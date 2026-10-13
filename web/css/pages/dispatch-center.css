@@ -281,7 +281,7 @@
 }
 
 .queue-incident-card.is-critical {
-  border-left: 3px solid var(--color-critical);
+  border-color: color-mix(in srgb, var(--color-critical) 35%, var(--color-border));
 }
 
 .queue-incident-card__header {

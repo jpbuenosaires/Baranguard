@@ -437,6 +437,10 @@ html { font-size: 100%; }
   --focus-ring-offset: 2px;
   --focus-ring-style: solid;
 
+  /* Timeline & Stepper Tokens (WCAG 2.2 SC 1.4.11 Non-text contrast >= 3:1) */
+  --timeline-node-pending: #94A3B8;
+  --timeline-connector: #CBD5E1;
+
   /* ─── LAYERING SCALE (audit 2026-10-09 D-16) ──────────────────────────
      Toasts sat at 300, under the shared modal (400), ConfirmDialog (400),
      every page modal (999-1000) and the fullscreen maps / print modal
@@ -578,6 +582,8 @@ html { font-size: 100%; }
     --focus-ring-color: #60A5FA;
     --color-critical-text: var(--dark-pill-critical-text);
     --color-neutral-text: var(--dark-pill-neutral-text);
+    --timeline-node-pending: #64748B;
+    --timeline-connector: #334155;
   }
 }
 :root[data-theme="dark"] {
@@ -628,6 +634,8 @@ html { font-size: 100%; }
   --focus-ring-color: #60A5FA;
   --color-critical-text: var(--dark-pill-critical-text);
   --color-neutral-text: var(--dark-pill-neutral-text);
+  --timeline-node-pending: #64748B;
+  --timeline-connector: #334155;
 }
 
 * {

@@ -22,6 +22,7 @@ import { requireReason } from '../utils/reasonText.js';
 import { promptDispatchTanod } from '../components/DispatchAction.js';
 import { REPORT_CHANNEL_OPTIONS, DEFAULT_WEB_REPORT_CHANNEL, reportChannelLabel } from '../utils/reportChannel.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { formatIncidentCode as sharedIncidentCode } from '../services/tanodWorkflowUi.js';
 import { formatManilaDateTime, manilaDateKey } from '../utils/manilaTime.js';
 import { SchoolC1Card, ReferralsCard } from '../components/IncidentCaseCards.js';
 import { getSchools, updateIncidentSchoolFields } from '../services/shellWorkflowApi.js';
@@ -81,9 +82,7 @@ function formatDateTime(isoString) {
  * Format display code (e.g. INC-2026-048)
  */
 function formatIncidentCode(row) {
-  if (row.displayId) return row.displayId;
-  const year = row.createdAt ? (manilaDateKey(row.createdAt) || "2026").slice(0, 4) : '2026';
-  return `INC-${year}-${String(row.incidentId).padStart(3, '0')}`;
+  return sharedIncidentCode(row.incidentId, row.displayId);
 }
 
 /**
@@ -948,10 +947,10 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     descLabel.textContent = 'Description';
     const descBody = document.createElement('p');
     descBody.className = 'incident-desc-body';
-    // Rule 1: raw_narrative is only returned to a Secretary, so every
+    // Rule 1 (amended 2026-10-13): raw_narrative is returned to the Secretary and the Admin (web), so any
     // other role honestly sees that it is restricted rather than blank.
     descBody.textContent = detail.rawNarrative
-      || (user.role === 'secretary' ? missingNarrativeText(detail) : 'The narrative is restricted to the Barangay Secretary.');
+      || (user.role === 'secretary' || user.role === 'admin' ? missingNarrativeText(detail) : 'The narrative is restricted to the Barangay Secretary and the Chief Tanod.');
     descCard.append(descLabel, descBody);
     rightPanel.appendChild(descCard);
 
@@ -1428,7 +1427,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
           complainantContactNumber: isSecretary ? (inContact.value.trim() || undefined) : undefined,
           idempotencyKey: crypto.randomUUID(),
         });
-        const newCode = created.displayId || `#${created.incidentId}`;
+        const newCode = sharedIncidentCode(created.incidentId, created.displayId);
         let schoolFailed = false;
         if (selSchool.value !== '') {
           try {

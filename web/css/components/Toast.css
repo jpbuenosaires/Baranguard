@@ -69,12 +69,11 @@
 .toast--error .toast__icon { color: var(--color-critical); }
 .toast--warning .toast__icon { color: var(--color-warning); }
 .toast--info .toast__icon { color: var(--color-info); }
-/* Left border echoes the variant color, same visual language as
-   .status-pill--critical's accent border. */
-.toast--success { border-left: 3px solid var(--color-success); }
-.toast--error { border-left: 3px solid var(--color-critical); }
-.toast--warning { border-left: 3px solid var(--color-warning); }
-.toast--info { border-left: 3px solid var(--color-info); }
+/* Toast card surfaces use clean uniform borders with semantic icon colors */
+.toast--success { border-color: color-mix(in srgb, var(--color-success) 35%, var(--color-border)); }
+.toast--error { border-color: color-mix(in srgb, var(--color-critical) 35%, var(--color-border)); }
+.toast--warning { border-color: color-mix(in srgb, var(--color-warning) 35%, var(--color-border)); }
+.toast--info { border-color: color-mix(in srgb, var(--color-info) 35%, var(--color-border)); }
 
 /* Progress bar — shrinks from 100% to 0% over the toast's auto-dismiss
    duration. Width is set via inline style in Toast.js. */

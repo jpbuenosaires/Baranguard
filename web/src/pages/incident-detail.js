@@ -24,6 +24,8 @@ import {
   downloadEvidenceFile,
   resolveIncident,
   updateIncidentLifecycle,
+  getUsers,
+  getDutyStatus,
   logout,
   ApiClientError,
 } from '../api/apiClient.js';
@@ -35,6 +37,7 @@ import { confirmDialog, promptText } from '../components/ConfirmDialog.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { formatManilaDateTime, formatManilaDate } from '../utils/manilaTime.js';
 import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
+import { promptDispatchTanod } from '../components/DispatchAction.js';
 import { SchoolC1Card, ReferralsCard, RelatedIncidentCard, resolveIncidentReference, describeIncidentRef } from '../components/IncidentCaseCards.js';
 import { reportChannelLabel } from '../utils/reportChannel.js';
 import { requireReason } from '../utils/reasonText.js';
@@ -49,7 +52,9 @@ const INCIDENT_TYPE_LABELS = {
   animal_complaint: 'Animal Complaint', other: 'Other',
 };
 
-const RESTRICTED_TO_SECRETARY = 'Restricted to the Barangay Secretary';
+// Rule 1 (amended 2026-10-13): the narrative and party details go to the Secretary (custodian) and the Chief Tanod (Admin),
+// who needs them to brief a responding Tanod. Everyone else is told plainly that they are restricted.
+const RESTRICTED_TO_SECRETARY = 'Restricted to the Barangay Secretary and the Chief Tanod';
 const NOT_AVAILABLE_FOR_ROLE = 'Not available for your role';
 // Raw narratives are deleted by the retention job 90 days after creation
 // (RetentionService; Rule 10 constant). GET /incidents/:id does not return
@@ -62,6 +67,20 @@ function parseApiDate(value) {
   const raw = String(value);
   const d = new Date(/[zZ]|[+-][0-9]{2}:?[0-9]{2}$/.test(raw) ? raw : `${raw.replace(' ', 'T')}Z`);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * "2 h 10 min", "45 min", "3 days". A real elapsed time between two real
+ * timestamps; no target or threshold is implied (Rule 6).
+ */
+function formatElapsed(ms) {
+  const min = Math.max(0, Math.floor(ms / 60000));
+  if (min < 1) return 'under 1 min';
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h < 48) return m ? `${h} h ${m} min` : `${h} h`;
+  return `${Math.floor(h / 24)} days`;
 }
 
 /** Operational times are shown in Asia/Manila (Rule 11). */
@@ -102,6 +121,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
   root.innerHTML = '';
 
   const isSecretary = user.role === 'secretary';
+  const canReadConfidential = isSecretary || user.role === 'admin';
 
   // There is no browsable list of incident records on this screen's
   // behalf: it returns to whichever list the signed-in role actually has.
@@ -110,17 +130,23 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
   const listPage = user.role === 'punong_barangay' ? 'dashboard' : 'incident-management';
   const listLabel = listPage === 'dashboard' ? 'Dashboard' : 'Incidents';
 
+  const breadcrumbTrail = [
+    { label: 'Operations' },
+    { label: listLabel, page: listPage },
+    { label: 'Incident Record', current: true },
+  ];
+
   const shell = AppShell(user, listPage, navigate, async () => {
     shell.logoutButton.disabled = true;
     await logout();
     onLoggedOut();
-  });
+  }, { breadcrumbTrail });
   const { header, content } = shell;
   shell.el.classList.add('incident-detail-shell');
   root.appendChild(shell.el);
 
   const pageHeader = PageHeader({
-    title: `Incident Record — ${formatIncidentCode(incidentId)}`,
+    title: 'Incident Record',
     subtitle: 'Incident particulars and response timeline',
     icon: icons.fileText,
   });
@@ -178,8 +204,18 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     const incidentDisplayId = formatIncidentCode(incident?.incidentId || incidentId, incident?.displayId);
     const titleBlock = pageHeader.el.querySelector('.page-header__title');
     if (titleBlock) {
-      titleBlock.innerHTML = `<span class="page-header__icon" aria-hidden="true">${icons.fileText(22)}</span> Incident Record — <span class="page-header__id-pill font-mono">${escapeHtml(incidentDisplayId)}</span>`;
+      // The ID is already in the breadcrumb and the card heading, so the bar shows only the page name. The dash and
+      // the ID stay in the DOM (screen readers and the document title still read "Incident Record — INC-...").
+      titleBlock.innerHTML = `<span class="page-header__icon" aria-hidden="true">${icons.fileText(22)}</span> Incident Record<span class="sr-only"> — </span><span class="page-header__id-pill font-mono">${escapeHtml(incidentDisplayId)}</span>`;
     }
+
+    const currentCrumb = shell.el.querySelector('.topbar__crumb--current');
+    if (currentCrumb) {
+      currentCrumb.textContent = incidentDisplayId;
+    }
+    // main.js sets document.title once per navigation, before the incident
+    // has loaded; refresh it now that the real display code is known.
+    document.title = `Incident Record — ${incidentDisplayId} — Baranguard`;
 
     // Exactly 1 Master Console Card on the entire screen
     const consoleCard = document.createElement('div');
@@ -199,17 +235,23 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     const titleGroup = document.createElement('div');
     titleGroup.className = 'console-hero-header__titles';
 
+    const titleRow = document.createElement('div');
+    titleRow.className = 'case-hero__title-row';
+
     const title = document.createElement('h3');
-    title.className = 'case-hero__title';
-    title.textContent = INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
+    title.className = 'case-hero__title font-mono incident-id-badge';
+    title.textContent = incidentDisplayId;
+    title.title = `Incident Reference ID ${escapeHtml(incidentDisplayId)}`;
+
+    const incidentTypeLabel = INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType;
+    const typeBadge = document.createElement('span');
+    typeBadge.className = 'case-hero__type-badge';
+    typeBadge.textContent = incidentTypeLabel;
+
+    titleRow.append(title, typeBadge);
 
     const badges = document.createElement('div');
     badges.className = 'case-hero__badges';
-
-    const incidentBadge = document.createElement('span');
-    incidentBadge.className = 'incident-id-badge';
-    incidentBadge.innerHTML = `${icons.fileText(13)} <span>${escapeHtml(incidentDisplayId)}</span>`;
-    incidentBadge.title = `Incident Reference ID ${escapeHtml(incidentDisplayId)}`;
 
     const statusPill = document.createElement('span');
     statusPill.className = `status-pill ${STATUS_PILL_CLASS[incident.status] || 'status-pill--neutral'}`;
@@ -220,17 +262,44 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     priorityPill.className = `status-pill ${incident.priority === 'urgent' || incident.priority === 'critical' ? 'status-pill--critical' : incident.priority === 'high' ? 'status-pill--warning' : 'status-pill--neutral'}`;
     priorityPill.textContent = `${PRIORITY_LABELS[incident.priority] || 'Normal'} priority`;
 
-    badges.append(incidentBadge, statusPill, priorityPill);
-    titleGroup.append(title, badges);
+    badges.append(statusPill, priorityPill);
+    titleGroup.append(titleRow, badges);
     leftGroup.append(iconWrap, titleGroup);
 
     const rightActions = document.createElement('div');
     rightActions.className = 'console-hero-header__actions';
+
+    const printBtn = document.createElement('button');
+    printBtn.type = 'button';
+    printBtn.className = 'ghost print-action-btn';
+    printBtn.title = 'Print or export incident case record';
+    printBtn.setAttribute('aria-label', 'Print case record');
+    printBtn.innerHTML = `${icons.printer(14)} <span>Print Case Record</span>`;
+    printBtn.addEventListener('click', () => {
+      window.print();
+    });
+
+    // Working actions first (the Admin's next step is the filled button), the print action last behind a divider.
+    if (canDispatchFromHere()) {
+      const dispatchBtn = document.createElement('button');
+      dispatchBtn.type = 'button';
+      dispatchBtn.className = 'primary hero-dispatch-btn';
+      dispatchBtn.innerHTML = `${icons.radio(14)} <span>Dispatch Tanod</span>`;
+      dispatchBtn.addEventListener('click', () => startDispatch(dispatchBtn));
+      rightActions.appendChild(dispatchBtn);
+    }
     if (incident.status === 'resolved') {
       rightActions.appendChild(buildResolvedStatusCard());
     } else if (user.role === 'admin') {
       rightActions.appendChild(buildAdminResolvePanel());
     }
+    if (rightActions.childElementCount > 0) {
+      const divider = document.createElement('span');
+      divider.className = 'console-hero-header__divider';
+      divider.setAttribute('aria-hidden', 'true');
+      rightActions.appendChild(divider);
+    }
+    rightActions.appendChild(printBtn);
 
     heroHeader.append(leftGroup, rightActions);
     consoleCard.appendChild(heroHeader);
@@ -242,19 +311,42 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     // Location
     const locTile = document.createElement('div');
     locTile.className = 'meta-tile';
-    const locCoords = incident.latitude != null && incident.longitude != null
+    const hasCoords = incident.latitude != null && incident.longitude != null;
+    const locCoords = hasCoords
       ? `${incident.latitude.toFixed(5)}, ${incident.longitude.toFixed(5)}`
       : null;
     const locDesc = incident.locationDescription
-      ? (locCoords ? `${incident.locationDescription} (${locCoords})` : incident.locationDescription)
+      ? incident.locationDescription
       : (locCoords || 'No location recorded');
+    const fullLocTitle = incident.locationDescription && locCoords
+      ? `${incident.locationDescription} (${locCoords})`
+      : locDesc;
+
+    let mapActionHtml = '';
+    if (hasCoords) {
+      mapActionHtml = `<button type="button" class="meta-tile__action-btn" title="View incident location on map">${icons.mapPin(11)} <span>View on map</span></button>`;
+    }
+
     locTile.innerHTML = `
       <div class="meta-tile__icon">${icons.mapPin(15)}</div>
       <div class="meta-tile__content">
-        <span class="meta-tile__label">Location</span>
-        <span class="meta-tile__value" title="${escapeHtml(locDesc)}">${escapeHtml(locDesc)}</span>
+        <span class="meta-tile__label-row"><span class="meta-tile__label">Location</span>${mapActionHtml}</span>
+        <span class="meta-tile__value" title="${escapeHtml(fullLocTitle)}">${escapeHtml(locDesc)}</span>
       </div>
     `;
+
+    if (hasCoords) {
+      const mapBtn = locTile.querySelector('.meta-tile__action-btn');
+      if (mapBtn) {
+        mapBtn.addEventListener('click', () => {
+          if (user.role === 'admin' || user.role === 'punong_barangay') {
+            navigate('gis');
+          } else {
+            window.open(`https://www.google.com/maps?q=${incident.latitude},${incident.longitude}`, '_blank', 'noopener,noreferrer');
+          }
+        });
+      }
+    }
 
     // Date Filed
     const dateTile = document.createElement('div');
@@ -273,11 +365,13 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     channelTile.className = 'meta-tile';
     const channelLabel = reportChannelLabel(incident.reportChannel)
       || (incident.source === 'app' ? 'Mobile App' : incident.source === 'walkin' ? 'Walk-in Desk' : 'Not recorded');
+    const isSms = incident.reportChannel === 'sms' || incident.source === 'sms';
+    const channelIcon = isSms ? icons.messageSquare(15) : icons.phone(15);
     channelTile.innerHTML = `
-      <div class="meta-tile__icon">${icons.phone(15)}</div>
+      <div class="meta-tile__icon">${channelIcon}</div>
       <div class="meta-tile__content">
         <span class="meta-tile__label">Report channel</span>
-        <span class="meta-tile__value">${channelLabel}</span>
+        <span class="meta-tile__value">${escapeHtml(channelLabel)}</span>
       </div>
     `;
 
@@ -285,11 +379,13 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     const officerTile = document.createElement('div');
     officerTile.className = 'meta-tile';
     const officerName = incident.officerName || 'Not recorded';
+    const isOfficerEmpty = !incident.officerName;
+    if (isOfficerEmpty) officerTile.classList.add('meta-tile--empty');
     officerTile.innerHTML = `
       <div class="meta-tile__icon">${icons.users(15)}</div>
       <div class="meta-tile__content">
         <span class="meta-tile__label">Recording Officer</span>
-        <span class="meta-tile__value">${escapeHtml(officerName)}</span>
+        <span class="meta-tile__value${isOfficerEmpty ? ' meta-tile__value--empty' : ''}">${escapeHtml(officerName)}</span>
       </div>
     `;
 
@@ -310,7 +406,8 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     tabDossier.setAttribute('aria-selected', 'true');
     tabDossier.setAttribute('aria-controls', 'panel-dossier');
     tabDossier.setAttribute('tabindex', '0');
-    tabDossier.innerHTML = `<span class="console-tab__icon" aria-hidden="true">${icons.fileText(15)}</span><span>Incident Dossier & School C-1</span>`;
+    tabDossier.innerHTML = `<span class="console-tab__icon" aria-hidden="true">${icons.fileText(15)}</span><span>Details</span>`;
+    tabDossier.title = 'Incident dossier and School C-1';
 
     const tabOperations = document.createElement('button');
     tabOperations.type = 'button';
@@ -320,7 +417,8 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     tabOperations.setAttribute('aria-selected', 'false');
     tabOperations.setAttribute('aria-controls', 'panel-operations');
     tabOperations.setAttribute('tabindex', '-1');
-    tabOperations.innerHTML = `<span class="console-tab__icon" aria-hidden="true">${icons.clock(15)}</span><span>Response Timeline & Case Links</span>`;
+    tabOperations.innerHTML = `<span class="console-tab__icon" aria-hidden="true">${icons.clock(15)}</span><span>Timeline & links</span>`;
+    tabOperations.title = 'Response timeline, responders and case links';
 
     tabList.append(tabDossier, tabOperations);
     consoleCard.appendChild(tabList);
@@ -406,28 +504,20 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     const partiesSection = document.createElement('div');
     partiesSection.className = 'dossier-section dossier-section--parties';
 
-    const missingParty = isSecretary ? 'Not recorded' : RESTRICTED_TO_SECRETARY;
+    const missingParty = canReadConfidential ? 'Not recorded' : RESTRICTED_TO_SECRETARY;
 
-    if (!isSecretary) {
+    if (!canReadConfidential) {
       const shield = document.createElement('div');
       shield.className = 'dossier-privacy-shield';
       shield.setAttribute('role', 'note');
+      shield.classList.add('dossier-privacy-shield--compact');
+      shield.title = 'Confidential records protection: RA 10173 and RA 7160 §394. The Barangay Secretary is the designated records custodian.';
       shield.innerHTML = `
-        <div class="dossier-privacy-shield__icon" aria-hidden="true">${icons.shield(18)}</div>
-        <div class="dossier-privacy-shield__body">
-          <div class="dossier-privacy-shield__header">
-            <span class="dossier-privacy-shield__title">Confidential Records Protection</span>
-            <span class="dossier-privacy-shield__citation">RA 10173 & RA 7160 §394</span>
-          </div>
-          <p class="dossier-privacy-shield__desc">
-            Complainant, respondent, and narrative details are <strong>${RESTRICTED_TO_SECRETARY}</strong> as designated records custodian.
-          </p>
-          <div class="dossier-privacy-shield__tags">
-            <span class="party-card__tag privacy-pill party-card__tag--complainant">Complainant: ${RESTRICTED_TO_SECRETARY}</span>
-            <span class="party-card__tag privacy-pill party-card__tag--respondent">Respondent: ${RESTRICTED_TO_SECRETARY}</span>
-            <span class="party-card__tag privacy-pill party-card__tag--narrative">Narrative: The narrative is restricted to the Barangay Secretary (RA 10173).</span>
-          </div>
-        </div>
+        <div class="dossier-privacy-shield__icon" aria-hidden="true">${icons.lock(15)}</div>
+        <p class="dossier-privacy-shield__desc">
+          <span class="dossier-privacy-shield__title">Confidential records.</span>
+          Complainant, respondent and narrative details are <strong>${RESTRICTED_TO_SECRETARY}</strong>.
+        </p>
       `;
       partiesSection.appendChild(shield);
     } else {
@@ -437,26 +527,29 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       const compCard = document.createElement('div');
       compCard.className = 'party-card';
       const compName = incident.complainantName || missingParty;
-      const compContact = incident.complainantContactNumber || missingParty;
+      const compContact = incident.complainantContactNumber;
+      const compContactHtml = compContact
+        ? `${icons.phone(13)} <span>${escapeHtml(compContact)}</span>`
+        : `<span class="party-card__contact--empty">No contact phone recorded</span>`;
       compCard.innerHTML = `
         <div class="party-card__role">
           <span class="party-card__tag party-card__tag--complainant">Complainant</span>
         </div>
         <div class="party-card__name">${escapeHtml(compName)}</div>
         <div class="party-card__contact">
-          ${icons.phone(13)}
-          <span>${escapeHtml(compContact)}</span>
+          ${compContactHtml}
         </div>
       `;
 
       const respCard = document.createElement('div');
-      respCard.className = 'party-card';
+      const hasRespondent = Boolean(incident.respondentName);
+      respCard.className = `party-card${hasRespondent ? '' : ' party-card--empty'}`;
       const respName = incident.respondentName || missingParty;
       respCard.innerHTML = `
         <div class="party-card__role">
           <span class="party-card__tag party-card__tag--respondent">Respondent</span>
         </div>
-        <div class="party-card__name">${escapeHtml(respName)}</div>
+        <div class="party-card__name${hasRespondent ? '' : ' party-card__name--empty'}">${escapeHtml(respName)}</div>
       `;
 
       partiesGrid.append(compCard, respCard);
@@ -465,8 +558,8 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
     dossierBody.appendChild(partiesSection);
 
-    // 2. Narrative Section (Secretary-only readable view)
-    if (isSecretary) {
+    // 2. Narrative Section (Secretary and Chief Tanod)
+    if (canReadConfidential) {
       const narrativeSection = document.createElement('div');
       narrativeSection.className = 'dossier-section dossier-section--narrative';
 
@@ -490,7 +583,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     dossierBody.appendChild(evidenceSection);
 
     // 4. Safer School Zone (Annex C-1) Subsection
-    dossierBody.appendChild(SchoolC1Card({ incidentId, canEdit: user.role === 'admin' || isSecretary }));
+    dossierBody.appendChild(SchoolC1Card({ incidentId, canEdit: user.role === 'admin' || isSecretary, rawNarrative: incident.rawNarrative }));
 
     return dossierBody;
   }
@@ -703,6 +796,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     card.appendChild(heading);
     const list = Array.isArray(incident.dispatches) ? incident.dispatches : [];
     if (list.length === 0) {
+      card.classList.add('card--quiet');
       const none = document.createElement('p');
       none.className = 'note';
       none.textContent = 'No tanod has been dispatched to this incident.';
@@ -752,7 +846,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
   function buildTimeline() {
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className = 'card case-card--timeline';
 
     const headerRow = document.createElement('div');
     headerRow.className = 'incident-card-heading';
@@ -788,8 +882,16 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       if (ts) lastReachedIdx = idx;
     });
 
+    // Closed without being resolved (cancelled / invalid / duplicate): later steps will never happen.
+    const closedOtherwise = ['cancelled', 'invalid', 'duplicate'].includes(incident.status);
+    const filedAt = parseApiDate(incident.createdAt);
+    const AWAITING = ['', 'Awaiting dispatch', 'Awaiting arrival', 'Awaiting resolution'];
+
+    const statusLine = buildTimelineStatusLine(filedAt, resolvedTs, isResolved);
+    if (statusLine) card.appendChild(statusLine);
+
     const list = document.createElement('ol');
-    list.className = 'timeline';
+    list.className = 'timeline timeline--horizontal';
     list.setAttribute('role', 'list');
     list.setAttribute('aria-label', 'Incident response timeline');
 
@@ -846,16 +948,76 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
       const value = document.createElement('span');
       value.className = 'timeline__value';
-      value.textContent = reached ? (formatDateTime(timestamp) || (isResolved && label === 'Resolved' ? 'Resolved' : 'Completed')) : 'Pending';
+      let pendingText = 'Pending';
+      if (closedOtherwise) pendingText = 'Not reached';
+      else if (i === lastReachedIdx + 1) pendingText = AWAITING[i] || 'Pending';
+      value.textContent = reached ? (formatDateTime(timestamp) || (isResolved && label === 'Resolved' ? 'Resolved' : 'Completed')) : pendingText;
+      if (!reached && pendingText !== 'Pending') value.classList.add(closedOtherwise ? 'timeline__value--muted' : 'timeline__value--next');
 
       row.append(name, value);
       body.appendChild(row);
+      if (reached && i > 0 && filedAt) {
+        const at = parseApiDate(timestamp);
+        if (at && at.getTime() >= filedAt.getTime()) {
+          const delta = document.createElement('span');
+          delta.className = 'timeline__delta';
+          delta.textContent = `+${formatElapsed(at.getTime() - filedAt.getTime())} after filing`;
+          body.appendChild(delta);
+        }
+      }
       item.append(rail, body);
       list.appendChild(item);
     });
 
     card.appendChild(list);
     return card;
+  }
+
+  /** One line above the timeline: where the incident stands and for how long (real timestamps only). */
+  function buildTimelineStatusLine(filedAt, resolvedTs, isResolved) {
+    if (!filedAt) return null;
+    const line = document.createElement('div');
+    line.className = 'timeline-status';
+    const text = document.createElement('span');
+    const sinceFiled = formatElapsed(Date.now() - filedAt.getTime());
+    if (incident.status === 'pending' || incident.status === 'reopened') {
+      line.classList.add('timeline-status--waiting');
+      text.textContent = `Waiting for dispatch. Filed ${sinceFiled} ago.`;
+    } else if (incident.status === 'dispatched') {
+      text.textContent = `Responders assigned. Filed ${sinceFiled} ago.`;
+    } else if (isResolved) {
+      const done = parseApiDate(resolvedTs);
+      if (!done || done.getTime() < filedAt.getTime()) return null;
+      text.textContent = `Resolved ${formatElapsed(done.getTime() - filedAt.getTime())} after it was filed.`;
+    } else {
+      return null;
+    }
+    line.appendChild(text);
+    return line;
+  }
+
+  /** Dispatch is Admin-only on the server (POST /dispatch); the button only exists where it can work. */
+  function canDispatchFromHere() {
+    return user.role === 'admin' && (incident.status === 'pending' || incident.status === 'reopened');
+  }
+
+  /** Same picker and rules as Incident Management and the Dispatch Center (DispatchAction.js). */
+  async function startDispatch(button) {
+    button.disabled = true;
+    try {
+      const [usersRes, duty] = await Promise.all([getUsers({ role: 'tanod', limit: 100 }), getDutyStatus(user.barangayId)]);
+      const onDuty = new Set(duty.filter((d) => d.status === 'on_duty').map((d) => d.userId));
+      const eligibleTanods = usersRes.items.filter((u) => u.isActive && onDuty.has(u.userId));
+      const done = await promptDispatchTanod({
+        incident: { ...incident, incidentId: incident.incidentId ?? incidentId },
+        incidentTypeLabel: INCIDENT_TYPE_LABELS[incident.incidentType] || incident.incidentType,
+        eligibleTanods,
+      });
+      if (done) { await load(); return; }
+    } catch (err) {
+      showToast(err instanceof ApiClientError ? err.message : 'Could not load the on-duty tanods.', { variant: 'error' });
+    }
+    button.disabled = false;
   }
 
   /**
@@ -914,7 +1076,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     body.className = 'doc-card__body';
 
     const button = document.createElement('button');
-    button.className = 'primary';
+    button.className = noDispatchResolve ? 'ghost resolve-bypass-btn' : 'primary';
     const buttonLabel = noDispatchResolve ? 'Resolve without dispatch' : 'Mark incident resolved';
     button.textContent = buttonLabel;
     button.disabled = blockedBecause !== null;

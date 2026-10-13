@@ -53,11 +53,11 @@ import {
   formatSwapCode,
 } from '../services/tanodWorkflowUi.js';
 
-function formatAuditEntity(entityType, entityId) {
+function formatAuditEntity(entityType, entityId, displayId = null) {
   if (!entityType) return '—';
   if (entityId === null || entityId === undefined) return entityType;
   switch (String(entityType).toLowerCase()) {
-    case 'incident': return formatIncidentCode(entityId);
+    case 'incident': return formatIncidentCode(entityId, displayId);
     case 'dispatch': return formatDispatchCode(entityId);
     case 'shift': return formatShiftCode(entityId);
     case 'user': return formatUserCode(entityId);
@@ -309,7 +309,7 @@ function openAuditPrintModal({ items, totalItems, dateFrom, dateTo, categoryLabe
       : (item.actorUserId ? formatUserCode(item.actorUserId) : 'SYSTEM');
     const actionName = actionText(item.action);
     const entityText = item.entityType
-      ? formatAuditEntity(item.entityType, item.entityId)
+      ? formatAuditEntity(item.entityType, item.entityId, item.entityDisplayId)
       : '—';
     const metaEntries = item.metadataJson && typeof item.metadataJson === 'object'
       ? Object.entries(item.metadataJson).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join('; ')
@@ -830,7 +830,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
       </div>
       <div class="audit-modal-field">
         <span class="audit-modal-label">Target Entity</span>
-        <span class="audit-modal-value">${escapeHtml(formatAuditEntity(row.entityType, row.entityId))}</span>
+        <span class="audit-modal-value">${escapeHtml(formatAuditEntity(row.entityType, row.entityId, row.entityDisplayId))}</span>
       </div>
     `;
 
@@ -1003,7 +1003,7 @@ function renderAuditCell(row, key, navigate) {
         return chipBtn;
       }
 
-      const label = formatAuditEntity(row.entityType, row.entityId);
+      const label = formatAuditEntity(row.entityType, row.entityId, row.entityDisplayId);
       chip.textContent = label;
       return chip;
     }

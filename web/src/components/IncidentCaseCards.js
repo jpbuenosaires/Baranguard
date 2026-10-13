@@ -38,6 +38,8 @@ const C1_FIELDS = [
   { key: 'c1StatusNotes', label: 'Status notes', hint: '' },
 ];
 const C1_MAX = 500;
+// What belongs in a school-zone (Annex C-1) entry: what the tanod met outside the school, not what happens inside it.
+const SCHOOL_SCOPE_NOTE = 'Link a school only for what the tanod met outside the school grounds (the gate, the perimeter, the road in front). What happens inside the school is a matter for the school, not for the tanod.';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -88,7 +90,7 @@ function fieldRow(label, value) {
  * @param {{incidentId:number, canEdit:boolean}} opts
  * @returns {HTMLElement}
  */
-export function SchoolC1Card({ incidentId, canEdit }) {
+export function SchoolC1Card({ incidentId, canEdit, rawNarrative }) {
   const card = el('section', 'card case-card case-card--school');
   card.setAttribute('aria-label', 'School link and Annex C-1');
   let editing = false;
@@ -149,11 +151,21 @@ export function SchoolC1Card({ incidentId, canEdit }) {
     const hasC1 = C1_FIELDS.some((f) => data[f.key]);
     if (!linked && !hasC1) {
       card.appendChild(el('p', 'note', 'This incident is not linked to a school and has no C-1 details.'));
+      if (canEdit) card.appendChild(el('p', 'note', SCHOOL_SCOPE_NOTE));
     } else {
-      card.appendChild(fieldRow('School', linked ? schoolName(data.schoolId) : 'Not linked'));
+      const schoolRow = fieldRow('School', linked ? schoolName(data.schoolId) : 'Not linked');
+      schoolRow.classList.add('case-card__field--school');
+      card.appendChild(schoolRow);
       for (const f of C1_FIELDS) {
         if (data[f.key] || f.key !== 'c1StatusNotes') {
-          card.appendChild(fieldRow(f.label, data[f.key] || '—'));
+          let val = data[f.key] || '—';
+          if (f.key === 'c1Summary' && rawNarrative && data.c1Summary && data.c1Summary.trim().toLowerCase() === rawNarrative.trim().toLowerCase()) {
+            val = 'Same as incident narrative';
+          }
+          const row = fieldRow(f.label, val);
+          if (f.key === 'c1Summary') row.classList.add('case-card__field--c1-summary');
+          if (f.key === 'c1ActionTaken') row.classList.add('case-card__field--c1-action');
+          card.appendChild(row);
         }
       }
     }
@@ -202,6 +214,7 @@ export function SchoolC1Card({ incidentId, canEdit }) {
       inputs[f.key] = area;
       form.append(label, area);
     }
+    form.appendChild(el('p', 'note', SCHOOL_SCOPE_NOTE));
     form.appendChild(el('p', 'note', 'Keep these short and factual. Never enter the name of a victim or a student.'));
 
     const actions = el('div', 'availability-item__actions');
@@ -414,7 +427,24 @@ export function ReferralsCard({ incidentId, canAdd, incidentLabel }) {
 
   function render(items) {
     card.innerHTML = '';
-    card.appendChild(cardHeading(icons.send, 'Referrals'));
+
+    const headerRow = el('div', 'case-card__header-row');
+    const heading = el('h3', 'case-card__heading');
+    heading.style.cssText = 'margin:0; display:flex; align-items:center; gap:var(--spacing-xs);';
+    const icon = el('span');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = icons.send(18);
+    heading.append(icon, el('span', '', 'Referrals'));
+    headerRow.appendChild(heading);
+
+    if (canAdd) {
+      const add = el('button', 'ghost case-card__edit-btn', 'Record a referral');
+      add.type = 'button';
+      add.addEventListener('click', () => openReferralDialog({ incidentId, incidentLabel, onCreated: load }));
+      headerRow.appendChild(add);
+    }
+    card.appendChild(headerRow);
+
     if (items.length === 0) {
       card.appendChild(el('p', 'note', 'This incident has not been referred to any other party.'));
     } else {
@@ -430,12 +460,6 @@ export function ReferralsCard({ incidentId, canAdd, incidentLabel }) {
         list.appendChild(li);
       }
       card.appendChild(list);
-    }
-    if (canAdd) {
-      const add = el('button', 'ghost', 'Record a referral');
-      add.type = 'button';
-      add.addEventListener('click', () => openReferralDialog({ incidentId, incidentLabel, onCreated: load }));
-      card.appendChild(add);
     }
   }
 
@@ -539,10 +563,38 @@ export function RelatedIncidentCard({ incidentId, relatedIncident, relatedBy, ca
   input.type = 'text';
   input.autocomplete = 'off';
   input.placeholder = 'e.g. INC-2026-048';
-  if (relatedIncident) input.value = relatedIncident.displayId || String(relatedIncident.incidentId);
+  if (relatedIncident && relatedIncident.displayId) input.value = relatedIncident.displayId;
 
-  const save = el('button', 'secondary', relatedIncident ? 'Change link' : 'Link incident');
+  const save = el('button', 'primary', relatedIncident ? 'Change link' : 'Link incident');
   save.type = 'submit';
+  // Live check while typing: once the text looks like an incident number, say what it resolves to (or that it does not).
+  // Only a hint; submitting still resolves and confirms it again, so a stale hint can never link the wrong incident.
+  const hint = el('p', 'related-incident-hint note');
+  hint.setAttribute('aria-live', 'polite');
+  hint.hidden = true;
+  let hintTimer = null;
+  let hintSeq = 0;
+  input.addEventListener('input', () => {
+    clearTimeout(hintTimer);
+    const raw = input.value.trim();
+    hint.hidden = true;
+    hint.classList.remove('related-incident-hint--error');
+    if (!/^(INC-\d{4}-)?\d+$/i.test(raw)) return;
+    const seq = ++hintSeq;
+    hintTimer = setTimeout(async () => {
+      try {
+        const found = await resolveIncidentReference(raw);
+        if (seq !== hintSeq) return;
+        hint.textContent = found.incidentId === incidentId ? 'That is this incident.' : describeIncidentRef(found);
+        hint.classList.toggle('related-incident-hint--error', found.incidentId === incidentId);
+      } catch (err) {
+        if (seq !== hintSeq) return;
+        hint.textContent = err?.message || 'Could not look that incident up.';
+        hint.classList.add('related-incident-hint--error');
+      }
+      hint.hidden = false;
+    }, 400);
+  });
   row.appendChild(input);
   row.appendChild(save);
   let remove = null;
@@ -551,7 +603,7 @@ export function RelatedIncidentCard({ incidentId, relatedIncident, relatedBy, ca
     remove.type = 'button';
     row.appendChild(remove);
   }
-  form.append(errorBox, label, row);
+  form.append(errorBox, label, row, hint);
   card.appendChild(form);
 
   async function submit(nextId) {

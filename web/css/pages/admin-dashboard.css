@@ -654,8 +654,15 @@
   background: linear-gradient(90deg, var(--color-success), var(--color-success-solid));
 }
 
+.pipeline-stacked-segment--settled {
+  background: var(--color-text-tertiary);
+}
+
 /* Individual Breakdown Item Rows & 2-Column Status Grid */
-.breakdown-status-card {
+.breakdown-status-card,
+.incident-type-donut-card,
+.dashboard-approvals-card,
+.citizen-reports-card {
   display: flex;
   flex-direction: column;
 }
@@ -748,9 +755,12 @@
   background: linear-gradient(90deg, var(--color-accent), var(--color-accent-solid));
 }
 
-.breakdown-progress-fill--resolved,
-.breakdown-progress-fill--settled {
+.breakdown-progress-fill--resolved {
   background: linear-gradient(90deg, var(--color-success), var(--color-success-solid));
+}
+
+.breakdown-progress-fill--settled {
+  background: var(--color-text-tertiary);
 }
 
 /* Operational Summary Footer (Resolves empty vertical void & clamps to bottom) */
@@ -830,8 +840,10 @@
 .incident-id-badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: var(--type-mono-id, 0.8125rem);
+  font-size: var(--type-mono-id, 0.75rem);
   font-weight: 600;
   color: var(--color-link);
   background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));

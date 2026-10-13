@@ -42,7 +42,7 @@ import { openReferralDialog } from '../components/IncidentCaseCards.js';
 import { playCriticalAlertTone } from '../utils/criticalAlertSound.js';
 import { formatManilaTime } from '../utils/manilaTime.js';
 import { DISPATCH_STATUS_LABELS as SHARED_DISPATCH_STATUS_LABELS } from '../utils/statusLabels.js';
-import { formatSosCode, formatDispatchCode } from '../services/tanodWorkflowUi.js';
+import { formatSosCode, formatDispatchCode, formatIncidentCode as sharedIncidentCode } from '../services/tanodWorkflowUi.js';
 
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
 
@@ -120,9 +120,7 @@ function sosHasNoLocation(sos) {
 }
 
 function formatIncidentCode(incident) {
-  if (incident.displayId) return incident.displayId;
-  const num = String(incident.incidentId || 0).padStart(3, '0');
-  return `INC-${num}`;
+  return sharedIncidentCode(incident.incidentId, incident.displayId);
 }
 
 function getIncidentIcon(type, priority) {

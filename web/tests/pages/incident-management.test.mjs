@@ -68,12 +68,12 @@ describe('Incident Management behaviour', () => {
     assert.ok(api.callsTo('GET', '/incidents/903').length >= 1);
   });
 
-  test('Admin cannot see the raw narrative; the server never sends it to them', async () => {
+  test('Admin reads the narrative in the detail pane (Rule 1 amended: the Chief Tanod briefs the responder)', async () => {
     const ctx = mountPage(renderIncidentManagementPage, { role: 'admin' });
     await settle();
     click(buttonByText(/^INC-2026-901/, ctx.root));
     await settle();
-    assert.doesNotMatch(text(), /RAW-NARRATIVE-901/);
+    assert.match(text(), /RAW-NARRATIVE-901/);
 
     const statBadge = $('.incident-detail-badge--pending', ctx.root);
     assert.ok(statBadge, 'detail pane status badge with pending modifier class missing');

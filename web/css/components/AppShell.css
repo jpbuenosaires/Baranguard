@@ -434,6 +434,25 @@
   color: var(--color-text-primary);
   font-weight: 600;
 }
+.topbar__crumb--link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.topbar__crumb--link:hover {
+  color: var(--color-link);
+  text-decoration: underline;
+}
+.topbar__crumb--link:focus-visible {
+  outline: 2px solid var(--color-link);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
 
 .topbar__role-tag {
   display: inline-flex;

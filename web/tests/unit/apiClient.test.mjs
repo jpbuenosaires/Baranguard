@@ -187,11 +187,15 @@ describe('snake_case -> camelCase mapping', () => {
     assert.equal(summary.responseTimeTrend[0].avgMinutes, null, 'a genuine gap stays null, never 0');
   });
 
-  test('raw narrative and party fields are optional — absent for non-Secretaries, not undefined-crashing', async () => {
+  test('raw narrative and party fields are optional — absent for Punong Barangay, present for Admin (web) and Secretary', async () => {
+    signIn('punong_barangay');
+    const asPb = await client.getIncident(901);
+    assert.equal(asPb.rawNarrative, null);
+    assert.equal(asPb.complainantName, null);
     signIn('admin');
     const asAdmin = await client.getIncident(901);
-    assert.equal(asAdmin.rawNarrative, null);
-    assert.equal(asAdmin.complainantName, null);
+    assert.match(asAdmin.rawNarrative, /^RAW-NARRATIVE-901/, 'Rule 1 amended 2026-10-13: the web Admin reads the narrative');
+    assert.equal(asAdmin.complainantName, 'Juan Santos');
     signIn('secretary');
     const asSecretary = await client.getIncident(901);
     assert.match(asSecretary.rawNarrative, /^RAW-NARRATIVE-901/);
