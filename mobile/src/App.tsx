@@ -82,6 +82,9 @@ import './theme/variables.css';
 import './theme/app.css';
 import './theme/tanod-workflow.css';
 import './theme/admin-console.css';
+import './theme/phase1-home.css';
+import './theme/phase1-dispatch.css';
+import './theme/phase1-nav.css';
 
 setupIonicReact();
 
