@@ -50,6 +50,7 @@ import {
 import DispatchOfferCards from '../components/DispatchOfferCards';
 import MobileHeader from '../components/MobileHeader';
 import SmsFallbackBadge from '../components/SmsFallbackBadge';
+import TacticalAlertBar, { type TacticalAlertItem } from '../components/TacticalAlertBar';
 import tacticalFeedback from '../utils/tacticalFeedback';
 import { getDispatches, getOwnDutyStatus, postSos, setDutyStatus, type DutyStatus } from '../services/apiService';
 import { ApiError } from '../services/apiService';
@@ -629,6 +630,45 @@ const HomePage: React.FC = () => {
         .toUpperCase()
     : 'TR';
 
+  const homeAlerts: TacticalAlertItem[] = [];
+  if (dutyError) {
+    homeAlerts.push({
+      id: 'duty-error',
+      severity: 'critical',
+      message: dutyError,
+    });
+  }
+  if (rejectedOffDuty && !pendingOffDutyAt) {
+    homeAlerts.push({
+      id: 'rejected-off-duty',
+      severity: 'warning',
+      message: `Your offline off-duty (${formatManilaTime(rejectedOffDuty.payload.changedAt)}) was not accepted by HQ${
+        rejectedOffDuty.payload.rejectReason ? `: ${rejectedOffDuty.payload.rejectReason}` : '.'
+      } Your status above is what HQ has now.`,
+      actionLabel: 'Dismiss',
+      onAction: () => void handleDismissRejectedOffDuty(),
+    });
+  }
+  if (pendingOffDutyAt) {
+    homeAlerts.push({
+      id: 'pending-off-duty',
+      severity: 'info',
+      message: `Off duty since ${formatManilaTime(pendingOffDutyAt)} — saved on this phone, waiting to sync with HQ.`,
+    });
+  }
+  if (openSchoolCheckin) {
+    homeAlerts.push({
+      id: 'open-school-checkin',
+      severity: 'info',
+      message: `At ${openSchoolCheckin.school_name} since ${formatManilaTime(openSchoolCheckin.checked_in_at)}`,
+      actionLabel: 'Check out',
+      onAction: () => {
+        tacticalFeedback.onTap();
+        navigate('/tabs/school');
+      },
+    });
+  }
+
   return (
     <IonPage>
       <MobileHeader title="Baranguard" subtitle="Dashboard" />
@@ -701,78 +741,10 @@ const HomePage: React.FC = () => {
                 </span>
               </div>
             </div>
-
-            {pendingOffDutyAt && (
-              <div className="wf-strip" role="status">
-                <span>
-                  Off duty since {formatManilaTime(pendingOffDutyAt)} — saved on this phone, waiting to sync with HQ.
-                </span>
-              </div>
-            )}
-
-            {rejectedOffDuty && !pendingOffDutyAt && (
-              <div
-                style={{
-                  background: 'var(--tint-warning-bg)',
-                  border: '1px solid var(--color-warning)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '6px 10px',
-                  color: 'var(--pill-warning-text)',
-                  fontSize: '0.74rem',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '8px',
-                }}
-                role="alert"
-              >
-                <span>
-                  Your offline off-duty ({formatManilaTime(rejectedOffDuty.payload.changedAt)}) was not accepted by HQ
-                  {rejectedOffDuty.payload.rejectReason ? `: ${rejectedOffDuty.payload.rejectReason}` : '.'} Your status
-                  above is what HQ has now.
-                </span>
-                <button type="button" className="wf-btn wf-btn--small" onClick={() => void handleDismissRejectedOffDuty()}>
-                  Dismiss
-                </button>
-              </div>
-            )}
-
-            {dutyError && (
-              <div
-                style={{
-                  background: 'var(--tint-critical-bg)',
-                  border: '1px solid var(--color-critical)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '6px 10px',
-                  color: 'var(--pill-critical-text)',
-                  fontSize: '0.74rem',
-                  fontWeight: 600,
-                }}
-                role="alert"
-              >
-                {dutyError}
-              </div>
-            )}
           </div>
 
-          {openSchoolCheckin && (
-            <div className="wf-strip" role="status">
-              <span>
-                At {openSchoolCheckin.school_name} since {formatManilaTime(openSchoolCheckin.checked_in_at)}
-              </span>
-              <button
-                type="button"
-                className="wf-btn wf-btn--small"
-                onClick={() => {
-                  tacticalFeedback.onTap();
-                  navigate('/tabs/school');
-                }}
-              >
-                Check out
-              </button>
-            </div>
-          )}
+          {/* Consolidated Prioritized Tactical Alert Bar */}
+          <TacticalAlertBar alerts={homeAlerts} />
 
           {/* Night-dispatch offers: online-only, accept is never queued (see DispatchOfferCards). */}
           <DispatchOfferCards />

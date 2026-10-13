@@ -111,6 +111,16 @@ export async function listActiveCachedDispatches(): Promise<DispatchLocalRow[]> 
   return (result.values ?? []) as DispatchLocalRow[];
 }
 
+/** Latest finished (completed/cancelled) cached dispatches, newest first: the read-only "Recent history" list. */
+export async function listRecentFinishedDispatches(limit = 20): Promise<DispatchLocalRow[]> {
+  const db = await openLocalDatabase();
+  const result = await db.query(
+    "SELECT * FROM dispatch_local WHERE status IN ('completed','cancelled') ORDER BY COALESCE(completed_at, arrived_at, dispatched_at) DESC LIMIT ?",
+    [limit]
+  );
+  return (result.values ?? []) as DispatchLocalRow[];
+}
+
 /** One cached assignment by its local_id — M6's detail screen. */
 export async function getCachedDispatch(localId: string): Promise<DispatchLocalRow | null> {
   const db = await openLocalDatabase();

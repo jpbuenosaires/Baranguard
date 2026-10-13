@@ -224,6 +224,80 @@ export async function markIncidentSynced(
     [serverId, displayId, clientEventId],
     /* transaction */ false
   );
+  // A server-pulled copy of this same incident (see upsertServerIncidents) must
+  // not live on beside the row captured here: keep exactly one.
+  if (serverId !== null) {
+    await db.run(
+      'DELETE FROM incident_local WHERE from_server = 1 AND server_incident_id = ? AND client_event_id <> ?',
+      [serverId, clientEventId],
+      /* transaction */ false
+    );
+  }
+}
+
+/**
+ * Upserts the caller's server-side incidents as already-synced, narrative-less
+ * rows. Never touches a row captured on this phone (from_server = 0) except to
+ * fill a missing display_id, and does nothing while any local row is unsynced
+ * (a sync may be mid-flight: its incident would otherwise be inserted twice).
+ */
+export async function upsertServerIncidents(
+  items: Array<{
+    incidentId: number;
+    barangayId: number;
+    reportedBy: number | null;
+    displayId: string | null;
+    incidentType: string;
+    priority: string;
+    status: string;
+    latitude: number | null;
+    longitude: number | null;
+    locationDescription: string | null;
+    createdAt: string;
+  }>
+): Promise<void> {
+  if (items.length === 0) return;
+  const db = await openLocalDatabase();
+  const pending = await db.query('SELECT COUNT(*) AS n FROM incident_local WHERE synced = 0');
+  if (Number((pending.values?.[0] as { n?: number } | undefined)?.n ?? 0) > 0) return;
+  for (const it of items) {
+    const existing = await db.query(
+      'SELECT local_id, from_server FROM incident_local WHERE server_incident_id = ?',
+      [it.incidentId]
+    );
+    const rows = (existing.values ?? []) as Array<{ local_id: string; from_server: number }>;
+    if (rows.length === 0) {
+      const eventId = `srv-incident-${it.incidentId}`;
+      await db.run(
+        `INSERT INTO incident_local
+           (local_id, server_incident_id, barangay_id, reported_by, incident_type, priority, raw_narrative,
+            status, source, latitude, longitude, created_offline_at, client_event_id, synced,
+            display_id, location_text, from_server)
+         VALUES (?, ?, ?, ?, ?, ?, '', ?, 'app', ?, ?, ?, ?, 1, ?, ?, 1)`,
+        [
+          eventId, it.incidentId, it.barangayId, it.reportedBy, it.incidentType, it.priority, it.status,
+          it.latitude, it.longitude, it.createdAt, eventId, it.displayId, it.locationDescription,
+        ],
+        /* transaction */ false
+      );
+    } else {
+      for (const r of rows) {
+        if (r.from_server === 1) {
+          await db.run(
+            'UPDATE incident_local SET status = ?, priority = ?, display_id = COALESCE(?, display_id), location_text = ? WHERE local_id = ?',
+            [it.status, it.priority, it.displayId, it.locationDescription, r.local_id],
+            /* transaction */ false
+          );
+        } else if (it.displayId) {
+          await db.run(
+            'UPDATE incident_local SET display_id = COALESCE(display_id, ?) WHERE local_id = ?',
+            [it.displayId, r.local_id],
+            /* transaction */ false
+          );
+        }
+      }
+    }
+  }
 }
 
 /**

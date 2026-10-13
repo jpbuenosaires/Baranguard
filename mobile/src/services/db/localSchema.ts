@@ -50,7 +50,7 @@
  * unsynced field captures, which Rule 2 ("offline capture is durable
  * until reconciliation") forbids.
  */
-export const LOCAL_SCHEMA_VERSION = 7;
+export const LOCAL_SCHEMA_VERSION = 8;
 
 /** Statements for schema version 1 (Sprint 2 baseline cut). */
 const MIGRATION_001_BASELINE: readonly string[] = [
@@ -427,6 +427,19 @@ const MIGRATION_007_INCIDENT_DISPLAY_ID: readonly string[] = [
 ];
 
 /**
+ * Statements for schema version 8: server-sourced history. A freshly installed
+ * phone has no `incident_local` rows, so "My Filed Reports" is filled from
+ * `GET /incidents` (own incidents). `from_server = 1` marks those rows: they
+ * are born synced, carry NO narrative (`raw_narrative` = '', the list never
+ * has one) and are never sent anywhere. `location_text` holds the server's
+ * location description. Rows captured on this phone keep from_server = 0.
+ */
+const MIGRATION_008_SERVER_HISTORY: readonly string[] = [
+  `ALTER TABLE incident_local ADD COLUMN location_text TEXT NULL`,
+  `ALTER TABLE incident_local ADD COLUMN from_server INTEGER NOT NULL DEFAULT 0`,
+];
+
+/**
  * Ordered migrations. Index 0 takes the DB from user_version 0 -> 1,
  * index 1 takes it 1 -> 2, and so on. Append only — never edit a
  * released entry (same rule as the backend's completed migration files).
@@ -439,6 +452,7 @@ export const LOCAL_MIGRATIONS: readonly (readonly string[])[] = [
   MIGRATION_005_SYNC_FAILURE_CAPS,
   MIGRATION_006_TANOD_WORKFLOW,
   MIGRATION_007_INCIDENT_DISPLAY_ID,
+  MIGRATION_008_SERVER_HISTORY,
 ];
 
 /** Every table this cut is responsible for, for assertions/diagnostics. */
@@ -498,6 +512,10 @@ export interface IncidentLocalRow {
   c1_status_notes: string | null;
   /** Official incident code INC-YYYY-NNN from the server (migration 7); null until known. */
   display_id: string | null;
+  /** Server location description (migration 8); only set on rows pulled from the server. */
+  location_text: string | null;
+  /** 0/1 (migration 8): row was pulled from GET /incidents, not captured on this phone; has no narrative. */
+  from_server: number;
 }
 
 export interface MobileDeviceLocalRow {

@@ -61,6 +61,8 @@ const EXPECTED = {
     c1_action_taken:    ['TEXT', 0, null, 0],
     c1_status_notes:    ['TEXT', 0, null, 0],
     display_id:         ['TEXT', 0, null, 0],
+    location_text:      ['TEXT', 0, null, 0],
+    from_server:        ['INTEGER', 1, '0', 0],
   },
   mobile_device_local: {
     device_id:     ['TEXT', 1, null, 1],
@@ -479,6 +481,28 @@ check(db.prepare('SELECT incident_display_id FROM dispatch_local WHERE local_id 
   db.prepare(sql).run(57, 'INC-2026-058', ev);
   check(db.prepare('SELECT display_id FROM incident_local WHERE local_id = ?').get('local-1').display_id === 'INC-2026-058',
     'sync update with a code stores it');
+}
+
+// Migration 8: server-pulled history rows. Same SQL as upsertServerIncidents /
+// markIncidentSynced: one row per incident, no narrative, phone-made rows win.
+{
+  check(db.prepare('SELECT from_server, location_text FROM incident_local WHERE local_id = ?').get('local-1').from_server === 0,
+    'incident_local.from_server defaults to 0');
+  db.prepare(
+    `INSERT INTO incident_local (local_id, server_incident_id, barangay_id, reported_by, incident_type, priority, raw_narrative,
+       status, source, latitude, longitude, created_offline_at, client_event_id, synced, display_id, location_text, from_server)
+     VALUES ('srv-incident-900', 900, 1, 4, 'fire', 'high', '', 'resolved', 'app', NULL, NULL, '2026-09-01T00:00:00Z',
+       'srv-incident-900', 1, 'INC-2026-900', 'Purok 2', 1)`
+  ).run();
+  const s = db.prepare('SELECT raw_narrative, synced, from_server FROM incident_local WHERE local_id = ?').get('srv-incident-900');
+  check(s.raw_narrative === '' && s.synced === 1 && s.from_server === 1, 'server-pulled row is synced, narrative-less, from_server');
+  // a phone-made row later syncs to the same server id: the server copy is removed, one row remains
+  db.prepare(`UPDATE incident_local SET server_incident_id = 900 WHERE local_id = 'local-1'`).run();
+  const ev1 = db.prepare('SELECT client_event_id FROM incident_local WHERE local_id = ?').get('local-1').client_event_id;
+  db.prepare('DELETE FROM incident_local WHERE from_server = 1 AND server_incident_id = ? AND client_event_id <> ?').run(900, ev1);
+  check(db.prepare('SELECT COUNT(*) AS n FROM incident_local WHERE server_incident_id = 900').get().n === 1,
+    'after sync exactly one incident_local row per server incident (no duplicate)');
+  db.prepare(`UPDATE incident_local SET server_incident_id = 58 WHERE local_id = 'local-1'`).run();
 }
 
 // --- 6. A device already on schema v1 upgrades to latest in place, without ----

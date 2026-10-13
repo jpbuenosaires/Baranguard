@@ -42,9 +42,13 @@ import {
   medicalOutline,
   medkitOutline,
   micOutline,
+  pawOutline,
+  peopleOutline,
+  personOutline,
   schoolOutline,
   shieldCheckmarkOutline,
   stopCircleOutline,
+  warningOutline,
 } from 'ionicons/icons';
 import { Capacitor } from '@capacitor/core';
 import LocationPickerModal from '../components/LocationPickerModal';
@@ -80,21 +84,18 @@ const TYPE_LABELS: Record<IncidentType, string> = {
   other: 'Other Incident',
 };
 
-const POPULAR_TYPE_CONFIG: { type: IncidentType; label: string; icon: typeof alertCircleOutline }[] = [
+const ALL_INCIDENT_TYPES: { type: IncidentType; label: string; icon: typeof alertCircleOutline }[] = [
   { type: 'disturbance', label: 'Disturbance', icon: alertCircleOutline },
   { type: 'theft', label: 'Theft', icon: shieldCheckmarkOutline },
   { type: 'physical_injury', label: 'Injury', icon: medkitOutline },
   { type: 'traffic_incident', label: 'Traffic', icon: carOutline },
   { type: 'medical_emergency', label: 'Medical', icon: medicalOutline },
   { type: 'fire', label: 'Fire', icon: flameOutline },
-];
-
-const OTHER_TYPES: IncidentType[] = [
-  'domestic_dispute',
-  'vandalism',
-  'missing_person',
-  'animal_complaint',
-  'other',
+  { type: 'domestic_dispute', label: 'Domestic', icon: peopleOutline },
+  { type: 'vandalism', label: 'Vandalism', icon: warningOutline },
+  { type: 'missing_person', label: 'Missing', icon: personOutline },
+  { type: 'animal_complaint', label: 'Animal', icon: pawOutline },
+  { type: 'other', label: 'Other', icon: alertCircleOutline },
 ];
 
 const NARRATIVE_TEMPLATES = [
@@ -113,7 +114,6 @@ interface StagedItem {
 const NewIncidentPage: React.FC = () => {
   const navigate = useNavigate();
   const [incidentType, setIncidentType] = useState<IncidentType>('theft');
-  const [showMoreCategories, setShowMoreCategories] = useState(false);
   const [narrative, setNarrative] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -349,8 +349,6 @@ const NewIncidentPage: React.FC = () => {
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  const isOtherSelected = OTHER_TYPES.includes(incidentType);
-
   return (
     <IonPage>
       <MobileHeader
@@ -373,13 +371,15 @@ const NewIncidentPage: React.FC = () => {
               </span>
             </div>
 
-            <div className="intake-grid-overhaul">
-              {POPULAR_TYPE_CONFIG.map(({ type, label, icon }) => {
+            <div className="intake-grid-overhaul" role="radiogroup" aria-label="Incident Type">
+              {ALL_INCIDENT_TYPES.map(({ type, label, icon }) => {
                 const isSelected = incidentType === type;
                 return (
                   <button
                     key={type}
                     type="button"
+                    role="radio"
+                    aria-checked={isSelected}
                     className={`intake-tile-chip ${isSelected ? 'intake-tile-chip--active' : ''}`}
                     onClick={() => {
                       setIncidentType(type);
@@ -387,64 +387,11 @@ const NewIncidentPage: React.FC = () => {
                     }}
                     disabled={saving}
                   >
-                    <IonIcon icon={icon} className="intake-tile-chip__icon" />
+                    <IonIcon icon={icon} className="intake-tile-chip__icon" aria-hidden="true" />
                     <span>{label}</span>
                   </button>
                 );
               })}
-            </div>
-
-            {/* Expandable Other Categories */}
-            <div className="intake-more-row">
-              <button
-                type="button"
-                className="intake-more-pill"
-                onClick={() => setShowMoreCategories((prev) => !prev)}
-              >
-                <span>
-                  {isOtherSelected ? `Selected: ${TYPE_LABELS[incidentType]}` : 'More incident types…'}
-                </span>
-                <IonIcon icon={showMoreCategories ? chevronUpOutline : chevronDownOutline} />
-              </button>
-
-              {showMoreCategories && (
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(2, 1fr)',
-                    gap: '6px',
-                    marginTop: '8px',
-                    padding: '8px',
-                    background: 'var(--color-surface-hover)',
-                    borderRadius: 'var(--radius-md)',
-                  }}
-                >
-                  {OTHER_TYPES.map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => {
-                        setIncidentType(type);
-                        tacticalFeedback.vibrate(15);
-                        setShowMoreCategories(false);
-                      }}
-                      style={{
-                        padding: '10px 8px',
-                        borderRadius: 'var(--radius-sm)',
-                        border: incidentType === type ? '1.5px solid var(--color-primary)' : '1px solid var(--color-border)',
-                        background: incidentType === type ? 'var(--color-surface-blue)' : 'var(--color-surface)',
-                        color: incidentType === type ? 'var(--color-primary)' : 'var(--color-text-primary)',
-                        fontSize: '0.78rem',
-                        fontWeight: 700,
-                        textAlign: 'left',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {TYPE_LABELS[type]}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
 
@@ -501,11 +448,14 @@ const NewIncidentPage: React.FC = () => {
                   style={{
                     background: 'none',
                     border: 'none',
-                    color: 'var(--color-text-tertiary)',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
+                    color: 'var(--color-primary)',
+                    fontSize: '0.8125rem',
+                    fontWeight: 700,
                     cursor: 'pointer',
-                    padding: '2px 4px',
+                    minHeight: '44px',
+                    padding: '0 8px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
                   }}
                 >
                   Clear Tag
@@ -595,11 +545,14 @@ const NewIncidentPage: React.FC = () => {
                   style={{
                     background: 'none',
                     border: 'none',
-                    color: 'var(--color-text-tertiary)',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
+                    color: 'var(--color-primary)',
+                    fontSize: '0.8125rem',
+                    fontWeight: 700,
                     cursor: 'pointer',
-                    padding: '2px 4px',
+                    minHeight: '44px',
+                    padding: '0 8px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
                   }}
                 >
                   Clear
