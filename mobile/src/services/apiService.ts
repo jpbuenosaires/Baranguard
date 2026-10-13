@@ -1816,6 +1816,45 @@ export async function getIncidentDisplayId(incidentId: number): Promise<string |
   return strOrNull(j.display_id);
 }
 
+export interface MyServerIncident {
+  incidentId: number;
+  barangayId: number;
+  reportedBy: number | null;
+  displayId: string | null;
+  incidentType: string;
+  priority: string;
+  status: string;
+  latitude: number | null;
+  longitude: number | null;
+  locationDescription: string | null;
+  createdAt: string;
+}
+
+/** GET /incidents, the caller's own incidents (a Tanod is server-scoped). Pages of 50, up to 100 rows. */
+export async function getMyServerIncidents(): Promise<MyServerIncident[]> {
+  const out: MyServerIncident[] = [];
+  for (let page = 1; page <= 2; page += 1) {
+    const json = await request<{ items: Array<Record<string, unknown>> }>(`/incidents?limit=50&page=${page}`);
+    for (const r of json.items) {
+      out.push({
+        incidentId: Number(r.incident_id),
+        barangayId: Number(r.barangay_id),
+        reportedBy: numberOrNull(r.reported_by),
+        displayId: strOrNull(r.display_id),
+        incidentType: String(r.incident_type ?? 'other'),
+        priority: String(r.priority ?? 'normal'),
+        status: String(r.status ?? 'pending'),
+        latitude: numberOrNull(r.latitude),
+        longitude: numberOrNull(r.longitude),
+        locationDescription: strOrNull(r.location_description),
+        createdAt: String(r.created_at ?? ''),
+      });
+    }
+    if (json.items.length < 50) break;
+  }
+  return out;
+}
+
 export interface AdminIncidentListItem {
   incidentId: number;
   displayId: string | null;

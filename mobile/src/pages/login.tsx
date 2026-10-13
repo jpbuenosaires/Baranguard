@@ -30,6 +30,8 @@ import { useNavigate } from 'react-router-dom';
 import { IonButton, IonContent, IonIcon, IonItem, IonList, IonPage, IonSpinner } from '@ionic/react';
 import { eyeOffOutline, eyeOutline, lockClosedOutline, personOutline, shield } from 'ionicons/icons';
 import { TextField } from '../components/FormFields';
+import { useOnline } from '../components/useOnline';
+import tacticalFeedback from '../utils/tacticalFeedback';
 import { ApiError, login, logout, registerDevice } from '../services/apiService';
 import { clearSession } from '../services/session';
 import { isMobileRole } from '../services/role';
@@ -46,6 +48,7 @@ const WRONG_APP =
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const isOnline = useOnline();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -57,11 +60,13 @@ const LoginPage: React.FC = () => {
     setError(null);
 
     if (!username.trim() || !password) {
+      tacticalFeedback.onWarning();
       setError('Enter your username and password.');
       return;
     }
 
     setBusy(true);
+    tacticalFeedback.onTap();
     try {
       const session = await login(username.trim(), password);
       if (!isMobileRole(session.role)) {
@@ -75,13 +80,16 @@ const LoginPage: React.FC = () => {
         await clearSession();
         setError(WRONG_APP);
         setPassword('');
+        tacticalFeedback.onWarning();
         return;
       }
       // Authentication succeeded. Everything below is best-effort setup —
       // §9 M1: "enters M2 without blocking on map download".
+      tacticalFeedback.onSuccess();
       await runPostLoginSetup(session.barangayId, session.role === 'admin');
       navigate(session.role === 'admin' ? '/tabs/sos' : '/tabs/home', { replace: true });
     } catch (err) {
+      tacticalFeedback.onWarning();
       if (err instanceof ApiError && err.isOffline) {
         // A different fact from bad credentials — say so honestly rather
         // than blaming the user's password.
@@ -98,21 +106,31 @@ const LoginPage: React.FC = () => {
   return (
     <IonPage>
       <IonContent fullscreen className="ion-no-padding">
-        <div className="mobile-login-bg">
-          <div className="app-column" style={{ width: '100%', padding: '0 8px' }}>
-            <div className="mobile-login-card">
-              <div className="mobile-login-brand">
-                <div className="mobile-login-emblem">
-                  <IonIcon icon={shield} />
-                </div>
-                <h1 className="mobile-login-title">BARANGUARD</h1>
-                <p className="mobile-login-subtitle">Field Responder Console</p>
+        <div className="mobile-login-shell">
+          {/* 1. Atmospheric Top Brand Hero */}
+          <div className="mobile-login-hero">
+            <div className="mobile-login-emblem-wrap">
+              <IonIcon icon={shield} />
+            </div>
+            <h1 className="mobile-login-title">BARANGUARD</h1>
+            <p className="mobile-login-subtitle">Field Responder Console</p>
+            <div className="mobile-login-badge">
+              <span>Barangay Peacekeeping Action Team</span>
+            </div>
+          </div>
+
+          {/* 2. Integrated Bottom Input Card */}
+          <div className="mobile-login-content-wrap">
+            <div>
+              <div className="mobile-login-card-header">
+                <h2 className="mobile-login-welcome-title">Sign In to Your Shift</h2>
+                <p className="mobile-login-welcome-desc">Enter your assigned officer credentials</p>
               </div>
 
               <form onSubmit={handleSubmit}>
                 <IonList inset className="ion-no-margin mobile-login-form">
                   <IonItem lines="full">
-                    <IonIcon icon={personOutline} slot="start" color="medium" className="mobile-login-icon" />
+                    <IonIcon icon={personOutline} slot="start" className="mobile-login-icon" />
                     <TextField
                       label="Username"
                       autocapitalize="off"
@@ -122,7 +140,7 @@ const LoginPage: React.FC = () => {
                     />
                   </IonItem>
                   <IonItem lines="none" style={{ position: 'relative' }}>
-                    <IonIcon icon={lockClosedOutline} slot="start" color="medium" className="mobile-login-icon" />
+                    <IonIcon icon={lockClosedOutline} slot="start" className="mobile-login-icon" />
                     <TextField
                       label="Password"
                       type={showPassword ? 'text' : 'password'}
@@ -156,6 +174,15 @@ const LoginPage: React.FC = () => {
                   {busy ? <IonSpinner name="dots" /> : 'Sign In to Console'}
                 </IonButton>
               </form>
+            </div>
+
+            {/* 3. Diagnostic & Network Footer */}
+            <div className="mobile-login-footer">
+              <div className="mobile-login-network-pill" role="status" aria-label={isOnline ? 'Workstation Network Connected' : 'Offline Mode'}>
+                <span className={`mobile-login-dot ${isOnline ? 'mobile-login-dot--online' : 'mobile-login-dot--offline'}`} />
+                <span>{isOnline ? 'Workstation Network Connected' : 'Offline · Check Cellular / Wi-Fi'}</span>
+              </div>
+              <p className="mobile-login-help-text">Tanod &amp; Chief Tanod Field Personnel Only</p>
             </div>
           </div>
         </div>

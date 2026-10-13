@@ -47,7 +47,8 @@ import {
 } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
-import { deriveSyncState, listAllLocalIncidents, type SyncState } from '../services/db/incidentRepository';
+import { deriveSyncState, listAllLocalIncidents, upsertServerIncidents, type SyncState } from '../services/db/incidentRepository';
+import { getMyServerIncidents } from '../services/apiService';
 import { getEvidenceCountsByIncident } from '../services/db/evidenceRepository';
 import { runSyncPass } from '../services/syncService';
 import type { IncidentLocalRow } from '../services/db/localSchema';
@@ -142,6 +143,12 @@ const MyReportsPage: React.FC = () => {
 
   const load = useCallback(async () => {
     try {
+      // Fresh install / new device: pull this Tanod's own history from the server (best effort).
+      try {
+        await upsertServerIncidents(await getMyServerIncidents());
+      } catch {
+        // offline or not allowed: show what is on the phone
+      }
       const [all, counts] = await Promise.all([
         listAllLocalIncidents(),
         getEvidenceCountsByIncident().catch(() => ({})),
@@ -484,7 +491,7 @@ const MyReportsPage: React.FC = () => {
 
                         {/* Row 2: Narrative Excerpt (Unquoted, clean typography) */}
                         <p className="report-blotter-narrative">
-                          {excerpt(row.raw_narrative)}
+                          {row.from_server === 1 ? 'Details stay on the server' : excerpt(row.raw_narrative)}
                         </p>
 
                         {/* Row 3: Clean Inline Metadata & Right-Aligned Sync Badge */}
@@ -494,7 +501,17 @@ const MyReportsPage: React.FC = () => {
                               {formatIncidentCode({ displayId: row.display_id, serverIncidentId: row.server_incident_id }) ?? localReportRef(row.client_event_id)}
                             </span>
 
-                            {row.latitude !== null && row.longitude !== null && (
+                            {row.from_server === 1 && row.location_text && (
+                              <>
+                                <span className="report-blotter-meta-bullet">•</span>
+                                <span className="report-blotter-meta-item">
+                                  <IonIcon icon={locationOutline} style={{ color: 'var(--color-primary)' }} />
+                                  <span>{row.location_text}</span>
+                                </span>
+                              </>
+                            )}
+
+                            {row.from_server !== 1 && row.latitude !== null && row.longitude !== null && (
                               <>
                                 <span className="report-blotter-meta-bullet">•</span>
                                 <span className="report-blotter-meta-item">

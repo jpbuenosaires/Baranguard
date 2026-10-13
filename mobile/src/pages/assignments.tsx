@@ -63,7 +63,13 @@ import DispatchOfferCards from '../components/DispatchOfferCards';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
 import { ApiError, getDispatches } from '../services/apiService';
-import { cacheDispatchesFromServer, isCacheStale, listActiveCachedDispatches } from '../services/db/dispatchRepository';
+import {
+  cacheDispatchesFromServer,
+  isCacheStale,
+  listActiveCachedDispatches,
+  listRecentFinishedDispatches,
+} from '../services/db/dispatchRepository';
+import { formatIncidentCode } from '../utils/incidentCode';
 import type { DispatchLocalRow } from '../services/db/localSchema';
 import { getCurrentPosition, watchPosition, type DevicePosition } from '../services/geolocation';
 import { bearingLabel, distanceMeters, formatDistance, formatRelativeAge } from '../utils/geo';
@@ -109,6 +115,7 @@ type FilterTab = 'all' | 'critical' | 'en_route' | 'assigned';
 const AssignmentsPage: React.FC = () => {
   const navigate = useNavigate();
   const [rows, setRows] = useState<DispatchLocalRow[]>([]);
+  const [history, setHistory] = useState<DispatchLocalRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [offlineNote, setOfflineNote] = useState<string | null>(null);
   const [offlineDismissed, setOfflineDismissed] = useState(false);
@@ -161,6 +168,7 @@ const AssignmentsPage: React.FC = () => {
     try {
       const cached = await listActiveCachedDispatches();
       setRows(cached);
+      setHistory(await listRecentFinishedDispatches(20));
     } catch (dbErr) {
       console.warn('[Assignments] Failed to read local dispatch cache:', dbErr);
     }
@@ -635,6 +643,27 @@ const AssignmentsPage: React.FC = () => {
                 );
               })}
             </div>
+          )}
+
+          {history.length > 0 && (
+            <section className="dispatch-history" aria-label="Recent history">
+              <h3 className="dispatch-empty-title" style={{ marginTop: '20px' }}>Recent history</h3>
+              <div className="dispatch-card-list">
+                {history.map((h) => (
+                  <article key={h.local_id} className="dispatch-card">
+                    <div className="dispatch-card__telemetry-row">
+                      <strong>{formatIncidentCode({ displayId: h.incident_display_id, serverIncidentId: h.server_incident_id })}</strong>
+                      <span>
+                        {(h.redacted_incident_type ?? 'incident').replace(/_/g, ' ')} &bull; {h.status}
+                      </span>
+                    </div>
+                    <div className="dispatch-card__telemetry-row">
+                      <span>{new Date(h.completed_at ?? h.arrived_at ?? h.dispatched_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
           )}
         </div>
       </IonContent>

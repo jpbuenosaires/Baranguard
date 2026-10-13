@@ -89,7 +89,7 @@
   --color-border-blue: #bfdbfe;
   --color-text-primary: #0f172a;
   --color-text-secondary: #475569;
-  --color-text-tertiary: #64748b;
+  --color-text-tertiary: #526075;
   --color-text-disabled: #94a3b8;
   --color-row-active-bg: #eff6ff;
 
@@ -121,12 +121,21 @@
   --glow-primary: none;
   --glow-critical: none;
 
+  /* Standardized 4-point spacing scale */
+  --spacing-2xs: 4px;
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 16px;
-  --spacing-lg: 24px;
-  --spacing-xl: 32px;
-  --spacing-2xl: 48px;
+  --spacing-lg: 20px;
+  --spacing-xl: 24px;
+  --spacing-2xl: 32px;
+  --spacing-3xl: 48px;
+
+  /* Standardized Mobile Touch Targets (WCAG 2.2 AA - Min 48px) */
+  --touch-min-size: 48px;
+  --touch-btn-height: 52px;
+  --touch-input-height: 48px;
+  --touch-fab-size: 56px;
 
   --font-base: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'SFMono-Regular', 'JetBrains Mono', Consolas, Menlo, monospace;
@@ -141,6 +150,7 @@
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
+  --radius-full: 9999px;
 
   /* Pure flat elevations — crisp borders instead of diffuse shadows */
   --shadow-card: none;

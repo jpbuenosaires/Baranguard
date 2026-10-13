@@ -703,8 +703,10 @@ const LiveMapPage: React.FC = () => {
                 <div className="live-map-drawer__peek-title">
                   <IonIcon icon={peopleOutline} style={{ color: 'var(--color-primary)' }} />
                   <span>
-                    {nearbyTanods.length} on duty &bull; {nearby.length}{' '}
-                    {nearby.length === 1 ? 'incident' : 'incidents'}
+                    {nearbyTanods.filter((t) => !t.isStale).length} active now &bull;{' '}
+                    {nearby.length === 0
+                      ? 'No incidents near your location'
+                      : `${nearby.length} ${nearby.length === 1 ? 'incident' : 'incidents'}`}
                   </span>
                 </div>
               </div>
