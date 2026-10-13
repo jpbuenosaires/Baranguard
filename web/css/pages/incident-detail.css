@@ -1806,7 +1806,7 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
 
 /* 1. Slim Executive Navigation Header */
 .incident-detail-shell .page-header {
-  padding: var(--spacing-xs) 0 !important;
+  padding: var(--spacing-xs) var(--spacing-lg) !important;
   margin-bottom: var(--spacing-xs) !important;
   border-bottom: none !important;
 }
@@ -1947,9 +1947,10 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
 
 /* 4. Adaptive Responsive Metadata Strip */
 .meta-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--spacing-xs) var(--spacing-md);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs) var(--spacing-lg);
   padding: var(--spacing-2xs) 0 var(--spacing-sm) 0;
   background: transparent;
   border: none;
@@ -2004,9 +2005,8 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
 }
 
 /* 5. Accessible WAI-ARIA Tab Navigation */
@@ -2106,6 +2106,7 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   align-items: center;
   width: 1.5rem;
   flex-shrink: 0;
+  align-self: stretch;
 }
 
 .timeline__node {
@@ -2121,6 +2122,10 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   flex-shrink: 0;
   z-index: 2;
   transition: all 0.2s ease;
+}
+
+.timeline__node::after {
+  display: none !important;
 }
 
 .timeline__node svg {
@@ -2170,9 +2175,11 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
 .timeline__connector {
   position: absolute;
   top: 1.5rem;
-  bottom: 0;
+  bottom: calc(-1 * var(--spacing-md));
   width: 2px;
-  background: var(--color-divider);
+  background: var(--color-border);
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 1;
 }
 
@@ -2315,9 +2322,10 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   flex-direction: column;
   gap: var(--spacing-3xs);
   padding: var(--spacing-xs) var(--spacing-sm);
-  background: var(--color-bg);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-left: 3px solid var(--color-link);
+  border-radius: var(--radius-sm);
   margin-bottom: var(--spacing-xs);
 }
 
