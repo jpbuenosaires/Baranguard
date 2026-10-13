@@ -24,6 +24,7 @@ import { addOutline, calendarOutline, closeOutline, createOutline, trashOutline 
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
 import { Banner, SyncChip } from '../components/WorkflowBits';
+import { EmptyState, ErrorState } from '../components/ui';
 import {
   isPeriodPast,
   listAvailability,
@@ -407,7 +408,7 @@ const AvailabilityPage: React.FC = () => {
           </Banner>
 
           {note && <Banner tone="success">{note}</Banner>}
-          {loadError && <Banner tone="critical">{loadError}</Banner>}
+          {loadError && rows.length > 0 && <Banner tone="critical">{loadError}</Banner>}
           {serverCopyStale && !loadError && (
             <Banner tone="warning">
               Could not reach the workstation. Your saved submissions are shown.
@@ -416,11 +417,13 @@ const AvailabilityPage: React.FC = () => {
 
           {loading ? (
             <LoadingBlock label="Loading your availability…" />
+          ) : loadError && rows.length === 0 ? (
+            <ErrorState message={loadError} onRetry={() => void reload()} />
           ) : rows.length === 0 ? (
-            <div className="wf-card" style={{ textAlign: 'center', alignItems: 'center' }}>
-              <h3 className="wf-card__title">No availability submitted yet</h3>
-              <p className="wf-card__sub">Submit the days and hours you can serve so the desk can build the roster.</p>
-            </div>
+            <EmptyState
+              title="No availability submitted yet"
+              body="Submit the days and hours you can serve so the desk can build the roster."
+            />
           ) : (
             rows.map((row) => {
               const windows = parseLocalWindows(row);

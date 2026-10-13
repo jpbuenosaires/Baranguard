@@ -11,7 +11,6 @@ import {
 } from '@ionic/react';
 import {
   calendarOutline,
-  checkmarkCircleOutline,
   checkmarkOutline,
   chevronDownOutline,
   chevronForwardOutline,
@@ -23,10 +22,11 @@ import {
   notificationsOutline,
   shieldCheckmarkOutline,
   syncOutline,
-  warningOutline,
 } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import NotificationDiagnostics from '../components/NotificationDiagnostics';
+import { Banner } from '../components/ui';
+import { formatSyncResult } from '../components/syncQueueSummary';
 import { checkHealth, logout } from '../services/apiService';
 import { getDeviceId } from '../services/deviceIdentity';
 import { clearSession, loadSession, type StoredSession } from '../services/session';
@@ -138,11 +138,8 @@ const ProfilePage: React.FC = () => {
     try {
       const result: SyncSummary = await runSyncPass();
       tacticalFeedback.onSuccess();
-      const evidenceNote =
-        result.evidenceUploaded > 0 ? ` · ${result.evidenceUploaded} evidence file(s) uploaded` : '';
-      setToastMessage(
-        `Sync complete: ${result.succeeded} uploaded, ${result.duplicates} verified${evidenceNote}.`
-      );
+      const summary = formatSyncResult(result);
+      setToastMessage(`Sync result: ${[summary.headline, ...summary.details].join(' ')}`);
       await loadData();
     } catch (err) {
       setToastMessage(err instanceof Error ? err.message : 'Workstation unreachable for sync.');
@@ -337,27 +334,17 @@ const ProfilePage: React.FC = () => {
 
             {/* Sync Health Banner */}
             {totalUnsynced === 0 ? (
-              <div className="profile-sync-banner profile-sync-banner--synced">
-                <IonIcon icon={checkmarkCircleOutline} style={{ fontSize: '1.3rem', flexShrink: 0 }} />
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>All records synced to Barangay HQ</div>
-                  <div style={{ fontSize: '0.72rem', opacity: 0.9 }}>
-                    Your incident reports and GPS tracks are fully up to date.
-                  </div>
-                </div>
-              </div>
+              <Banner tone="success" role="status">
+                <strong>Nothing waiting to send.</strong> Your incident reports, GPS tracks and status updates have all
+                been sent.
+              </Banner>
             ) : (
-              <div className="profile-sync-banner profile-sync-banner--pending">
-                <IonIcon icon={warningOutline} style={{ fontSize: '1.3rem', flexShrink: 0 }} />
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>
-                    {totalUnsynced} record(s) pending upload
-                  </div>
-                  <div style={{ fontSize: '0.72rem', opacity: 0.9 }}>
-                    Saved on this device. Tap below to sync when connected.
-                  </div>
-                </div>
-              </div>
+              <Banner tone="warning" role="status">
+                <strong>
+                  {totalUnsynced} record{totalUnsynced === 1 ? '' : 's'} not sent yet.
+                </strong>{' '}
+                Saved on this phone. Tap below to send when connected.
+              </Banner>
             )}
 
             {/* Breakdown Chips (Progressive disclosure of pending items) */}
@@ -479,7 +466,7 @@ const ProfilePage: React.FC = () => {
                         '--border-radius': 'var(--radius-sm)',
                       }}
                     >
-                      {pruning ? <IonSpinner name="dots" /> : 'Clear Old Synced Evidence (30+ days)'}
+                      {pruning ? <IonSpinner name="dots" /> : 'Clear Old Sent Evidence (30+ days)'}
                     </IonButton>
                   </div>
                 )}

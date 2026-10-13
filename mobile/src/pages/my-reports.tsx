@@ -34,7 +34,6 @@ import {
   alertCircleOutline,
   cameraOutline,
   carOutline,
-  checkmarkDoneOutline,
   closeCircleOutline,
   cloudUploadOutline,
   documentTextOutline,
@@ -47,6 +46,7 @@ import {
 } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
+import { Banner, Button, EmptyState, ErrorState, SyncLabel, type SyncState as UiSyncState } from '../components/ui';
 import { deriveSyncState, listAllLocalIncidents, upsertServerIncidents, type SyncState } from '../services/db/incidentRepository';
 import { getMyServerIncidents } from '../services/apiService';
 import { getEvidenceCountsByIncident } from '../services/db/evidenceRepository';
@@ -55,12 +55,19 @@ import type { IncidentLocalRow } from '../services/db/localSchema';
 import tacticalFeedback from '../utils/tacticalFeedback';
 import { formatIncidentCode, localReportRef } from '../utils/incidentCode';
 
-const SYNC_STATE_META: Record<SyncState, { label: string; pillClass: string; icon: typeof cloudUploadOutline }> = {
-  saved_locally: { label: 'Saved Offline', pillClass: 'status-pill--pending', icon: cloudUploadOutline },
-  queued: { label: 'Queued', pillClass: 'status-pill--info', icon: cloudUploadOutline },
-  synced: { label: 'Synced', pillClass: 'status-pill--success', icon: checkmarkDoneOutline },
-  duplicate_reconciled: { label: 'Synced', pillClass: 'status-pill--info', icon: checkmarkDoneOutline },
-  needs_attention: { label: 'Needs Attention', pillClass: 'status-pill--critical is-urgent', icon: alertCircleOutline },
+// Wording comes from SyncLabel only. A duplicate means the server already has the report, so it is "Sent".
+const SYNC_STATE_MAP: Record<SyncState, { state: UiSyncState; willRetry: boolean }> = {
+  saved_locally: { state: 'saved_on_phone', willRetry: true },
+  queued: { state: 'saved_on_phone', willRetry: true },
+  synced: { state: 'sent', willRetry: true },
+  duplicate_reconciled: { state: 'sent', willRetry: true },
+  needs_attention: { state: 'failed', willRetry: false },
+};
+
+const FILTER_EMPTY_LABEL: Record<'all' | 'synced' | 'pending', string> = {
+  all: '',
+  synced: 'sent',
+  pending: 'unsent',
 };
 
 const PRIORITY_PILL_CLASS: Record<string, string> = {
@@ -267,10 +274,10 @@ const MyReportsPage: React.FC = () => {
                 <IonIcon icon={cloudUploadOutline} className="reports-sync-banner-icon" />
                 <div>
                   <div className="reports-sync-banner-title">
-                    {pendingCount} report{pendingCount > 1 ? 's' : ''} waiting to sync
+                    {pendingCount} report{pendingCount > 1 ? 's' : ''} not sent yet
                   </div>
                   <div className="reports-sync-banner-sub">
-                    Saved on your device. Tap to sync with the Barangay Desk.
+                    Saved on your phone. Tap Sync to send to the Barangay Desk.
                   </div>
                 </div>
               </div>
@@ -346,7 +353,7 @@ const MyReportsPage: React.FC = () => {
                   setFilter('synced');
                 }}
               >
-                <span>Synced</span>
+                <span>Sent</span>
                 <span className="reports-filter-count">{syncedCount}</span>
               </button>
               <button
@@ -359,7 +366,7 @@ const MyReportsPage: React.FC = () => {
                   setFilter('pending');
                 }}
               >
-                <span>Pending</span>
+                <span>Not sent</span>
                 <span className="reports-filter-count">{pendingCount}</span>
               </button>
             </div>
@@ -369,76 +376,35 @@ const MyReportsPage: React.FC = () => {
           {loading ? (
             <LoadingBlock label="Loading reports…" />
           ) : loadError && rows.length === 0 ? (
-            <div role="alert" style={{ textAlign: 'center', padding: 'var(--spacing-xl) var(--spacing-md)' }}>
-              <p style={{ margin: '0 0 var(--spacing-md)', color: 'var(--pill-critical-text)', fontSize: 'var(--font-size-sm)' }}>
-                Could not read the reports saved on this phone.
-              </p>
-              <button
-                type="button"
-                className="dispatch-primary-cta dispatch-primary-cta--blue"
-                style={{ maxWidth: '240px', height: '44px' }}
-                onClick={() => {
-                  setLoading(true);
-                  void load().finally(() => {
-                    if (mountedRef.current) setLoading(false);
-                  });
-                }}
-              >
-                Try again
-              </button>
-            </div>
-          ) : rows.length === 0 ? (
-            <div
-              className="card--elevated"
-              style={{
-                textAlign: 'center',
-                padding: 'var(--spacing-2xl) var(--spacing-lg)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                marginTop: 'var(--spacing-md)',
+            <ErrorState
+              message="Could not read the reports saved on this phone."
+              onRetry={() => {
+                setLoading(true);
+                void load().finally(() => {
+                  if (mountedRef.current) setLoading(false);
+                });
               }}
-            >
-              <div
-                style={{
-                  width: '56px',
-                  height: '56px',
-                  borderRadius: '50%',
-                  background: 'var(--tint-neutral-bg)',
-                  color: 'var(--color-text-secondary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '1.5rem',
-                  marginBottom: 'var(--spacing-md)',
-                }}
-              >
-                <IonIcon icon={documentTextOutline} />
-              </div>
-              <h3 style={{ margin: '0 0 var(--spacing-xs)', fontSize: 'var(--font-size-lg)', fontWeight: 700 }}>
-                No Reports Filed Yet
-              </h3>
-              <p style={{ margin: '0 0 var(--spacing-md)', color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', maxWidth: '280px' }}>
-                Reports saved on this phone will sync automatically when connected to the internet.
-              </p>
-              <button
-                type="button"
-                className="dispatch-primary-cta dispatch-primary-cta--blue"
-                style={{ maxWidth: '240px', height: '44px' }}
-                onClick={() => {
-                  tacticalFeedback.onTap();
-                  navigate('/tabs/incidents/new');
-                }}
-              >
-                File a Report
-              </button>
-            </div>
+            />
+          ) : rows.length === 0 ? (
+            <EmptyState
+              icon={documentTextOutline}
+              title="No reports filed yet"
+              body="Reports you file are saved on this phone and sent automatically when you are connected."
+              action={
+                <Button
+                  onClick={() => {
+                    tacticalFeedback.onTap();
+                    navigate('/tabs/incidents/new');
+                  }}
+                >
+                  File a report
+                </Button>
+              }
+            />
           ) : filteredRows.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 'var(--spacing-xl) var(--spacing-md)', color: 'var(--color-text-secondary)' }}>
-              <p style={{ fontSize: 'var(--font-size-sm)', margin: 0 }}>
-                {searchQuery ? `No reports matching "${searchQuery}".` : `No ${filter} reports found.`}
-              </p>
-            </div>
+            <EmptyState
+              title={searchQuery ? `No reports matching "${searchQuery}".` : `No ${FILTER_EMPTY_LABEL[filter]} reports found.`}
+            />
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
               {timelineGroups.map((group) => (
@@ -452,7 +418,7 @@ const MyReportsPage: React.FC = () => {
                   {/* Blotter Cards */}
                   {group.items.map((row) => {
                     const state = deriveSyncState(row);
-                    const meta = SYNC_STATE_META[state];
+                    const syncMeta = SYNC_STATE_MAP[state];
                     const isElevatedPriority = row.priority === 'high' || row.priority === 'critical';
                     const evidenceCount = evidenceCounts[row.local_id] ?? 0;
 
@@ -539,29 +505,15 @@ const MyReportsPage: React.FC = () => {
                               </span>
                             )}
 
-                            <span className={`status-pill ${meta.pillClass}`}>
-                              <IonIcon icon={meta.icon} style={{ fontSize: '0.85rem' }} />
-                              {meta.label}
-                            </span>
+                            <SyncLabel state={syncMeta.state} willRetry={syncMeta.willRetry} />
                           </div>
                         </div>
 
                         {/* Error Alert Box for Attention Rows */}
                         {state === 'needs_attention' && row.last_sync_error && (
-                          <div
-                            style={{
-                              marginTop: 'var(--spacing-xs)',
-                              background: 'var(--tint-critical-bg)',
-                              border: '1px solid var(--color-critical)',
-                              borderRadius: 'var(--radius-sm)',
-                              padding: 'var(--spacing-xs) var(--spacing-sm)',
-                              color: 'var(--pill-critical-text)',
-                              fontSize: 'var(--font-size-label)',
-                              fontWeight: 600,
-                            }}
-                          >
-                            Sync Error: {row.last_sync_error}
-                          </div>
+                          <Banner tone="error" role="status" className="ui-state-gap--none">
+                            Not sent. Reason: {row.last_sync_error}
+                          </Banner>
                         )}
                       </div>
                     );

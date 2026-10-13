@@ -6,9 +6,11 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { IonContent, IonPage, IonRefresher, IonRefresherContent, IonSpinner } from '@ionic/react';
+import { IonContent, IonPage, IonRefresher, IonRefresherContent } from '@ionic/react';
 import MobileHeader from '../../components/MobileHeader';
 import { Banner } from '../../components/WorkflowBits';
+import { LoadingBlock } from '../../components/LoadingBlock';
+import { EmptyState, ErrorState } from '../../components/ui';
 import { AdminIncidentSheet } from '../../components/AdminBits';
 import { formatServerTime, humanize, NEEDS_CONNECTION } from '../../components/adminFormat';
 import { useOnline } from '../../components/useOnline';
@@ -46,20 +48,11 @@ const AdminIncidentsPage: React.FC = () => {
         </IonRefresher>
         <div className="wf-page">
           {!online && <Banner tone="warning">{NEEDS_CONNECTION}. Showing the last loaded list.</Banner>}
-          {loading && (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '32px 0' }}>
-              <IonSpinner name="dots" />
-            </div>
+          {loading && <LoadingBlock compact />}
+          {error && <ErrorState message={error} onRetry={() => void load()} />}
+          {!loading && !error && items && items.length === 0 && (
+            <EmptyState title="No incidents" body="No incidents on record for your barangay." />
           )}
-          {error && (
-            <>
-              <Banner tone="critical">{error}</Banner>
-              <button type="button" className="wf-btn" onClick={() => void load()}>
-                Retry
-              </button>
-            </>
-          )}
-          {!loading && !error && items && items.length === 0 && <div className="wf-card wf-muted">No incidents on record.</div>}
           {items?.map((i) => (
             <button key={i.incidentId} type="button" className="wf-card wf-card--tap" onClick={() => setOpenId(i.incidentId)}>
               <div className="wf-card__head">

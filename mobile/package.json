@@ -10,7 +10,8 @@
     "test.unit": "vitest",
     "lint": "eslint",
     "verify.schema": "node scripts/verify-local-schema.mjs",
-    "verify.contrast": "node scripts/verify-contrast.mjs"
+    "verify.contrast": "node scripts/verify-contrast.mjs",
+    "verify.touch": "node scripts/verify-touch-targets.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-secure-storage": "^8.0.0",

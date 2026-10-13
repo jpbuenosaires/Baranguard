@@ -49,6 +49,7 @@ import {
 } from 'ionicons/icons';
 import DispatchOfferCards from '../components/DispatchOfferCards';
 import MobileHeader from '../components/MobileHeader';
+import { Banner } from '../components/ui';
 import SmsFallbackBadge from '../components/SmsFallbackBadge';
 import TacticalAlertBar, { type TacticalAlertItem } from '../components/TacticalAlertBar';
 import tacticalFeedback from '../utils/tacticalFeedback';
@@ -882,62 +883,31 @@ const HomePage: React.FC = () => {
           )}
 
           {deviceBlocked && (
-            <div
-              style={{
-                background: 'var(--tint-critical-bg)',
-                color: 'var(--pill-critical-text)',
-                border: '1px solid var(--color-critical)',
-                borderRadius: 'var(--radius-md)',
-                padding: '8px 12px',
-                fontSize: 'var(--font-size-sm)',
-              }}
-              role="alert"
-            >
+            <Banner tone="error" role="alert">
               <strong>This phone is registered to a different account.</strong> Reports and SOS alerts saved here
               cannot be sent to HQ from this account. Nothing is lost: log in with the account that saved them, or ask
               the Chief Tanod to reset this phone. For an emergency, call the barangay desk or text your backup contact.
-            </div>
+            </Banner>
           )}
           {failedSosCount > 0 && (
-            <div
-              style={{
-                background: 'var(--tint-critical-bg)',
-                color: 'var(--pill-critical-text)',
-                border: '1px solid var(--color-critical)',
-                borderRadius: 'var(--radius-md)',
-                padding: '8px 12px',
-                fontSize: 'var(--font-size-sm)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '8px',
-              }}
+            <Banner
+              tone="error"
               role="alert"
+              action={
+                <IonButton size="small" color="danger" disabled={retryingSos} onClick={handleRetryFailedSos}>
+                  {retryingSos ? 'Retrying…' : 'Retry'}
+                </IonButton>
+              }
             >
-              <span>
-                {failedSosCount} SOS alert{failedSosCount === 1 ? '' : 's'} could not be delivered to HQ. Call the
-                barangay desk directly.
-              </span>
-              <IonButton size="small" color="danger" disabled={retryingSos} onClick={handleRetryFailedSos}>
-                {retryingSos ? 'Retrying…' : 'Retry'}
-              </IonButton>
-            </div>
+              {failedSosCount} SOS alert{failedSosCount === 1 ? '' : 's'} could not be delivered to HQ. Call the
+              barangay desk directly.
+            </Banner>
           )}
 
           {sosError && (
-            <div
-              style={{
-                background: 'var(--tint-critical-bg)',
-                color: 'var(--pill-critical-text)',
-                border: '1px solid var(--color-critical)',
-                borderRadius: 'var(--radius-md)',
-                padding: '8px 12px',
-                fontSize: 'var(--font-size-sm)',
-              }}
-              role="alert"
-            >
+            <Banner tone="error" role="alert">
               {sosError}
-            </div>
+            </Banner>
           )}
         </div>
 

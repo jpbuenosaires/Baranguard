@@ -57,11 +57,12 @@ import {
   searchOutline,
   shieldCheckmarkOutline,
   timeOutline,
-  warningOutline,
+
 } from 'ionicons/icons';
 import DispatchOfferCards from '../components/DispatchOfferCards';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
+import { Banner, Button, EmptyState } from '../components/ui';
 import { ApiError, getDispatches } from '../services/apiService';
 import {
   cacheDispatchesFromServer,
@@ -291,34 +292,26 @@ const AssignmentsPage: React.FC = () => {
         <div className="dispatch-container">
           {/* Offline / Cache Banner */}
           {offlineNote && !offlineDismissed && (
-            <div className="dispatch-offline-banner" role="status">
-              <div className="dispatch-offline-banner-content">
-                <IonIcon icon={warningOutline} className="dispatch-offline-icon" aria-hidden="true" />
-                <span className="dispatch-offline-text">{offlineNote}</span>
-              </div>
-              <div className="dispatch-offline-actions">
-                <button
-                  type="button"
-                  className="dispatch-offline-btn"
+            <Banner
+              tone="warning"
+              role="status"
+              onDismiss={() => setOfflineDismissed(true)}
+              dismissLabel="Dismiss notice"
+              action={
+                <Button
+                  variant="secondary"
+                  icon={refreshOutline}
                   onClick={() => {
                     tacticalFeedback.onTap();
                     void load();
                   }}
-                  title="Retry connecting to workstation"
                 >
-                  <IonIcon icon={refreshOutline} style={{ marginRight: '4px' }} aria-hidden="true" />
                   Retry
-                </button>
-                <button
-                  type="button"
-                  className="dispatch-offline-dismiss"
-                  onClick={() => setOfflineDismissed(true)}
-                  aria-label="Dismiss notice"
-                >
-                  <IonIcon icon={closeCircleOutline} aria-hidden="true" />
-                </button>
-              </div>
-            </div>
+                </Button>
+              }
+            >
+              {offlineNote}
+            </Banner>
           )}
 
           {/* Night-dispatch offers waiting for this tanod (online-only; see DispatchOfferCards). */}
@@ -444,27 +437,24 @@ const AssignmentsPage: React.FC = () => {
           {loading ? (
             <LoadingBlock label="Updating dispatches…" />
           ) : rows.length === 0 ? (
-            <div className="dispatch-empty-card" role="region" aria-label="No dispatches">
-              <div className="dispatch-empty-icon-ring" aria-hidden="true">
-                <IonIcon icon={shieldCheckmarkOutline} />
-              </div>
-              <h3 className="dispatch-empty-title">All Clear</h3>
-              <p className="dispatch-empty-desc">
-                No active calls for your unit right now. Continue your regular patrol or stand by for updates from the Barangay Desk.
-              </p>
-              <button
-                type="button"
-                className="dispatch-refresh-btn"
-                onClick={() => {
-                  tacticalFeedback.onTap();
-                  setLoading(true);
-                  void load().finally(() => setLoading(false));
-                }}
-              >
-                <IonIcon icon={refreshOutline} aria-hidden="true" />
-                <span>Refresh</span>
-              </button>
-            </div>
+            <EmptyState
+              icon={shieldCheckmarkOutline}
+              title="No active calls"
+              body="No active calls for your unit right now. Continue your regular patrol or stand by for updates from the Barangay Desk."
+              action={
+                <Button
+                  variant="secondary"
+                  icon={refreshOutline}
+                  onClick={() => {
+                    tacticalFeedback.onTap();
+                    setLoading(true);
+                    void load().finally(() => setLoading(false));
+                  }}
+                >
+                  Refresh
+                </Button>
+              }
+            />
           ) : filteredAndSortedRows.length === 0 ? (
             <div className="dispatch-empty-card" role="region" aria-label="No results">
               <p className="dispatch-empty-desc" style={{ marginTop: '8px' }}>
@@ -606,7 +596,7 @@ const AssignmentsPage: React.FC = () => {
                         <div className="dispatch-card__telemetry-row" style={{ marginTop: '6px' }}>
                           <div className="dispatch-card__stale-chip">
                             <IonIcon icon={timeOutline} aria-hidden="true" />
-                            <span>Saved offline</span>
+                            <span>Cached copy, may be out of date</span>
                           </div>
                         </div>
                       )}

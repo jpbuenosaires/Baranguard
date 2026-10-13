@@ -12,6 +12,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { IonAlert, IonContent, IonPage, IonRefresher, IonRefresherContent, IonSpinner } from '@ionic/react';
+import { LoadingBlock } from '../../components/LoadingBlock';
+import { EmptyState, ErrorState } from '../../components/ui';
 import MobileHeader from '../../components/MobileHeader';
 import { Banner } from '../../components/WorkflowBits';
 import { useOnline } from '../../components/useOnline';
@@ -183,20 +185,11 @@ const AdminSosPage: React.FC = () => {
         <div className="wf-page">
           {!online && <Banner tone="warning">{NEEDS_CONNECTION}. Showing the last loaded list; acknowledging and resolving are disabled.</Banner>}
           {notice && <Banner tone="success">{notice}</Banner>}
-          {loading && (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '32px 0' }}>
-              <IonSpinner name="dots" />
-            </div>
+          {loading && <LoadingBlock compact />}
+          {error && <ErrorState message={error} onRetry={() => void load()} />}
+          {!loading && !error && alerts && alerts.length === 0 && (
+            <EmptyState title="No SOS alerts" body="No SOS alerts on record for your barangay." />
           )}
-          {error && (
-            <>
-              <Banner tone="critical">{error}</Banner>
-              <button type="button" className="wf-btn" onClick={() => void load()}>
-                Retry
-              </button>
-            </>
-          )}
-          {!loading && !error && alerts && alerts.length === 0 && <div className="wf-card wf-muted">No SOS alerts on record.</div>}
 
           {(() => {
             const { current, earlier } = splitSosAlerts(alerts ?? []);

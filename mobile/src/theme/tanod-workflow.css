@@ -151,7 +151,7 @@
 .wf-input,
 .wf-select {
   width: 100%;
-  min-height: 46px;
+  min-height: var(--touch-min-size, 48px);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-bg);
@@ -192,7 +192,7 @@
 
 /* Buttons that sit inside content (the sticky-dock CTAs reuse .dispatch-*-cta). */
 .wf-btn {
-  min-height: 44px;
+  min-height: var(--touch-min-size, 48px);
   padding: 0 16px;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
@@ -232,12 +232,13 @@
 }
 
 .wf-btn--small {
-  min-height: 36px;
+  min-height: var(--touch-min-size, 48px);
   padding: 0 12px;
   font-size: var(--text-xs);
 }
 
 .wf-icon-btn {
+  position: relative;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -250,6 +251,13 @@
   font-size: 1.1rem;
   cursor: pointer;
   flex-shrink: 0;
+}
+
+/* Invisible 48px hit area; visual size unchanged. */
+.wf-icon-btn::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
 }
 
 /* Month stepper (accomplishments) */
