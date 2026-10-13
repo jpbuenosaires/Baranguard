@@ -40,24 +40,19 @@ import {
   alertCircleOutline,
   callOutline,
   cameraOutline,
-  carOutline,
   checkmarkCircle,
   checkmarkCircleOutline,
   checkmarkOutline,
   copyOutline,
   documentTextOutline,
-  flameOutline,
   locateOutline,
   locationOutline,
-  medkitOutline,
   navigateOutline,
   openOutline,
-  pawOutline,
   refreshOutline,
   shieldCheckmarkOutline,
   syncOutline,
   timeOutline,
-  warningOutline,
 } from 'ionicons/icons';
 import LiveMapCanvas, { type FocusTarget, type LiveMapCanvasHandle } from '../components/LiveMapCanvas';
 import ActiveStepCard from '../components/ActiveStepCard';
@@ -78,7 +73,6 @@ import {
   cacheDispatchesFromServer,
   cacheRouteFetch,
   getCachedDispatch,
-  isCacheStale,
   markStatusSynced,
   nextStatusFor,
   revertLocalStatusChange,
@@ -111,29 +105,6 @@ const STAGE_ORDER: Record<string, number> = {
 };
 
 const STAGES = ['assigned', 'en_route', 'arrived', 'completed'] as const;
-
-function getCategoryIcon(type?: string | null) {
-  const normalized = (type ?? '').toLowerCase();
-  if (normalized.includes('injury') || normalized.includes('medical') || normalized.includes('health')) {
-    return medkitOutline;
-  }
-  if (normalized.includes('theft') || normalized.includes('vandalism') || normalized.includes('robbery') || normalized.includes('security')) {
-    return shieldCheckmarkOutline;
-  }
-  if (normalized.includes('fire') || normalized.includes('smoke')) {
-    return flameOutline;
-  }
-  if (normalized.includes('fight') || normalized.includes('disturbance') || normalized.includes('noise')) {
-    return warningOutline;
-  }
-  if (normalized.includes('animal') || normalized.includes('bite') || normalized.includes('dog')) {
-    return pawOutline;
-  }
-  if (normalized.includes('traffic') || normalized.includes('vehicular') || normalized.includes('accident')) {
-    return carOutline;
-  }
-  return alertCircleOutline;
-}
 
 const AssignmentDetailPage: React.FC = () => {
   const { localId = '' } = useParams<{ localId: string }>();
@@ -261,16 +232,6 @@ const AssignmentDetailPage: React.FC = () => {
       }
     }
   }, [navigationActive, route, position, row?.status]);
-
-  const handleToggleNavigation = useCallback(() => {
-    setNavigationActive((prev) => {
-      if (prev) {
-        setNavState(null);
-        arrivalPromptedRef.current = false;
-      }
-      return !prev;
-    });
-  }, []);
 
   const handleUserPan = useCallback(() => {
     // MapLibre auto-follow pauses internally on pan
@@ -402,7 +363,6 @@ const AssignmentDetailPage: React.FC = () => {
     }
   };
 
-  const stale = row ? isCacheStale(row) : false;
   const next = row ? nextStatusFor(row.status) : null;
   const currentStageIndex = row ? STAGES.indexOf(row.status as typeof STAGES[number]) : 0;
   const stageNum = row ? (STAGE_ORDER[row.status] ?? 1) : 1;
@@ -438,8 +398,6 @@ const AssignmentDetailPage: React.FC = () => {
   const elapsedSeconds = row
     ? Math.max(0, Math.floor((Date.now() - new Date(row.dispatched_at).getTime()) / 1000))
     : 0;
-
-  const categoryIcon = getCategoryIcon(row?.redacted_incident_type);
 
   return (
     <IonPage>

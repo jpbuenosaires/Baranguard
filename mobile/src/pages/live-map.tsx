@@ -20,7 +20,7 @@ import {
   shieldCheckmarkOutline,
   timeOutline,
 } from 'ionicons/icons';
-import LiveMapCanvas, { type BasemapStatus, type LiveMapCanvasHandle } from '../components/LiveMapCanvas';
+import LiveMapCanvas, { type LiveMapCanvasHandle } from '../components/LiveMapCanvas';
 import MobileHeader from '../components/MobileHeader';
 import {
   getNearbyIncidents,
@@ -72,7 +72,6 @@ const LiveMapPage: React.FC = () => {
   const [nearby, setNearby] = useState<NearbyIncident[]>([]);
   const [nearbyTanods, setNearbyTanods] = useState<NearbyTanod[]>([]);
   const [barangayId, setBarangayId] = useState<number | null>(null);
-  const [basemapStatus, setBasemapStatus] = useState<BasemapStatus>({ kind: 'loading' });
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Interactive Bottom Sheet Drawer State
@@ -507,7 +506,6 @@ const LiveMapPage: React.FC = () => {
               position={position}
               incidents={filteredIncidents}
               tanods={filteredTanods}
-              onStatusChange={setBasemapStatus}
               fullScreen={true}
               height="100%"
               hideRecenterFab={true}
