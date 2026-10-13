@@ -60,6 +60,7 @@ const EXPECTED = {
     c1_summary:         ['TEXT', 0, null, 0],
     c1_action_taken:    ['TEXT', 0, null, 0],
     c1_status_notes:    ['TEXT', 0, null, 0],
+    display_id:         ['TEXT', 0, null, 0],
   },
   mobile_device_local: {
     device_id:     ['TEXT', 1, null, 1],
@@ -117,6 +118,7 @@ const EXPECTED = {
     cached_at:                 ['TEXT', 1, null, 0],
     stale_after:               ['TEXT', 1, null, 0],
     synced:                    ['INTEGER', 1, '0', 0],
+    incident_display_id:       ['TEXT', 0, null, 0],
   },
   gps_track_local: {
     local_id:        ['TEXT', 1, null, 1],
@@ -457,6 +459,27 @@ db.prepare(
 ).run();
 check(db.prepare('SELECT school_id FROM incident_local WHERE local_id = ?').get('local-1').school_id === 7,
   'incident_local.school_id / c1_* columns accept values');
+
+// Migration 7: official incident code columns exist, nullable, and accept values.
+check(db.prepare('SELECT display_id FROM incident_local WHERE local_id = ?').get('local-1').display_id === null,
+  'incident_local.display_id defaults to NULL');
+db.prepare(`UPDATE incident_local SET display_id = 'INC-2026-057' WHERE local_id = 'local-1'`).run();
+check(db.prepare('SELECT display_id FROM incident_local WHERE local_id = ?').get('local-1').display_id === 'INC-2026-057',
+  'incident_local.display_id accepts an INC-YYYY-NNN code');
+check(db.prepare('SELECT incident_display_id FROM dispatch_local WHERE local_id = ?').get('dl-1').incident_display_id === null,
+  'dispatch_local.incident_display_id defaults to NULL');
+
+// markIncidentSynced SQL: stores a new code, but a null result never erases a known one.
+{
+  const sql = 'UPDATE incident_local SET synced = 1, server_incident_id = ?, display_id = COALESCE(?, display_id), last_sync_error = NULL WHERE client_event_id = ?';
+  const ev = db.prepare('SELECT client_event_id FROM incident_local WHERE local_id = ?').get('local-1').client_event_id;
+  db.prepare(sql).run(57, null, ev);
+  check(db.prepare('SELECT display_id FROM incident_local WHERE local_id = ?').get('local-1').display_id === 'INC-2026-057',
+    'sync update with no code keeps the stored display_id');
+  db.prepare(sql).run(57, 'INC-2026-058', ev);
+  check(db.prepare('SELECT display_id FROM incident_local WHERE local_id = ?').get('local-1').display_id === 'INC-2026-058',
+    'sync update with a code stores it');
+}
 
 // --- 6. A device already on schema v1 upgrades to latest in place, without ----
 // losing existing rows — the real-world path an already-installed app

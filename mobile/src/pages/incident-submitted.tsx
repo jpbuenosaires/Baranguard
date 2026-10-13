@@ -53,6 +53,7 @@ import { deriveSyncState, getLocalIncident, type SyncState } from '../services/d
 import { getEvidenceForIncident } from '../services/db/evidenceRepository';
 import type { IncidentLocalRow, EvidenceAttachmentLocalRow } from '../services/db/localSchema';
 import tacticalFeedback from '../utils/tacticalFeedback';
+import { formatIncidentCode } from '../utils/incidentCode';
 
 interface SyncEngineMeta {
   headline: string;
@@ -231,7 +232,7 @@ const IncidentSubmittedPage: React.FC = () => {
                     <span>{row.incident_type.replace(/_/g, ' ')}</span>
                   </div>
                   {row.server_incident_id !== null ? (
-                    <span className="tactical-receipt-case-tag">Case #{row.server_incident_id}</span>
+                    <span className="tactical-receipt-case-tag">{formatIncidentCode({ displayId: row.display_id, serverIncidentId: row.server_incident_id })}</span>
                   ) : (
                     <span className="tactical-receipt-case-tag">Saved on Phone</span>
                   )}
@@ -333,7 +334,7 @@ const IncidentSubmittedPage: React.FC = () => {
               {/* Referral / handoff — works offline; a phone-only incident is linked by its local id. */}
               <ReferralPanel
                 link={{ incidentLocalId: row.local_id, serverIncidentId: row.server_incident_id }}
-                incidentLabel={row.server_incident_id !== null ? `Case #${row.server_incident_id}` : 'this report'}
+                incidentLabel={formatIncidentCode({ displayId: row.display_id, serverIncidentId: row.server_incident_id }) ?? 'this report'}
               />
 
               {/* Ergonomic 2-Row Action Dock */}

@@ -82,6 +82,7 @@ import type { DispatchLocalRow } from '../services/db/localSchema';
 import { getCurrentPosition, watchPosition, type DevicePosition } from '../services/geolocation';
 import { loadSession } from '../services/session';
 import tacticalFeedback from '../utils/tacticalFeedback';
+import { formatIncidentCode } from '../utils/incidentCode';
 import {
   computeNavigationState,
   formatRemainingTime,
@@ -730,7 +731,7 @@ const AssignmentDetailPage: React.FC = () => {
                 <span className="dispatch-category-pill">
                   {row.redacted_incident_type ? row.redacted_incident_type.replace(/_/g, ' ').toUpperCase() : 'INCIDENT'}
                 </span>
-                <span className="dispatch-case-pill">Case #{row.server_incident_id}</span>
+                <span className="dispatch-case-pill">{formatIncidentCode({ displayId: row.incident_display_id, serverIncidentId: row.server_incident_id })}</span>
                 <span className="dispatch-hero-time">
                   <IonIcon icon={timeOutline} />
                   {formatRelativeAge(elapsedSeconds)}
@@ -824,7 +825,7 @@ const AssignmentDetailPage: React.FC = () => {
             {/* Referral / handoff — records that the Tanod handed the case over; never implies acceptance. */}
             <ReferralPanel
               link={{ serverIncidentId: row.server_incident_id }}
-              incidentLabel={`Case #${row.server_incident_id}`}
+              incidentLabel={formatIncidentCode({ displayId: row.incident_display_id, serverIncidentId: row.server_incident_id }) ?? 'this incident'}
             />
 
             {/* Evidence for the assigned incident - saved on the phone first, uploaded by the sync worker. */}
@@ -1040,7 +1041,7 @@ const AssignmentDetailPage: React.FC = () => {
                   Complete Dispatch #{row.server_dispatch_id ?? row.local_id.slice(0, 6)}?
                 </h2>
                 <span className="confirm-sheet-sub">
-                  Case #{row.server_incident_id} &bull; {row.redacted_incident_type?.replace(/_/g, ' ') || 'Incident'}
+                  {formatIncidentCode({ displayId: row.incident_display_id, serverIncidentId: row.server_incident_id })} &bull; {row.redacted_incident_type?.replace(/_/g, ' ') || 'Incident'}
                 </span>
               </div>
             </div>

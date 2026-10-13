@@ -115,6 +115,7 @@ import {
   resetFailedSosItems,
 } from './db/offlineQueueRepository';
 import { classifyDispatchFailure } from './syncFailureClass';
+import { resolveMissingIncidentCodes } from './incidentCodeService';
 import { cacheDispatchesFromServer, markStatusSynced, revertLocalStatusChange } from './db/dispatchRepository';
 import { listUnsyncedReferrals, markReferralSynced, markReferralSyncFailed } from './db/referralRepository';
 import {
@@ -431,9 +432,10 @@ async function syncChunk(deviceId: string, input: ChunkInput): Promise<ChunkCoun
     if (result.status === 'failed') {
       await markIncidentSyncFailed(row.client_event_id, result.reason ?? 'Sync failed.', MAX_SYNC_ATTEMPTS);
     } else {
-      await markIncidentSynced(row.client_event_id, result.serverId);
+      await markIncidentSynced(row.client_event_id, result.serverId, result.displayId);
     }
   }
+  if (incidents.length > 0) void resolveMissingIncidentCodes();
 
   for (const row of gps) {
     const result = byEventId.get(row.client_event_id);

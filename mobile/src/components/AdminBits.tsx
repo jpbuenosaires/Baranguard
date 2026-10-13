@@ -24,6 +24,7 @@ import {
   type DirectoryUser,
 } from '../services/apiService';
 import { uuid } from '../services/uuid';
+import { formatIncidentCode } from '../utils/incidentCode';
 import { humanize, isActiveDispatchStatus, MAX_REASON, NEEDS_CONNECTION } from './adminFormat';
 import { formatServerTime } from './adminFormat';
 
@@ -264,7 +265,7 @@ export const AdminIncidentSheet: React.FC<IncidentSheetProps> = ({ incidentId, o
       >
         <div className="wf-sheet admin-incident-sheet">
           <div className="wf-sheet__head">
-            <h3 className="wf-sheet__title">{incident?.displayId ?? (incidentId ? `Incident #${incidentId}` : 'Incident')}</h3>
+            <h3 className="wf-sheet__title">{incidentId ? formatIncidentCode({ displayId: incident?.displayId, serverIncidentId: incidentId }) : 'Incident'}</h3>
             <button type="button" className="wf-icon-btn" onClick={onClose} disabled={busy} aria-label="Close incident">
               <IonIcon icon={closeOutline} />
             </button>

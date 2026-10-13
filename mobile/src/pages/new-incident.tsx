@@ -640,7 +640,9 @@ const NewIncidentPage: React.FC = () => {
                   <IonIcon icon={alertCircleOutline} aria-hidden="true" />
                   <div>
                     Keep these notes <strong>short and factual</strong>. Do <strong>not</strong> write the names of
-                    students or victims (Walang pangalan ng estudyante o biktima).
+                    students or victims (Walang pangalan ng estudyante o biktima). Link a school only for what you met{' '}
+                    <strong>outside</strong> the school grounds: the gate, the perimeter or the road in front. What
+                    happens inside the school is a matter for the school, not for the tanod.
                   </div>
                 </div>
 
@@ -656,7 +658,7 @@ const NewIncidentPage: React.FC = () => {
                     value={c1Summary}
                     onChange={(e) => setC1Summary(e.target.value)}
                     disabled={saving}
-                    placeholder="e.g. Altercation between two students at the school gate"
+                    placeholder="e.g. Stray dogs gathered outside the school gate at dismissal"
                   />
                   <span className="wf-counter">
                     {c1Summary.length}/{C1_FIELD_MAX}

@@ -15,6 +15,7 @@ import { openLocalDatabase } from './localDatabase';
 import type { DispatchLocalRow } from './localSchema';
 import type { DispatchEntry } from '../apiService';
 import { uuid } from '../uuid';
+import { resolveMissingIncidentCodes } from '../incidentCodeService';
 
 /**
  * How long a cached dispatch snapshot is treated as fresh before the UI
@@ -49,12 +50,13 @@ export async function cacheDispatchesFromServer(entries: DispatchEntry[]): Promi
       const localId = localIdForServer(entry.dispatchId);
       await db.run(
         `INSERT INTO dispatch_local
-           (local_id, server_dispatch_id, server_incident_id, tanod_id, priority, redacted_incident_type,
+           (local_id, server_dispatch_id, server_incident_id, incident_display_id, tanod_id, priority, redacted_incident_type,
             latitude, longitude, route_json, route_status,
             status, dispatched_at, en_route_at, arrived_at, completed_at, cached_at, stale_after, synced)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
          ON CONFLICT(local_id) DO UPDATE SET
            server_dispatch_id = excluded.server_dispatch_id,
+           incident_display_id = COALESCE(excluded.incident_display_id, incident_display_id),
            priority = excluded.priority,
            redacted_incident_type = excluded.redacted_incident_type,
            latitude = excluded.latitude,
@@ -72,6 +74,7 @@ export async function cacheDispatchesFromServer(entries: DispatchEntry[]): Promi
           localId,
           entry.dispatchId,
           entry.incidentId,
+          entry.incidentDisplayId,
           entry.tanodId,
           entry.priority,
           entry.incidentType,
@@ -95,6 +98,8 @@ export async function cacheDispatchesFromServer(entries: DispatchEntry[]): Promi
     await db.rollbackTransaction();
     throw error;
   }
+  // GET /dispatch carries no display_id: fetch it in the background.
+  void resolveMissingIncidentCodes();
 }
 
 /** Non-terminal cached assignments, newest first — M5's list. */
