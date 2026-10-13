@@ -311,7 +311,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     metaSection.className = 'dossier-section';
 
     const metaGrid = document.createElement('div');
-    metaGrid.className = 'meta-strip meta-grid-4col';
+    metaGrid.className = 'meta-strip';
 
     // Location
     const locTile = document.createElement('div');
@@ -393,6 +393,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
           <div class="dossier-privacy-shield__tags">
             <span class="party-card__tag party-card__tag--complainant">Complainant: ${RESTRICTED_TO_SECRETARY}</span>
             <span class="party-card__tag party-card__tag--respondent">Respondent: ${RESTRICTED_TO_SECRETARY}</span>
+            <span class="party-card__tag party-card__tag--narrative">Narrative: The narrative is restricted to the Barangay Secretary (RA 10173).</span>
           </div>
         </div>
       `;
@@ -430,77 +431,33 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       partiesSection.appendChild(partiesGrid);
     }
 
-    // 3. Narrative Section
-    const narrativeSection = document.createElement('div');
-    narrativeSection.className = 'dossier-section dossier-section--narrative';
+    dossierBody.append(metaSection, partiesSection);
 
-    const narrativeHeader = document.createElement('div');
-    narrativeHeader.className = 'dossier-subheading';
-    narrativeHeader.innerHTML = `<span>Incident Narrative</span>`;
-    narrativeSection.appendChild(narrativeHeader);
-
-    const narrativeText = isSecretary
-      ? (incident.rawNarrative || missingNarrativeText())
-      : 'The narrative is restricted to the Barangay Secretary (RA 10173).';
-
-    const narrativeBody = document.createElement('div');
-    narrativeBody.className = 'doc-blockquote' + (isSecretary ? '' : ' doc-blockquote--restricted');
+    // 3. Narrative Section (Secretary-only readable view)
     if (isSecretary) {
+      const narrativeSection = document.createElement('div');
+      narrativeSection.className = 'dossier-section dossier-section--narrative';
+
+      const narrativeHeader = document.createElement('div');
+      narrativeHeader.className = 'dossier-subheading';
+      narrativeHeader.innerHTML = `<span>Incident Narrative</span>`;
+      narrativeSection.appendChild(narrativeHeader);
+
+      const narrativeText = incident.rawNarrative || missingNarrativeText();
+      const narrativeBody = document.createElement('div');
+      narrativeBody.className = 'doc-blockquote';
       narrativeBody.textContent = narrativeText;
-    } else {
-      narrativeBody.innerHTML = `<span class="doc-blockquote__icon" aria-hidden="true">${icons.shield(14)}</span><span>${escapeHtml(narrativeText)}</span>`;
+      narrativeSection.appendChild(narrativeBody);
+      dossierBody.appendChild(narrativeSection);
     }
-    narrativeSection.appendChild(narrativeBody);
 
     // 4. Digital Evidence Section
     const evidenceSection = document.createElement('div');
     evidenceSection.className = 'dossier-section dossier-section--evidence';
     evidenceSection.appendChild(buildEvidence());
+    dossierBody.appendChild(evidenceSection);
 
-    dossierBody.append(metaSection, partiesSection, narrativeSection, evidenceSection);
     card.appendChild(dossierBody);
-
-    return card;
-  }
-
-  function buildNarrative() {
-    const card = document.createElement('div');
-    card.className = 'card doc-card';
-
-    const header = document.createElement('div');
-    header.className = 'doc-card__header';
-
-    const titleGroup = document.createElement('div');
-    titleGroup.className = 'doc-card__title-group';
-    const heading = document.createElement('h3');
-    heading.className = 'doc-card__title';
-    heading.textContent = 'Incident Narrative';
-    titleGroup.appendChild(heading);
-
-    const actions = document.createElement('div');
-    actions.className = 'doc-card__actions';
-
-    // Rule 1: raw_narrative is only ever returned to a Secretary
-    // (RA 7160 §394(c) records custodian); every other role gets nothing.
-    const narrativeText = isSecretary
-      ? (incident.rawNarrative || missingNarrativeText())
-      : 'The narrative is restricted to the Barangay Secretary (RA 10173).';
-
-    // No "Copy Narrative" button (audit V-10): copying put raw_narrative on
-    // the system clipboard, which any other app can read (Rule 1: it never
-    // leaves the system). The Secretary reads it on screen only.
-
-    header.append(titleGroup, actions);
-    card.appendChild(header);
-
-    const body = document.createElement('div');
-    body.className = 'doc-blockquote' + (isSecretary ? '' : ' doc-blockquote--restricted');
-    if (isSecretary) {
-      body.textContent = narrativeText;
-    } else {
-      body.innerHTML = `<span class="doc-blockquote__icon" aria-hidden="true">${icons.shield(14)}</span><span>${escapeHtml(narrativeText)}</span>`;
-    }
-    card.appendChild(body);
 
     return card;
   }
