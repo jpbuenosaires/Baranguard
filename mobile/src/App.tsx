@@ -93,6 +93,11 @@ import './theme/phase1-home.css';
 import './theme/phase1-dispatch.css';
 import './theme/phase1-nav.css';
 import './theme/ui.css';
+import './theme/phase4-home.css';
+import './theme/phase4-workflow.css';
+import './theme/phase4-dispatch.css';
+import './theme/phase4-map.css';
+import './theme/phase4-admin.css';
 
 setupIonicReact();
 
