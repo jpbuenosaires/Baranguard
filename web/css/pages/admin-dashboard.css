@@ -261,9 +261,16 @@
    Quick Actions Card (Design Token Overhaul)
    ========================================================================== */
 
+.quick-actions-card {
+  display: flex;
+  flex-direction: column;
+}
+
 .quick-actions-grid {
+  flex: 1;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
   gap: var(--spacing-sm);
   align-items: stretch;
 }
@@ -647,20 +654,43 @@
   background: linear-gradient(90deg, var(--color-success), var(--color-success-solid));
 }
 
-/* Individual Breakdown Item Rows */
+/* Individual Breakdown Item Rows & 2-Column Status Grid */
+.breakdown-status-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.breakdown-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
 .breakdown-item {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  padding: 0.45rem 0.625rem;
+  padding: 0.5rem 0.6875rem;
   border-radius: var(--radius-md);
-  border: 1px solid transparent;
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--color-bg) 55%, var(--color-surface));
   transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.breakdown-status-grid .breakdown-item:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 540px) {
+  .breakdown-status-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .breakdown-item:hover {
   background: var(--surface-card-hover);
-  border-color: var(--border-subtle);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--border-subtle));
 }
 
 .breakdown-row {
@@ -956,27 +986,122 @@
   gap: var(--spacing-md);
 }
 
-/* 2026-10: pending-approvals widget. */
+/* 2026-10: Overhauled Pending Approvals widget (3-column interactive tile grid) */
+.card-header__chip--warning {
+  background: var(--tint-warning-bg);
+  color: var(--color-warning-text);
+  border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+}
+
+.card-header__chip--success {
+  background: var(--tint-success-bg);
+  color: var(--color-success-text);
+  border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
+}
+
+.dashboard-approvals-skeleton {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.dashboard-approvals-skeleton .skeleton--row {
+  height: 6.25rem;
+  border-radius: var(--radius-lg);
+}
+
 .dashboard-approvals-list {
   list-style: none;
-  margin: 0 0 var(--spacing-md);
+  margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: var(--spacing-sm);
 }
 
 .dashboard-approvals-list__item {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-  padding: var(--spacing-sm) 0;
-  border-top: 1px solid var(--color-border);
-  color: var(--color-text-primary);
+  min-width: 0;
 }
 
-.dashboard-approvals-list__item:first-child {
-  border-top: 0;
+.dashboard-approval-tile {
+  width: 100%;
+}
+
+.dashboard-approval-tile__meta-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+.dashboard-approval-tile__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.875rem;
+  height: 1.5rem;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  font-size: var(--font-size-sm);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.dashboard-approval-tile__count--blue.is-pending {
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  color: var(--color-link);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
+}
+
+.dashboard-approval-tile__count--amber.is-pending {
+  background: color-mix(in srgb, var(--color-warning) 14%, transparent);
+  color: var(--color-warning-text);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 28%, transparent);
+}
+
+.dashboard-approval-tile__count--violet.is-pending {
+  background: color-mix(in srgb, var(--chart-cat-9) 14%, transparent);
+  color: color-mix(in srgb, var(--chart-cat-9) 55%, var(--color-text-primary));
+  border: 1px solid color-mix(in srgb, var(--chart-cat-9) 28%, transparent);
+}
+
+.dashboard-approval-tile__count--cyan.is-pending {
+  background: color-mix(in srgb, var(--color-info) 14%, transparent);
+  color: var(--color-info-text);
+  border: 1px solid color-mix(in srgb, var(--color-info) 28%, transparent);
+}
+
+.dashboard-approval-tile__count.is-clear {
+  background: var(--tint-success-bg);
+  color: var(--color-success-text);
+  border: 1px solid color-mix(in srgb, var(--color-success) 28%, transparent);
+}
+
+.dashboard-approvals-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm-md) var(--spacing-md);
+  border-radius: var(--radius-md);
+  background: var(--tint-success-bg);
+  border: 1px solid color-mix(in srgb, var(--color-success) 25%, transparent);
+  color: var(--color-success-text);
+}
+
+.dashboard-approvals-empty__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dashboard-approvals-empty .note {
+  margin: 0;
+  color: inherit;
+  font-weight: 500;
 }
 
 .incident-type-cell {

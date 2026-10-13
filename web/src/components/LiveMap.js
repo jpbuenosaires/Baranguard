@@ -69,6 +69,7 @@
 
 import { onThemeChange } from './themeEvents.js';
 import { attachBasemapFallback, OSM_TILE_URL } from '../utils/mapFallback.js';
+import { formatSosCode, formatIncidentCode } from '../services/tanodWorkflowUi.js';
 
 const DEFAULT_CENTER = [123.6667, 12.9186]; // Pilar, Sorsogon [lng, lat]
 const DEFAULT_ZOOM = 13;
@@ -420,14 +421,15 @@ export function LiveMap(container, options = {}) {
       const isLastKnown = item.locationSource === 'last_known';
       const lastKnownAt = isLastKnown ? manilaClock(item.locationRecordedAt) : null;
       const lastKnownText = isLastKnown ? `last known position${lastKnownAt ? ` (${lastKnownAt})` : ''}` : null;
-      const baseLabel = item.fullName ? `SOS · ${shortPersonLabel(item.fullName)}` : `SOS #${item.sosId}`;
+      const sosCode = formatSosCode(item.sosId);
+      const baseLabel = item.fullName ? `SOS · ${shortPersonLabel(item.fullName)}` : sosCode;
       labelEl.textContent = lastKnownText ? `${baseLabel} · ${lastKnownText}` : baseLabel;
       el.appendChild(labelEl);
       if (isLastKnown) {
         el.classList.add('live-map__marker--sos-last-known');
       }
 
-      el.title = `SOS Alert #${item.sosId} — ${item.status || 'Active'}${lastKnownText ? ` — ${lastKnownText}` : ''}`;
+      el.title = `${sosCode} — ${item.status || 'Active'}${lastKnownText ? ` — ${lastKnownText}` : ''}`;
 
       const popupContent = document.createElement('div');
       popupContent.className = 'live-map__incident-popup';
@@ -435,7 +437,7 @@ export function LiveMap(container, options = {}) {
       topRow.className = 'live-map__popup-top-row';
       const heading = document.createElement('div');
       heading.className = 'live-map__incident-popup-heading';
-      heading.textContent = `SOS Alert #${item.sosId}${item.fullName ? ' (' + item.fullName + ')' : ''}`;
+      heading.textContent = `${sosCode}${item.fullName ? ' (' + item.fullName + ')' : ''}`;
       const statusPill = document.createElement('span');
       statusPill.className = 'status-pill status-pill--critical';
       statusPill.textContent = (item.status || 'active').toUpperCase();
@@ -514,7 +516,7 @@ export function LiveMap(container, options = {}) {
 
       const isCritical = item.priority === 'critical';
       const isDispatched = item.status === 'dispatched';
-      const codeStr = item.displayId || `INC-${String(item.incidentId).padStart(3, '0')}`;
+      const codeStr = formatIncidentCode(item.incidentId, item.displayId);
 
       const el = document.createElement('div');
       el.className = 'live-map__marker live-map__marker--incident'
@@ -536,7 +538,7 @@ export function LiveMap(container, options = {}) {
       topRow.className = 'live-map__popup-top-row';
       const heading = document.createElement('div');
       heading.className = 'live-map__incident-popup-heading';
-      heading.textContent = `#${item.incidentId} — ${item.typeLabel || item.incidentType}`;
+      heading.textContent = `${codeStr} — ${item.typeLabel || item.incidentType}`;
       const priorityPill = document.createElement('span');
       priorityPill.className = 'status-pill' + (isCritical ? ' status-pill--critical' : isDispatched ? ' status-pill--info' : ' status-pill--pending');
       priorityPill.textContent = item.priority;

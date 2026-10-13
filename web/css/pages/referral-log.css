@@ -1,7 +1,7 @@
 /**
  * referral-log.css — Referral Log overhaul.
  *
- * Inter-agency delegation registry (PNP, BFP, EMS, VAW Desk, LGU).
+ * Inter-agency delegation registry (PNP, BFP, EMS, DOH, DPWH, VAW Desk, LGU, Brgy).
  * Follows Baranguard design system tokens (REFERENCE.md §6).
  */
 
@@ -10,45 +10,215 @@
 }
 
 /* ==========================================================================
-   Agency KPI Metrics Strip
+   5-Card Interactive Agency KPI Command Strip
    ========================================================================== */
 
+.ref-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-bg) 50%, var(--color-surface));
+}
+
+.ref-kpi-card {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  min-height: 3.5rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, background-color 0.15s ease;
+}
+
+.ref-kpi-card:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 50%, var(--color-border));
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-card);
+}
+
+.ref-kpi-card:focus-visible {
+  outline: var(--focus-ring-width, 2px) var(--focus-ring-style, solid) var(--focus-ring-color, var(--color-link));
+  outline-offset: 2px;
+}
+
+.ref-kpi-card.is-active {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.ref-kpi-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+
+.ref-kpi-card__icon--primary {
+  background: var(--tint-info-bg);
+  color: var(--pill-info-text);
+}
+
+.ref-kpi-card__icon--info {
+  background: var(--tint-info-bg);
+  color: var(--pill-info-text);
+}
+
+.ref-kpi-card__icon--success {
+  background: var(--tint-success-bg);
+  color: var(--pill-success-text);
+}
+
+.ref-kpi-card__icon--warning {
+  background: var(--tint-warning-bg);
+  color: var(--color-warning-text);
+}
+
+.ref-kpi-card__icon--neutral {
+  background: var(--tint-neutral-bg);
+  color: var(--pill-neutral-text);
+}
+
+.ref-kpi-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.ref-kpi-card__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-xs);
+}
+
+.ref-kpi-card__label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ref-kpi-card__value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  color: var(--color-text-primary);
+}
+
+.ref-kpi-card.is-active .ref-kpi-card__value {
+  color: var(--color-link);
+}
+
+.ref-kpi-card__sub {
+  font-size: 0.6875rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ==========================================================================
-   Agency Badges
+   WCAG 2.2 AA Semantic Agency Badges (Light & Dark Theme Safe)
    ========================================================================== */
 
 .tw-ref-agency-pill {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-2xs);
-  padding: 0.15rem var(--spacing-xs);
+  padding: 0.2rem var(--spacing-xs);
   border-radius: var(--radius-sm);
   font-size: var(--font-size-label);
-  font-weight: 600;
+  font-weight: 700;
+  border: 1px solid transparent;
+  line-height: 1.25;
 }
+
+.tw-ref-agency-pill__dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 9999px;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
 .tw-ref-agency-pill--pnp {
-  background: color-mix(in srgb, #1D4ED8 15%, transparent);
-  color: #1D4ED8;
-}
-.tw-ref-agency-pill--bfp {
-  background: color-mix(in srgb, #DC2626 15%, transparent);
-  color: #DC2626;
-}
-.tw-ref-agency-pill--ems {
-  background: color-mix(in srgb, #16A34A 15%, transparent);
-  color: #16A34A;
-}
-.tw-ref-agency-pill--vaw {
-  background: color-mix(in srgb, #9333EA 15%, transparent);
-  color: #9333EA;
-}
-.tw-ref-agency-pill--lgu {
-  background: color-mix(in srgb, #D97706 15%, transparent);
-  color: #D97706;
-}
-.tw-ref-agency-pill--other {
   background: var(--tint-info-bg);
   color: var(--pill-info-text);
+  border-color: color-mix(in srgb, var(--pill-info-text) 22%, transparent);
+}
+
+.tw-ref-agency-pill--bfp {
+  background: var(--tint-critical-bg);
+  color: var(--pill-critical-text);
+  border-color: color-mix(in srgb, var(--pill-critical-text) 22%, transparent);
+}
+
+.tw-ref-agency-pill--ems {
+  background: var(--tint-success-bg);
+  color: var(--pill-success-text);
+  border-color: color-mix(in srgb, var(--pill-success-text) 22%, transparent);
+}
+
+.tw-ref-agency-pill--doh {
+  background: color-mix(in srgb, var(--color-info) 14%, var(--color-surface));
+  color: var(--color-info-text);
+  border-color: color-mix(in srgb, var(--color-info-text) 25%, transparent);
+}
+
+.tw-ref-agency-pill--dpwh {
+  background: var(--tint-warning-bg);
+  color: var(--color-warning-text);
+  border-color: color-mix(in srgb, var(--color-warning-text) 25%, transparent);
+}
+
+.tw-ref-agency-pill--vaw {
+  background: color-mix(in srgb, #7C3AED 12%, var(--color-surface));
+  color: #5B21B6;
+  border-color: color-mix(in srgb, #5B21B6 25%, transparent);
+}
+[data-theme="dark"] .tw-ref-agency-pill--vaw {
+  background: color-mix(in srgb, #A78BFA 18%, var(--color-surface));
+  color: #DDD6FE;
+  border-color: color-mix(in srgb, #DDD6FE 28%, transparent);
+}
+
+.tw-ref-agency-pill--lgu {
+  background: color-mix(in srgb, var(--color-navy) 12%, var(--color-surface));
+  color: var(--color-navy);
+  border-color: color-mix(in srgb, var(--color-navy) 24%, transparent);
+}
+[data-theme="dark"] .tw-ref-agency-pill--lgu {
+  background: var(--tint-info-bg);
+  color: var(--pill-info-text);
+  border-color: color-mix(in srgb, var(--pill-info-text) 25%, transparent);
+}
+
+.tw-ref-agency-pill--brgy {
+  background: var(--tint-neutral-bg);
+  color: var(--pill-neutral-text);
+  border-color: var(--color-border);
+}
+
+.tw-ref-agency-pill--other {
+  background: var(--tint-neutral-bg);
+  color: var(--pill-neutral-text);
+  border-color: var(--color-border);
 }
 
 /* ==========================================================================
@@ -66,7 +236,7 @@
   background: var(--glass-bg);
   border: 1px solid var(--color-border);
   gap: var(--spacing-sm);
-  margin: var(--spacing-sm) 0;
+  margin: var(--spacing-sm) var(--spacing-md);
 }
 
 .tw-ref-empty__icon {
@@ -106,10 +276,9 @@
 }
 
 /* ==========================================================================
-   Referral Log Rebuild Overhaul Styles
+   Consolidated Full-Width Control Bar & Sort Controls
    ========================================================================== */
 
-/* Consolidated 44px Control Bar */
 .ref-control-bar {
   display: flex;
   flex-wrap: wrap;
@@ -155,13 +324,13 @@
   position: relative;
   display: flex;
   align-items: center;
-  flex: 1 1 14rem;
-  max-width: 22rem;
+  flex: 1 1 18rem;
+  max-width: none;
 }
 
 .ref-search-icon {
   position: absolute;
-  left: 12px;
+  left: var(--spacing-sm);
   top: 50%;
   transform: translateY(-50%);
   pointer-events: none;
@@ -174,9 +343,9 @@
   width: 100%;
   height: var(--control-height, 2.25rem);
   min-height: var(--control-height, 2.25rem);
-  padding-left: 36px;
-  padding-right: var(--spacing-sm-md);
-  border-radius: 8px;
+  padding-left: 2.25rem;
+  padding-right: 2rem;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   background-color: var(--color-surface);
   color: var(--color-text-primary);
@@ -188,6 +357,28 @@
 .ref-search-input:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+.ref-search-clear {
+  position: absolute;
+  right: var(--spacing-2xs);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  min-height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.ref-search-clear:hover {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
 }
 
 .ref-date-group {
@@ -207,14 +398,15 @@
 }
 
 .ref-date-field label {
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: var(--font-size-label);
+  font-weight: 700;
   color: var(--color-text-secondary);
   text-transform: uppercase;
 }
 
 .ref-date-input {
   height: 2rem;
+  min-height: 2rem;
   padding: 0.2rem var(--spacing-xs);
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
@@ -225,7 +417,7 @@
 
 .ref-date-arrow {
   color: var(--color-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
 }
 
 .ref-select-field {
@@ -235,8 +427,8 @@
 }
 
 .ref-select-field label {
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: var(--font-size-label);
+  font-weight: 700;
   color: var(--color-text-secondary);
   text-transform: uppercase;
 }
@@ -246,13 +438,13 @@
   -webkit-appearance: none;
   height: var(--control-height, 2.25rem);
   min-height: var(--control-height, 2.25rem);
-  padding: 0 2.25rem 0 0.85rem;
-  border-radius: 8px;
+  padding: 0 2.25rem 0 0.75rem;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   background-color: var(--color-surface);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 0.75rem center;
+  background-position: right 0.65rem center;
   background-size: 1rem 1rem;
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
@@ -271,30 +463,76 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
+.ref-sort-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+}
+
+.ref-sort-select {
+  width: auto;
+}
+
+.ref-sort-dir-btn {
+  height: var(--control-height, 2.25rem);
+  min-height: var(--control-height, 2.25rem);
+  padding: 0 var(--spacing-sm);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ref-sort-dir-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text-primary);
+}
+
 .ref-clear-btn {
   font-size: var(--font-size-sm);
   height: var(--control-height, 2.25rem);
   min-height: var(--control-height, 2.25rem);
   padding: 0 var(--spacing-sm);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
+  white-space: nowrap;
 }
 
-/* Table Cells & Actions */
+.ref-clear-btn.is-active {
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+  color: var(--color-link);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Table Cells & Actions
+   ========================================================================== */
+
 .ref-incident-cell {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs);
+  flex-wrap: wrap;
 }
 
 .ref-incident-id {
-  font-family: var(--font-family-mono, monospace);
+  font-family: var(--font-mono, monospace);
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.8125rem;
   color: var(--color-text-primary);
   background: var(--color-bg);
   padding: 0.15rem var(--spacing-xs);
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
+}
+
+.ref-log-sub {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
 }
 
 .ref-type-text {
@@ -319,22 +557,36 @@
 }
 
 .ref-code-badge {
-  font-family: var(--font-family-mono, monospace);
-  font-size: 0.825rem;
-  font-weight: 600;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8125rem;
+  font-weight: 700;
   background: var(--color-bg);
-  padding: 0.15rem 0.35rem;
+  padding: 0.15rem 0.4rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
+}
+
+.ref-no-empty-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  background: color-mix(in srgb, var(--color-bg) 75%, transparent);
+  border: 1px dashed var(--color-border);
 }
 
 .ref-copy-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -349,9 +601,12 @@
   border-color: var(--color-primary);
 }
 
-.ref-empty-dash {
-  color: var(--color-text-secondary);
-  font-size: 0.9rem;
+.ref-copy-btn:focus-visible,
+.ref-view-btn:focus-visible,
+.ref-clear-btn:focus-visible,
+.ref-sort-dir-btn:focus-visible {
+  outline: var(--focus-ring-width, 2px) var(--focus-ring-style, solid) var(--focus-ring-color, var(--color-link));
+  outline-offset: 2px;
 }
 
 .ref-view-btn {
@@ -361,19 +616,39 @@
   padding: 0.25rem var(--spacing-sm);
   font-size: var(--font-size-sm);
   font-weight: 600;
-  color: var(--color-link, #2563eb);
+  color: var(--color-link);
 }
 
 .ref-view-btn:hover {
   color: var(--color-primary);
 }
 
+/* ==========================================================================
+   Responsive Breakpoints
+   ========================================================================== */
+
+@media (max-width: 1150px) {
+  .ref-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 768px) {
+  .ref-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .ref-control-bar {
     flex-direction: column;
     align-items: stretch;
   }
   .ref-search-box {
     max-width: 100%;
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .ref-kpi-grid {
+    grid-template-columns: 1fr;
   }
 }

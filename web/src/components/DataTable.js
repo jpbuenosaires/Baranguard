@@ -105,6 +105,7 @@ export function DataTable({
   columns, rows, renderCell, rowKey, rowClass, onRowClick, selectedKey = null, caption,
   emptyIcon, emptyMessage,
   page, totalItems, pageSize, onPageChange,
+  initialSort = null, onSortChange = null, rowAriaLabel = null,
 }) {
   const wrapper = document.createElement('div');
   wrapper.className = 'data-table-wrap';
@@ -139,7 +140,9 @@ export function DataTable({
 
   // { key: string|null, direction: 'asc'|'desc' } — null key means
   // "whatever order `rows` was given in," the default/unsorted state.
-  let sort = { key: null, direction: 'asc' };
+  let sort = initialSort && initialSort.key
+    ? { key: initialSort.key, direction: initialSort.direction === 'desc' ? 'desc' : 'asc' }
+    : { key: null, direction: 'asc' };
   const headerButtons = {};
   const headerCells = {};
 
@@ -173,6 +176,7 @@ export function DataTable({
           : { key: col.key, direction: 'asc' };
         renderBody();
         syncSortIndicators();
+        if (onSortChange) onSortChange({ ...sort });
       });
       headerButtons[col.key] = button;
       headerCells[col.key] = th;
@@ -247,6 +251,7 @@ export function DataTable({
     for (const row of sortedRows()) {
       const tr = document.createElement('tr');
       const key = rowKey(row);
+      tr.dataset.rowKey = String(key);
       if (selectedKey !== null && key === selectedKey) tr.classList.add('is-selected');
       if (rowClass) {
         const customClass = rowClass(row);
@@ -277,6 +282,7 @@ export function DataTable({
           const activator = document.createElement('button');
           activator.type = 'button';
           activator.className = 'data-table__row-activator';
+          if (rowAriaLabel) activator.setAttribute('aria-label', rowAriaLabel(row));
           if (cell instanceof Node) activator.appendChild(cell);
           else activator.appendChild(cellContent(cell));
           activator.addEventListener('click', (event) => {

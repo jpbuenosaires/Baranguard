@@ -38,6 +38,40 @@ import { DateRangePicker } from '../components/DateRangePicker.js';
 import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { formatManilaDate, formatManilaDateTime, formatManilaTimeSeconds, manilaDateKey } from '../utils/manilaTime.js';
+import {
+  formatAuditCode,
+  formatUserCode,
+  formatIncidentCode,
+  formatDispatchCode,
+  formatShiftCode,
+  formatCitizenReportCode,
+  formatSosCode,
+  formatSmsCode,
+  formatSchoolCode,
+  formatAccomplishmentCode,
+  formatAnnexDCode,
+  formatSwapCode,
+} from '../services/tanodWorkflowUi.js';
+
+function formatAuditEntity(entityType, entityId) {
+  if (!entityType) return '—';
+  if (entityId === null || entityId === undefined) return entityType;
+  switch (String(entityType).toLowerCase()) {
+    case 'incident': return formatIncidentCode(entityId);
+    case 'dispatch': return formatDispatchCode(entityId);
+    case 'shift': return formatShiftCode(entityId);
+    case 'user': return formatUserCode(entityId);
+    case 'citizen_report':
+    case 'report': return formatCitizenReportCode(entityId);
+    case 'sos': return formatSosCode(entityId);
+    case 'sms': return formatSmsCode(entityId);
+    case 'school': return formatSchoolCode(entityId);
+    case 'accomplishment_report': return formatAccomplishmentCode(entityId);
+    case 'annex_d': return formatAnnexDCode(entityId);
+    case 'swap': return formatSwapCode(entityId);
+    default: return `${entityType} #${entityId}`;
+  }
+}
 
 const PAGE_SIZE = 25;
 
@@ -271,11 +305,11 @@ function openAuditPrintModal({ items, totalItems, dateFrom, dateTo, categoryLabe
 
   const rowsHtml = items.map((item) => {
     const actor = item.actorUsername
-      ? `${item.actorUsername} (#${item.actorUserId ?? '—'})`
-      : (item.actorUserId ? `User #${item.actorUserId}` : 'SYSTEM');
+      ? `${item.actorUsername} (${item.actorUserId ? formatUserCode(item.actorUserId) : '—'})`
+      : (item.actorUserId ? formatUserCode(item.actorUserId) : 'SYSTEM');
     const actionName = actionText(item.action);
     const entityText = item.entityType
-      ? `${item.entityType}${item.entityId ? ` #${item.entityId}` : ''}`
+      ? formatAuditEntity(item.entityType, item.entityId)
       : '—';
     const metaEntries = item.metadataJson && typeof item.metadataJson === 'object'
       ? Object.entries(item.metadataJson).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join('; ')
@@ -283,7 +317,7 @@ function openAuditPrintModal({ items, totalItems, dateFrom, dateTo, categoryLabe
 
     return `
       <tr>
-        <td>#${escapeHtml(String(item.auditId))}</td>
+        <td>${escapeHtml(formatAuditCode(item.auditId))}</td>
         <td>${escapeHtml(formatManilaDateTime(item.createdAt, '—'))}</td>
         <td>${escapeHtml(actor)}</td>
         <td>${escapeHtml(actionName)}</td>
@@ -758,7 +792,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
     const titleEl = document.createElement('h3');
     titleEl.className = 'audit-modal-title';
     titleEl.id = 'audit-modal-title';
-    titleEl.innerHTML = `${icons.shield(18)}<span>Audit Event #${row.auditId}</span>`;
+    titleEl.innerHTML = `${icons.shield(18)}<span>${escapeHtml(formatAuditCode(row.auditId))}</span>`;
 
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
@@ -786,7 +820,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
       </div>
       <div class="audit-modal-field">
         <span class="audit-modal-label">Actor / Initiator</span>
-        <span class="audit-modal-value">${row.actorUserId !== null ? `${escapeHtml(row.actorUsername || 'User')} (#${row.actorUserId})` : 'System Daemon (Automated)'}</span>
+        <span class="audit-modal-value">${row.actorUserId !== null ? `${escapeHtml(row.actorUsername || 'User')} (${escapeHtml(formatUserCode(row.actorUserId))})` : 'System Daemon (Automated)'}</span>
       </div>
       <div class="audit-modal-field">
         <span class="audit-modal-label">Action</span>
@@ -796,7 +830,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
       </div>
       <div class="audit-modal-field">
         <span class="audit-modal-label">Target Entity</span>
-        <span class="audit-modal-value">${escapeHtml(row.entityType || 'General')}${row.entityId !== null ? ` #${escapeHtml(String(row.entityId))}` : ''}</span>
+        <span class="audit-modal-value">${escapeHtml(formatAuditEntity(row.entityType, row.entityId))}</span>
       </div>
     `;
 
@@ -930,11 +964,11 @@ function renderAuditCell(row, key, navigate) {
 
       const name = document.createElement('span');
       name.className = 'audit-actor-name';
-      name.textContent = row.actorUsername || `User #${row.actorUserId}`;
+      name.textContent = row.actorUsername || (row.actorUserId ? formatUserCode(row.actorUserId) : 'System');
 
       const id = document.createElement('span');
       id.className = 'audit-actor-id';
-      id.textContent = `#${row.actorUserId}`;
+      id.textContent = row.actorUserId ? formatUserCode(row.actorUserId) : 'System';
 
       info.append(name, id);
       wrap.append(avatarEl, info);
@@ -958,9 +992,10 @@ function renderAuditCell(row, key, navigate) {
         const chipBtn = document.createElement('button');
         chipBtn.type = 'button';
         chipBtn.className = 'audit-entity-chip audit-entity-chip--interactive';
-        chipBtn.title = `View Personnel #${row.entityId}`;
-        chipBtn.setAttribute('aria-label', `View Personnel #${row.entityId}`);
-        chipBtn.textContent = `User #${row.entityId} ↗`;
+        const userCode = formatUserCode(row.entityId);
+        chipBtn.title = `View Personnel (${userCode})`;
+        chipBtn.setAttribute('aria-label', `View Personnel ${userCode}`);
+        chipBtn.textContent = `${userCode} ↗`;
         chipBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           navigate('personnel', { userId: row.entityId });
@@ -968,7 +1003,7 @@ function renderAuditCell(row, key, navigate) {
         return chipBtn;
       }
 
-      const label = row.entityId !== null ? `${row.entityType} #${row.entityId}` : (row.entityType || '—');
+      const label = formatAuditEntity(row.entityType, row.entityId);
       chip.textContent = label;
       return chip;
     }

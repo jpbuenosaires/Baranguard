@@ -47,6 +47,7 @@ import { InfoTip } from '../components/Tooltip.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { formatManilaDate, formatManilaDateTime, formatManilaTime } from '../utils/manilaTime.js';
 import { INCIDENT_STATUS_LABELS } from '../utils/statusLabels.js';
+import { formatIncidentCode } from '../services/tanodWorkflowUi.js';
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -514,15 +515,45 @@ async function loadTanodsOnDuty(container, barangayId, role) {
  * is no approvals-count endpoint and none is invented). All four states:
  * skeleton, error with Retry, nothing pending / no authority, populated.
  */
+const APPROVAL_TILE_META = {
+  roster: {
+    category: 'Duty Roster',
+    hint: 'Review & publish schedule',
+    tone: 'blue',
+    icon: icons.calendar,
+    onNavigate: (navigate) => navigate('personnel', { tab: 'scheduler' }),
+  },
+  'reports-prepared': {
+    category: 'Monthly Reports',
+    hint: 'Print & sign on paper',
+    tone: 'amber',
+    icon: icons.fileText,
+    onNavigate: (navigate) => navigate('accomplishment-reports'),
+  },
+  'annex-d': {
+    category: 'DILG MC 2026-037',
+    hint: 'Prepare or submit term report',
+    tone: 'violet',
+    icon: icons.shield,
+    onNavigate: (navigate) => navigate('school-zones', { tab: 'term' }),
+  },
+};
+
 async function loadPendingApprovals(container, user, navigate) {
   const host = container.querySelector('[data-pending-approvals]');
   if (!host) return;
-  host.innerHTML = '<div class="skeleton skeleton--line" role="status" aria-label="Loading pending approvals"></div>';
+  const headerChip = container.querySelector('[data-approvals-total-chip]');
+  host.innerHTML = '<div class="dashboard-approvals-skeleton" role="status" aria-label="Loading pending approvals"><div class="skeleton skeleton--row"></div><div class="skeleton skeleton--row"></div><div class="skeleton skeleton--row"></div></div>';
   try {
     const authorities = await getOwnApprovalAuthority(user.userId, user.role);
     const isManager = user.role === 'admin' || user.role === 'secretary';
     if (authorities.length === 0 && !isManager) {
       host.innerHTML = '';
+      if (headerChip) {
+        headerChip.textContent = 'No authority';
+        headerChip.className = 'card-header__chip';
+        headerChip.hidden = false;
+      }
       const note = document.createElement('p');
       note.className = 'note';
       note.textContent = 'No approval authority is assigned to your account, so nothing is waiting on you. An Admin can assign one under Personnel.';
@@ -532,32 +563,87 @@ async function loadPendingApprovals(container, user, navigate) {
     const counts = await getPendingApprovalCounts(authorities, user.role);
     host.innerHTML = '';
     const total = counts.reduce((sum, c) => sum + c.count, 0);
+
+    if (headerChip) {
+      headerChip.hidden = false;
+      headerChip.textContent = total > 0 ? `${total} waiting` : 'All clear';
+      headerChip.className = `card-header__chip card-header__chip--${total > 0 ? 'warning' : 'success'}`;
+    }
+
     if (total === 0) {
+      const emptyBanner = document.createElement('div');
+      emptyBanner.className = 'dashboard-approvals-empty';
+      const emptyIcon = document.createElement('span');
+      emptyIcon.className = 'dashboard-approvals-empty__icon';
+      emptyIcon.setAttribute('aria-hidden', 'true');
+      emptyIcon.innerHTML = icons.checkCircle(18);
       const note = document.createElement('p');
       note.className = 'note';
       note.textContent = 'Nothing is waiting for you right now.';
-      host.appendChild(note);
+      emptyBanner.append(emptyIcon, note);
+      host.appendChild(emptyBanner);
     } else {
       const list = document.createElement('ul');
       list.className = 'dashboard-approvals-list';
-      for (const item of counts.filter((c) => c.count > 0)) {
+      for (const item of counts) {
+        const meta = APPROVAL_TILE_META[item.key] || {
+          category: 'Approval Queue',
+          hint: 'Open queue',
+          tone: 'cyan',
+          icon: icons.checkCircle,
+          onNavigate: (nav) => nav('approvals'),
+        };
+        const isPending = item.count > 0;
+
         const li = document.createElement('li');
         li.className = 'dashboard-approvals-list__item';
-        const label = document.createElement('span');
-        label.textContent = item.label;
+
+        const tile = document.createElement('button');
+        tile.type = 'button';
+        tile.className = `quick-action-tile dashboard-approval-tile dashboard-approval-tile--${meta.tone} ${isPending ? 'is-pending' : 'is-clear'}`;
+        tile.addEventListener('click', () => meta.onNavigate(navigate));
+
+        const headerRow = document.createElement('div');
+        headerRow.className = 'quick-action-tile__header';
+
+        const iconBadge = document.createElement('span');
+        iconBadge.className = `quick-action-tile__badge quick-action-tile__badge--${meta.tone}`;
+        iconBadge.setAttribute('aria-hidden', 'true');
+        iconBadge.innerHTML = meta.icon(20);
+
+        const rightMeta = document.createElement('div');
+        rightMeta.className = 'dashboard-approval-tile__meta-right';
+
         const value = document.createElement('strong');
+        value.className = `dashboard-approval-tile__count dashboard-approval-tile__count--${meta.tone} ${isPending ? 'is-pending' : 'is-clear'}`;
         value.textContent = String(item.count);
-        li.append(label, value);
+
+        const arrow = document.createElement('span');
+        arrow.className = 'quick-action-tile__arrow';
+        arrow.setAttribute('aria-hidden', 'true');
+        arrow.innerHTML = icons.arrowUpRight(14);
+
+        rightMeta.append(value, arrow);
+        headerRow.append(iconBadge, rightMeta);
+
+        const bodyCol = document.createElement('div');
+        bodyCol.className = 'quick-action-tile__body';
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'quick-action-tile__title';
+        titleSpan.textContent = item.label;
+
+        const subSpan = document.createElement('span');
+        subSpan.className = 'quick-action-tile__sub';
+        subSpan.textContent = `${meta.category} · ${isPending ? meta.hint : 'All caught up'}`;
+
+        bodyCol.append(titleSpan, subSpan);
+        tile.append(headerRow, bodyCol);
+        li.appendChild(tile);
         list.appendChild(li);
       }
       host.appendChild(list);
     }
-    const open = document.createElement('button');
-    open.type = 'button';
-    open.className = 'ghost';
-    open.textContent = 'Open Approvals';
-    open.addEventListener('click', () => navigate('approvals'));
-    host.appendChild(open);
   } catch (err) {
     host.innerHTML = '';
     const block = document.createElement('div');
@@ -864,12 +950,21 @@ function renderPopulated(container, summary, navigate, role) {
 /** The Pending Approvals card row; shared by the populated and empty states. */
 function pendingApprovalsRow(navigate) {
   const approvalsCard = document.createElement('div');
-  approvalsCard.className = 'card';
-  approvalsCard.appendChild(cardHeader(
-    'Pending Approvals', 'Waiting on you', icons.checkCircle,
+  approvalsCard.className = 'card dashboard-approvals-card';
+  const hdr = cardHeader(
+    'Pending Approvals',
+    'Items requiring your review, signature, or publication',
+    icons.checkCircle,
     'Duty rosters, accomplishment reports and Annex D term reports waiting for something only you are authorised to do.',
-    { label: 'Open Approvals', onClick: () => navigate('approvals') }
-  ));
+    { label: 'Open Approvals', onClick: () => navigate('approvals') },
+    { text: '…', tone: 'neutral' }
+  );
+  const chipEl = hdr.querySelector('.card-header__chip');
+  if (chipEl) {
+    chipEl.setAttribute('data-approvals-total-chip', '');
+    chipEl.hidden = true;
+  }
+  approvalsCard.appendChild(hdr);
   const approvalsHost = document.createElement('div');
   approvalsHost.setAttribute('data-pending-approvals', '');
   approvalsHost.setAttribute('aria-live', 'polite');
@@ -956,6 +1051,7 @@ function renderRecentIncidentsTable(host, items, navigate, role) {
     columns: RECENT_INCIDENTS_COLUMNS,
     rows: items,
     rowKey: (row) => row.incidentId,
+    rowAriaLabel: (row) => `#${row.incidentId}`,
     caption: 'Most recent incidents',
     // 2026-09-05 UX pass: this was the one list in the app whose rows led
     // nowhere — every other list (Incident Management, topbar
@@ -967,7 +1063,7 @@ function renderRecentIncidentsTable(host, items, navigate, role) {
         case 'id': {
           const badge = document.createElement('span');
           badge.className = 'incident-id-badge';
-          badge.textContent = `#${row.incidentId}`;
+          badge.textContent = formatIncidentCode(row.incidentId, row.displayId);
           return badge;
         }
         case 'type': {
@@ -1112,7 +1208,7 @@ function renderIncidentTypeDonutCard(counts, navigate) {
  */
 function renderQuickActionsCard(navigate) {
   const card = document.createElement('div');
-  card.className = 'card';
+  card.className = 'card quick-actions-card';
   card.appendChild(cardHeader(
     'Quick Actions', 'Common next steps', icons.plus,
     'Shortcuts to the most common tasks — nothing here does anything a full sidebar screen doesn’t already do.',
@@ -1152,7 +1248,7 @@ function renderQuickActionsCard(navigate) {
 
 function renderBreakdownCard(title, counts, labels, pillClasses, navigate) {
   const card = document.createElement('div');
-  card.className = 'card';
+  card.className = 'card breakdown-status-card';
 
   const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
 
@@ -1182,7 +1278,7 @@ function renderBreakdownCard(title, counts, labels, pillClasses, navigate) {
   }
 
   const list = document.createElement('div');
-  list.className = 'stack';
+  list.className = 'breakdown-status-grid';
   for (const [key, count] of Object.entries(counts)) {
     if (!CORE_STATUSES.has(key) && STATUS_LABELS[key] && count === 0) continue;
     const pct = total > 0 ? Math.round((count / total) * 100) : 0;

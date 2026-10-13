@@ -712,18 +712,16 @@ function renderReport(container, summary, role, navigate) {
     renderIncidentTypeDonutCard(summary.byIncidentType)
   );
 
-  const crossDomainGrid = document.createElement('div');
-  crossDomainGrid.className = 'two-col-grid dashboard-row';
-
+  let citizenCard = null;
   if (role === 'admin') {
-    const citizenCard = document.createElement('div');
-    citizenCard.className = 'card';
+    citizenCard = document.createElement('div');
+    citizenCard.className = 'card dashboard-row citizen-reports-card';
     citizenCard.setAttribute('data-citizen-card', '');
     citizenCard.appendChild(cardHeader(
-      'Citizen Reports',
-      'All submitted reports, all time',
+      'Citizen Reports Intake & Conversion',
+      'Citizen submission pipeline & triage efficiency (All time)',
       icons.messageSquare,
-      'Conversion tracking from citizen submissions into incidents — not scoped to the date range above.',
+      'Conversion tracking from citizen submissions into formalized incidents — not scoped to the date range above.',
       navigate ? { label: 'Review Inbox', onClick: () => navigate('citizen-inbox') } : null
     ));
     const citizenHost = document.createElement('div');
@@ -733,7 +731,6 @@ function renderReport(container, summary, role, navigate) {
     citizenHost.style.flex = '1';
     citizenHost.appendChild(Object.assign(document.createElement('div'), { className: 'skeleton skeleton--block' }));
     citizenCard.append(citizenHost);
-    crossDomainGrid.appendChild(citizenCard);
   }
 
   const analyticsGrid = document.createElement('div');
@@ -770,7 +767,7 @@ function renderReport(container, summary, role, navigate) {
   analyticsGrid.append(byHourCard, responseTimeCard);
 
   container.append(kpiGrid, insightsCard, trendCard, breakdownGrid);
-  if (role === 'admin') container.appendChild(crossDomainGrid);
+  if (citizenCard) container.appendChild(citizenCard);
   container.appendChild(analyticsGrid);
 }
 
@@ -827,13 +824,31 @@ function renderCitizenConversion(host, { totalReports, converted, unconverted })
   container.className = 'citizen-conversion-body';
   container.style.display = 'flex';
   container.style.flexDirection = 'column';
-  container.style.flex = '1';
-  container.style.height = '100%';
+  container.style.gap = 'var(--spacing-sm)';
 
-  // Multi-Segment Top Proportional Pipeline Strip
+  // Conversion Efficiency Hero Banner
+  const heroBanner = document.createElement('div');
+  heroBanner.className = 'conversion-hero-banner';
+  heroBanner.innerHTML = `
+    <div class="conversion-hero-banner__left">
+      <span class="conversion-hero-banner__badge ${convertedPct >= 50 ? 'conversion-hero-banner__badge--success' : 'conversion-hero-banner__badge--warning'}" aria-hidden="true">
+        ${icons.trendingUp(16)}
+      </span>
+      <div class="conversion-hero-banner__text">
+        <span class="conversion-hero-banner__title">Intake Conversion Efficiency</span>
+        <span class="conversion-hero-banner__caption">${converted} of ${totalReports} citizen submissions formalized into incidents</span>
+      </div>
+    </div>
+    <div class="conversion-hero-banner__right">
+      <span class="conversion-hero-banner__val">${convertedPct}%</span>
+      <span class="conversion-hero-banner__rate-label">Formalized</span>
+    </div>
+  `;
+  container.appendChild(heroBanner);
+
+  // Multi-Segment Proportional Pipeline Bar
   const pipelineBar = document.createElement('div');
   pipelineBar.className = 'pipeline-stacked-bar';
-  pipelineBar.style.marginBottom = 'var(--spacing-md)';
   pipelineBar.setAttribute('aria-hidden', 'true');
   if (converted > 0) {
     const seg = document.createElement('div');
@@ -853,92 +868,23 @@ function renderCitizenConversion(host, { totalReports, converted, unconverted })
   }
   container.appendChild(pipelineBar);
 
-  // Conversion Efficiency Hero Banner
-  const heroBanner = document.createElement('div');
-  heroBanner.className = 'conversion-hero-banner';
-  heroBanner.innerHTML = `
-    <div class="conversion-hero-banner__left">
-      <span class="conversion-hero-banner__badge ${convertedPct >= 50 ? 'conversion-hero-banner__badge--success' : 'conversion-hero-banner__badge--warning'}" aria-hidden="true">
-        ${icons.trendingUp(16)}
-      </span>
-      <div class="conversion-hero-banner__text">
-        <span class="conversion-hero-banner__title">Intake Conversion Efficiency</span>
-        <span class="conversion-hero-banner__caption">${converted} of ${totalReports} submissions converted into incidents</span>
-      </div>
-    </div>
-    <div class="conversion-hero-banner__right">
-      <span class="conversion-hero-banner__val">${convertedPct}%</span>
-      <span class="conversion-hero-banner__rate-label">Converted</span>
-    </div>
-  `;
-  container.appendChild(heroBanner);
-
-  // Structured Conversion Stage Rows with Progress Tracks
-  const list = document.createElement('div');
-  list.className = 'stack';
-  list.style.marginTop = 'var(--spacing-sm)';
-
-  const stages = [
-    {
-      label: 'Converted to Incident',
-      pillClass: 'status-pill--success',
-      fillClass: 'breakdown-progress-fill--resolved',
-      count: converted,
-      pct: convertedPct,
-    },
-    {
-      label: 'Awaiting Triage & Review',
-      pillClass: 'status-pill--pending',
-      fillClass: 'breakdown-progress-fill--pending',
-      count: unconverted,
-      pct: unconvertedPct,
-    },
-  ];
-
-  for (const stage of stages) {
-    const item = document.createElement('div');
-    item.className = 'breakdown-item';
-
-    const row = document.createElement('div');
-    row.className = 'breakdown-row';
-
-    const label = document.createElement('span');
-    label.innerHTML = `<span class="status-pill ${stage.pillClass}">${stage.label}</span>`;
-
-    const metrics = document.createElement('span');
-    metrics.className = 'breakdown-row__metrics';
-    metrics.innerHTML = `<span class="breakdown-row__value">${stage.count}</span> <span class="breakdown-row__pct">${stage.pct}%</span>`;
-    row.append(label, metrics);
-
-    const track = document.createElement('div');
-    track.className = 'breakdown-progress-track';
-    const fill = document.createElement('div');
-    fill.className = `breakdown-progress-fill ${stage.fillClass}`;
-    fill.style.width = `${stage.pct}%`;
-    track.appendChild(fill);
-
-    item.append(row, track);
-    list.appendChild(item);
-  }
-  container.appendChild(list);
-
-  // Clamped Operational Summary Footer
+  // Clean Dual Operational Summary Footer (Direct & Non-Redundant)
   const footer = document.createElement('div');
   footer.className = 'category-summary-footer';
   footer.innerHTML = `
     <div class="category-summary-tile">
       <span class="category-summary-tile__val">
         <span class="summary-tile-pip" style="background:var(--color-warning);" aria-hidden="true"></span>
-        ${unconverted} Pending Action
+        ${unconverted} Awaiting Review
       </span>
-      <span class="category-summary-tile__sub">${unconvertedPct}% awaiting triage</span>
+      <span class="category-summary-tile__sub">${unconvertedPct}% pending operational triage</span>
     </div>
     <div class="category-summary-tile">
       <span class="category-summary-tile__val">
         <span class="summary-tile-pip" style="background:var(--color-success);" aria-hidden="true"></span>
         ${converted} Formalized
       </span>
-      <span class="category-summary-tile__sub">Converted into incidents</span>
+      <span class="category-summary-tile__sub">${convertedPct}% converted to active incident record</span>
     </div>
   `;
   container.appendChild(footer);

@@ -183,7 +183,7 @@
 }
 
 .incident-table-wrap .data-table-wrap {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   height: 100%;
   max-height: 100%;
@@ -192,14 +192,14 @@
   position: relative;
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  display: flex;
-  flex-direction: column;
+  display: block !important;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--color-text-tertiary) 30%, transparent) transparent;
 }
 
 .incident-table-wrap .data-table-wrap .data-table {
-  flex: 1 0 auto;
+  width: 100%;
+  height: auto;
 }
 
 .incident-table-wrap .data-table-wrap::-webkit-scrollbar {

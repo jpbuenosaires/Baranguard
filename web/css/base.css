@@ -454,6 +454,12 @@ html { font-size: 100%; }
   --z-fullscreen: 9999;
   --z-confirm: 10050;
   --z-toast: 10100;
+
+  /* Standard 4-Tier Breakpoint Tokens (Layout scale contract) */
+  --screen-sm: 640px;
+  --screen-md: 768px;
+  --screen-lg: 1024px;
+  --screen-xl: 1440px;
 }
 
 /* Dark palette — only the tokens that actually need a different value in

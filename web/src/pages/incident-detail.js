@@ -39,6 +39,7 @@ import { SchoolC1Card, ReferralsCard, RelatedIncidentCard, resolveIncidentRefere
 import { reportChannelLabel } from '../utils/reportChannel.js';
 import { requireReason } from '../utils/reasonText.js';
 import { INCIDENT_STATUS_LABELS, DISPATCH_STATUS_LABELS as SHARED_DISPATCH_STATUS_LABELS } from '../utils/statusLabels.js';
+import { formatIncidentCode } from '../services/tanodWorkflowUi.js';
 
 const INCIDENT_TYPE_LABELS = {
   theft: 'Theft', physical_injury: 'Physical Injury', disturbance: 'Disturbance',
@@ -118,7 +119,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
   root.appendChild(shell.el);
 
   const pageHeader = PageHeader({
-    title: `Incident Record — #${incidentId}`,
+    title: `Incident Record — ${formatIncidentCode(incidentId)}`,
     subtitle: 'Incident particulars and response timeline',
     icon: icons.fileText,
   });
@@ -173,7 +174,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     content.append(body);
     body.innerHTML = '';
 
-    const incidentDisplayId = incident?.displayId || `#${incident?.incidentId || incidentId}`;
+    const incidentDisplayId = formatIncidentCode(incident?.incidentId || incidentId, incident?.displayId);
     const titleBlock = pageHeader.el.querySelector('.page-header__title');
     if (titleBlock) {
       titleBlock.innerHTML = `<span class="page-header__icon" aria-hidden="true">${icons.fileText(22)}</span> Incident Record — <span class="page-header__id-pill font-mono">${escapeHtml(incidentDisplayId)}</span>`;
@@ -215,7 +216,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     aside.appendChild(ReferralsCard({
       incidentId,
       canAdd: user.role === 'admin' || isSecretary,
-      incidentLabel: incident.displayId || `#${incidentId}`,
+      incidentLabel: formatIncidentCode(incidentId, incident.displayId),
     }));
     aside.appendChild(buildResponders());
     aside.appendChild(buildTimeline());
@@ -232,7 +233,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     const card = document.createElement('div');
     card.className = 'card case-hero';
 
-    const incidentDisplayId = incident?.displayId || `#${incident.incidentId}`;
+    const incidentDisplayId = formatIncidentCode(incident.incidentId, incident.displayId);
 
     // Header Row: Type + Icon + Badges
     const headerRow = document.createElement('div');
@@ -994,7 +995,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
         },
       });
       if (!targetRef) return;
-      const targetLabel = targetRef.displayId || `#${targetRef.incidentId}`;
+      const targetLabel = formatIncidentCode(targetRef.incidentId, targetRef.displayId);
       await confirmDialog({
         title: `Mark as duplicate of ${targetLabel}?`,
         description: describeIncidentRef(targetRef),
