@@ -294,6 +294,15 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
 
 **Four barangays, fixed:** Dao=1, Binanuahan=2, Marifosque=3, Banuyo=4.
 
+**Incident code `INC-YYYY-NNN` (`incident.display_id`, 0014; unique per barangay since 0043, 2026-10-14).** Numbered per
+barangay and per Asia/Manila year as MAX(existing number)+1 (locking read in the insert's transaction), so every barangay
+starts at 001 each year and a purged incident's number is never re-issued; NNN grows past 3 digits. It is NOT derivable
+from the numeric `incident_id`: never build it client-side. The API returns it as `display_id` (incidents, search results,
+sync results) or `incident_display_id` (dispatch, dispatch offers, SMS logs, citizen reports) and `entity_display_id`
+(audit log). A row without a stored code (older rows) is shown as `INC-#<id>` (web `formatIncidentCode`, mobile
+`formatIncidentCode`), visibly not an official code. Dispatch SMS/push carry `Ref: INC-...`. Referral `reference_no` is
+free text typed by staff (<= 64 chars); the `SIM-nnnn` values exist only in seeded data.
+
 **Relationship to DILG BIMSS — settled, do not re-litigate.** DILG
 BIMSS/BIMS is mandated for all barangays by Memorandum Circular; its
 KPIS subsystem already *is* the Katarungang Pambarangay case database
@@ -322,9 +331,13 @@ elsewhere means whichever list context makes clear.
 
 1. **`raw_narrative` never leaves the system.** Never to FCM, the SMS gateway, cloud, logs,
    terminal output, or audit metadata. **`GET /incidents/:id` is the only endpoint
-   that returns it, and only to a Secretary** (RA 7160 §394(c) makes the
-   Secretary the statutory records custodian — Admin gets *less* here on
-   purpose, don't "fix" that).
+   that returns it, and only to a Secretary or to an Admin on a WEB session.**
+   (RA 7160 §394(c) makes the Secretary the statutory records custodian.
+   **Amended 2026-10-13 by the owner:** the Chief Tanod (Admin) is the dispatcher
+   and must read the narrative and the party fields to brief a responding Tanod.
+   The Admin's DEVICE session, the phone console, still never receives them;
+   editing is unchanged, `complainant_name` stays Secretary-only; each read is
+   audited as `raw_narrative_viewed`, ids only.)
 2. **Every protected endpoint verifies role + tenant + ownership
    server-side.** No client-side check is a security boundary.
    Cross-tenant is **404, never 403** (403 confirms the resource exists).
@@ -369,8 +382,8 @@ elsewhere means whichever list context makes clear.
 
 | Role | Reach |
 |---|---|
-| **Admin** | Full operations / Chief Tanod's seat: dispatch, GPS, scheduler (drafts rosters, reviews availability), users (incl. editing official title and approval authorities), devices, audit log, service health, exports, Annex D preparation. Cannot read `raw_narrative` or run the Secretary lifecycle actions. May NOT change their OWN `approve_*` authorities (403; another Admin must). |
-| **Secretary** | **Records & Reports Officer** (redefined 2026-10-01): only reader of `raw_narrative` and the incident party fields; only role that may change an incident's lifecycle (duplicate/invalid/cancelled/reopened); also owns citizen reports, the school inventory (Annex B), the referral log, C-1 fields and preparing/filing annexes. A Kagawad has NO role of their own: they use a `secretary` account carrying approval authorities (open decision, see HANDOFF). |
+| **Admin** | Full operations / Chief Tanod's seat: dispatch, GPS, scheduler (drafts rosters, reviews availability), users (incl. editing official title and approval authorities), devices, audit log, service health, exports, Annex D preparation. Reads `raw_narrative` and the party fields on the web only (amended 2026-10-13, see Rule 1) but cannot edit them or run the Secretary lifecycle actions. May NOT change their OWN `approve_*` authorities (403; another Admin must). |
+| **Secretary** | **Records & Reports Officer** (redefined 2026-10-01): records custodian: reads `raw_narrative` and the incident party fields (the web Admin may read them too, amended 2026-10-13) and is the only one who edits the complainant name; only role that may change an incident's lifecycle (duplicate/invalid/cancelled/reopened); also owns citizen reports, the school inventory (Annex B), the referral log, C-1 fields and preparing/filing annexes. A Kagawad has NO role of their own: they use a `secretary` account carrying approval authorities (open decision, see HANDOFF). |
 | **Punong Barangay** | Oversight **plus approval** when granted authority: dashboard, map, heatmap, analytics, Approvals inbox, accomplishment reports, referral log, school zones (read). Still no evidence files and no list of cases (individual incidents still reachable from dashboard). |
 | **Tanod** | Mobile only. Own incidents/dispatches/**published** shifts, availability, accomplishment entries, referrals, school check-ins. Web login succeeds but lands on an honest "no screen" page. |
 | **Lupon** | **No system account at all** (DB-enum-only, never a login role). Baranguard no longer generates anything for them. |
