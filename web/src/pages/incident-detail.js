@@ -391,9 +391,9 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
             Complainant, respondent, and narrative details are <strong>${RESTRICTED_TO_SECRETARY}</strong> as designated records custodian.
           </p>
           <div class="dossier-privacy-shield__tags">
-            <span class="party-card__tag party-card__tag--complainant">Complainant: ${RESTRICTED_TO_SECRETARY}</span>
-            <span class="party-card__tag party-card__tag--respondent">Respondent: ${RESTRICTED_TO_SECRETARY}</span>
-            <span class="party-card__tag party-card__tag--narrative">Narrative: The narrative is restricted to the Barangay Secretary (RA 10173).</span>
+            <span class="party-card__tag privacy-pill party-card__tag--complainant">Complainant: ${RESTRICTED_TO_SECRETARY}</span>
+            <span class="party-card__tag privacy-pill party-card__tag--respondent">Respondent: ${RESTRICTED_TO_SECRETARY}</span>
+            <span class="party-card__tag privacy-pill party-card__tag--narrative">Narrative: The narrative is restricted to the Barangay Secretary (RA 10173).</span>
           </div>
         </div>
       `;
