@@ -116,6 +116,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     onLoggedOut();
   });
   const { header, content } = shell;
+  shell.el.classList.add('incident-detail-shell');
   root.appendChild(shell.el);
 
   const pageHeader = PageHeader({
@@ -811,11 +812,17 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       if (reached) {
         if (isLatest) {
           nodeClass += ' timeline__node--current';
+          node.innerHTML = '<span class="timeline__node-dot" aria-hidden="true"></span>';
         } else if (isResolved && i === visibleStages.length - 1) {
           nodeClass += ' timeline__node--resolved';
+          node.innerHTML = icons.check(11);
         } else {
           nodeClass += ' timeline__node--done';
+          node.innerHTML = icons.check(11);
         }
+      } else {
+        nodeClass += ' timeline__node--pending';
+        node.innerHTML = '<span class="timeline__node-hollow" aria-hidden="true"></span>';
       }
       node.className = nodeClass;
       rail.appendChild(node);

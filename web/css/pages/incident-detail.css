@@ -1801,9 +1801,45 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
 }
 
 /* ==========================================================================
-   Executive 2-Tab Master Console Overhaul
+   Executive Master Console: Proposal 9 Comprehensive Polish
    ========================================================================== */
 
+/* 1. Slim Executive Navigation Header */
+.incident-detail-shell .page-header {
+  padding: var(--spacing-xs) 0 !important;
+  margin-bottom: var(--spacing-xs) !important;
+  border-bottom: none !important;
+}
+
+.incident-detail-shell .page-header__subtitle {
+  display: none !important;
+}
+
+.incident-detail-shell .page-header__title {
+  font-size: var(--font-size-md) !important;
+  font-weight: 600 !important;
+  color: var(--color-text-secondary) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: var(--spacing-xs) !important;
+}
+
+.incident-detail-shell .page-header__icon {
+  display: none !important;
+}
+
+.incident-detail-shell .page-header__id-pill {
+  font-size: var(--font-size-sm) !important;
+  padding: 1px var(--spacing-xs) !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+.incident-detail-shell .page-header__actions .ghost {
+  padding: var(--spacing-2xs) var(--spacing-sm) !important;
+  font-size: var(--font-size-sm) !important;
+}
+
+/* 2. Master Console Card Container */
 .incident-console-card {
   display: flex;
   flex-direction: column;
@@ -1816,13 +1852,13 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   width: 100%;
 }
 
-/* 1. Persistent Console Header */
+/* 3. Persistent Hero Header */
 .console-hero-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: var(--spacing-md);
+  gap: var(--spacing-sm) var(--spacing-md);
 }
 
 .console-hero-header__left {
@@ -1834,8 +1870,24 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
 
 .console-hero-header__titles {
   display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2xs);
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.case-hero__title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.25;
+}
+
+.case-hero__badges {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
 }
 
 .console-hero-header__actions {
@@ -1893,21 +1945,85 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   gap: var(--spacing-xs);
 }
 
-/* 2. Accessible Tab Navigation */
+/* 4. Adaptive Responsive Metadata Strip */
+.meta-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--spacing-xs) var(--spacing-md);
+  padding: var(--spacing-2xs) 0 var(--spacing-sm) 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-divider);
+  border-radius: 0;
+  width: 100%;
+}
+
+.meta-strip .meta-tile {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-3xs) 0;
+  background: transparent;
+  border: none;
+  min-width: 0;
+}
+
+.meta-strip .meta-tile__icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.meta-strip .meta-tile__content {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: var(--spacing-3xs);
+  min-width: 0;
+}
+
+.meta-strip .meta-tile__label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.meta-strip .meta-tile__label::after {
+  content: ":";
+  margin-right: 2px;
+}
+
+.meta-strip .meta-tile__value {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 5. Accessible WAI-ARIA Tab Navigation */
 .console-tabs {
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
   border-bottom: 2px solid var(--color-divider);
   margin-top: var(--spacing-xs);
-  margin-bottom: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
 }
 
 .console-tab {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs);
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-md);
   border: none;
   background: transparent;
   color: var(--color-text-secondary);
@@ -1918,6 +2034,7 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   margin-bottom: -2px;
   transition: all 0.15s ease-in-out;
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  min-height: 2.25rem;
 }
 
 .console-tab:hover {
@@ -1943,7 +2060,7 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   color: inherit;
 }
 
-/* 3. Tab Panels */
+/* 6. Tab Panels */
 .console-panels {
   width: 100%;
 }
@@ -1964,7 +2081,262 @@ body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app,
   outline: none;
 }
 
-/* 4. Operations Body Subsections */
+/* 7. Enterprise Stepper Timeline */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  padding: var(--spacing-xs) 0;
+}
+
+.timeline__item {
+  position: relative;
+  display: flex;
+  gap: var(--spacing-md);
+  padding-bottom: var(--spacing-md);
+}
+
+.timeline__item:last-child {
+  padding-bottom: 0;
+}
+
+.timeline__rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 1.5rem;
+  flex-shrink: 0;
+}
+
+.timeline__node {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  border: 2px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  z-index: 2;
+  transition: all 0.2s ease;
+}
+
+.timeline__node svg {
+  display: block;
+}
+
+.timeline__node--done {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-white);
+  box-shadow: 0 0 6px rgba(29, 78, 216, 0.25);
+}
+
+.timeline__node--resolved {
+  border-color: var(--color-success);
+  background: var(--color-success);
+  color: var(--color-white);
+  box-shadow: 0 0 6px rgba(18, 132, 60, 0.25);
+}
+
+.timeline__node--current {
+  border-color: var(--color-link);
+  background: var(--tint-info-bg);
+  color: var(--color-link);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-link) 25%, transparent);
+}
+
+.timeline__node-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--color-link);
+}
+
+.timeline__node--pending {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+}
+
+.timeline__node-hollow {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--color-border);
+}
+
+.timeline__connector {
+  position: absolute;
+  top: 1.5rem;
+  bottom: 0;
+  width: 2px;
+  background: var(--color-divider);
+  z-index: 1;
+}
+
+.timeline__connector--done {
+  background: var(--color-primary);
+}
+
+.timeline__connector--resolved {
+  background: var(--color-success);
+}
+
+.timeline__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.timeline__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.timeline__label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.timeline__label--pending {
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.timeline__value {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono, inherit);
+}
+
+/* 8. Refined Confidential Records Protection Shield */
+.dossier-privacy-shield {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-primary);
+}
+
+.dossier-privacy-shield__icon {
+  color: var(--color-primary);
+  flex-shrink: 0;
+  margin-top: 2px;
+  display: inline-flex;
+}
+
+.dossier-privacy-shield__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3xs);
+  min-width: 0;
+  flex: 1;
+}
+
+.dossier-privacy-shield__header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+}
+
+.dossier-privacy-shield__title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.dossier-privacy-shield__citation {
+  font-size: var(--font-size-label);
+  font-weight: 600;
+  color: var(--color-primary);
+  background: var(--tint-info-bg);
+  padding: 1px var(--spacing-xs);
+  border-radius: var(--radius-xs);
+}
+
+.dossier-privacy-shield__desc {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin: 0;
+  line-height: 1.45;
+}
+
+.dossier-privacy-shield__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2xs);
+  margin-top: var(--spacing-3xs);
+}
+
+.privacy-pill {
+  font-size: var(--font-size-label) !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  padding: 2px var(--spacing-xs) !important;
+  border-radius: var(--radius-sm) !important;
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-border) !important;
+  color: var(--color-text-secondary) !important;
+  line-height: 1.35 !important;
+}
+
+/* 9. Seamless School C-1 embedded in Master Dossier */
+.case-dossier .case-card--school {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: var(--spacing-md) 0 0 0 !important;
+  border-top: 1px solid var(--color-divider) !important;
+  border-radius: 0 !important;
+  margin-top: var(--spacing-xs);
+}
+
+.case-card--school .case-card__header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-sm);
+}
+
+.case-card--school .case-card__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-xs);
+}
+
+.case-card--school .meta-tile__label {
+  font-size: var(--font-size-label);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.case-card--school .meta-tile__value {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-text-primary);
+  line-height: 1.5;
+}
+
+/* 10. Operations Body Subsections */
 .operations-body {
   display: flex;
   flex-direction: column;
