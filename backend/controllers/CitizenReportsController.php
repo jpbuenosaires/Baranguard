@@ -82,7 +82,8 @@ final class CitizenReportsController
         $total = (int) $countStmt->fetchColumn();
 
         $stmt = $pdo->prepare(
-            "SELECT report_id, description, contact_number, latitude, longitude, submitted_at, incident_id
+            "SELECT report_id, description, contact_number, latitude, longitude, submitted_at, incident_id,
+                    (SELECT i.display_id FROM incident i WHERE i.incident_id = citizen_report.incident_id) AS incident_display_id
              FROM citizen_report
              WHERE {$whereSql}
              ORDER BY submitted_at DESC
@@ -105,6 +106,7 @@ final class CitizenReportsController
                 'longitude' => $row['longitude'] !== null ? (float) $row['longitude'] : null,
                 'submitted_at' => $row['submitted_at'],
                 'incident_id' => $row['incident_id'] !== null ? (int) $row['incident_id'] : null,
+                'incident_display_id' => $row['incident_display_id'] ?? null,
             ];
         }, $rows);
 
@@ -206,7 +208,7 @@ final class CitizenReportsController
                     break;
                 } catch (\PDOException $e) {
                     $attempts++;
-                    if ($attempts >= 3 || !str_contains($e->getMessage(), 'uq_incident_display_id')) {
+                    if ($attempts >= 3 || !IncidentsController::isDisplayIdCollision($e)) {
                         throw $e;
                     }
                 }

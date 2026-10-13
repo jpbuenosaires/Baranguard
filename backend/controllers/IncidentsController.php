@@ -452,12 +452,15 @@ final class IncidentsController
      * requiring reporter or assigned-dispatch relationship."
      *
      * **This is the only endpoint in the system that returns
-     * `raw_narrative`, and only to a Secretary.** §3 explains why the
-     * higher-privileged Admin gets less here than the Secretary does: RA
-     * 7160 §394(c) makes the Barangay Secretary the statutory custodian
-     * of barangay records, so raw-narrative access follows the legal
-     * custodian, not the system's privilege ladder. Do not "fix" that by
-     * adding admin to the raw-narrative branch.
+     * `raw_narrative`, and only to a Secretary or to an Admin on a WEB
+     * session.** RA 7160 §394(c) makes the Barangay Secretary the statutory
+     * custodian of barangay records. Until 2026-10-13 the Admin got less
+     * here on purpose; the owner then decided the Chief Tanod (the
+     * dispatcher) must read the narrative and party fields in order to
+     * brief a responding Tanod (REFERENCE.md Rule 1, amended). The Admin's
+     * DEVICE session (the phone console, SessionPolicy::KIND_DEVICE) is
+     * deliberately NOT included: the narrative stays off phones. Editing is
+     * unchanged: `complainant_name` is still Secretary-only (PATCH).
      *
      * Built in Sprint 6 because W8 (AI Redaction Review) shows raw vs
      * draft side by side and had no way to obtain the raw side.
@@ -670,13 +673,16 @@ final class IncidentsController
         ];
 
         // The one raw-narrative disclosure in the system. Added LAST and
-        // only for the Secretary, so the allow-listed payload above is the
-        // default and raw access is the explicit exception.
-        if ($identity['role'] === 'secretary') {
+        // only for the Secretary and the web-session Admin, so the
+        // allow-listed payload above is the default and raw access is the
+        // explicit exception.
+        $isWebAdmin = $identity['role'] === 'admin'
+            && (string) ($identity['session_kind'] ?? '') !== \Baranguard\Services\Auth\SessionPolicy::KIND_DEVICE;
+        if ($identity['role'] === 'secretary' || $isWebAdmin) {
             $payload['raw_narrative'] = $incident['raw_narrative'];
 
-            // Party fields (migration 0008) carry the same Secretary-only
-            // protection as raw_narrative itself.
+            // Party fields (migration 0008) carry the same protection as
+            // raw_narrative itself (Secretary and web-session Admin only).
             $payload['complainant_name'] = $incident['complainant_name'];
             $payload['respondent_name'] = $incident['respondent_name'];
             $payload['complainant_contact_number'] = $incident['complainant_contact_number'];
@@ -1847,7 +1853,7 @@ final class IncidentsController
                     break;
                 } catch (\PDOException $e) {
                     $attempts++;
-                    if ($attempts >= 3 || !str_contains($e->getMessage(), 'uq_incident_display_id')) {
+                    if ($attempts >= 3 || !self::isDisplayIdCollision($e)) {
                         throw $e;
                     }
                 }
@@ -1895,11 +1901,17 @@ final class IncidentsController
     }
 
     /**
-     * §5 has no dedicated sequence-per-scope table; a barangay logbook
-     * number is computed as COUNT(*)+1 scoped to barangay+year, inside
-     * the same transaction as the insert that will consume it. Shared by
-     * `createWeb()`/`createMobileItem()` (prefix `INC`). See migration
-     * 0014's own comment for the accepted concurrency tradeoff.
+     * The next `INC-YYYY-NNN` for one barangay and one Manila year:
+     * MAX(existing number)+1, read with a LOCKING read (`FOR UPDATE`) inside
+     * the transaction of the insert that will consume it. (Until 2026-10-14 this
+     * was COUNT(*)+1 over a plain read: a purge lowered the count and re-issued
+     * a code another incident still held, and two simultaneous filings read the
+     * same count.) The locking read sees the latest committed rows, so a retry
+     * after a collision recomputes from fresh data, and it serialises concurrent
+     * filings of the same barangay and year. Numbering is per barangay and per
+     * year; uniqueness is (barangay_id, display_id), migration 0043. Shared by
+     * `createWeb()`/`createMobileItem()` and the citizen-report convert
+     * (prefix `INC`).
      */
     public static function nextDisplayId(PDO $pdo, int $barangayId, string $prefix, string $table = 'incident', string $dateColumn = 'created_at'): string
     {
@@ -1914,12 +1926,20 @@ final class IncidentsController
         // uses (Rule 11: never CONVERT_TZ(), which needs tz tables this
         // stock XAMPP install doesn't load).
         $year = (int) (new \DateTimeImmutable('now', new \DateTimeZone('Asia/Manila')))->format('Y');
-        $countStmt = $pdo->prepare(
-            "SELECT COUNT(*) FROM {$table} WHERE barangay_id = :barangay_id AND YEAR(DATE_ADD({$dateColumn}, INTERVAL 8 HOUR)) = :year"
+        $maxStmt = $pdo->prepare(
+            "SELECT MAX(CAST(SUBSTRING_INDEX(display_id, '-', -1) AS UNSIGNED)) FROM {$table}
+             WHERE barangay_id = :barangay_id AND display_id LIKE :prefix FOR UPDATE"
         );
-        $countStmt->execute(['barangay_id' => $barangayId, 'year' => $year]);
-        $seq = (int) $countStmt->fetchColumn() + 1;
+        $maxStmt->execute(['barangay_id' => $barangayId, 'prefix' => sprintf('%s-%d-%%', $prefix, $year)]);
+        $seq = (int) $maxStmt->fetchColumn() + 1;
         return sprintf('%s-%d-%03d', $prefix, $year, $seq);
+    }
+
+    /** True when a failed insert was the display-code uniqueness rule (old global key or the per-barangay key from 0043). */
+    public static function isDisplayIdCollision(\PDOException $e): bool
+    {
+        $m = $e->getMessage();
+        return str_contains($m, 'uq_incident_display_id') || str_contains($m, 'uq_incident_barangay_display');
     }
 
     /**
@@ -2078,7 +2098,7 @@ final class IncidentsController
                     break;
                 } catch (\PDOException $e) {
                     $attempts++;
-                    if ($attempts >= 3 || !str_contains($e->getMessage(), 'uq_incident_display_id')) {
+                    if ($attempts >= 3 || !self::isDisplayIdCollision($e)) {
                         throw $e;
                     }
                 }

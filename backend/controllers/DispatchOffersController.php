@@ -72,7 +72,7 @@ final class DispatchOffersController
             $nowDb = OfferService::now()->format('Y-m-d H:i:s');
             $stmt = $pdo->prepare(
                 "SELECT o.offer_id, o.incident_id, o.status, o.created_at, o.expires_at,
-                        i.incident_type, i.priority, b.name AS barangay_name
+                        i.incident_type, i.priority, i.display_id AS incident_display_id, b.name AS barangay_name
                    FROM dispatch_offer o
                    JOIN dispatch_offer_recipient r ON r.offer_id = o.offer_id AND r.user_id = :user_id
                    JOIN incident i ON i.incident_id = o.incident_id
@@ -90,6 +90,7 @@ final class DispatchOffersController
             $items = array_map(static fn (array $row): array => [
                 'offer_id' => (int) $row['offer_id'],
                 'incident_id' => (int) $row['incident_id'],
+                'incident_display_id' => $row['incident_display_id'] ?? null,
                 'incident_type' => $row['incident_type'],
                 'priority' => $row['priority'],
                 'barangay_name' => $row['barangay_name'],
@@ -121,7 +122,7 @@ final class DispatchOffersController
         $stmt = $pdo->prepare(
             "SELECT o.offer_id, o.incident_id, o.status, o.`round`, o.created_at, o.expires_at, o.closed_at,
                     o.accepted_by, o.accepted_dispatch_id, o.created_by,
-                    i.incident_type, i.priority, b.name AS barangay_name,
+                    i.incident_type, i.priority, i.display_id AS incident_display_id, b.name AS barangay_name,
                     u.full_name AS accepted_by_name,
                     (SELECT COUNT(*) FROM dispatch_offer_recipient r WHERE r.offer_id = o.offer_id) AS recipient_count,
                     (SELECT COUNT(*) FROM dispatch_offer_recipient r WHERE r.offer_id = o.offer_id AND r.status = 'offered') AS offered_count,
@@ -146,6 +147,7 @@ final class DispatchOffersController
         $items = array_map(static fn (array $row): array => [
             'offer_id' => (int) $row['offer_id'],
             'incident_id' => (int) $row['incident_id'],
+            'incident_display_id' => $row['incident_display_id'] ?? null,
             'incident_type' => $row['incident_type'],
             'priority' => $row['priority'],
             'barangay_name' => $row['barangay_name'],

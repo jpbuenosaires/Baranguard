@@ -67,20 +67,24 @@ final class SearchController
         // non-matching query is an empty result, not an error, so the
         // shared top-bar search box keeps working for page shortcuts.
         if ($identity['role'] === 'punong_barangay') {
-            $digits = ctype_digit($q) ? $q : (preg_match('/^INC-0*(\d+)$/i', $q, $m) === 1 ? $m[1] : null);
+            // `INC-#159` is what the screens show for an incident that has no stored code yet; the number is the row id.
+            $digits = ctype_digit($q) ? $q : (preg_match('/^INC-#?0*(\d+)$/i', $q, $m) === 1 ? $m[1] : null);
             $where[] = $digits !== null
                 ? '(incident_id = :exact_id OR display_id = :exact_display)'
                 : 'display_id = :exact_display';
             if ($digits !== null) {
                 $params['exact_id'] = (int) $digits;
             }
-            $params['exact_display'] = $q;
+            $params['exact_display'] = strtoupper($q);
             self::sendResults($pdo, implode(' AND ', $where), $params);
             return;
         }
 
-        $matchClauses = ['CAST(incident_id AS CHAR) LIKE :q_id'];
+        // The number staff see and say is the display code (INC-2026-159), so it must be searchable as typed;
+        // before 2026-10-14 only the numeric row id matched, so typing a code found nothing for Admin/Secretary/Tanod.
+        $matchClauses = ['CAST(incident_id AS CHAR) LIKE :q_id', 'display_id LIKE :q_display'];
         $params['q_id'] = '%' . $q . '%';
+        $params['q_display'] = '%' . $q . '%';
 
         $qLower = strtolower($q);
         $matchedTypes = array_values(array_filter(self::INCIDENT_TYPES, static fn ($t) => str_contains($t, $qLower) || str_contains(str_replace('_', ' ', $t), $qLower)));
@@ -113,7 +117,7 @@ final class SearchController
     private static function sendResults(PDO $pdo, string $whereSql, array $params): void
     {
         $stmt = $pdo->prepare(
-            "SELECT incident_id, incident_type, status, priority, report_channel, related_incident_id, created_at
+            "SELECT incident_id, display_id, incident_type, status, priority, report_channel, related_incident_id, created_at
              FROM incident
              WHERE {$whereSql}
              ORDER BY created_at DESC
@@ -128,6 +132,7 @@ final class SearchController
         $items = array_map(static function (array $row): array {
             return [
                 'incident_id' => (int) $row['incident_id'],
+                'display_id' => $row['display_id'] ?? null,
                 'incident_type' => $row['incident_type'],
                 'status' => $row['status'],
                 'priority' => $row['priority'],

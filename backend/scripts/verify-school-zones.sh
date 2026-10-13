@@ -623,7 +623,7 @@ expect_eq "$(printf '%s' "$ALLJSON" | grep -ciE 'student|victim|pupil')" "0" "No
 call GET "/reports/school-term?term_start=2026-03-01&term_end=2026-03-31" "$ADMIN"
 expect_eq "$(printf '%s' "$BODY" | grep -ciE 'raw_narrative|latitude|longitude|contact|complainant')" "0" "Annex D computation carries counts only -- no narrative, coordinates or contact data"
 call GET /incidents/$INC_A "$ADMIN"
-expect_eq "$([ -z "$(jf raw_narrative)" ] && echo withheld)" "withheld" "Admin still never receives raw_narrative from show() (Rule 1 unchanged)"
+expect_eq "$([ -n "$(jf raw_narrative)" ] && echo returned)" "returned" "Admin (web session) receives raw_narrative from show() (Rule 1 amended 2026-10-13; the phone session still does not)"
 
 # ============================================================
 echo
