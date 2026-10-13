@@ -38,6 +38,7 @@ import { cacheDispatchesFromServer, getCachedDispatch } from '../services/db/dis
 import { useDispatchOffers } from '../services/useDispatchOffers';
 import { uuid } from '../services/uuid';
 import { formatCountdown, incidentTypeLabel } from '../utils/dispatchOfferFormat';
+import { formatIncidentCode } from '../utils/incidentCode';
 import { formatManilaTime } from '../utils/manilaTime';
 import tacticalFeedback from '../utils/tacticalFeedback';
 
@@ -157,7 +158,7 @@ const DispatchOfferCards: React.FC = () => {
                 <h3 className="wf-card__title">{typeLabel}</h3>
                 <span className="wf-card__sub dispatch-offer-card__meta">
                   <IonIcon icon={locationOutline} aria-hidden="true" />
-                  <span>Barangay {offer.barangayName}</span>
+                  <span>{formatIncidentCode({ displayId: offer.incidentDisplayId, serverIncidentId: offer.incidentId })} &bull; Barangay {offer.barangayName}</span>
                   {Number.isFinite(raisedAt) && (
                     <>
                       <span aria-hidden="true">&bull;</span>

@@ -52,6 +52,7 @@ import { getEvidenceCountsByIncident } from '../services/db/evidenceRepository';
 import { runSyncPass } from '../services/syncService';
 import type { IncidentLocalRow } from '../services/db/localSchema';
 import tacticalFeedback from '../utils/tacticalFeedback';
+import { formatIncidentCode, localReportRef } from '../utils/incidentCode';
 
 const SYNC_STATE_META: Record<SyncState, { label: string; pillClass: string; icon: typeof cloudUploadOutline }> = {
   saved_locally: { label: 'Saved Offline', pillClass: 'status-pill--pending', icon: cloudUploadOutline },
@@ -490,7 +491,7 @@ const MyReportsPage: React.FC = () => {
                         <div className="report-blotter-bottom">
                           <div className="report-blotter-meta-left">
                             <span className="report-blotter-case">
-                              {row.server_incident_id !== null ? `#${row.server_incident_id}` : `#${row.client_event_id.slice(0, 6)}`}
+                              {formatIncidentCode({ displayId: row.display_id, serverIncidentId: row.server_incident_id }) ?? localReportRef(row.client_event_id)}
                             </span>
 
                             {row.latitude !== null && row.longitude !== null && (

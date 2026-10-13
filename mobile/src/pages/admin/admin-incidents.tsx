@@ -12,6 +12,7 @@ import { Banner } from '../../components/WorkflowBits';
 import { AdminIncidentSheet } from '../../components/AdminBits';
 import { formatServerTime, humanize, NEEDS_CONNECTION } from '../../components/adminFormat';
 import { useOnline } from '../../components/useOnline';
+import { formatIncidentCode } from '../../utils/incidentCode';
 import { adminErrorMessage, getAdminIncidents, type AdminIncidentListItem } from '../../services/apiService';
 
 const AdminIncidentsPage: React.FC = () => {
@@ -62,7 +63,7 @@ const AdminIncidentsPage: React.FC = () => {
           {items?.map((i) => (
             <button key={i.incidentId} type="button" className="wf-card wf-card--tap" onClick={() => setOpenId(i.incidentId)}>
               <div className="wf-card__head">
-                <strong className="wf-card__title">{i.displayId ?? `Incident #${i.incidentId}`}</strong>
+                <strong className="wf-card__title">{formatIncidentCode({ displayId: i.displayId, serverIncidentId: i.incidentId })}</strong>
                 <span className="status-pill status-pill--info">{humanize(i.status)}</span>
               </div>
               <div className="wf-card__sub">

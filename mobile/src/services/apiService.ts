@@ -586,6 +586,8 @@ export interface DispatchEntry {
   status: DispatchStatus;
   /** Redacted-safe fields joined in from the incident (Sprint 3 addition — see DispatchController.php's class doc). */
   incidentType: string | null;
+  /** Official INC-YYYY-NNN code if the server ever includes it on dispatch items (GET /dispatch does not today). */
+  incidentDisplayId: string | null;
   latitude: number | null;
   longitude: number | null;
   dispatchedAt: string;
@@ -621,6 +623,7 @@ function mapDispatch(json: {
     routeStatus: json.route_status,
     status: json.status,
     incidentType: json.incident_type ?? null,
+    incidentDisplayId: (json as { incident_display_id?: string | null }).incident_display_id ?? null,
     latitude: json.latitude ?? null,
     longitude: json.longitude ?? null,
     dispatchedAt: json.dispatched_at,
@@ -1066,6 +1069,8 @@ export interface SyncSosItem {
 export interface SyncBatchResult {
   clientEventId: string;
   serverId: number | null;
+  /** Official INC-YYYY-NNN code; present on incident results (success and duplicate). */
+  displayId: string | null;
   status: 'success' | 'duplicate' | 'failed';
   reason?: string;
 }
@@ -1093,7 +1098,7 @@ export async function syncBatch(params: {
   // this single /sync/batch request's headers, not per-item.
   const headers = await deviceAuthHeaders('POST', '/sync/batch', params.deviceId);
   const json = await request<{
-    results: { client_event_id: string; server_id: number | null; status: string; reason?: string }[];
+    results: { client_event_id: string; server_id: number | null; display_id?: string | null; status: string; reason?: string }[];
   }>('/sync/batch', {
     method: 'POST',
     headers,
@@ -1113,6 +1118,7 @@ export async function syncBatch(params: {
   return json.results.map((r) => ({
     clientEventId: r.client_event_id,
     serverId: r.server_id,
+    displayId: typeof r.display_id === 'string' ? r.display_id : null,
     status: r.status as SyncBatchResult['status'],
     reason: r.reason,
   }));
@@ -1494,6 +1500,8 @@ export interface DispatchOfferEntry {
   /** Raw `incident_type` enum value (e.g. `medical_emergency`) — label it for display. */
   incidentType: string;
   priority: string | null;
+  /** Official INC-YYYY-NNN code, null if the server did not send one. */
+  incidentDisplayId: string | null;
   barangayName: string;
   createdAt: string;
   expiresAt: string;
@@ -1505,6 +1513,7 @@ interface RawDispatchOffer {
   incident_id: number;
   incident_type: string;
   priority?: string | null;
+  incident_display_id?: string | null;
   barangay_name: string;
   created_at: string;
   expires_at: string;
@@ -1519,6 +1528,7 @@ export async function getOpenDispatchOffers(): Promise<DispatchOfferEntry[]> {
     incidentId: row.incident_id,
     incidentType: row.incident_type,
     priority: row.priority ?? null,
+    incidentDisplayId: row.incident_display_id ?? null,
     barangayName: row.barangay_name,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
@@ -1800,6 +1810,12 @@ export async function getAdminIncident(incidentId: number): Promise<AdminInciden
   };
 }
 
+/** GET /incidents/:id, only the official code. Null if the server did not send one. */
+export async function getIncidentDisplayId(incidentId: number): Promise<string | null> {
+  const j = await request<Record<string, unknown>>(`/incidents/${incidentId}`);
+  return strOrNull(j.display_id);
+}
+
 export interface AdminIncidentListItem {
   incidentId: number;
   displayId: string | null;
@@ -1829,6 +1845,7 @@ export interface AdminOfferEntry {
   incidentId: number;
   incidentType: string | null;
   priority: string | null;
+  incidentDisplayId: string | null;
   status: string;
   round: number;
   createdAt: string;
@@ -1849,6 +1866,7 @@ export async function getAdminOffers(): Promise<AdminOfferEntry[]> {
       incident_id: number;
       incident_type: string | null;
       priority: string | null;
+      incident_display_id?: string | null;
       status: string;
       round: number;
       created_at: string;
@@ -1863,6 +1881,7 @@ export async function getAdminOffers(): Promise<AdminOfferEntry[]> {
     incidentId: r.incident_id,
     incidentType: r.incident_type,
     priority: r.priority,
+    incidentDisplayId: r.incident_display_id ?? null,
     status: r.status,
     round: r.round ?? 0,
     createdAt: r.created_at,

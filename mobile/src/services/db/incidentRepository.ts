@@ -213,11 +213,15 @@ export async function listUnsyncedIncidents(): Promise<IncidentLocalRow[]> {
  * without one — treated the same as a reconciled duplicate by
  * `deriveSyncState` above, never as an error.
  */
-export async function markIncidentSynced(clientEventId: string, serverId: number | null): Promise<void> {
+export async function markIncidentSynced(
+  clientEventId: string,
+  serverId: number | null,
+  displayId: string | null = null
+): Promise<void> {
   const db = await openLocalDatabase();
   await db.run(
-    'UPDATE incident_local SET synced = 1, server_incident_id = ?, last_sync_error = NULL WHERE client_event_id = ?',
-    [serverId, clientEventId],
+    'UPDATE incident_local SET synced = 1, server_incident_id = ?, display_id = COALESCE(?, display_id), last_sync_error = NULL WHERE client_event_id = ?',
+    [serverId, displayId, clientEventId],
     /* transaction */ false
   );
 }

@@ -18,11 +18,13 @@ import {
   cancelDispatch,
   cancelDispatchOffer,
   getAdminDispatches,
+  getAdminIncidents,
   getAdminOffers,
   type AdminDispatchEntry,
   type AdminOfferEntry,
 } from '../../services/apiService';
 import { uuid } from '../../services/uuid';
+import { formatIncidentCode } from '../../utils/incidentCode';
 
 const LIVE_OFFER_STATUSES = ['open', 'escalated'];
 
@@ -33,6 +35,7 @@ const AdminDispatchPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [offersError, setOffersError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [codes, setCodes] = useState<Record<number, string>>({});
   const [openIncidentId, setOpenIncidentId] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -53,6 +56,15 @@ const AdminDispatchPage: React.FC = () => {
     if (o.status === 'fulfilled') setOffers(o.value);
     else setOffersError(adminErrorMessage(o.reason, 'Could not load offers.'));
     setLoading(false);
+    // Dispatch/offer payloads carry no display_id; the incident list does.
+    try {
+      const list = await getAdminIncidents();
+      const map: Record<number, string> = {};
+      for (const i of list) if (i.displayId) map[i.incidentId] = i.displayId;
+      setCodes(map);
+    } catch {
+      // keep the unofficial INC-#id fallback
+    }
   }, []);
 
   useEffect(() => {
@@ -128,7 +140,7 @@ const AdminDispatchPage: React.FC = () => {
                 <span className="status-pill status-pill--info">{humanize(d.status)}</span>
               </div>
               <div className="wf-card__sub">
-                Incident #{d.incidentId} · {humanize(d.incidentType)} · {humanize(d.priority)}
+                {formatIncidentCode({ displayId: d.incidentDisplayId ?? codes[d.incidentId], serverIncidentId: d.incidentId })} · {humanize(d.incidentType)} · {humanize(d.priority)}
               </div>
               <div className="wf-card__sub">Dispatched: {formatServerTime(d.dispatchedAt)}</div>
               <div className="wf-row">
@@ -158,7 +170,7 @@ const AdminDispatchPage: React.FC = () => {
             <div key={o.offerId} className="wf-card">
               <div className="wf-card__head">
                 <strong className="wf-card__title">
-                  Incident #{o.incidentId} · {humanize(o.incidentType)}
+                  {formatIncidentCode({ displayId: o.incidentDisplayId ?? codes[o.incidentId], serverIncidentId: o.incidentId })} · {humanize(o.incidentType)}
                 </strong>
                 <span className={`status-pill ${LIVE_OFFER_STATUSES.includes(o.status) ? 'status-pill--pending' : 'status-pill--neutral'}`}>
                   {o.status}

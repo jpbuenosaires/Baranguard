@@ -50,7 +50,7 @@
  * unsynced field captures, which Rule 2 ("offline capture is durable
  * until reconciliation") forbids.
  */
-export const LOCAL_SCHEMA_VERSION = 6;
+export const LOCAL_SCHEMA_VERSION = 7;
 
 /** Statements for schema version 1 (Sprint 2 baseline cut). */
 const MIGRATION_001_BASELINE: readonly string[] = [
@@ -415,6 +415,18 @@ const MIGRATION_006_TANOD_WORKFLOW: readonly string[] = [
 ];
 
 /**
+ * Statements for schema version 7: the official incident code. `display_id`
+ * (INC-YYYY-NNN) is assigned by the server per barangay and year, so it cannot
+ * be derived from the numeric id. NULL = not known yet (never synced, or
+ * synced but not yet fetched); screens then show "Saved on Phone" / "INC-#id".
+ * ADD COLUMN only: queued offline writes are untouched (Rule 7).
+ */
+const MIGRATION_007_INCIDENT_DISPLAY_ID: readonly string[] = [
+  `ALTER TABLE incident_local ADD COLUMN display_id TEXT NULL`,
+  `ALTER TABLE dispatch_local ADD COLUMN incident_display_id TEXT NULL`,
+];
+
+/**
  * Ordered migrations. Index 0 takes the DB from user_version 0 -> 1,
  * index 1 takes it 1 -> 2, and so on. Append only — never edit a
  * released entry (same rule as the backend's completed migration files).
@@ -426,6 +438,7 @@ export const LOCAL_MIGRATIONS: readonly (readonly string[])[] = [
   MIGRATION_004_EVIDENCE_SYNC_TRACKING,
   MIGRATION_005_SYNC_FAILURE_CAPS,
   MIGRATION_006_TANOD_WORKFLOW,
+  MIGRATION_007_INCIDENT_DISPLAY_ID,
 ];
 
 /** Every table this cut is responsible for, for assertions/diagnostics. */
@@ -483,6 +496,8 @@ export interface IncidentLocalRow {
   c1_summary: string | null;
   c1_action_taken: string | null;
   c1_status_notes: string | null;
+  /** Official incident code INC-YYYY-NNN from the server (migration 7); null until known. */
+  display_id: string | null;
 }
 
 export interface MobileDeviceLocalRow {
@@ -556,6 +571,8 @@ export interface DispatchLocalRow {
   /** ISO 8601 UTC string — past this, the UI must label the cache stale/last-known (§9 M6). */
   stale_after: string;
   synced: number;
+  /** Official code of the dispatch's incident (migration 7); null until known. */
+  incident_display_id: string | null;
 }
 
 export interface GpsTrackLocalRow {
