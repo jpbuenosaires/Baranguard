@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { IonIcon } from '@ionic/react';
 import { alertCircleOutline, closeOutline, refreshOutline, shieldCheckmarkOutline } from 'ionicons/icons';
 import tacticalFeedback from '../../utils/tacticalFeedback';
@@ -49,6 +49,22 @@ const MapFilterSheet: React.FC<Props> = ({
 }) => {
   const patch = (p: Partial<AdvancedFilterState>) => setFilters((prev) => ({ ...prev, ...p }));
 
+  // This sheet is a plain dialog, not an Ionic modal, so the hardware Back handler cannot see it: claim Back here,
+  // or Back would leave the map with the sheet still open.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const onBack = (e: Event) => {
+      e.preventDefault();
+      closeRef.current();
+    };
+    window.addEventListener('baranguard:hardware-back', onBack);
+    return () => window.removeEventListener('baranguard:hardware-back', onBack);
+  }, []);
+
+  // Drag the header down to dismiss, the same gesture as every other bottom sheet.
+  const dragStartY = useRef<number | null>(null);
+
   return (
     <>
       <div
@@ -60,7 +76,17 @@ const MapFilterSheet: React.FC<Props> = ({
         aria-hidden="true"
       />
       <div className="live-map-filter-sheet" role="dialog" aria-modal="true" aria-labelledby="filter-sheet-title">
-        <div className="live-map-filter-sheet__header">
+        <div
+          className="live-map-filter-sheet__header"
+          onTouchStart={(e) => {
+            dragStartY.current = e.touches[0].clientY;
+          }}
+          onTouchEnd={(e) => {
+            const start = dragStartY.current;
+            dragStartY.current = null;
+            if (start !== null && e.changedTouches[0].clientY - start > 70) onClose();
+          }}
+        >
           <span id="filter-sheet-title" className="live-map-filter-sheet__title">
             Filter Live Patrol Map
           </span>

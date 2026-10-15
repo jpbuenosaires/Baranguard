@@ -2,15 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   IonAlert,
-  IonButton,
   IonContent,
   IonIcon,
   IonPage,
-  IonSpinner,
   IonToast,
+  useIonViewWillEnter,
 } from '@ionic/react';
 import {
   calendarOutline,
+  checkmarkCircleOutline,
   checkmarkOutline,
   chevronDownOutline,
   chevronForwardOutline,
@@ -22,15 +22,16 @@ import {
   notificationsOutline,
   shieldCheckmarkOutline,
   syncOutline,
+  timeOutline,
 } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import NotificationDiagnostics from '../components/NotificationDiagnostics';
-import { Banner } from '../components/ui';
+import { Banner, Button } from '../components/ui';
 import { formatSyncResult } from '../components/syncQueueSummary';
-import { checkHealth, logout } from '../services/apiService';
+import { checkHealth, getDispatches, logout } from '../services/apiService';
 import { getDeviceId } from '../services/deviceIdentity';
 import { clearSession, loadSession, type StoredSession } from '../services/session';
-import { listActiveCachedDispatches } from '../services/db/dispatchRepository';
+import { cacheDispatchesFromServer, listActiveCachedDispatches } from '../services/db/dispatchRepository';
 import { listUnsyncedIncidents } from '../services/db/incidentRepository';
 import { listUnsyncedGpsPoints } from '../services/db/gpsTrackRepository';
 import { listPendingDispatchStatusUpdates, listPendingSosItems } from '../services/db/offlineQueueRepository';
@@ -125,6 +126,15 @@ const ProfilePage: React.FC = () => {
     void checkConnection();
   }, []);
 
+  // Stay mounted between tab visits: re-read the on-phone counts, and pull the latest dispatches so "Active
+  // Dispatches" is not a stale cache.
+  useIonViewWillEnter(() => {
+    void getDispatches()
+      .then((fresh) => cacheDispatchesFromServer(fresh))
+      .catch(() => undefined)
+      .finally(() => void loadData());
+  });
+
   const handleCopyDeviceId = () => {
     if (!deviceId) return;
     navigator.clipboard.writeText(deviceId);
@@ -193,135 +203,92 @@ const ProfilePage: React.FC = () => {
 
   return (
     <IonPage>
-      <MobileHeader title="Console & Profile" subtitle="Responder Diagnostics" />
+      <MobileHeader title="Profile" />
 
       <IonContent className="ion-padding content-bg">
         <div className="app-column profile-layout">
-          {/* Section 1: Responder Identity & Duty Status */}
-          <div className="profile-officer-card">
-            <div className="profile-officer-header">
-              <div className="profile-avatar-circle">{initials}</div>
-              <div className="profile-officer-meta">
-                <div className="profile-officer-top-row">
-                  <h2 className="profile-officer-name">{session?.fullName || 'Tanod Officer'}</h2>
-                  <span className="profile-verified-badge">
-                    <IonIcon icon={shieldCheckmarkOutline} />
-                    Active Duty
-                  </span>
-                </div>
-                <div className="profile-officer-role">
-                  Security Responder · Brgy {barangayName}
-                </div>
-              </div>
+          <section className="profile-identity" aria-label="Your account">
+            <div className="profile-avatar-circle" aria-hidden="true">{initials}</div>
+            <div className="profile-identity__body">
+              <h2 className="profile-identity__name">{session?.fullName || 'Tanod Officer'}</h2>
+              <p className="profile-identity__role">Security responder, Brgy {barangayName}</p>
+              <span className="profile-verified-badge">
+                <IonIcon icon={shieldCheckmarkOutline} aria-hidden="true" />
+                Active Duty
+              </span>
+              <p className="profile-identity__line">Barangay post: {barangayName} HQ</p>
+              <p className="profile-identity__line">Active dispatches: {localStats.dispatches}</p>
             </div>
+          </section>
 
-            <div className="profile-officer-stats">
-              <div className="profile-stat-cell">
-                <span className="profile-stat-label">Active Dispatches</span>
-                <span className="profile-stat-val">{localStats.dispatches} Assigned</span>
-              </div>
-              <div className="profile-stat-cell">
-                <span className="profile-stat-label">Barangay Post</span>
-                <span className="profile-stat-val">{barangayName} HQ</span>
-              </div>
-            </div>
-          </div>
+          <ul className="profile-list">
+            <li>
+              <button type="button" className="profile-row" onClick={() => navigate('/tabs/reports')}>
+                <span className="profile-row__icon" aria-hidden="true">
+                  <IonIcon icon={documentTextOutline} />
+                </span>
+                <span className="profile-row__text">
+                  <span className="profile-row__title">My filed reports</span>
+                  <span className="profile-row__sub">Incidents you submitted</span>
+                </span>
+                <IonIcon icon={chevronForwardOutline} className="profile-row__chevron" aria-hidden="true" />
+              </button>
+            </li>
+            <li>
+              <button type="button" className="profile-row" onClick={() => navigate('/tabs/shifts')}>
+                <span className="profile-row__icon" aria-hidden="true">
+                  <IonIcon icon={timeOutline} />
+                </span>
+                <span className="profile-row__text">
+                  <span className="profile-row__title">My duty shifts</span>
+                  <span className="profile-row__sub">Published patrol shifts</span>
+                </span>
+                <IonIcon icon={chevronForwardOutline} className="profile-row__chevron" aria-hidden="true" />
+              </button>
+            </li>
+            <li>
+              <button type="button" className="profile-row" onClick={() => navigate('/tabs/availability')}>
+                <span className="profile-row__icon" aria-hidden="true">
+                  <IonIcon icon={calendarOutline} />
+                </span>
+                <span className="profile-row__text">
+                  <span className="profile-row__title">My availability</span>
+                  <span className="profile-row__sub">When you can serve</span>
+                </span>
+                <IonIcon icon={chevronForwardOutline} className="profile-row__chevron" aria-hidden="true" />
+              </button>
+            </li>
+            <li>
+              <button type="button" className="profile-row" onClick={() => navigate('/tabs/accomplishments')}>
+                <span className="profile-row__icon" aria-hidden="true">
+                  <IonIcon icon={checkmarkCircleOutline} />
+                </span>
+                <span className="profile-row__text">
+                  <span className="profile-row__title">My accomplishments</span>
+                  <span className="profile-row__sub">Daily log and monthly report</span>
+                </span>
+                <IonIcon icon={chevronForwardOutline} className="profile-row__chevron" aria-hidden="true" />
+              </button>
+            </li>
+            <li>
+              <button type="button" className="profile-row" onClick={() => navigate('/tabs/school')}>
+                <span className="profile-row__icon" aria-hidden="true">
+                  <IonIcon icon={schoolOutline} />
+                </span>
+                <span className="profile-row__text">
+                  <span className="profile-row__title">School check-in</span>
+                  <span className="profile-row__sub">Safer School Zones, works offline</span>
+                </span>
+                <IonIcon icon={chevronForwardOutline} className="profile-row__chevron" aria-hidden="true" />
+              </button>
+            </li>
+          </ul>
 
-          {/* Section 2: Prominent Operational Records Navigation */}
-          <div className="profile-prominent-nav">
-            <button
-              type="button"
-              className="profile-nav-card"
-              onClick={() => navigate('/tabs/reports')}
-            >
-              <div className="profile-nav-card__icon-box profile-nav-card__icon-box--blue">
-                <IonIcon icon={documentTextOutline} />
-              </div>
-              <div className="profile-nav-card__body">
-                <div className="profile-nav-card__title-row">
-                  <h3 className="profile-nav-card__title">My Filed Reports</h3>
-                  <IonIcon icon={chevronForwardOutline} className="icon-chevron" />
-                </div>
-                <p className="profile-nav-card__sub">
-                  Review submitted incidents, attach supplementary evidence, and track dispatch status.
-                </p>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              className="profile-nav-card"
-              onClick={() => navigate('/tabs/shifts')}
-            >
-              <div className="profile-nav-card__icon-box profile-nav-card__icon-box--green">
-                <IonIcon icon={calendarOutline} />
-              </div>
-              <div className="profile-nav-card__body">
-                <div className="profile-nav-card__title-row">
-                  <h3 className="profile-nav-card__title">My Duty Shifts</h3>
-                  <IonIcon icon={chevronForwardOutline} className="icon-chevron" />
-                </div>
-                <p className="profile-nav-card__sub">
-                  View scheduled patrol assignments, shift hours, and request replacements.
-                </p>
-              </div>
-            </button>
-          </div>
-
-          {/* 2026-10 tanod workflow: availability, accomplishment report + school check-in */}
-          <div className="profile-prominent-nav">
-            <button type="button" className="profile-nav-card" onClick={() => navigate('/tabs/availability')}>
-              <div className="profile-nav-card__icon-box profile-nav-card__icon-box--green">
-                <IonIcon icon={calendarOutline} />
-              </div>
-              <div className="profile-nav-card__body">
-                <div className="profile-nav-card__title-row">
-                  <h3 className="profile-nav-card__title">My Availability</h3>
-                  <IonIcon icon={chevronForwardOutline} className="icon-chevron" />
-                </div>
-                <p className="profile-nav-card__sub">
-                  Tell the desk when you can serve so your shifts can be scheduled.
-                </p>
-              </div>
-            </button>
-
-            <button type="button" className="profile-nav-card" onClick={() => navigate('/tabs/accomplishments')}>
-              <div className="profile-nav-card__icon-box profile-nav-card__icon-box--blue">
-                <IonIcon icon={documentTextOutline} />
-              </div>
-              <div className="profile-nav-card__body">
-                <div className="profile-nav-card__title-row">
-                  <h3 className="profile-nav-card__title">My Accomplishments</h3>
-                  <IonIcon icon={chevronForwardOutline} className="icon-chevron" />
-                </div>
-                <p className="profile-nav-card__sub">
-                  Log what you did each day and submit your monthly accomplishment report.
-                </p>
-              </div>
-            </button>
-
-            <button type="button" className="profile-nav-card" onClick={() => navigate('/tabs/school')}>
-              <div className="profile-nav-card__icon-box profile-nav-card__icon-box--green">
-                <IonIcon icon={schoolOutline} />
-              </div>
-              <div className="profile-nav-card__body">
-                <div className="profile-nav-card__title-row">
-                  <h3 className="profile-nav-card__title">School Check-in</h3>
-                  <IonIcon icon={chevronForwardOutline} className="icon-chevron" />
-                </div>
-                <p className="profile-nav-card__sub">
-                  Check in and out when posted at a school (Safer School Zones). Works offline.
-                </p>
-              </div>
-            </button>
-          </div>
-
-          {/* Section 3: Data Sync & Station Health (Combined & Decluttered) */}
           <div className="profile-section-card">
             <div className="profile-section-header">
               <div className="profile-section-title">
-                <IonIcon icon={syncOutline} className="icon-lg-primary" />
-                <span>Station Sync & Storage</span>
+                <IonIcon icon={syncOutline} className="icon-lg-primary" aria-hidden="true" />
+                <span>Sync and storage</span>
               </div>
               <span
                 className={`status-pill ${
@@ -332,7 +299,6 @@ const ProfilePage: React.FC = () => {
               </span>
             </div>
 
-            {/* Sync Health Banner */}
             {totalUnsynced === 0 ? (
               <Banner tone="success" role="status">
                 <strong>Nothing waiting to send.</strong> Your incident reports, GPS tracks and status updates have all
@@ -347,7 +313,6 @@ const ProfilePage: React.FC = () => {
               </Banner>
             )}
 
-            {/* Breakdown Chips (Progressive disclosure of pending items) */}
             {totalUnsynced > 0 && (
               <div className="profile-sync-badge-row">
                 {localStats.unsyncedIncidents > 0 && (
@@ -371,25 +336,16 @@ const ProfilePage: React.FC = () => {
               </div>
             )}
 
-            <IonButton
-              expand="block"
-              disabled={syncing || !isOnline}
+            <Button
+              fullWidth
+              icon={syncOutline}
+              loading={syncing}
+              disabled={!isOnline}
               onClick={handleManualSync}
-              className="profile-sync-btn"
             >
-              {syncing ? (
-                <IonSpinner name="dots" />
-              ) : (
-                <>
-                  <IonIcon icon={syncOutline} slot="start" />
-                  {totalUnsynced > 0
-                    ? `Sync Records Now (${totalUnsynced})`
-                    : 'Check Station Connection'}
-                </>
-              )}
-            </IonButton>
+              {totalUnsynced > 0 ? `Sync records now (${totalUnsynced})` : 'Check connection'}
+            </Button>
 
-            {/* Progressive Disclosure Storage Drawer */}
             {storage && (
               <>
                 <button
@@ -398,7 +354,7 @@ const ProfilePage: React.FC = () => {
                   onClick={() => setShowStorageDetails(!showStorageDetails)}
                   aria-expanded={showStorageDetails}
                 >
-                  <span>Offline Storage Breakdown</span>
+                  <span>Offline storage breakdown</span>
                   <IonIcon icon={showStorageDetails ? chevronUpOutline : chevronDownOutline} />
                 </button>
 
@@ -406,9 +362,7 @@ const ProfilePage: React.FC = () => {
                   <div className="profile-drawer-content">
                     <div className="profile-storage-grid">
                       <div className="profile-storage-tile">
-                        <div className="profile-storage-tile__label">
-                          Evidence Files
-                        </div>
+                        <div className="profile-storage-tile__label">Evidence files</div>
                         <div className="profile-storage-tile__value">
                           {formatBytes(storage.evidence.totalBytes)}{' '}
                           <span className="profile-storage-tile__count">
@@ -417,9 +371,7 @@ const ProfilePage: React.FC = () => {
                         </div>
                       </div>
                       <div className="profile-storage-tile">
-                        <div className="profile-storage-tile__label">
-                          Offline Map
-                        </div>
+                        <div className="profile-storage-tile__label">Offline map</div>
                         <div className="profile-storage-tile__value">
                           {formatBytes(storage.mapPackages.totalBytes)}{' '}
                           <span className="profile-storage-tile__count">
@@ -428,43 +380,35 @@ const ProfilePage: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                    <IonButton
-                      fill="outline"
-                      className="btn-touch-compact profile-prune-btn"
-                      expand="block"
-                      disabled={pruning}
-                      onClick={handlePruneEvidence}
-                    >
-                      {pruning ? <IonSpinner name="dots" /> : 'Clear Old Sent Evidence (30+ days)'}
-                    </IonButton>
+                    <Button variant="secondary" fullWidth loading={pruning} onClick={handlePruneEvidence}>
+                      Clear old sent evidence (30+ days)
+                    </Button>
                   </div>
                 )}
               </>
             )}
           </div>
 
-          {/* Section 4: Alert Readiness & Terminal Diagnostics */}
           <div className="profile-section-card">
             <div className="profile-section-header">
               <div className="profile-section-title">
-                <IonIcon icon={notificationsOutline} className="icon-lg-warning" />
-                <span>Emergency Push Alert Readiness</span>
+                <IonIcon icon={notificationsOutline} className="icon-lg-warning" aria-hidden="true" />
+                <span>Alerts on this phone</span>
               </div>
             </div>
 
             <NotificationDiagnostics />
 
-            {/* Subtle technical diagnostics footer with 1-tap copy for IT/admin */}
             <div className="profile-terminal-footer">
               <div className="profile-terminal-info">
-                <span className="profile-terminal-label">Device Terminal ID</span>
+                <span className="profile-terminal-label">Device ID</span>
                 <span className="profile-terminal-key">{deviceId || 'Detecting…'}</span>
               </div>
               <button
                 type="button"
                 className="profile-copy-btn"
                 onClick={handleCopyDeviceId}
-                aria-label="Copy Device Terminal ID"
+                aria-label="Copy device ID"
               >
                 <IonIcon icon={copiedDevice ? checkmarkOutline : copyOutline} />
                 <span>{copiedDevice ? 'Copied' : 'Copy'}</span>
@@ -472,17 +416,14 @@ const ProfilePage: React.FC = () => {
             </div>
           </div>
 
-          {/* Section 5: Secure Terminal Sign Out */}
-          <div className="profile-signout-card">
-            <button
-              type="button"
-              className="profile-signout-btn"
-              onClick={() => setConfirmingSignOut(true)}
-            >
-              <IonIcon icon={logOutOutline} className="icon-md" />
-              <span>SIGN OUT OF TERMINAL</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            className="profile-signout-btn"
+            onClick={() => setConfirmingSignOut(true)}
+          >
+            <IonIcon icon={logOutOutline} className="icon-md" aria-hidden="true" />
+            <span>Sign out</span>
+          </button>
         </div>
 
         <IonToast

@@ -14,8 +14,8 @@
  * none), and nothing about students is ever recorded.
  */
 
-import { useCallback, useEffect, useState } from 'react';
-import { IonContent, IonIcon, IonPage } from '@ionic/react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { IonContent, IonIcon, IonPage, IonRefresher, IonRefresherContent, useIonViewWillEnter } from '@ionic/react';
 import { logInOutline, logOutOutline, schoolOutline } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
@@ -69,18 +69,20 @@ const SchoolCheckinPage: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
+  // Tab-stack page stays mounted: reload on every visit; only the first load shows the spinner.
+  const loadedOnce = useRef(false);
+  useIonViewWillEnter(() => {
+    void (async () => {
+      if (!loadedOnce.current) setLoading(true);
       await reload();
-      if (!cancelled) setLoading(false);
+      loadedOnce.current = true;
+      setLoading(false);
     })();
+  });
+
+  useEffect(() => {
     const unsubscribe = subscribeSyncSummary(() => void reload());
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
+    return unsubscribe;
   }, [reload]);
 
   async function handleCheckIn() {
@@ -150,6 +152,9 @@ const SchoolCheckinPage: React.FC = () => {
     <IonPage>
       <MobileHeader title="School Check-in" showBack defaultBackHref="/tabs/profile" />
       <IonContent style={{ '--background': 'var(--color-bg)' }}>
+        <IonRefresher slot="fixed" onIonRefresh={(e) => void reload().finally(() => e.detail.complete())}>
+          <IonRefresherContent />
+        </IonRefresher>
         <div className="wf-page" style={{ paddingBottom: 28 }}>
           {note && <Banner tone={note.tone}>{note.text}</Banner>}
           {loadError && (open || schools.length > 0) && <Banner tone="critical">{loadError}</Banner>}
@@ -215,7 +220,7 @@ const SchoolCheckinPage: React.FC = () => {
                   {pickError ?? 'Pick the school you are posted at.'}
                 </span>
               </div>
-              <Button variant="secondary" onClick={handleRefreshSchools} loading={refreshing} disabled={busy}>
+              <Button variant="ghost" className="wf-link-btn" onClick={handleRefreshSchools} loading={refreshing} disabled={busy}>
                 Refresh school list
               </Button>
             </div>
@@ -232,7 +237,9 @@ const SchoolCheckinPage: React.FC = () => {
                   </div>
                   <span className="wf-muted">
                     In {formatManilaDateTime(row.checked_in_at)}
-                    {row.checked_out_at ? ` · Out ${formatManilaTime(row.checked_out_at)}` : ' · still checked in'}
+                    {row.checked_out_at
+                      ? ` · Out ${formatManilaTime(row.checked_out_at)}`
+                      : ' · still checked in'}
                     {duration(row) ? ` · ${duration(row)}` : ''}
                   </span>
                   {row.last_sync_error && !isCheckinFullySynced(row) && (

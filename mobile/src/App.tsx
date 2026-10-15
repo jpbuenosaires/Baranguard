@@ -105,6 +105,7 @@ import './theme/x-map.css';
 import './theme/x-dispatch.css';
 import './theme/x-home.css';
 import './theme/x-forms.css';
+import './theme/x-profile.css';
 import './theme/layout.css';
 
 setupIonicReact();

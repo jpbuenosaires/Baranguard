@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IonContent, IonIcon, IonPage, IonToast } from '@ionic/react';
 import { alertCircleOutline, checkmarkCircleOutline, locateOutline, refreshOutline, timeOutline } from 'ionicons/icons';
 import LiveMapCanvas, { type BasemapStatus, type LiveMapCanvasHandle } from '../components/LiveMapCanvas';
@@ -17,6 +17,7 @@ import { bearingLabel, distanceMeters, formatDistance } from '../utils/geo';
 import tacticalFeedback from '../utils/tacticalFeedback';
 import { basemapChip, freshnessLine } from '../utils/liveMapHud';
 import { combinedLastOk } from '../utils/liveMapPolicy';
+import { DEFAULT_PEEK_PX, clampPeekHeight, combineStatus, statusLinePlacement } from '../utils/mapStatusLine';
 import {
   DEFAULT_ADVANCED_FILTERS,
   applyMapFilters,
@@ -67,6 +68,17 @@ const LiveMapPage: React.FC = () => {
     basemap.kind === 'offline' ? { kind: 'offline', version: basemap.version } : { kind: basemap.kind },
     deviceOnline
   );
+
+  const statusLine = combineStatus(freshness, basemapInfo);
+
+  const [peekPx, setPeekPx] = useState(DEFAULT_PEEK_PX);
+  const handlePeekHeight = useCallback((px: number) => setPeekPx(clampPeekHeight(px)), []);
+  const [viewportH, setViewportH] = useState(() => (typeof window === 'undefined' ? 800 : window.innerHeight));
+  useEffect(() => {
+    const onResize = () => setViewportH(window.innerHeight);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const ageSeconds = position
     ? Math.max(0, Math.floor((Date.now() - new Date(position.recordedAt).getTime()) / 1000))
@@ -155,7 +167,9 @@ const LiveMapPage: React.FC = () => {
   }, [filteredIncidents, filteredTanods, selectedItem, drawerMode]);
 
   const { isDragging, scrollListRef, handleTouchStart, handleTouchMove, handleTouchEnd, fabYStyle, drawerYStyle } =
-    useDrawerGestures({ drawerMode, setDrawerMode, selectedItem, setSelectedItem });
+    useDrawerGestures({ drawerMode, setDrawerMode, selectedItem, setSelectedItem, peekPx });
+  const statusPlacement = statusLinePlacement(drawerMode, peekPx, viewportH);
+  const statusInDrawer = drawerMode === 'expanded' || !statusPlacement.fits;
 
   return (
     <IonPage>
@@ -231,11 +245,13 @@ const LiveMapPage: React.FC = () => {
             </span>
           </div>
 
-          {/* Data freshness and basemap in use. Glides with the drawer like the recenter FAB. */}
-          <div className="lm-info" style={{ transform: fabYStyle }} role="status" aria-live="polite">
-            <Chip tone={freshness.offline ? 'warning' : 'neutral'}>{freshness.text}</Chip>
-            <Chip tone={basemapInfo.tone}>{basemapInfo.label}</Chip>
-          </div>
+          {/* One status line (data freshness and basemap) kept above the drawer, clear of the filter rail.
+              When there is no room for it (short landscape, expanded drawer) it moves into the drawer. */}
+          {!statusInDrawer && (
+            <div className="lm-status-line" style={{ bottom: statusPlacement.bottomPx }} role="status" aria-live="polite">
+              <Chip tone={statusLine.tone}>{statusLine.text}</Chip>
+            </div>
+          )}
 
           <MapFilterRail
             quickFilter={quickFilter}
@@ -308,6 +324,8 @@ const LiveMapPage: React.FC = () => {
             onDirections={openExternalDirections}
             onCenterOn={(lat, lng) => mapCanvasRef.current?.focusCoordinates(lat, lng, 17)}
             onResetFilters={resetFilters}
+            onPeekHeight={handlePeekHeight}
+            statusInside={statusInDrawer ? statusLine : null}
           />
         </div>
 

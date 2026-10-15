@@ -4,10 +4,11 @@
  * Provides brand continuity with the Web Command Center:
  * - Baranguard Shield insignia
  * - Bold wordmark + role/console indicator
- * - Live connection/sync status indicator
+ * - Offline/cache status pill (shown only when not live)
  * - Contextual title and back button support
  */
 
+import { usePendingSyncCount } from '../services/usePendingSyncCount';
 import { visibleInterval } from '../utils/visibleInterval';
 import React, { useEffect, useState } from 'react';
 import {
@@ -44,6 +45,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [dark, setDark] = useState<boolean>(() => isCurrentlyDark());
+  const pendingCount = usePendingSyncCount();
 
   useEffect(() => {
     const handleThemeChanged = () => {
@@ -110,12 +112,12 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
                   <IonIcon icon={dark ? sunnyOutline : moonOutline} />
                 </button>
               )}
-              {!hideStatusIndicator && (
+              {!hideStatusIndicator && (isOnline === false || pendingCount > 0) && (
                 <button
                   type="button"
                   className={`mobile-topbar__status ${isOnline ? 'mobile-topbar__status--online' : 'mobile-topbar__status--offline'}`}
-                  aria-label={isOnline ? 'Workstation Connected — tap to inspect sync queue' : 'Offline Cache Mode — tap to inspect sync queue'}
-                  title={isOnline ? 'Workstation Connected — tap to inspect queue' : 'Offline Cache Mode — tap to inspect queue'}
+                  aria-label={isOnline === false ? 'Offline cache mode: tap to inspect sync queue' : `${pendingCount} waiting to send: tap to inspect sync queue`}
+                  title={isOnline === false ? 'Offline cache mode: tap to inspect queue' : 'Waiting to send: tap to inspect queue'}
                   onClick={() => setShowSyncModal(true)}
                 >
                   <span
@@ -124,7 +126,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
                     }`}
                     aria-hidden="true"
                   />
-                  <span className="mobile-topbar__status-text">{isOnline ? 'LIVE' : 'CACHE'}</span>
+                  <span className="mobile-topbar__status-text">{isOnline === false ? 'CACHE' : `${pendingCount} waiting`}</span>
                 </button>
               )}
             </div>

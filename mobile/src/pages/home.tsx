@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { IonAlert, IonButton, IonContent, IonIcon, IonPage, IonSpinner, IonToast } from '@ionic/react';
+import { IonAlert, IonButton, IonContent, IonIcon, IonPage, IonSpinner, IonToast, useIonViewWillEnter } from '@ionic/react';
 import { documentTextOutline, warningOutline } from 'ionicons/icons';
 import DispatchOfferCards from '../components/DispatchOfferCards';
 import MobileHeader from '../components/MobileHeader';
@@ -16,6 +16,7 @@ import DutyStatusCard from '../components/home/DutyStatusCard';
 import DispatchHeadline from '../components/home/DispatchHeadline';
 import EmergencyDials from '../components/home/EmergencyDials';
 import SosConfirmSheet from '../components/home/SosConfirmSheet';
+import { visibleInterval } from '../utils/visibleInterval';
 import {
   barangayLabel,
   dutyStatusErrorMessage,
@@ -83,6 +84,7 @@ const HomePage: React.FC = () => {
     setConfirmingSos,
     raisingSos,
     sosError,
+    sosResult,
     sosToast,
     setSosToast,
     sosFallbackOutcome,
@@ -103,6 +105,7 @@ const HomePage: React.FC = () => {
   // state for the sync-summary listener, which is subscribed once.
   const [pendingOffDutyAt, setPendingOffDutyAt] = useState<string | null>(null);
   const pendingOffDutyRef = useRef<string | null>(null);
+  const reloadRef = useRef<(() => void) | null>(null);
   const [rejectedOffDuty, setRejectedOffDuty] = useState<QueuedDutyStatus | null>(null);
 
   function applyDutyStatus(next: DutyStatus) {
@@ -296,10 +299,25 @@ const HomePage: React.FC = () => {
     loadDispatches();
     loadTelemetry();
 
+    // Tab pages stay mounted, so a call assigned while the Tanod was on another tab must be picked up on return
+    // and while Home is open. Showing "All clear" during an active call is the one thing Home must never do.
+    reloadRef.current = () => {
+      void loadDutyStatus();
+      void loadDispatches();
+      void loadTelemetry();
+    };
+    const stopPolling = visibleInterval(() => void loadDispatches(), 30000);
+
     return () => {
       cancelled = true;
+      reloadRef.current = null;
+      stopPolling();
     };
   }, []);
+
+  useIonViewWillEnter(() => {
+    reloadRef.current?.();
+  });
 
   async function handleToggleDuty() {
     if (status === null || toggling) return;
@@ -472,6 +490,7 @@ const HomePage: React.FC = () => {
             shiftElapsed={shiftElapsed}
             patrolTracking={patrolTracking}
             todayIncidentCount={todayIncidentCount}
+            waitingToSend={pendingOffDutyAt !== null}
             onToggleDuty={handleToggleDuty}
           />
 
@@ -572,12 +591,10 @@ const HomePage: React.FC = () => {
         <SosConfirmSheet
           isOpen={confirmingSos}
           raisingSos={raisingSos}
-          barangayName={barangayName}
+          result={sosResult}
+          error={sosError}
           onClose={() => setConfirmingSos(false)}
-          onConfirm={() => {
-            setConfirmingSos(false);
-            void handleRaiseSos();
-          }}
+          onConfirm={() => void handleRaiseSos()}
         />
 
         {/* Safety Confirmation Dialog for Ending Patrol Shift (Nielsen Heuristic #5: Error Prevention) */}

@@ -22,8 +22,8 @@ interface Props {
 }
 
 /**
- * Compact icon+count filter rail. Icon-only chips: no text labels = never
- * clips, maximum map visibility. ARIA labels carry full readable names.
+ * Filter rail: each toggle shows icon, count and a short text label so the
+ * meaning never depends on the icon alone.
  */
 const MapFilterRail: React.FC<Props> = ({
   quickFilter,
@@ -47,8 +47,11 @@ const MapFilterRail: React.FC<Props> = ({
         onSelectAll();
       }}
     >
-      <IonIcon icon={layersOutline} />
-      <span className="lm-rail-count">{incidentCount + tanodCount}</span>
+      <span className="lm-rail-top">
+        <IonIcon icon={layersOutline} />
+        <span className="lm-rail-count">{incidentCount + tanodCount}</span>
+      </span>
+      <span className="lm-rail-label">All</span>
     </button>
 
     <button
@@ -62,8 +65,11 @@ const MapFilterRail: React.FC<Props> = ({
         onSelectTab('tanods');
       }}
     >
-      <IonIcon icon={shieldCheckmarkOutline} />
-      <span className="lm-rail-count">{tanodCount}</span>
+      <span className="lm-rail-top">
+        <IonIcon icon={shieldCheckmarkOutline} />
+        <span className="lm-rail-count">{tanodCount}</span>
+      </span>
+      <span className="lm-rail-label">Tanods</span>
     </button>
 
     <button
@@ -77,8 +83,11 @@ const MapFilterRail: React.FC<Props> = ({
         onSelectTab('incidents');
       }}
     >
-      <IonIcon icon={alertCircleOutline} />
-      <span className="lm-rail-count">{incidentCount}</span>
+      <span className="lm-rail-top">
+        <IonIcon icon={alertCircleOutline} />
+        <span className="lm-rail-count">{incidentCount}</span>
+      </span>
+      <span className="lm-rail-label">Incidents</span>
     </button>
 
     <button
@@ -92,8 +101,11 @@ const MapFilterRail: React.FC<Props> = ({
         onSelectTab('critical');
       }}
     >
-      <IonIcon icon={flameOutline} />
-      <span className="lm-rail-count">{criticalCount}</span>
+      <span className="lm-rail-top">
+        <IonIcon icon={flameOutline} />
+        <span className="lm-rail-count">{criticalCount}</span>
+      </span>
+      <span className="lm-rail-label">Critical</span>
     </button>
 
     {/* Vertical divider separates filter tier from settings tier */}

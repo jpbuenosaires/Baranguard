@@ -2,11 +2,8 @@
 
 .h4-content { --background: var(--color-bg); }
 .h4-fallback-badge { margin-top: 2px; display: flex; justify-content: center; }
-.tactical-sos-spinner { color: var(--color-critical-solid); }
 
 /* New incident form (extracted from inline styles) */
-
-.intake-type-label { font-size: 0.74rem; font-weight: 700; color: var(--color-primary); }
 .intake-char-count { font-size: 0.72rem; color: var(--color-text-tertiary); font-weight: 600; }
 .intake-clear-btn {
   background: none;
@@ -100,3 +97,121 @@
 .critical-alert-overlay__icon { font-size: 1.4rem; color: var(--color-critical); }
 .critical-alert-overlay__title.critical-alert-overlay__title--flush { margin: 0; }
 .critical-alert-overlay__btn { font-weight: 700; height: var(--touch-min-size, 48px); }
+
+/* ---- Audit 2026-10-15: SOS dock, emergency rows, SOS confirm sheet ---- */
+
+/* Dedicated SOS tokens: solid saturated red with white text in light AND dark (the shared
+   --color-critical lightens to salmon in dark mode and takes dark text). #dc2626 vs white = 4.83:1. */
+:root {
+  --sos-bg: var(--color-critical-solid);
+  --sos-fg: var(--color-white);
+}
+.home-sos-button { background: var(--sos-bg); color: var(--sos-fg); box-shadow: var(--shadow-2); }
+.home-sos-button__label { color: var(--sos-fg); }
+
+/* Less dead space between Home cards. */
+.h4-home { gap: var(--spacing-sm); }
+
+/* Emergency lines: full-width rows under the status card. */
+.h4-dials { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+.h4-dial {
+  flex-direction: row;
+  justify-content: flex-start;
+  min-height: 56px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  gap: var(--spacing-md);
+  text-align: left;
+}
+.h4-dial__label { flex: 1; color: var(--color-text-primary); }
+.h4-dial__number { font-size: var(--text-md); font-weight: 800; color: var(--color-link, var(--color-primary)); font-variant-numeric: tabular-nums; }
+
+/* SOS confirm sheet: neutral surface, one saturated Confirm, quiet Cancel. */
+.tactical-sos-modal { --background: var(--color-surface); }
+.tactical-sos-sheet.sos-sheet {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border-top: 4px solid var(--sos-bg);
+  gap: var(--spacing-md);
+  transition: transform 0.18s ease;
+}
+.sos-sheet__grab {
+  width: 100%;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+.tactical-sos-sheet__handle.sos-sheet__handle { background: var(--color-border); width: 44px; }
+.sos-sheet__icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--sos-bg);
+  color: var(--sos-fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+}
+.sos-sheet__result { display: flex; flex-direction: column; align-items: center; gap: var(--spacing-sm); }
+.sos-sheet__result-icon { font-size: 3rem; color: var(--color-link, var(--color-primary)); }
+.sos-sheet__result-icon--error { color: var(--pill-critical-text); }
+.sos-sheet__title { margin: 0; font-size: var(--text-lg); font-weight: 800; color: var(--color-text-primary); }
+.sos-sheet__desc { margin: 0; font-size: var(--text-sm); line-height: 1.45; color: var(--color-text-secondary); max-width: 320px; }
+.sos-sheet__actions { display: flex; flex-direction: column; gap: var(--spacing-sm); width: 100%; }
+.sos-sheet__btn-confirm {
+  width: 100%;
+  min-height: 60px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--sos-bg);
+  color: var(--sos-fg);
+  font-family: inherit;
+  font-size: var(--text-lg);
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+}
+.sos-sheet__btn-confirm:active { transform: scale(0.985); }
+.sos-sheet__btn-confirm:disabled { opacity: 0.9; }
+.sos-sheet__spinner { color: var(--sos-fg); }
+.sos-sheet__btn-cancel {
+  width: 100%;
+  min-height: var(--touch-min-size, 48px);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.sos-sheet__btn-cancel:disabled { opacity: 0.5; }
+.sos-sheet__btn-confirm:focus-visible,
+.sos-sheet__btn-cancel:focus-visible { outline: 3px solid var(--color-text-primary); outline-offset: 2px; }
+
+/* ---- Report form (audit 2026-10-15) ---- */
+.intake-textarea-box { resize: none; }
+
+/* Quick phrases: right-edge fade shows the row scrolls. */
+.intake-template-strip {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  padding-right: 28px;
+}
+
+/* Submit stays visible above the safe area while the form scrolls. */
+.intake-overhaul-container > .h4-submit {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin: 0 -14px -28px;
+  padding: var(--spacing-sm) 14px calc(var(--spacing-sm) + env(safe-area-inset-bottom, 0px));
+  background: var(--color-bg);
+  border-top: 1px solid var(--color-border);
+}

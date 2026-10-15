@@ -19,8 +19,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { IonAlert, IonContent, IonIcon, IonPage } from '@ionic/react';
-import { addOutline, calendarOutline, closeOutline, createOutline, trashOutline } from 'ionicons/icons';
+import { IonAlert, IonContent, IonIcon, IonPage, IonRefresher, IonRefresherContent, useIonViewWillEnter } from '@ionic/react';
+import { addOutline, calendarOutline, checkmarkCircleOutline, closeOutline, createOutline, trashOutline } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
 import { Banner, SyncChip } from '../components/WorkflowBits';
@@ -33,6 +33,7 @@ import {
   saveAvailabilityLocally,
   validateAvailability,
 } from '../services/db/availabilityRepository';
+import { deriveWorkflowSyncState } from '../services/db/workflowSync';
 import type { AvailabilityLocalRow, AvailabilityWindow } from '../services/db/localSchema';
 import { forceSyncNow, subscribeSyncSummary } from '../services/syncScheduler';
 import { refreshAvailabilityFromServer } from '../services/workflowRefresh';
@@ -100,22 +101,27 @@ const AvailabilityPage: React.FC = () => {
     }
   }, []);
 
+  const loadedOnce = useRef(false);
+
+  // Quiet refresh: the local list first, then the server copy; no loading flash after the first load.
+  const refresh = useCallback(async () => {
+    if (!loadedOnce.current) setLoading(true);
+    await reload();
+    loadedOnce.current = true;
+    setLoading(false);
+    const ok = await refreshAvailabilityFromServer({ force: true });
+    setServerCopyStale(!ok);
+    if (ok) await reload();
+  }, [reload]);
+
+  // Tab-stack page stays mounted: refresh on every visit.
+  useIonViewWillEnter(() => {
+    void refresh();
+  });
+
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      await reload();
-      if (!cancelled) setLoading(false);
-      const ok = await refreshAvailabilityFromServer({ force: true });
-      if (cancelled) return;
-      setServerCopyStale(!ok);
-      if (ok) await reload();
-    })();
     const unsubscribe = subscribeSyncSummary(() => void reload());
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
+    return unsubscribe;
   }, [reload]);
 
   function openNew() {
@@ -455,11 +461,15 @@ const AvailabilityPage: React.FC = () => {
     <IonPage>
       <MobileHeader title="My Availability" showBack defaultBackHref="/tabs/profile" />
       <IonContent style={{ '--background': 'var(--color-bg)' }}>
+        <IonRefresher slot="fixed" onIonRefresh={(e) => void refresh().finally(() => e.detail.complete())}>
+          <IonRefresherContent />
+        </IonRefresher>
         <div className="wf-page">
-          <Banner tone="info">
-            Tell the desk when you can serve. This is your own statement: the desk can only schedule you inside these
-            windows, and you can change them any time. Only published shifts appear in My Shifts.
-          </Banner>
+          <div className="ui-banner wf-info-note" role="status">
+            <div className="ui-banner__body">
+              You set your own windows and can change them any time. Only published shifts appear in My Shifts.
+            </div>
+          </div>
 
           {note && <Banner tone="success">{note}</Banner>}
           {loadError && rows.length > 0 && <Banner tone="critical">{loadError}</Banner>}
@@ -482,28 +492,54 @@ const AvailabilityPage: React.FC = () => {
             rows.map((row) => {
               const windows = parseLocalWindows(row);
               const dayCount = new Set(windows.map((w) => w.date)).size;
-              return (
-                <div key={row.local_id} className="wf-card">
+              const ended = isPeriodPast(row.period_end);
+              const period = formatPeriodLabel(row.period_start, row.period_end);
+              const chip =
+                deriveWorkflowSyncState(row) === 'synced' ? (
+                  <span className="ui-sync ui-sync--success" role="status">
+                    <IonIcon icon={checkmarkCircleOutline} aria-hidden="true" />
+                    <span>Submitted</span>
+                  </span>
+                ) : (
+                  <SyncChip row={row} />
+                );
+              const body = (
+                <>
                   <div className="wf-card__head">
                     <div>
-                      <h3 className="wf-card__title">{formatPeriodLabel(row.period_start, row.period_end)}</h3>
+                      <h3 className="wf-card__title">{period}</h3>
                       <p className="wf-card__sub">
                         {dayCount} day{dayCount === 1 ? '' : 's'} · {windows.length} window{windows.length === 1 ? '' : 's'}
-                        {isPeriodPast(row.period_end) ? ' · period ended' : ''}
+                        {ended ? ' · period ended' : ''}
                       </p>
                     </div>
-                    <SyncChip row={row} />
+                    {chip}
                   </div>
                   {row.last_sync_error && row.synced === 0 && (
                     <span className="wf-muted">The desk could not save this yet: {row.last_sync_error}</span>
                   )}
-                  {!isPeriodPast(row.period_end) && (
-                    <button type="button" className="wf-btn wf-btn--small" onClick={() => openEdit(row)}>
-                      <IonIcon icon={createOutline} />
+                  {!ended && (
+                    <span className="wf-btn wf-btn--small wf-card__edit">
+                      <IonIcon icon={createOutline} aria-hidden="true" />
                       <span>Edit</span>
-                    </button>
+                    </span>
                   )}
+                </>
+              );
+              return ended ? (
+                <div key={row.local_id} className="wf-card wf-card--ended">
+                  {body}
                 </div>
+              ) : (
+                <button
+                  key={row.local_id}
+                  type="button"
+                  className="wf-card wf-card--tap"
+                  aria-label={`Edit availability, ${period}`}
+                  onClick={() => openEdit(row)}
+                >
+                  {body}
+                </button>
               );
             })
           )}

@@ -26,6 +26,7 @@
  * working regardless of session/API state.
  */
 
+import { normalizeServerTimestamps } from '../utils/serverTime';
 import { isSessionEndingUnauthorized } from '../utils/authErrors';
 import { Preferences } from '@capacitor/preferences';
 import type { AvailabilityStatus, AvailabilityWindow, ReferralTarget } from './db/localSchema';
@@ -226,7 +227,8 @@ async function deviceAuthHeaders(method: string, routePath: string, deviceId: st
 
 function safeJsonParse(text: string): unknown {
   try {
-    return JSON.parse(text);
+    // Zone-less UTC timestamps become ISO-with-Z here, once, so no screen reads them as local time.
+    return normalizeServerTimestamps(JSON.parse(text));
   } catch {
     return null;
   }

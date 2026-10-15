@@ -16,17 +16,19 @@
  *    - Replaced heavy repetitive buttons with a clean, ergonomic action link and bottom sheet modal.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   IonAlert,
   IonContent,
   IonIcon,
   IonPage,
+  IonRefresher,
+  IonRefresherContent,
+  useIonViewWillEnter,
 } from '@ionic/react';
 import {
   calendarOutline,
   swapHorizontalOutline,
-  timeOutline,
   hourglassOutline,
 } from 'ionicons/icons';
 import { useNavigate } from 'react-router-dom';
@@ -65,13 +67,19 @@ const MyShiftsPage: React.FC = () => {
   const [note, setNote] = useState<string | null>(null);
   const [swapError, setSwapError] = useState<string | null>(null);
 
+  const hasData = useRef(false);
+  const [pastOpen, setPastOpen] = useState(false);
+
   const load = useCallback(async () => {
     try {
       const [shiftItems, swapItems] = await Promise.all([getMyShifts(), getMyShiftSwapRequests()]);
       setShifts(shiftItems);
       setSwapRequests(swapItems);
+      hasData.current = true;
       setError(null);
     } catch (err) {
+      // Quiet refresh: keep the data already on screen instead of replacing it with an error.
+      if (hasData.current) return;
       setError(
         err instanceof ApiError && err.isOffline
           ? 'Offline — Connect to the internet or Barangay Wi-Fi to refresh schedule.'
@@ -80,10 +88,18 @@ const MyShiftsPage: React.FC = () => {
     }
   }, []);
 
+  // Tab-stack page stays mounted: reload on every visit, quietly once data is shown.
+  const firstEnter = useRef(true);
   useEffect(() => {
-    setLoading(true);
-    load().finally(() => setLoading(false));
+    void load().finally(() => setLoading(false));
   }, [load]);
+  useIonViewWillEnter(() => {
+    if (firstEnter.current) {
+      firstEnter.current = false;
+      return;
+    }
+    void load();
+  });
 
   function pendingSwapForShift(shiftId: number): ShiftSwapRequestEntry | undefined {
     return swapRequests.find((r) => r.shiftId === shiftId && r.status === 'pending');
@@ -128,19 +144,22 @@ const MyShiftsPage: React.FC = () => {
     }
   }
 
-  // Calculate schedule summary metrics. A shift flagged `pendingReapproval` (legacy: a swap
-  // approved before 2026-10-12, awaiting re-publish) is NOT confirmed duty, so it never counts
-  // toward "next duty" or hours. An approved swap now keeps the shift published.
-  const { nextShift, confirmedCount, pendingReapprovalCount } = useMemo(() => {
+  // A shift flagged `pendingReapproval` (legacy) is NOT confirmed duty, so it never counts
+  // as the next duty. Upcoming = not yet ended; ended shifts go under "Past shifts".
+  const { nextShift, confirmedCount, pendingReapprovalCount, upcoming, past } = useMemo(() => {
     const now = Date.now();
-    const confirmed = shifts.filter((s) => !s.pendingReapproval);
-    const upcoming = confirmed.filter((s) => new Date(s.endAt).getTime() >= now);
-    const next = upcoming[0] ?? confirmed[0] ?? null;
-
+    const endsLater = (s: ShiftEntry) => new Date(s.endAt).getTime() >= now;
+    const byStart = (x: ShiftEntry, y: ShiftEntry) =>
+      new Date(x.startAt).getTime() - new Date(y.startAt).getTime();
+    const up = shifts.filter(endsLater).sort(byStart);
+    const done = shifts.filter((s) => !endsLater(s)).sort((x, y) => byStart(y, x));
+    const confirmedUp = up.filter((s) => !s.pendingReapproval);
     return {
-      nextShift: next,
-      confirmedCount: confirmed.length,
-      pendingReapprovalCount: shifts.length - confirmed.length,
+      nextShift: confirmedUp[0] ?? null,
+      confirmedCount: confirmedUp.length,
+      pendingReapprovalCount: up.length - confirmedUp.length,
+      upcoming: up,
+      past: done,
     };
   }, [shifts]);
 
@@ -160,6 +179,9 @@ const MyShiftsPage: React.FC = () => {
       <MobileHeader title="My Shifts" showBack defaultBackHref="/tabs/profile" />
 
       <IonContent className="ion-padding content-bg">
+        <IonRefresher slot="fixed" onIonRefresh={(e) => void load().finally(() => e.detail.complete())}>
+          <IonRefresherContent />
+        </IonRefresher>
         <div className="roster-container">
           {note && <Banner tone="info">{note}</Banner>}
           {/* Availability entry point — the desk builds the roster from what Tanods submit here. */}
@@ -188,22 +210,19 @@ const MyShiftsPage: React.FC = () => {
           {!loading && !error && (
             activeTab === 'schedule' ? (
               shifts.length > 0 && (
-                <div className="roster-glance-banner" role="region" aria-label="Schedule Overview">
-                  <div className="roster-glance-left">
-                    <div className="roster-glance-icon" aria-hidden="true">
-                      <IonIcon icon={timeOutline} />
-                    </div>
-                    <div>
-                      <div className="roster-glance-headline">
-                        {nextShiftTiming
-                          ? `Next: ${nextShiftTiming.isToday ? 'Today' : nextShiftTiming.isTomorrow ? 'Tomorrow' : nextShiftTiming.dateLabel.split('·')[0].trim()} at ${nextShiftTiming.timeRange.split('–')[0].trim()}`
-                          : 'No confirmed duty'}
-                      </div>
-                      <div className="roster-glance-sub">
-                        {confirmedCount} confirmed shift{confirmedCount === 1 ? '' : 's'}
-                        {pendingReapprovalCount > 0 ? ` · ${pendingReapprovalCount} pending re-approval` : ''}
-                      </div>
-                    </div>
+                <div className="roster-glance-banner roster-next" role="region" aria-label="Next shift">
+                  <div className="roster-next__label">Next shift</div>
+                  {nextShiftTiming ? (
+                    <>
+                      <div className="roster-next__time">{nextShiftTiming.timeRange}</div>
+                      <div className="roster-next__date">{nextShiftTiming.dateLabel}</div>
+                    </>
+                  ) : (
+                    <div className="roster-next__date">No confirmed upcoming duty</div>
+                  )}
+                  <div className="roster-glance-sub">
+                    {confirmedCount} upcoming confirmed shift{confirmedCount === 1 ? '' : 's'}
+                    {pendingReapprovalCount > 0 ? ` · ${pendingReapprovalCount} pending re-approval` : ''}
                   </div>
                 </div>
               )
@@ -250,8 +269,8 @@ const MyShiftsPage: React.FC = () => {
                   setActiveTab('schedule');
                 }}
               >
-                <span>Upcoming Schedule</span>
-                <span className="roster-segment-count">{shifts.length}</span>
+                <span>Upcoming schedule</span>
+                <span className="roster-segment-count">{upcoming.length}</span>
               </button>
 
               <button
@@ -283,7 +302,7 @@ const MyShiftsPage: React.FC = () => {
             />
           ) : activeTab === 'schedule' ? (
             /* Tab 1: Upcoming Schedule */
-            shifts.length === 0 ? (
+            upcoming.length === 0 && past.length === 0 ? (
               <EmptyState
                 icon={calendarOutline}
                 title="No upcoming shifts"
@@ -291,25 +310,52 @@ const MyShiftsPage: React.FC = () => {
               />
             ) : (
               <div className="col-gap-sm">
-                {shifts.map((shift) => {
-                  const pendingSwap = pendingSwapForShift(shift.shiftId);
-                  const isPendingReapproval = shift.pendingReapproval;
-                  const isNext = !isPendingReapproval && shift.shiftId === nextShift?.shiftId;
-
-                  return (
-                    <ShiftCard
-                      key={shift.shiftId}
-                      shift={shift}
-                      pendingSwap={pendingSwap}
-                      isNext={isNext}
-                      onRequestSwap={(s) => {
-                        setSwapReason('');
-                        setSwapError(null);
-                        setSwapTarget(s);
+                {upcoming.length === 0 && (
+                  <EmptyState
+                    icon={calendarOutline}
+                    title="No upcoming shifts"
+                    body="Only shifts the desk has published appear here. Check back once the roster is published."
+                  />
+                )}
+                {upcoming.map((shift) => (
+                  <ShiftCard
+                    key={shift.shiftId}
+                    shift={shift}
+                    pendingSwap={pendingSwapForShift(shift.shiftId)}
+                    isNext={!shift.pendingReapproval && shift.shiftId === nextShift?.shiftId}
+                    onRequestSwap={(s) => {
+                      setSwapReason('');
+                      setSwapError(null);
+                      setSwapTarget(s);
+                    }}
+                  />
+                ))}
+                {past.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      className="roster-past-toggle"
+                      aria-expanded={pastOpen}
+                      onClick={() => {
+                        tacticalFeedback.onTap();
+                        setPastOpen((v) => !v);
                       }}
-                    />
-                  );
-                })}
+                    >
+                      {pastOpen ? 'Hide past shifts' : `Past shifts (${past.length})`}
+                    </button>
+                    {pastOpen &&
+                      past.map((shift) => (
+                        <ShiftCard
+                          key={shift.shiftId}
+                          shift={shift}
+                          pendingSwap={pendingSwapForShift(shift.shiftId)}
+                          isNext={false}
+                          canSwap={false}
+                          onRequestSwap={() => undefined}
+                        />
+                      ))}
+                  </>
+                )}
               </div>
             )
           ) : (

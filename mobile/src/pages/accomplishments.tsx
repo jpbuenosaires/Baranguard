@@ -23,7 +23,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { IonAlert, IonContent, IonIcon, IonPage } from '@ionic/react';
+import { IonAlert, IonContent, IonIcon, IonPage, IonRefresher, IonRefresherContent, useIonViewWillEnter } from '@ionic/react';
 import { addOutline, chevronBackOutline, chevronForwardOutline, paperPlaneOutline } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
@@ -63,6 +63,15 @@ import tacticalFeedback from '../utils/tacticalFeedback';
 import { uuid } from '../services/uuid';
 import { emptyForm, formMinutes, splitMinutes, type FormState } from '../utils/accomplishmentForm';
 import { AccomplishmentEntrySheet } from '../components/forms/AccomplishmentEntrySheet';
+
+/** "0 hours logged", "45 minutes logged", "2 hours 30 minutes logged" (real totals). */
+function hoursLogged(total: number): string {
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (total === 0) return '0 hours logged';
+  const parts = [h > 0 ? `${h} hour${h === 1 ? '' : 's'}` : '', m > 0 ? `${m} minute${m === 1 ? '' : 's'}` : ''];
+  return `${parts.filter(Boolean).join(' ')} logged`;
+}
 
 /** Sync events can arrive in bursts; reload at most about once a second. */
 const SYNC_REFRESH_DEBOUNCE_MS = 1000;
@@ -107,6 +116,38 @@ const AccomplishmentsPage: React.FC = () => {
       setLoadError('Could not read your saved entries from this phone.');
     }
   }, []);
+
+  // Tab-stack page stays mounted: re-read local entries and the server status on each visit,
+  // without a loading flash. The first enter is covered by the month effect below.
+  const firstEnter = useRef(true);
+  useIonViewWillEnter(() => {
+    if (firstEnter.current) {
+      firstEnter.current = false;
+      return;
+    }
+    void (async () => {
+      await reloadEntries(month);
+      const result = await refreshAccomplishmentMonth(month);
+      setStatusFresh(result.fresh);
+      setReport(result.report);
+      if (result.fresh) await reloadEntries(month);
+    })();
+  });
+
+  const pullRefresh = useCallback(
+    async (done: () => void) => {
+      try {
+        await reloadEntries(month);
+        const result = await refreshAccomplishmentMonth(month);
+        setStatusFresh(result.fresh);
+        setReport(result.report);
+        if (result.fresh) await reloadEntries(month);
+      } finally {
+        done();
+      }
+    },
+    [month, reloadEntries]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -331,6 +372,9 @@ const AccomplishmentsPage: React.FC = () => {
     <IonPage>
       <MobileHeader title="My Accomplishments" showBack defaultBackHref="/tabs/profile" />
       <IonContent className="content-bg">
+        <IonRefresher slot="fixed" onIonRefresh={(e) => void pullRefresh(() => e.detail.complete())}>
+          <IonRefresherContent />
+        </IonRefresher>
         <div className="wf-page">
           <div className="wf-card">
             <div className="wf-month-stepper">
@@ -369,7 +413,7 @@ const AccomplishmentsPage: React.FC = () => {
                 </span>
               )}
               <span className="wf-muted">
-                {entries.length} entr{entries.length === 1 ? 'y' : 'ies'} · {formatMinutes(totalMinutes)}
+                {entries.length} entr{entries.length === 1 ? 'y' : 'ies'} · {hoursLogged(totalMinutes)}
               </span>
             </div>
 
@@ -402,6 +446,13 @@ const AccomplishmentsPage: React.FC = () => {
             <EmptyState
               title={`No entries for ${formatMonthLabel(month)}`}
               body="Add what you did on each work day. Entries are saved on your phone even without a signal."
+              action={
+                !locked ? (
+                  <Button variant="primary" icon={addOutline} onClick={() => openEditor(null)} disabled={submitting}>
+                    Add first entry
+                  </Button>
+                ) : undefined
+              }
             />
           ) : (
             <div className="wf-stack">
@@ -454,9 +505,11 @@ const AccomplishmentsPage: React.FC = () => {
         {note && <Banner tone={note.tone}>{note.text}</Banner>}
         {!locked && (
           <>
-            <Button variant="primary" size="lg" fullWidth icon={addOutline} onClick={() => openEditor(null)} disabled={submitting}>
-              Add entry
-            </Button>
+            {entries.length > 0 && (
+              <Button variant="primary" size="lg" fullWidth icon={addOutline} onClick={() => openEditor(null)} disabled={submitting}>
+                Add entry
+              </Button>
+            )}
             <div className="p4w-dock-secondary">
               {submitBlockedReason && <span className="wf-hint p4w-dock-reason">{submitBlockedReason}</span>}
               <Button

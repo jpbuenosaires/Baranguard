@@ -1,5 +1,5 @@
 /**
- * assignment-detail.tsx â€” M6 Assignment Detail / Tactical Navigation (Â§9 Mobile).
+ * assignment-detail.tsx — M6 Assignment Detail / Tactical Navigation (§9 Mobile).
  *
  * PRODUCTION-GRADE OVERHAUL:
  * Clean, flat, modern, minimal mobile UI designed specifically for Tanods in the field.
@@ -183,7 +183,7 @@ const AssignmentDetailPage: React.FC = () => {
       arrivalPromptedRef.current = true;
       tacticalFeedback.vibrate([80, 100, 80, 100, 80]);
       if (row?.status === 'en_route') {
-        setNote('You have arrived at the scene â€” tap "Mark Arrived" to confirm.');
+        setNote('You have arrived at the scene — tap "Mark Arrived" to confirm.');
       } else {
         setNote('You have arrived at the destination.');
       }
@@ -196,7 +196,7 @@ const AssignmentDetailPage: React.FC = () => {
     const next = nextStatusFor(row.status);
     if (!next) return;
     if (row.server_dispatch_id === null) {
-      setNote('This assignment has no server ID yet â€” cannot change status.');
+      setNote('This assignment has no server ID yet — cannot change status.');
       return;
     }
 
@@ -218,7 +218,7 @@ const AssignmentDetailPage: React.FC = () => {
       } catch (error) {
         // Queue ONLY when the request may never have reached the server
         // (offline/timeout), the server itself failed (5xx), or the session
-        // expired mid-shift (401 â€” syncs after re-login). A 4xx/409 is the
+        // expired mid-shift (401 — syncs after re-login). A 4xx/409 is the
         // server DECIDING no (dispatch cancelled, already advanced, not
         // yours): queueing it would just replay the same rejection later
         // while the cache claimed a status the server never accepted.
@@ -233,10 +233,10 @@ const AssignmentDetailPage: React.FC = () => {
           });
           setNote(
             error instanceof ApiError && error.status === 401
-              ? `Status set to ${STATUS_LABEL[next] ?? next} locally â€” pending, re-login required to send it.`
+              ? `Status set to ${STATUS_LABEL[next] ?? next} locally — pending, re-login required to send it.`
               : error instanceof ApiError && error.isOffline
-                ? `Offline â€” status set to ${STATUS_LABEL[next] ?? next} locally and queued.`
-                : `Workstation unreachable â€” status updated locally and queued.`
+                ? `Offline — status set to ${STATUS_LABEL[next] ?? next} locally and queued.`
+                : `Workstation unreachable — status updated locally and queued.`
           );
         } else {
           pendingNoteKindRef.current = 'error';
@@ -270,7 +270,7 @@ const AssignmentDetailPage: React.FC = () => {
 
   async function handleGetRoute() {
     if (!row || row.server_dispatch_id === null || !position) {
-      setNote(position ? 'No server ID yet â€” cannot fetch route.' : 'Waiting for GPS fixâ€¦');
+      setNote(position ? 'No server ID yet — cannot fetch route.' : 'Waiting for GPS fix…');
       return;
     }
 
@@ -298,8 +298,8 @@ const AssignmentDetailPage: React.FC = () => {
     } catch (error) {
       setNote(
         error instanceof ApiError && error.isOffline
-          ? 'Offline â€” cannot fetch live route.'
-          : 'Workstation unreachable â€” using offline route.'
+          ? 'Offline — cannot fetch live route.'
+          : 'Workstation unreachable — using offline route.'
       );
     } finally {
       setFetchingRoute(false);
@@ -435,6 +435,8 @@ const AssignmentDetailPage: React.FC = () => {
             onRecenter={handleNavigate}
             onOpenExternalMaps={handleOpenExternalMaps}
             onReroute={() => void handleGetRoute()}
+            onCopyCoords={handleCopyCoords}
+            copiedCoords={copiedCoords}
             onExit={() => {
               tacticalFeedback.onTap();
               setNavigationActive(false);

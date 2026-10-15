@@ -54,7 +54,7 @@ const NotificationDiagnostics: React.FC = () => {
 
   return (
     <div className="app-section">
-      <h3 className="card__title">Notification diagnostics</h3>
+      <h3 className="card__title">Push notifications</h3>
       <IonNote className="app-note">Push notification permission: {LABEL[state]}</IonNote>
     </div>
   );

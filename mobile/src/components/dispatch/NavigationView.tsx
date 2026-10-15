@@ -3,7 +3,9 @@ import { IonIcon, IonSpinner } from '@ionic/react';
 import {
   checkmarkCircle,
   checkmarkCircleOutline,
+  checkmarkOutline,
   closeOutline,
+  copyOutline,
   documentTextOutline,
   locateOutline,
   locationOutline,
@@ -20,6 +22,7 @@ import type { NearbyIncident, RouteData } from '../../services/apiService';
 import type { DispatchLocalRow } from '../../services/db/localSchema';
 import type { DevicePosition } from '../../services/geolocation';
 import { formatDistance } from '../../utils/geo';
+import { priorityChip, sceneSubline } from '../../utils/navScene';
 import { formatNavDistance, formatRemainingTime, type NavigationState } from '../../utils/routeProgress';
 import type { NextDispatchStatus, NoteKind } from '../../utils/dispatchStages';
 
@@ -48,6 +51,8 @@ export interface NavigationViewProps {
   onOpenExternalMaps: () => void;
   onReroute: () => void;
   onExit: () => void;
+  onCopyCoords: () => void;
+  copiedCoords: boolean;
 }
 
 export default function NavigationView({
@@ -72,7 +77,11 @@ export default function NavigationView({
   onOpenExternalMaps,
   onReroute,
   onExit,
+  onCopyCoords,
+  copiedCoords,
 }: NavigationViewProps) {
+  const priority = priorityChip(row.priority);
+  const subline = sceneSubline(bearing, distanceM);
   return (
   <div className="nav-viewport-container">
     {focusTarget && (
@@ -147,32 +156,20 @@ export default function NavigationView({
                 {formatRemainingTime(navState.remainingTimeS)}
               </span>
               <span className="nav-bottom-sheet__meta">
-                Â· {formatNavDistance(navState.remainingDistanceM)} remaining
+                · {formatNavDistance(navState.remainingDistanceM)} remaining
               </span>
             </>
           ) : (
             <span className="nav-bottom-sheet__meta">
-              {distanceM !== null ? `${formatDistance(distanceM)} away` : 'Calculating distanceâ€¦'}
+              {distanceM !== null ? `${formatDistance(distanceM)} away` : 'Calculating distance…'}
             </span>
           )}
         </div>
 
         <div className="nav-bottom-sheet__badge-group">
-          <span
-            className={`status-pill nav-priority-pill ${
-              row.priority === 'critical'
-                ? 'status-pill--critical is-urgent'
-                : row.priority === 'high'
-                  ? 'status-pill--pending'
-                  : 'status-pill--info'
-            }`}
-                              >
-            {row.priority.toUpperCase()}
-          </span>
+          <span className={`nav-priority-chip nav-priority-chip--${priority.tone}`}>{priority.label}</span>
           <span className="nav-type-chip">
-            {row.redacted_incident_type
-              ? row.redacted_incident_type.replace(/_/g, ' ').toUpperCase()
-              : 'INCIDENT'}
+            {row.redacted_incident_type ? row.redacted_incident_type.replace(/_/g, ' ') : 'Incident'}
           </span>
         </div>
       </div>
@@ -186,12 +183,14 @@ export default function NavigationView({
               ? row.redacted_incident_summary.split(/[\n.]/)[0].trim() || 'Incident Scene'
               : 'Incident Scene'}
           </div>
-          <div className="nav-bottom-sheet__dest-coords">
-            {focusTarget
-              ? `${focusTarget.latitude.toFixed(5)}, ${focusTarget.longitude.toFixed(5)}${bearing ? ` Â· Bearing ${bearing}` : ''}`
-              : 'Coordinates mapped'}
-          </div>
+          <div className="nav-bottom-sheet__dest-coords">{subline ?? 'Location on the map'}</div>
         </div>
+        {focusTarget && (
+          <button type="button" className="nav-copy-btn" onClick={onCopyCoords} aria-label="Copy coordinates">
+            <IonIcon icon={copiedCoords ? checkmarkOutline : copyOutline} aria-hidden="true" />
+            <span>{copiedCoords ? 'Copied' : 'Copy'}</span>
+          </button>
+        )}
       </div>
 
       {/* Primary Context-Aware Action Button */}
@@ -235,6 +234,16 @@ export default function NavigationView({
         <button
           type="button"
           className="nav-tool-btn"
+          onClick={onExit}
+          title="Exit Navigation to Briefing"
+        >
+          <IonIcon icon={documentTextOutline} />
+          <span>Briefing</span>
+        </button>
+
+        <button
+          type="button"
+          className="nav-tool-btn"
           onClick={onOpenExternalMaps}
           title="Open in Google Maps"
         >
@@ -255,16 +264,6 @@ export default function NavigationView({
             <IonIcon icon={refreshOutline} />
           )}
           <span>Re-route</span>
-        </button>
-
-        <button
-          type="button"
-          className="nav-tool-btn nav-tool-btn--exit"
-          onClick={onExit}
-          title="Exit Navigation to Briefing"
-        >
-          <IonIcon icon={documentTextOutline} />
-          <span>Briefing</span>
         </button>
       </div>
 
