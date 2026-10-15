@@ -32,7 +32,7 @@
 }
 
 .admin-incident-sheet {
-  max-height: 92vh;
+  max-height: 92dvh;
   overflow-y: auto;
 }
 

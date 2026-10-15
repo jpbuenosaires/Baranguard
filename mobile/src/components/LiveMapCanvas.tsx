@@ -163,7 +163,7 @@ interface Props {
    * prompt. The existing recenter FAB already handles reactivation.
    */
   onUserPan?: () => void;
-  /** Optional custom map container height (defaults to '340px' or '68vh' in nav mode) */
+  /** Optional custom map container height (defaults to '340px' or '68dvh' in nav mode) */
   height?: string;
   /** When true, expands the map container edge-to-edge without border radius or card shadow */
   fullScreen?: boolean;
@@ -991,7 +991,7 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
   }
 
   const isFull = fullScreen || (navigationMode && height === '100%');
-  const mapHeight = height ?? (navigationMode ? '68vh' : '340px');
+  const mapHeight = height ?? (navigationMode ? '68dvh' : '340px');
 
   return (
     <div

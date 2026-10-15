@@ -6,6 +6,7 @@
  * the incident sheet. All writes are online-only and never queued.
  */
 
+import { visibleInterval } from '../../utils/visibleInterval';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { IonContent, IonPage, IonRefresher, IonRefresherContent } from '@ionic/react';
 import MobileHeader from '../../components/MobileHeader';
@@ -58,8 +59,7 @@ const AdminDispatchPage: React.FC = () => {
 
   useEffect(() => {
     void load();
-    const timer = setInterval(() => void load(), 20000);
-    return () => clearInterval(timer);
+    return visibleInterval(() => void load(), 20000);
   }, [load]);
 
   async function submitCancel(reason: string) {

@@ -187,6 +187,13 @@ export function deriveSyncState(row: IncidentLocalRow): SyncState {
  * "what happened to the report I filed" needs to see synced rows too, not
  * just the ones still in flight.
  */
+/** Reports created on this phone since `sinceIso` (a COUNT, so Home does not load every row to show one number). */
+export async function countLocalIncidentsSince(sinceIso: string): Promise<number> {
+  const db = await openLocalDatabase();
+  const result = await db.query('SELECT COUNT(*) AS n FROM incident_local WHERE created_offline_at >= ?', [sinceIso]);
+  return Number((result.values?.[0] as { n?: number } | undefined)?.n ?? 0);
+}
+
 export async function listAllLocalIncidents(): Promise<IncidentLocalRow[]> {
   const db = await openLocalDatabase();
   const result = await db.query('SELECT * FROM incident_local ORDER BY created_offline_at DESC');

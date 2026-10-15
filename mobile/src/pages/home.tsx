@@ -66,7 +66,7 @@ import {
   type QueuedDutyStatus,
 } from '../services/db/offlineQueueRepository';
 import { cacheDispatchesFromServer, listActiveCachedDispatches } from '../services/db/dispatchRepository';
-import { listAllLocalIncidents } from '../services/db/incidentRepository';
+import { countLocalIncidentsSince } from '../services/db/incidentRepository';
 import { getOpenSchoolCheckin } from '../services/db/schoolRepository';
 import { formatManilaTime } from '../utils/manilaTime';
 import type { DispatchLocalRow, SchoolCheckinLocalRow } from '../services/db/localSchema';
@@ -312,12 +312,9 @@ const HomePage: React.FC = () => {
 
     async function loadTelemetry() {
       try {
-        const allIncidents = await listAllLocalIncidents();
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
-        const todayCount = allIncidents.filter(
-          (inc) => new Date(inc.created_offline_at).getTime() >= startOfDay.getTime()
-        ).length;
+        const todayCount = await countLocalIncidentsSince(startOfDay.toISOString());
         if (!cancelled) setTodayIncidentCount(todayCount);
       } catch {
         // Handled
