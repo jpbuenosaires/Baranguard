@@ -39,7 +39,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
-import { Button, EmptyState, ErrorState } from '../components/ui';
+import { Banner, Button, EmptyState, ErrorState } from '../components/ui';
 import {
   ApiError,
   cancelShiftSwapRequest,
@@ -109,6 +109,7 @@ const MyShiftsPage: React.FC = () => {
   const [withdrawingId, setWithdrawingId] = useState<number | null>(null);
   const [confirmWithdrawTarget, setConfirmWithdrawTarget] = useState<ShiftSwapRequestEntry | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [swapError, setSwapError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -136,6 +137,7 @@ const MyShiftsPage: React.FC = () => {
 
   async function handleSubmitSwap(target: ShiftEntry, reason: string) {
     setSubmittingSwap(true);
+    setSwapError(null);
     try {
       await requestShiftSwap(target.shiftId, reason.trim() || undefined, uuid());
       tacticalFeedback.onSuccess();
@@ -144,7 +146,13 @@ const MyShiftsPage: React.FC = () => {
       await load();
     } catch (err) {
       tacticalFeedback.onWarning();
-      setNote(err instanceof Error ? err.message : 'Could not submit the swap request.');
+      setSwapError(
+        err instanceof ApiError && err.isOffline
+          ? 'A swap request needs a connection. Try again when you are online.'
+          : err instanceof Error
+            ? err.message
+            : 'Could not submit the swap request.'
+      );
     } finally {
       setSubmittingSwap(false);
     }
@@ -199,6 +207,7 @@ const MyShiftsPage: React.FC = () => {
 
       <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
         <div className="roster-container">
+          {note && <Banner tone="info">{note}</Banner>}
           {/* Availability entry point — the desk builds the roster from what Tanods submit here. */}
           <button
             type="button"
@@ -328,7 +337,7 @@ const MyShiftsPage: React.FC = () => {
               <EmptyState
                 icon={calendarOutline}
                 title="No upcoming shifts"
-                body="No published duties right now. Submit your availability, then check back once the desk publishes the roster."
+                body="Only shifts the desk has published appear here. Submit your availability, then check back once the roster is published."
               />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
@@ -400,6 +409,7 @@ const MyShiftsPage: React.FC = () => {
                             onClick={() => {
                               tacticalFeedback.onTap();
                               setSwapReason('');
+                              setSwapError(null);
                               setSwapTarget(shift);
                             }}
                             aria-label={`Request shift swap for ${timing.dateLabel}`}
@@ -557,14 +567,6 @@ const MyShiftsPage: React.FC = () => {
         </div>
 
         <IonAlert
-          isOpen={note !== null}
-          onDidDismiss={() => setNote(null)}
-          header="Duty Schedule"
-          message={note ?? ''}
-          buttons={['OK']}
-        />
-
-        <IonAlert
           isOpen={confirmWithdrawTarget !== null}
           onDidDismiss={() => setConfirmWithdrawTarget(null)}
           header="Cancel Swap Request"
@@ -662,7 +664,9 @@ const MyShiftsPage: React.FC = () => {
                   onChange={(e) => setSwapReason(e.target.value)}
                   maxLength={300}
                   rows={3}
+                  disabled={submittingSwap}
                 />
+                <span className="wf-hint">Optional. Up to 300 characters ({swapReason.length}/300).</span>
               </div>
 
               {/* Desk Routing Notice */}
@@ -674,31 +678,22 @@ const MyShiftsPage: React.FC = () => {
               </div>
 
               {/* Actions */}
+              {swapError && <p className="p4w-error" role="alert">{swapError}</p>}
+
               <div className="tactical-swap-actions">
-                <button
-                  type="button"
-                  className="tactical-swap-btn-submit"
-                  disabled={submittingSwap}
+                <Button
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  icon={swapHorizontalOutline}
+                  loading={submittingSwap}
                   onClick={() => handleSubmitSwap(swapTarget, swapReason)}
                 >
-                  {submittingSwap ? (
-                    <IonSpinner name="dots" style={{ width: '20px', height: '20px' }} />
-                  ) : (
-                    <>
-                      <IonIcon icon={swapHorizontalOutline} style={{ fontSize: '1.2rem' }} />
-                      <span>Submit Swap Request</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  className="tactical-swap-btn-cancel"
-                  disabled={submittingSwap}
-                  onClick={() => setSwapTarget(null)}
-                >
+                  Send swap request
+                </Button>
+                <Button variant="ghost" fullWidth disabled={submittingSwap} onClick={() => setSwapTarget(null)}>
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
           );

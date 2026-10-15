@@ -11,13 +11,12 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { IonAlert, IonContent, IonPage, IonRefresher, IonRefresherContent, IonSpinner } from '@ionic/react';
+import { IonAlert, IonContent, IonPage, IonRefresher, IonRefresherContent } from '@ionic/react';
 import { LoadingBlock } from '../../components/LoadingBlock';
-import { EmptyState, ErrorState } from '../../components/ui';
+import { Banner, Button, Card, Chip, EmptyState, ErrorState } from '../../components/ui';
 import MobileHeader from '../../components/MobileHeader';
-import { Banner } from '../../components/WorkflowBits';
 import { useOnline } from '../../components/useOnline';
-import { formatServerTime, humanize, NEEDS_CONNECTION } from '../../components/adminFormat';
+import { formatServerTime, humanize, NEEDS_CONNECTION, sortNewestFirst, sosLocationText } from '../../components/adminFormat';
 import {
   acknowledgeSos,
   adminErrorMessage,
@@ -33,16 +32,10 @@ import { publishActiveSosCount } from '../../services/adminSosCount';
 import { activeSosCount, splitSosAlerts } from '../../utils/sosBadge';
 import tacticalFeedback from '../../utils/tacticalFeedback';
 
-const LOCATION_LABEL: Record<string, string> = {
-  live: 'Live GPS fix',
-  last_known: 'Last known position (not live)',
-  no_fix: 'No location available',
-};
-
-const STATUS_PILL: Record<string, string> = {
-  active: 'status-pill--critical is-urgent',
-  acknowledged: 'status-pill--pending',
-  resolved: 'status-pill--success',
+const STATUS_TONE: Record<string, 'critical' | 'warning' | 'success' | 'neutral'> = {
+  active: 'critical',
+  acknowledged: 'warning',
+  resolved: 'success',
 };
 
 const AdminSosPage: React.FC = () => {
@@ -142,42 +135,42 @@ const AdminSosPage: React.FC = () => {
 
   function renderAlert(a: AdminSosAlert) {
     return (
-            <div key={a.sosId} className="wf-card">
-              <div className="wf-card__head">
-                <strong className="wf-card__title">{names.get(a.userId) ?? `Tanod #${a.userId}`}</strong>
-                <span className={`status-pill ${STATUS_PILL[a.status] ?? 'status-pill--neutral'}`}>{humanize(a.status)}</span>
-              </div>
-              <div className="wf-card__sub">Raised: {formatServerTime(a.triggeredAt)}</div>
-              <div className="wf-card__sub">Received: {formatServerTime(a.receivedAt)}</div>
-              <div className="wf-card__sub">
-                Location: {LOCATION_LABEL[a.locationSource ?? 'no_fix'] ?? 'Unknown'}
-                {a.locationSource === 'last_known' && a.locationRecordedAt ? ` (fix from ${formatServerTime(a.locationRecordedAt)})` : ''}
-              </div>
-              {a.acknowledgedAt && <div className="wf-card__sub">Acknowledged: {formatServerTime(a.acknowledgedAt)}</div>}
-              {a.resolvedAt && <div className="wf-card__sub">Resolved: {formatServerTime(a.resolvedAt)}</div>}
-              {rowError?.id === a.sosId && <Banner tone="critical">{rowError.message}</Banner>}
-              {a.status === 'active' && (
-                <button
-                  type="button"
-                  className="dispatch-primary-cta dispatch-primary-cta--blue"
-                  disabled={!online || busy}
-                  onClick={() => void acknowledge(a.sosId)}
-                >
-                  {ackingId === a.sosId ? <IonSpinner name="dots" /> : <span>Acknowledge</span>}
-                </button>
-              )}
-              {a.status === 'acknowledged' && (
-                <button type="button" className="sos-resolve-btn" disabled={!online || busy} onClick={() => setResolveTarget(a)}>
-                  {resolvingId === a.sosId ? <IonSpinner name="dots" /> : <span>Mark resolved</span>}
-                </button>
-              )}
-            </div>
+      <Card
+        key={a.sosId}
+        title={names.get(a.userId) ?? `Tanod #${a.userId}`}
+        action={<Chip tone={STATUS_TONE[a.status] ?? 'neutral'}>{humanize(a.status)}</Chip>}
+      >
+        <div className="wf-card__sub">Raised: {formatServerTime(a.triggeredAt)}</div>
+        <div className="wf-card__sub">Received: {formatServerTime(a.receivedAt)}</div>
+        <div className="wf-card__sub">Location: {sosLocationText(a.locationSource, a.locationRecordedAt)}</div>
+        {a.acknowledgedAt && <div className="wf-card__sub">Acknowledged: {formatServerTime(a.acknowledgedAt)}</div>}
+        {a.resolvedAt && <div className="wf-card__sub">Resolved: {formatServerTime(a.resolvedAt)}</div>}
+        {rowError?.id === a.sosId && <Banner tone="error">{rowError.message}</Banner>}
+        {a.status === 'active' && (
+          <div className="admin-actions">
+            <Button size="lg" fullWidth loading={ackingId === a.sosId} disabled={!online || busy} onClick={() => void acknowledge(a.sosId)}>
+              Acknowledge
+            </Button>
+          </div>
+        )}
+        {a.status === 'acknowledged' && (
+          <div className="admin-actions">
+            <Button variant="secondary" size="lg" fullWidth loading={resolvingId === a.sosId} disabled={!online || busy} onClick={() => setResolveTarget(a)}>
+              Mark resolved
+            </Button>
+          </div>
+        )}
+      </Card>
     );
   }
 
   return (
     <IonPage>
-      <MobileHeader title="SOS" subtitle="Chief Tanod Console" hideStatusIndicator />
+      <MobileHeader
+        title="SOS"
+        subtitle={activeSosCount(alerts ?? []) > 0 ? `Chief Tanod Console · ${activeSosCount(alerts ?? [])} active` : 'Chief Tanod Console'}
+        hideStatusIndicator
+      />
       <IonContent>
         <IonRefresher slot="fixed" onIonRefresh={(e) => void load().finally(() => e.detail.complete())}>
           <IonRefresherContent />
@@ -192,7 +185,9 @@ const AdminSosPage: React.FC = () => {
           )}
 
           {(() => {
-            const { current, earlier } = splitSosAlerts(alerts ?? []);
+            const split = splitSosAlerts(alerts ?? []);
+            const current = [...sortNewestFirst(split.current.filter((x) => x.status === 'active')), ...sortNewestFirst(split.current.filter((x) => x.status !== 'active'))];
+            const earlier = sortNewestFirst(split.earlier);
             return (
               <>
                 {current.map(renderAlert)}
@@ -214,8 +209,7 @@ const AdminSosPage: React.FC = () => {
             );
           })()}
           {fallbackNumber !== undefined && (
-            <div className="wf-card">
-              <strong className="wf-card__title">SMS fallback number</strong>
+            <Card title="SMS fallback number">
               {fallbackNumber ? (
                 <a className="admin-fallback-number" href={`tel:${fallbackNumber}`}>
                   {fallbackNumber}
@@ -224,7 +218,7 @@ const AdminSosPage: React.FC = () => {
                 <span className="wf-muted">No backup contact number has been configured.</span>
               )}
               <span className="wf-hint">Where a Tanod's phone sends the SOS text if it cannot reach the workstation.</span>
-            </div>
+            </Card>
           )}
         </div>
 

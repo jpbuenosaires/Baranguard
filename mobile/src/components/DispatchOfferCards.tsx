@@ -24,9 +24,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { IonIcon, IonSpinner } from '@ionic/react';
+import { IonIcon } from '@ionic/react';
 import { flashOutline, locationOutline, timeOutline, cloudOfflineOutline } from 'ionicons/icons';
 import { Banner } from './WorkflowBits';
+import { Button, Chip } from './ui';
 import {
   acceptDispatchOffer,
   ApiError,
@@ -114,7 +115,7 @@ const DispatchOfferCards: React.FC = () => {
       pendingRequestIds.current.delete(offer.offerId);
       tacticalFeedback.onWarning();
       if (error instanceof ApiError && error.status === 409 && error.code === 'OFFER_CLOSED') {
-        setNotice({ tone: 'info', text: 'Another tanod already responded.' });
+        setNotice({ tone: 'info', text: 'Someone else accepted this call first. It is not assigned to you.' });
       } else if (error instanceof ApiError && error.status === 404) {
         setNotice({ tone: 'info', text: 'This call is no longer available.' });
       } else {
@@ -146,15 +147,15 @@ const DispatchOfferCards: React.FC = () => {
         return (
           <article
             key={offer.offerId}
-            className="wf-card dispatch-offer-card"
+            className="wf-card dispatch-offer-card p4d-offer"
             aria-label={`Dispatch offer: ${typeLabel}, Barangay ${offer.barangayName}`}
           >
             <div className="wf-card__head">
               <div className="wf-stack dispatch-offer-card__text">
-                <span className="dispatch-offer-card__tag">
+                <Chip tone="info" className="dispatch-offer-card__tag">
                   <IonIcon icon={flashOutline} aria-hidden="true" />
-                  <span>Call available</span>
-                </span>
+                  <span>Open call. First to accept gets it.</span>
+                </Chip>
                 <h3 className="wf-card__title">{typeLabel}</h3>
                 <span className="wf-card__sub dispatch-offer-card__meta">
                   <IonIcon icon={locationOutline} aria-hidden="true" />
@@ -180,26 +181,21 @@ const DispatchOfferCards: React.FC = () => {
               </div>
             </div>
 
-            <button
-              type="button"
-              className="wf-btn wf-btn--primary wf-btn--block"
+            <Button
+              size="lg"
+              fullWidth
+              loading={accepting}
               disabled={disabled}
+              icon={offline ? cloudOfflineOutline : undefined}
               onClick={() => void handleAccept(offer)}
             >
-              {accepting ? (
-                <>
-                  <IonSpinner name="dots" style={{ width: '18px', height: '18px' }} />
-                  <span>Accepting&hellip;</span>
-                </>
-              ) : offline ? (
-                <>
-                  <IonIcon icon={cloudOfflineOutline} aria-hidden="true" />
-                  <span>Needs a connection to accept</span>
-                </>
-              ) : (
-                <span>Accept call</span>
-              )}
-            </button>
+              {accepting ? 'Accepting...' : offline ? 'Needs a connection to accept' : expired ? 'Time ran out' : 'Accept call'}
+            </Button>
+            {offline && (
+              <p className="p4d-offer__why" role="status">
+                Accepting is never saved for later. Someone else may take this call before you reconnect.
+              </p>
+            )}
           </article>
         );
       })}

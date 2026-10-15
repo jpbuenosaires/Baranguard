@@ -37,10 +37,8 @@ import {
   IonSpinner,
 } from '@ionic/react';
 import {
-  alertCircleOutline,
   closeOutline,
   callOutline,
-  cameraOutline,
   checkmarkCircle,
   checkmarkCircleOutline,
   checkmarkOutline,
@@ -53,7 +51,6 @@ import {
   refreshOutline,
   shieldCheckmarkOutline,
   syncOutline,
-  timeOutline,
 } from 'ionicons/icons';
 import LiveMapCanvas, { type FocusTarget, type LiveMapCanvasHandle } from '../components/LiveMapCanvas';
 import ActiveStepCard from '../components/ActiveStepCard';
@@ -61,6 +58,9 @@ import MobileHeader from '../components/MobileHeader';
 import ReferralPanel from '../components/ReferralPanel';
 import AssignmentEvidencePanel from '../components/AssignmentEvidencePanel';
 import { LoadingBlock } from '../components/LoadingBlock';
+import CollapsibleSection from '../components/CollapsibleSection';
+import DispatchNextCard from '../components/DispatchNextCard';
+import { Banner, Button } from '../components/ui';
 import {
   ApiError,
   getDispatches,
@@ -705,103 +705,48 @@ const AssignmentDetailPage: React.FC = () => {
           /* ====================================================================
              RETHOUGHT & OVERHAULED FIELD BRIEFING & OPERATION MODE
              ==================================================================== */
-          <div className="dispatch-redesign-container">
-            {/* Transient Alert / Note Banner */}
+          <div className="dispatch-redesign-container p4d-stack">
             {note && (
-              <div
-                style={{
-                  background: 'var(--tint-info-bg)',
-                  border: '1px solid color-mix(in srgb, var(--color-primary) 30%, transparent)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '10px 14px',
-                  color: 'var(--pill-info-text)',
-                  fontSize: 'var(--font-size-sm)',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                }}
-                role={noteKind === 'error' ? 'alert' : 'status'}
+              <Banner
+                tone={noteKind === 'error' ? 'error' : noteKind === 'queued' ? 'warning' : 'info'}
+                onDismiss={noteKind !== 'info' ? () => setNote(null) : undefined}
+                dismissLabel="Dismiss message"
               >
-                <IonIcon icon={alertCircleOutline} style={{ fontSize: '1.1rem', flexShrink: 0 }} />
-                <span style={{ flex: 1 }}>{note}</span>
-                {noteKind !== 'info' && (
-                  <button type="button" className="p1-note-dismiss" aria-label="Dismiss message" onClick={() => setNote(null)}>
-                    <IonIcon icon={closeOutline} aria-hidden="true" />
-                  </button>
-                )}
-              </div>
+                {note}
+              </Banner>
             )}
 
-            {/* Offline Sync Status Banner */}
-            {row.synced === 0 && (
-              <div
-                style={{
-                  background: 'var(--tint-warning-bg)',
-                  border: '1px solid var(--color-warning)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '9px 12px',
-                  color: 'var(--pill-warning-text)',
-                  fontSize: '0.76rem',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                }}
-                role="status"
-              >
-                <IonIcon icon={syncOutline} style={{ fontSize: '1rem', flexShrink: 0 }} />
-                <span>Offline change saved â€” will sync when connected.</span>
-              </div>
-            )}
+            <DispatchNextCard
+              next={next}
+              incidentCode={formatIncidentCode({ displayId: row.incident_display_id, serverIncidentId: row.server_incident_id }) ?? 'Incident'}
+              incidentType={row.redacted_incident_type}
+              priority={row.priority}
+              statusLabel={STATUS_LABEL[row.status] ?? row.status}
+              locationLine={
+                row.redacted_incident_summary
+                  ? row.redacted_incident_summary.split(/[\n.]/)[0].trim() || 'Incident location'
+                  : 'Incident location'
+              }
+              telemetry={distanceM !== null ? `${formatDistance(distanceM)} away, bearing ${bearing ?? 'N'}` : 'Locating...'}
+              age={formatRelativeAge(elapsedSeconds)}
+              synced={row.synced !== 0}
+              serverDispatchId={row.server_dispatch_id}
+              updating={updating}
+              onAdvance={() => {
+                tacticalFeedback.onTap();
+                if (next === 'completed') {
+                  setShowCompleteConfirm(true);
+                  return;
+                }
+                void handleAdvanceStatus();
+                if (next === 'en_route') setNavigationActive(true);
+              }}
+            />
 
-            {/* Unified Hero Incident Card */}
-            <div className="dispatch-hero-card">
-              <div className="dispatch-hero-badges">
-                <span
-                  className={`status-pill ${
-                    row.priority === 'critical'
-                      ? 'status-pill--critical is-urgent'
-                      : row.priority === 'high'
-                        ? 'status-pill--pending'
-                        : 'status-pill--info'
-                  }`}
-                >
-                  {row.priority === 'critical' ? 'Critical' : row.priority === 'high' ? 'High Priority' : 'Normal'}
-                </span>
-                <span className="dispatch-category-pill">
-                  {row.redacted_incident_type ? row.redacted_incident_type.replace(/_/g, ' ').toUpperCase() : 'INCIDENT'}
-                </span>
-                <span className="dispatch-case-pill">{formatIncidentCode({ displayId: row.incident_display_id, serverIncidentId: row.server_incident_id })}</span>
-                <span className="dispatch-hero-time">
-                  <IonIcon icon={timeOutline} />
-                  {formatRelativeAge(elapsedSeconds)}
-                </span>
-              </div>
-
-              <div className="dispatch-hero-location">
-                <IonIcon icon={locationOutline} className="dispatch-hero-loc-icon" />
-                <div className="dispatch-hero-loc-text">
-                  <div className="dispatch-hero-landmark">
-                    {row.redacted_incident_summary
-                      ? row.redacted_incident_summary.split(/[\n.]/)[0].trim() || 'Incident Location'
-                      : 'Incident Location'}
-                  </div>
-                  <div className="dispatch-hero-telemetry">
-                    {distanceM !== null ? `${formatDistance(distanceM)} away Â· Bearing ${bearing ?? 'N'}` : 'Locatingâ€¦'}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Compact Linear Operational Stage Bar */}
             <div className="dispatch-stage-bar">
               <div className="dispatch-stage-bar__header">
                 <span className="dispatch-stage-bar__title">
                   Stage {stageNum} of 4: {STATUS_LABEL[row.status] ?? row.status}
-                </span>
-                <span className="dispatch-stage-bar__step-name">
-                  {row.status === 'completed' ? 'Resolved' : row.status === 'arrived' ? 'On Scene' : row.status === 'en_route' ? 'In Transit' : 'Dispatched'}
                 </span>
               </div>
               <div
@@ -810,6 +755,7 @@ const AssignmentDetailPage: React.FC = () => {
                 aria-valuenow={stageNum}
                 aria-valuemin={1}
                 aria-valuemax={4}
+                aria-label="Dispatch stage"
               >
                 {STAGES.map((s, idx) => {
                   const isDone = idx < currentStageIndex || (row.status === 'completed' && idx === currentStageIndex);
@@ -818,11 +764,7 @@ const AssignmentDetailPage: React.FC = () => {
                     <div
                       key={s}
                       className={`dispatch-stage-segment ${
-                        isDone
-                          ? 'dispatch-stage-segment--done'
-                          : isActive
-                            ? 'dispatch-stage-segment--active'
-                            : ''
+                        isDone ? 'dispatch-stage-segment--done' : isActive ? 'dispatch-stage-segment--active' : ''
                       }`}
                     />
                   );
@@ -830,20 +772,10 @@ const AssignmentDetailPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Field Incident Briefing Card */}
-            <div className="dispatch-briefing-card">
-              <div className="dispatch-briefing-header">
-                <span className="dispatch-section-title">
-                  <IonIcon icon={documentTextOutline} />
-                  Dispatcher Briefing
-                </span>
-              </div>
-
+            <CollapsibleSection title="Details" defaultOpen>
               <p className="dispatch-briefing-body">
-                {row.redacted_incident_summary ||
-                  'Patrol dispatched to check the area and assist with the incident.'}
+                {row.redacted_incident_summary || 'Patrol dispatched to check the area and assist with the incident.'}
               </p>
-
               {focusTarget && (
                 <div className="dispatch-coords-strip">
                   <span>
@@ -853,104 +785,66 @@ const AssignmentDetailPage: React.FC = () => {
                     type="button"
                     className="coords-copy-btn"
                     onClick={handleCopyCoords}
-                    title="Copy coordinates"
                     aria-label="Copy coordinates"
                   >
-                    <IonIcon icon={copiedCoords ? checkmarkOutline : copyOutline} />
+                    <IonIcon icon={copiedCoords ? checkmarkOutline : copyOutline} aria-hidden="true" />
                     <span>{copiedCoords ? 'Copied' : 'Copy'}</span>
                   </button>
                 </div>
               )}
-            </div>
+              {row.status === 'arrived' && backupContact && (
+                <a
+                  href={`tel:${backupContact}`}
+                  className="p4d-call"
+                  onClick={() => tacticalFeedback.onTap()}
+                >
+                  <IonIcon icon={callOutline} aria-hidden="true" />
+                  <span>Call backup contact {backupContact}</span>
+                </a>
+              )}
+            </CollapsibleSection>
 
-            {/* Referral / handoff — records that the Tanod handed the case over; never implies acceptance. */}
-            <ReferralPanel
-              link={{ serverIncidentId: row.server_incident_id }}
-              incidentLabel={formatIncidentCode({ displayId: row.incident_display_id, serverIncidentId: row.server_incident_id }) ?? 'this incident'}
-            />
-
-            {/* Evidence for the assigned incident - saved on the phone first, uploaded by the sync worker. */}
-            <AssignmentEvidencePanel dispatchLocalId={row.local_id} />
-
-            {/* Clean Tap-to-Navigate Map Card */}
             {focusTarget && (
-              <div
-                className="dispatch-map-preview-card"
-                onClick={() => {
-                  tacticalFeedback.onTap();
-                  setNavigationActive(true);
-                }}
-                role="button"
-                tabIndex={0}
-                title="Tap to open turn-by-turn tactical navigation"
-                aria-label="Open turn-by-turn navigation"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
+              <CollapsibleSection title="Route and map">
+                <div className="dispatch-map-preview-card">
+                  <LiveMapCanvas
+                    ref={mapRef}
+                    barangayId={barangayId}
+                    position={position}
+                    incidents={destinationIncidents}
+                    tanods={[]}
+                    focusTarget={focusTarget}
+                    routeGeometry={route?.geometry ?? null}
+                    navigationMode={false}
+                    height="200px"
+                    hideRecenterFab={true}
+                  />
+                </div>
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  icon={navigateOutline}
+                  onClick={() => {
+                    tacticalFeedback.onTap();
                     setNavigationActive(true);
-                  }
-                }}
-              >
-                <LiveMapCanvas
-                  ref={mapRef}
-                  barangayId={barangayId}
-                  position={position}
-                  incidents={destinationIncidents}
-                  tanods={[]}
-                  focusTarget={focusTarget}
-                  routeGeometry={route?.geometry ?? null}
-                  navigationMode={false}
-                  height="200px"
-                  hideRecenterFab={true}
-                />
-                <div className="dispatch-map-launch-bar">
-                  <div className="dispatch-map-launch-info">
-                    <IonIcon icon={navigateOutline} />
-                    <span>Tap map for Turn-by-Turn Guidance</span>
-                  </div>
-                  <IonIcon icon={openOutline} />
-                </div>
-              </div>
+                  }}
+                >
+                  Open turn-by-turn guidance
+                </Button>
+              </CollapsibleSection>
             )}
 
-            {/* On-Scene Operational Tools (when arrived on scene) */}
-            {row.status === 'arrived' && (
-              <div className="dispatch-on-scene-tools">
-                <span className="dispatch-section-title">On-Scene Field Tools</span>
-                <div className="dispatch-scene-tools-grid">
-                  <button
-                    type="button"
-                    className="dispatch-scene-tool-btn"
-                    onClick={() => {
-                      tacticalFeedback.onTap();
-                      navigate('/tabs/reports');
-                    }}
-                    title="View or attach incident notes and evidence"
-                  >
-                    <IonIcon icon={cameraOutline} style={{ color: 'var(--color-primary)' }} />
-                    <div className="dispatch-scene-tool-text">
-                      <span className="dispatch-scene-tool-label">Incident Reports</span>
-                      <span className="dispatch-scene-tool-sub">View evidence & logs</span>
-                    </div>
-                  </button>
+            <CollapsibleSection title="Evidence">
+              <AssignmentEvidencePanel dispatchLocalId={row.local_id} hideTitle />
+            </CollapsibleSection>
 
-                  {backupContact && (
-                    <a
-                      href={`tel:${backupContact}`}
-                      className="dispatch-scene-tool-btn"
-                      onClick={() => tacticalFeedback.onTap()}
-                      title="Call the barangay backup contact"
-                    >
-                      <IonIcon icon={callOutline} style={{ color: 'var(--color-danger)' }} />
-                      <div className="dispatch-scene-tool-text">
-                        <span className="dispatch-scene-tool-label">Call backup contact</span>
-                        <span className="dispatch-scene-tool-sub">{backupContact}</span>
-                      </div>
-                    </a>
-                  )}
-                </div>
-              </div>
-            )}
+            <CollapsibleSection title="Referral">
+              <ReferralPanel
+                link={{ serverIncidentId: row.server_incident_id }}
+                incidentLabel={formatIncidentCode({ displayId: row.incident_display_id, serverIncidentId: row.server_incident_id }) ?? 'this incident'}
+                hideTitle
+              />
+            </CollapsibleSection>
           </div>
         )}
       </IonContent>
@@ -958,90 +852,18 @@ const AssignmentDetailPage: React.FC = () => {
       {/* Sticky Bottom Operational Action Dock (Ergonomic Thumb-Zone) */}
       {!navigationActive && row && (
         <IonFooter className="ion-no-border dispatch-sticky-dock">
-          {row.status === 'assigned' && (
+          {(row.status === 'en_route' || row.status === 'arrived') && (
             <button
               type="button"
-              className="dispatch-primary-cta dispatch-primary-cta--blue"
-              disabled={updating}
+              className="dispatch-secondary-cta"
               onClick={() => {
                 tacticalFeedback.onTap();
-                void handleAdvanceStatus();
                 setNavigationActive(true);
               }}
             >
-              <IonIcon icon={navigateOutline} style={{ fontSize: '1.2rem' }} />
-              <span>{updating ? 'Startingâ€¦' : 'Start Navigation & Go En Route'}</span>
+              <IonIcon icon={navigateOutline} aria-hidden="true" />
+              <span>{row.status === 'en_route' ? 'Resume navigation' : 'Open tactical map'}</span>
             </button>
-          )}
-
-          {row.status === 'en_route' && (
-            <>
-              <button
-                type="button"
-                className="dispatch-primary-cta dispatch-primary-cta--blue"
-                disabled={updating}
-                onClick={() => {
-                  tacticalFeedback.onTap();
-                  void handleAdvanceStatus();
-                }}
-              >
-                {updating ? (
-                  <IonSpinner name="dots" />
-                ) : (
-                  <>
-                    <IonIcon icon={checkmarkCircleOutline} style={{ fontSize: '1.2rem' }} />
-                    <span>Mark Arrived</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                type="button"
-                className="dispatch-secondary-cta"
-                onClick={() => {
-                  tacticalFeedback.onTap();
-                  setNavigationActive(true);
-                }}
-              >
-                <IonIcon icon={navigateOutline} style={{ color: 'var(--color-primary)' }} />
-                <span>Resume Navigation</span>
-              </button>
-            </>
-          )}
-
-          {row.status === 'arrived' && (
-            <>
-              <button
-                type="button"
-                className="dispatch-primary-cta dispatch-primary-cta--green"
-                disabled={updating}
-                onClick={() => {
-                  tacticalFeedback.onTap();
-                  setShowCompleteConfirm(true);
-                }}
-              >
-                {updating ? (
-                  <IonSpinner name="dots" />
-                ) : (
-                  <>
-                    <IonIcon icon={checkmarkCircle} style={{ fontSize: '1.2rem' }} />
-                    <span>Mark as Completed</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                type="button"
-                className="dispatch-secondary-cta"
-                onClick={() => {
-                  tacticalFeedback.onTap();
-                  setNavigationActive(true);
-                }}
-              >
-                <IonIcon icon={navigateOutline} style={{ color: 'var(--color-primary)' }} />
-                <span>Open Tactical Map</span>
-              </button>
-            </>
           )}
 
           {row.status === 'completed' && (

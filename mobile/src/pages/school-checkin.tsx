@@ -15,12 +15,12 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { IonContent, IonIcon, IonPage, IonSpinner } from '@ionic/react';
+import { IonContent, IonIcon, IonPage } from '@ionic/react';
 import { logInOutline, logOutOutline, schoolOutline } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
 import { Banner, SyncChip } from '../components/WorkflowBits';
-import { Button, EmptyState, ErrorState } from '../components/ui';
+import { Button, Chip, EmptyState, ErrorState } from '../components/ui';
 import {
   endSchoolCheckin,
   getOpenSchoolCheckin,
@@ -50,6 +50,7 @@ const SchoolCheckinPage: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
   const [note, setNote] = useState<{ tone: 'success' | 'info' | 'warning' | 'critical'; text: string } | null>(null);
 
   const reload = useCallback(async () => {
@@ -85,9 +86,10 @@ const SchoolCheckinPage: React.FC = () => {
   async function handleCheckIn() {
     const school = schools.find((s) => String(s.school_id) === schoolId);
     if (!school) {
-      setNote({ tone: 'warning', text: 'Choose a school first.' });
+      setPickError('Choose a school to check in.');
       return;
     }
+    setPickError(null);
     setBusy(true);
     setNote(null);
     tacticalFeedback.onTap();
@@ -95,7 +97,7 @@ const SchoolCheckinPage: React.FC = () => {
       await startSchoolCheckin({ schoolId: school.school_id, name: school.name });
       tacticalFeedback.onSuccess();
       setSchoolId('');
-      setNote({ tone: 'success', text: `Checked in at ${school.name}. Saved on this phone; it will sync when connected.` });
+      setNote({ tone: 'success', text: `Checked in at ${school.name}. Saved on this phone, will send when online.` });
       await reload();
       void forceSyncNow();
     } catch (err) {
@@ -114,7 +116,7 @@ const SchoolCheckinPage: React.FC = () => {
     try {
       await endSchoolCheckin(open.local_id);
       tacticalFeedback.onSuccess();
-      setNote({ tone: 'success', text: 'Checked out. Saved on this phone; it will sync when connected.' });
+      setNote({ tone: 'success', text: 'Checked out. Saved on this phone, will send when online.' });
       await reload();
       void forceSyncNow();
     } catch (err) {
@@ -160,19 +162,12 @@ const SchoolCheckinPage: React.FC = () => {
             <div className="wf-card">
               <div className="wf-card__head">
                 <div>
-                  <h3 className="wf-card__title">Checked in at {open.school_name}</h3>
+                  <Chip tone="success">Checked in</Chip>
+                  <h3 className="wf-card__title p4w-checkin__school">{open.school_name}</h3>
                   <p className="wf-card__sub">Since {formatManilaTime(open.checked_in_at)}</p>
                 </div>
                 <SyncChip row={chipRow(open)} />
               </div>
-              <button type="button" className="dispatch-primary-cta dispatch-primary-cta--green" onClick={handleCheckOut} disabled={busy}>
-                {busy ? <IonSpinner name="dots" /> : (
-                  <>
-                    <IonIcon icon={logOutOutline} style={{ fontSize: '1.2rem' }} />
-                    <span>Check Out</span>
-                  </>
-                )}
-              </button>
             </div>
           ) : schools.length === 0 ? (
             <EmptyState
@@ -201,8 +196,13 @@ const SchoolCheckinPage: React.FC = () => {
                   id="checkin-school"
                   className="wf-select"
                   value={schoolId}
-                  onChange={(e) => setSchoolId(e.target.value)}
+                  onChange={(e) => {
+                    setSchoolId(e.target.value);
+                    setPickError(null);
+                  }}
                   disabled={busy}
+                  aria-invalid={pickError ? true : undefined}
+                  aria-describedby="checkin-school-msg"
                 >
                   <option value="">Select a school…</option>
                   {schools.map((s) => (
@@ -211,23 +211,13 @@ const SchoolCheckinPage: React.FC = () => {
                     </option>
                   ))}
                 </select>
+                <span id="checkin-school-msg" className={pickError ? 'p4w-error' : 'wf-hint'}>
+                  {pickError ?? 'Pick the school you are posted at.'}
+                </span>
               </div>
-              <button
-                type="button"
-                className="dispatch-primary-cta dispatch-primary-cta--blue"
-                onClick={handleCheckIn}
-                disabled={busy || !schoolId}
-              >
-                {busy ? <IonSpinner name="dots" /> : (
-                  <>
-                    <IonIcon icon={logInOutline} style={{ fontSize: '1.2rem' }} />
-                    <span>Check In</span>
-                  </>
-                )}
-              </button>
-              <button type="button" className="wf-btn wf-btn--small" onClick={handleRefreshSchools} disabled={refreshing}>
-                {refreshing ? <IonSpinner name="dots" /> : <span>Refresh school list</span>}
-              </button>
+              <Button variant="secondary" onClick={handleRefreshSchools} loading={refreshing} disabled={busy}>
+                Refresh school list
+              </Button>
             </div>
           )}
 
@@ -237,7 +227,7 @@ const SchoolCheckinPage: React.FC = () => {
               {history.map((row) => (
                 <div key={row.local_id} className="wf-entry">
                   <div className="wf-row wf-row--between">
-                    <strong style={{ fontSize: '0.88rem' }}>{row.school_name}</strong>
+                    <strong className="p4w-entry__date">{row.school_name}</strong>
                     <SyncChip row={chipRow(row)} />
                   </div>
                   <span className="wf-muted">
@@ -254,6 +244,20 @@ const SchoolCheckinPage: React.FC = () => {
           )}
         </div>
       </IonContent>
+
+      {!loading && !loadError && (open || schools.length > 0) && (
+        <div className="wf-dock">
+          {open ? (
+            <Button variant="primary" size="lg" fullWidth icon={logOutOutline} loading={busy} onClick={handleCheckOut}>
+              Check out
+            </Button>
+          ) : (
+            <Button variant="primary" size="lg" fullWidth icon={logInOutline} loading={busy} onClick={handleCheckIn}>
+              Check in
+            </Button>
+          )}
+        </div>
+      )}
     </IonPage>
   );
 };

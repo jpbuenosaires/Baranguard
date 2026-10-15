@@ -139,7 +139,7 @@ export const TacticalAlertBar: React.FC<TacticalAlertBarProps> = ({ alerts }) =>
               borderRadius: 'var(--radius-full, 9999px)',
               padding: '6px 14px',
               color: 'var(--color-text-secondary)',
-              fontSize: '0.75rem',
+              fontSize: 'var(--text-sm)',
               fontWeight: 700,
               display: 'inline-flex',
               alignItems: 'center',
@@ -152,7 +152,7 @@ export const TacticalAlertBar: React.FC<TacticalAlertBarProps> = ({ alerts }) =>
             aria-expanded={expanded}
           >
             <span>{expanded ? 'Hide extra notices' : `+ ${remaining.length} more notice${remaining.length === 1 ? '' : 's'}`}</span>
-            <IonIcon icon={expanded ? chevronUpOutline : chevronDownOutline} style={{ fontSize: '0.9rem' }} />
+            <IonIcon icon={expanded ? chevronUpOutline : chevronDownOutline} style={{ fontSize: '1rem' }} />
           </button>
 
           {expanded && (
@@ -168,7 +168,7 @@ export const TacticalAlertBar: React.FC<TacticalAlertBarProps> = ({ alerts }) =>
                       borderRadius: 'var(--radius-md, 8px)',
                       padding: '8px 12px',
                       color: s.text,
-                      fontSize: '0.75rem',
+                      fontSize: 'var(--text-sm)',
                       fontWeight: 600,
                       lineHeight: 1.35,
                       display: 'flex',
@@ -197,7 +197,7 @@ export const TacticalAlertBar: React.FC<TacticalAlertBarProps> = ({ alerts }) =>
                           ...actionColors(item.severity),
                           border: 'none',
                           fontWeight: 700,
-                          fontSize: '0.75rem',
+                          fontSize: 'var(--text-sm)',
                           cursor: 'pointer',
                           flexShrink: 0,
                         }}

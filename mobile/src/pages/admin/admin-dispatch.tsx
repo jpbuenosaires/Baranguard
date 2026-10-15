@@ -7,28 +7,24 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { IonContent, IonPage, IonRefresher, IonRefresherContent, IonSpinner } from '@ionic/react';
+import { IonContent, IonPage, IonRefresher, IonRefresherContent } from '@ionic/react';
 import MobileHeader from '../../components/MobileHeader';
-import { Banner } from '../../components/WorkflowBits';
 import { LoadingBlock } from '../../components/LoadingBlock';
-import { EmptyState, ErrorState } from '../../components/ui';
+import { Banner, Button, Card, Chip, EmptyState, ErrorState } from '../../components/ui';
 import { useOnline } from '../../components/useOnline';
 import { AdminIncidentSheet, ReasonSheet } from '../../components/AdminBits';
-import { formatServerTime, humanize, isActiveDispatchStatus, NEEDS_CONNECTION } from '../../components/adminFormat';
+import { LIVE_OFFER_STATUSES, formatServerTime, humanize, isActiveDispatchStatus, NEEDS_CONNECTION, offerStateText, sortOffers, visibleOffers } from '../../components/adminFormat';
 import {
   adminErrorMessage,
   cancelDispatch,
   cancelDispatchOffer,
   getAdminDispatches,
-  getAdminIncidents,
   getAdminOffers,
   type AdminDispatchEntry,
   type AdminOfferEntry,
 } from '../../services/apiService';
 import { uuid } from '../../services/uuid';
 import { formatIncidentCode } from '../../utils/incidentCode';
-
-const LIVE_OFFER_STATUSES = ['open', 'escalated'];
 
 const AdminDispatchPage: React.FC = () => {
   const online = useOnline();
@@ -37,7 +33,7 @@ const AdminDispatchPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [offersError, setOffersError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [codes, setCodes] = useState<Record<number, string>>({});
+  const [showEarlier, setShowEarlier] = useState(false);
   const [openIncidentId, setOpenIncidentId] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -55,18 +51,9 @@ const AdminDispatchPage: React.FC = () => {
     const [d, o] = await Promise.allSettled([getAdminDispatches(), getAdminOffers()]);
     if (d.status === 'fulfilled') setDispatches(d.value.filter((x) => isActiveDispatchStatus(x.status)));
     else setError(adminErrorMessage(d.reason, 'Could not load dispatches.'));
-    if (o.status === 'fulfilled') setOffers(o.value);
+    if (o.status === 'fulfilled') setOffers(sortOffers(o.value));
     else setOffersError(adminErrorMessage(o.reason, 'Could not load offers.'));
     setLoading(false);
-    // Dispatch/offer payloads carry no display_id; the incident list does.
-    try {
-      const list = await getAdminIncidents();
-      const map: Record<number, string> = {};
-      for (const i of list) if (i.displayId) map[i.incidentId] = i.displayId;
-      setCodes(map);
-    } catch {
-      // keep the unofficial INC-#id fallback
-    }
   }, []);
 
   useEffect(() => {
@@ -127,22 +114,21 @@ const AdminDispatchPage: React.FC = () => {
             <EmptyState title="No active dispatches" body="No Tanod is on an active dispatch right now." />
           )}
           {dispatches?.map((d) => (
-            <div key={d.dispatchId} className="wf-card">
-              <div className="wf-card__head">
-                <strong className="wf-card__title">{d.tanodName ?? `Tanod #${d.tanodId}`}</strong>
-                <span className="status-pill status-pill--info">{humanize(d.status)}</span>
-              </div>
+            <Card
+              key={d.dispatchId}
+              title={d.tanodName ?? `Tanod #${d.tanodId}`}
+              action={<Chip tone="info">{humanize(d.status)}</Chip>}
+            >
               <div className="wf-card__sub">
-                {formatIncidentCode({ displayId: d.incidentDisplayId ?? codes[d.incidentId], serverIncidentId: d.incidentId })} · {humanize(d.incidentType)} · {humanize(d.priority)}
+                {formatIncidentCode({ displayId: d.incidentDisplayId, serverIncidentId: d.incidentId })} · {humanize(d.incidentType)} · {humanize(d.priority)}
               </div>
               <div className="wf-card__sub">Dispatched: {formatServerTime(d.dispatchedAt)}</div>
-              <div className="wf-row">
-                <button type="button" className="wf-btn wf-btn--small" onClick={() => setOpenIncidentId(d.incidentId)}>
+              <div className="admin-actions">
+                <Button variant="secondary" onClick={() => setOpenIncidentId(d.incidentId)}>
                   Open incident
-                </button>
-                <button
-                  type="button"
-                  className="wf-btn wf-btn--small"
+                </Button>
+                <Button
+                  variant="danger"
                   disabled={!online}
                   onClick={() => {
                     cancelKey.current = null;
@@ -151,9 +137,9 @@ const AdminDispatchPage: React.FC = () => {
                   }}
                 >
                   {online ? 'Cancel dispatch' : NEEDS_CONNECTION}
-                </button>
+                </Button>
               </div>
-            </div>
+            </Card>
           ))}
 
           <h2 className="admin-section-title">Dispatch offers</h2>
@@ -161,43 +147,50 @@ const AdminDispatchPage: React.FC = () => {
           {!loading && !offersError && offers && offers.length === 0 && (
             <EmptyState title="No offers yet" body="Night dispatch offers will appear here once one is sent." />
           )}
-          {offers?.map((o) => (
-            <div key={o.offerId} className="wf-card">
-              <div className="wf-card__head">
-                <strong className="wf-card__title">
-                  {formatIncidentCode({ displayId: o.incidentDisplayId ?? codes[o.incidentId], serverIncidentId: o.incidentId })} · {humanize(o.incidentType)}
-                </strong>
-                <span className={`status-pill ${LIVE_OFFER_STATUSES.includes(o.status) ? 'status-pill--pending' : 'status-pill--neutral'}`}>
-                  {humanize(o.status)}
-                </span>
-              </div>
-              <div className="wf-card__sub">
-                Round {o.round} · {o.recipientCount} recipient{o.recipientCount === 1 ? '' : 's'} (waiting {o.offered}, accepted {o.accepted},
-                released {o.released}, expired {o.expired})
-              </div>
-              <div className="wf-card__sub">
-                Opened {formatServerTime(o.createdAt)}
-                {LIVE_OFFER_STATUSES.includes(o.status) ? ` · round ends ${formatServerTime(o.expiresAt)}` : ''}
-              </div>
-              {o.acceptedByName && <div className="wf-card__sub">Accepted by {o.acceptedByName}</div>}
-              {offerError?.id === o.offerId && <Banner tone="critical">{offerError.message}</Banner>}
-              <div className="wf-row">
-                <button type="button" className="wf-btn wf-btn--small" onClick={() => setOpenIncidentId(o.incidentId)}>
-                  Open incident
-                </button>
-                {LIVE_OFFER_STATUSES.includes(o.status) && (
-                  <button
-                    type="button"
-                    className="wf-btn wf-btn--small"
-                    disabled={!online || offerBusyId !== null}
-                    onClick={() => void cancelOffer(o.offerId)}
-                  >
-                    {offerBusyId === o.offerId ? <IonSpinner name="dots" /> : online ? 'Cancel offer' : NEEDS_CONNECTION}
-                  </button>
-                )}
-              </div>
+          {offers && offers.length > 0 && visibleOffers(offers, showEarlier).length === 0 && (
+            <EmptyState title="No live offers" body="Every offer so far has finished." />
+          )}
+          {offers &&
+            visibleOffers(offers, showEarlier).map((o) => {
+              const live = LIVE_OFFER_STATUSES.includes(o.status);
+              return (
+                <Card
+                  key={o.offerId}
+                  title={`${formatIncidentCode({ displayId: o.incidentDisplayId, serverIncidentId: o.incidentId })} · ${humanize(o.incidentType)}`}
+                  action={<Chip tone={live ? 'warning' : 'neutral'}>{humanize(o.status)}</Chip>}
+                >
+                  <div className="wf-card__sub">{offerStateText(o)}</div>
+                  <div className="wf-card__sub">
+                    {o.recipientCount} recipient{o.recipientCount === 1 ? '' : 's'}: waiting {o.offered}, accepted {o.accepted}, released {o.released}, expired {o.expired}
+                  </div>
+                  <div className="wf-card__sub">Opened {formatServerTime(o.createdAt)}</div>
+                  {o.acceptedByName && <div className="wf-card__sub">Accepted by {o.acceptedByName}</div>}
+                  {offerError?.id === o.offerId && <Banner tone="error">{offerError.message}</Banner>}
+                  <div className="admin-actions">
+                    <Button variant="secondary" onClick={() => setOpenIncidentId(o.incidentId)}>
+                      Open incident
+                    </Button>
+                    {live && (
+                      <Button
+                        variant="secondary"
+                        loading={offerBusyId === o.offerId}
+                        disabled={!online || offerBusyId !== null}
+                        onClick={() => void cancelOffer(o.offerId)}
+                      >
+                        {online ? 'Cancel offer' : NEEDS_CONNECTION}
+                      </Button>
+                    )}
+                  </div>
+                </Card>
+              );
+            })}
+          {offers && offers.some((o) => !LIVE_OFFER_STATUSES.includes(o.status)) && (
+            <div className="admin-more">
+              <Button variant="ghost" onClick={() => setShowEarlier((v) => !v)} aria-expanded={showEarlier}>
+                {showEarlier ? 'Hide finished offers' : 'Show finished offers'}
+              </Button>
             </div>
-          ))}
+          )}
         </div>
       </IonContent>
 
@@ -206,7 +199,9 @@ const AdminDispatchPage: React.FC = () => {
         isOpen={cancelTarget !== null}
         title={`Cancel dispatch${cancelTarget?.tanodName ? ` for ${cancelTarget.tanodName}` : ''}`}
         hint="Required. Say why this responder is being pulled off."
-        confirmLabel="Cancel dispatch"
+        confirmLabel="Confirm cancellation"
+        dismissLabel="Keep dispatch"
+        tone="danger"
         busy={busy}
         error={actionError}
         onConfirm={(reason) => void submitCancel(reason)}

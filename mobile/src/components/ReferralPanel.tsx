@@ -16,9 +16,10 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { IonIcon, IonModal, IonSpinner } from '@ionic/react';
+import { IonIcon, IonModal } from '@ionic/react';
 import { closeOutline, swapHorizontalOutline } from 'ionicons/icons';
 import { Banner, SyncChip } from './WorkflowBits';
+import { Button } from './ui';
 import {
   listReferralsForIncident,
   MAX_CONTACT_NAME,
@@ -38,9 +39,11 @@ interface ReferralPanelProps {
   link: { serverIncidentId?: number | null; incidentLocalId?: string | null };
   /** Short label for the sheet header, e.g. "Case #42". */
   incidentLabel?: string;
+  /** The parent section already names this panel. */
+  hideTitle?: boolean;
 }
 
-export const ReferralPanel: React.FC<ReferralPanelProps> = ({ link, incidentLabel }) => {
+export const ReferralPanel: React.FC<ReferralPanelProps> = ({ link, incidentLabel, hideTitle = false }) => {
   const { serverIncidentId = null, incidentLocalId = null } = link;
   const [referrals, setReferrals] = useState<ReferralLocalRow[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -66,7 +69,7 @@ export const ReferralPanel: React.FC<ReferralPanelProps> = ({ link, incidentLabe
     <div className="wf-card" aria-label="Referral">
       <div className="wf-card__head">
         <div>
-          <h3 className="wf-card__title">Refer / Hand Off</h3>
+          {!hideTitle && <h3 className="wf-card__title">Refer / Hand Off</h3>}
           <p className="wf-card__sub">
             Record that you handed this case to another agency or official. This logs the handoff only — it does not
             mean they accepted it.
@@ -81,7 +84,7 @@ export const ReferralPanel: React.FC<ReferralPanelProps> = ({ link, incidentLabe
           {referrals.map((r) => (
             <div key={r.local_id} className="wf-entry">
               <div className="wf-row wf-row--between">
-                <strong style={{ fontSize: '0.86rem' }}>
+                <strong className="p4d-referral__name">
                   {referralTargetLabel(r.referred_to)}
                   {r.other_text ? ` · ${r.other_text}` : ''}
                 </strong>
@@ -163,6 +166,10 @@ const ReferralSheet: React.FC<{
   async function handleSave() {
     if (referredTo === '') {
       setError('Choose who the case was referred to.');
+      return;
+    }
+    if (referredTo === 'other' && otherText.trim() === '') {
+      setError('Name the agency or person you handed the case to.');
       return;
     }
     setSaving(true);
@@ -271,14 +278,14 @@ const ReferralSheet: React.FC<{
           not confirm the agency accepted it.
         </Banner>
 
-        {error && <Banner tone="critical">{error}</Banner>}
+        {error && <p className="p4d-field-error" role="alert">{error}</p>}
 
-        <button type="button" className="dispatch-primary-cta dispatch-primary-cta--blue" onClick={handleSave} disabled={saving}>
-          {saving ? <IonSpinner name="dots" /> : <span>Record Referral</span>}
-        </button>
-        <button type="button" className="dispatch-secondary-cta" onClick={onClose} disabled={saving}>
+        <Button size="lg" fullWidth loading={saving} onClick={handleSave}>
+          Record referral
+        </Button>
+        <Button variant="secondary" fullWidth onClick={onClose} disabled={saving}>
           Cancel
-        </button>
+        </Button>
       </div>
     </IonModal>
   );

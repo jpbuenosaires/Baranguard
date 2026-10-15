@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react';
 import { IonButton, IonContent, IonHeader, IonIcon, IonModal, IonTitle, IonToolbar } from '@ionic/react';
 import { closeOutline } from 'ionicons/icons';
 import LiveMapCanvas, { type FocusTarget } from './LiveMapCanvas';
+import { Button } from './ui';
 import type { NearbyIncident } from '../services/apiService';
 import type { DevicePosition } from '../services/geolocation';
 
@@ -58,31 +59,46 @@ const LocationPickerModal: React.FC<Props> = ({ isOpen, barangayId, selfPosition
       <IonHeader>
         <IonToolbar>
           <IonTitle>Tap to Set Location</IonTitle>
-          <IonButton slot="end" fill="clear" onClick={onCancel} aria-label="Close">
-            <IonIcon icon={closeOutline} />
+          <IonButton slot="end" fill="clear" onClick={onCancel} aria-label="Close without choosing a location" className="lm-picker__close">
+            <IonIcon icon={closeOutline} aria-hidden="true" />
           </IonButton>
         </IonToolbar>
       </IonHeader>
-      <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
-        <LiveMapCanvas
-          barangayId={barangayId}
-          position={selfPosition}
-          incidents={pickedIncidents}
-          tanods={[]}
-          focusTarget={picked ?? undefined}
-          onMapClick={setPicked}
-        />
-        <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: '10px' }}>
-          Tap anywhere on the map to drop a pin at that spot.
-        </p>
-        {picked && (
-          <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--color-text-primary)' }}>
-            {picked.latitude.toFixed(5)}, {picked.longitude.toFixed(5)}
-          </p>
-        )}
-        <IonButton expand="block" disabled={!picked} onClick={() => picked && onConfirm(picked)} style={{ marginTop: '12px', fontWeight: 700 }}>
-          Use This Location
-        </IonButton>
+      <IonContent scrollY={false} style={{ '--background': 'var(--color-bg)' }}>
+        <div className="lm-picker">
+          <div className="lm-picker__map">
+            <LiveMapCanvas
+              barangayId={barangayId}
+              position={selfPosition}
+              incidents={pickedIncidents}
+              tanods={[]}
+              focusTarget={picked ?? undefined}
+              onMapClick={setPicked}
+              fullScreen={true}
+              height="100%"
+            />
+          </div>
+          <div className="lm-picker__panel">
+            <p className="lm-picker__gps" role="status">
+              {selfPosition
+                ? `GPS fix: accuracy about ${Math.round(selfPosition.accuracyM)} m`
+                : 'No GPS fix. Tap the map to place the pin yourself.'}
+            </p>
+            <p className="lm-picker__coords" aria-live="polite">
+              {picked
+                ? `${picked.latitude.toFixed(5)}, ${picked.longitude.toFixed(5)}`
+                : 'Tap anywhere on the map to drop a pin at that spot.'}
+            </p>
+            <div className="lm-picker__actions">
+              <Button variant="secondary" onClick={onCancel}>
+                Cancel
+              </Button>
+              <Button disabled={!picked} onClick={() => picked && onConfirm(picked)}>
+                Use This Location
+              </Button>
+            </div>
+          </div>
+        </div>
       </IonContent>
     </IonModal>
   );

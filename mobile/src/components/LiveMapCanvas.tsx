@@ -59,6 +59,8 @@ import { getActiveMapPackage, readMapPackageBytes } from '../services/mapPackage
 import type { NearbyIncident, NearbyTanod } from '../services/apiService';
 import type { DevicePosition } from '../services/geolocation';
 import { splitRouteAtSnap } from '../utils/routeProgress';
+import { incidentAriaLabel, pinLabel, shortPersonLabel, tanodAriaLabel, tanodInitials } from '../utils/liveMapPolicy';
+import { thinLabels, type LabelCandidate } from '../utils/liveMapHud';
 
 // Register MapLibre's worker bundle with Vite so GeoJSON sources (route polyline) can be tiled in the background.
 // Without this, MapLibre defaults to an empty workerUrl in bundled/Capacitor environments, causing GeoJSON sources
@@ -177,6 +179,8 @@ interface Props {
   selectedTanodId?: number | null;
   /** Currently selected Incident ID (highlights marker) */
   selectedIncidentId?: number | null;
+  /** True when the nearby data on screen is old or failed to refresh: markers are dimmed so they never read as live. */
+  dataStale?: boolean;
 }
 
 /** Frames the camera on whichever of self/focusTarget are available; both → fits bounds, one → centers on it. */
@@ -286,12 +290,39 @@ function priorityMarkerClass(priority: string): string {
   return 'map-marker map-marker--normal';
 }
 
-function shortPersonLabel(fullName?: string | null): string {
-  if (!fullName) return 'Tanod';
-  const parts = String(fullName).trim().split(/\s+/);
-  if (parts.length === 1) return parts[0];
-  return `${parts[0][0]}. ${parts[parts.length - 1]}`;
+/** One reusable MapLibre marker plus the DOM bits updated in place on each poll. */
+interface PinEntry<T> {
+  marker: Marker;
+  container: HTMLDivElement;
+  el: HTMLDivElement;
+  label: HTMLSpanElement;
+  item: T;
 }
+
+function createPinShell(iconSvg: string): { container: HTMLDivElement; el: HTMLDivElement; label: HTMLSpanElement } {
+  const container = document.createElement('div');
+  container.className = 'lm-pin-hit';
+  container.tabIndex = 0;
+  container.setAttribute('role', 'button');
+  const el = document.createElement('div');
+  el.innerHTML = iconSvg;
+  const label = document.createElement('span');
+  label.className = 'live-map__pin-label lm-pin-label--off';
+  el.appendChild(label);
+  container.appendChild(el);
+  container.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      container.click();
+    }
+  });
+  return { container, el, label };
+}
+
+const INCIDENT_ICON =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>';
+const TANOD_ICON =
+  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
 
 const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCanvas(
   {
@@ -314,14 +345,22 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
     onDeselect,
     selectedTanodId,
     selectedIncidentId,
+    dataStale,
   },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MaplibreMap | null>(null);
   const selfMarkerRef = useRef<Marker | null>(null);
-  const incidentMarkersRef = useRef<Marker[]>([]);
-  const tanodMarkersRef = useRef<Marker[]>([]);
+  const selfLabelRef = useRef<HTMLSpanElement | null>(null);
+  const incidentPinsRef = useRef(new Map<number, PinEntry<NearbyIncident>>());
+  const tanodPinsRef = useRef(new Map<number, PinEntry<NearbyTanod>>());
+  /** Re-runs label thinning for the current zoom and screen positions. */
+  const applyLabelsRef = useRef<() => void>(() => {});
+  const selectedIdsRef = useRef<{ incident: number | null; tanod: number | null }>({ incident: null, tanod: null });
+  selectedIdsRef.current = { incident: selectedIncidentId ?? null, tanod: selectedTanodId ?? null };
+  const focusTargetRef = useRef(focusTarget);
+  focusTargetRef.current = focusTarget;
   // Latest callback without re-subscribing the map's click listener on
   // every render (same "ref holds the current callback" idiom
   // FormFields.tsx's useElementEvent already uses in this codebase).
@@ -349,6 +388,8 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
   // recreating the whole map on every 15-30s telemetry refresh.
   useEffect(() => {
     let cancelled = false;
+    const incidentPins = incidentPinsRef.current;
+    const tanodPins = tanodPinsRef.current;
     ensureProtocolRegistered();
     setStatus({ kind: 'loading' });
 
@@ -400,6 +441,8 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
         userPannedRef.current = true;
         onUserPanRef.current?.();
       });
+      // Label thinning depends on zoom and on where markers sit on screen.
+      map.on('moveend', () => applyLabelsRef.current());
       mapRef.current = map;
       setStatus(nextStatus);
     }
@@ -410,10 +453,11 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
       cancelled = true;
       selfMarkerRef.current?.remove();
       selfMarkerRef.current = null;
-      incidentMarkersRef.current.forEach((m) => m.remove());
-      incidentMarkersRef.current = [];
-      tanodMarkersRef.current.forEach((m) => m.remove());
-      tanodMarkersRef.current = [];
+      selfLabelRef.current = null;
+      incidentPins.forEach((p) => p.marker.remove());
+      incidentPins.clear();
+      tanodPins.forEach((p) => p.marker.remove());
+      tanodPins.clear();
       mapRef.current?.remove();
       mapRef.current = null;
       if (currentReader) {
@@ -436,17 +480,9 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
     if (!map) return;
 
     if (position && !isNaN(position.longitude) && !isNaN(position.latitude)) {
-      selfMarkerRef.current?.remove();
-      const container = document.createElement('div');
-      const el = document.createElement('div');
-      el.className = navigationMode ? 'map-marker map-marker--self-navigating' : 'map-marker map-marker--self';
-      el.title = `Your position — accuracy ±${position.accuracyM.toFixed(0)}m`;
-      container.appendChild(el);
-
-      // Map-matching (Google Maps–style road snapping):
-      // In navigation mode, place the self-marker at the road-snapped point
-      // so the dot glides along the road instead of floating beside it due
-      // to raw GPS noise. Falls back to raw GPS when no route is active.
+      // Map-matching (Google Maps style road snapping): in navigation mode the
+      // self marker sits on the road-snapped point so the dot glides along
+      // the road instead of floating beside it due to raw GPS noise.
       const markerLng = (navigationMode && routeProgress)
         ? routeProgress.snappedPoint.lng
         : position.longitude;
@@ -454,10 +490,35 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
         ? routeProgress.snappedPoint.lat
         : position.latitude;
 
-      selfMarkerRef.current = new Marker({ element: container })
-        .setLngLat([markerLng, markerLat])
-        .addTo(map);
+      // One marker for the session: moved and restyled in place, not rebuilt.
+      let marker = selfMarkerRef.current;
+      let el: HTMLElement | null = null;
+      if (!marker) {
+        const container = document.createElement('div');
+        el = document.createElement('div');
+        const label = document.createElement('span');
+        label.className = 'live-map__pin-label';
+        label.textContent = 'You';
+        el.appendChild(label);
+        container.appendChild(el);
+        selfLabelRef.current = label;
+        marker = new Marker({ element: container }).setLngLat([markerLng, markerLat]).addTo(map);
+        selfMarkerRef.current = marker;
+      } else {
+        marker.setLngLat([markerLng, markerLat]);
+        el = marker.getElement().firstElementChild as HTMLElement | null;
+      }
+      if (el) {
+        const cls = navigationMode ? 'map-marker map-marker--self-navigating' : 'map-marker map-marker--self';
+        if (el.className !== cls) el.className = cls;
+        el.title = `Your position, accuracy ±${position.accuracyM.toFixed(0)}m`;
+      }
+    } else if (selfMarkerRef.current) {
+      selfMarkerRef.current.remove();
+      selfMarkerRef.current = null;
+      selfLabelRef.current = null;
     }
+    applyLabelsRef.current();
 
     if (!framedOnce.current && (position || focusTarget)) {
       framedOnce.current = true;
@@ -539,87 +600,165 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
     [position, focusTarget, navigationMode, routeProgress]
   );
 
+  // Label policy: which markers show text at this zoom, thinned by overlap.
+  // Selected, destination and the user's own marker are always labelled.
+  applyLabelsRef.current = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    const zoom = map.getZoom();
+    const candidates: LabelCandidate[] = [];
+    const apply: Array<{ id: string; label: HTMLSpanElement; text: string }> = [];
+    const sel = selectedIdsRef.current;
+    const ft = focusTargetRef.current;
+
+    if (selfMarkerRef.current && selfLabelRef.current) {
+      const p = map.project(selfMarkerRef.current.getLngLat());
+      candidates.push({ id: 'self', x: p.x, y: p.y, text: 'You', always: true });
+      apply.push({ id: 'self', label: selfLabelRef.current, text: 'You' });
+    }
+    incidentPinsRef.current.forEach((pin, id) => {
+      const inc = pin.item;
+      const isDestination = !!ft && Math.abs(inc.latitude - ft.latitude) < 0.00005 && Math.abs(inc.longitude - ft.longitude) < 0.00005;
+      const selected = sel.incident === id;
+      const text = id < 0 ? '' : pinLabel({ kind: 'incident', zoom, selected, pinned: isDestination, fullText: `#${id}` }).text;
+      const p = map.project([inc.longitude, inc.latitude]);
+      candidates.push({ id: `i${id}`, x: p.x, y: p.y, text, always: selected || isDestination, rank: inc.priority === 'critical' ? 1 : 3 });
+      apply.push({ id: `i${id}`, label: pin.label, text });
+    });
+    tanodPinsRef.current.forEach((pin, id) => {
+      const t = pin.item;
+      const selected = sel.tanod === id;
+      const text = pinLabel({
+        kind: 'tanod',
+        zoom,
+        selected,
+        fullText: shortPersonLabel(t.fullName),
+        shortText: tanodInitials(t.fullName),
+      }).text;
+      const p = map.project([t.longitude, t.latitude]);
+      candidates.push({ id: `t${id}`, x: p.x, y: p.y, text, always: selected, rank: t.dispatchId !== null ? 2 : 4 });
+      apply.push({ id: `t${id}`, label: pin.label, text });
+    });
+
+    const keep = thinLabels(candidates);
+    for (const a of apply) {
+      const show = a.text !== '' && keep.has(a.id);
+      if (a.label.textContent !== a.text) a.label.textContent = a.text;
+      a.label.classList.toggle('lm-pin-label--off', !show);
+    }
+  };
+
+  // Incident markers are created once and updated in place on every poll;
+  // only ids that disappeared are removed.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    incidentMarkersRef.current.forEach((m) => m.remove());
-    incidentMarkersRef.current = incidents
-      .filter((incident: NearbyIncident) => typeof incident.longitude === 'number' && typeof incident.latitude === 'number' && !isNaN(incident.longitude) && !isNaN(incident.latitude))
-      .map((incident: NearbyIncident) => {
-        const isDestination =
-          focusTarget &&
-          Math.abs(incident.latitude - focusTarget.latitude) < 0.00005 &&
-          Math.abs(incident.longitude - focusTarget.longitude) < 0.00005;
+    const pins = incidentPinsRef.current;
+    const seen = new Set<number>();
 
-        const isCritical = incident.priority === 'critical';
-        const isSelected = selectedIncidentId === incident.incidentId;
+    for (const incident of incidents) {
+      if (typeof incident.longitude !== 'number' || typeof incident.latitude !== 'number' || isNaN(incident.longitude) || isNaN(incident.latitude)) continue;
+      const id = incident.incidentId;
+      seen.add(id);
 
-        // Container div is isolated for MapLibre's coordinate translation transforms
-        const container = document.createElement('div');
-        container.style.cursor = 'pointer';
+      const isDestination =
+        !!focusTarget &&
+        Math.abs(incident.latitude - focusTarget.latitude) < 0.00005 &&
+        Math.abs(incident.longitude - focusTarget.longitude) < 0.00005;
+      const isCritical = incident.priority === 'critical';
+      const isSelected = selectedIncidentId === id;
 
-        const el = document.createElement('div');
-        el.className = isDestination
-          ? `map-marker map-marker--destination ${priorityMarkerClass(incident.priority)}`
-          : `map-marker map-marker--incident ${isCritical ? 'map-marker--incident-critical' : ''} ${isSelected ? 'map-marker--focused' : ''}`;
-        
-        // Warning SVG Icon matching web Dispatch Center
-        el.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>`;
-
-        // Nameplate Callout Label
-        const labelEl = document.createElement('span');
-        labelEl.className = `live-map__pin-label live-map__pin-label--incident ${isCritical ? 'live-map__pin-label--critical' : ''}`;
-        labelEl.textContent = `#${incident.incidentId}`;
-        el.appendChild(labelEl);
-
-        el.title = `${incident.incidentType.replace(/_/g, ' ')} · ${incident.priority} · ${Math.floor(incident.ageSeconds / 60)}m ago`;
-
-        container.addEventListener('click', (e) => {
+      let pin = pins.get(id);
+      if (!pin) {
+        const shell = createPinShell(INCIDENT_ICON);
+        const created: PinEntry<NearbyIncident> = {
+          ...shell,
+          item: incident,
+          marker: new Marker({ element: shell.container }).setLngLat([incident.longitude, incident.latitude]).addTo(map),
+        };
+        shell.container.addEventListener('click', (e) => {
           e.stopPropagation();
-          onSelectIncidentRef.current?.(incident);
+          onSelectIncidentRef.current?.(created.item);
         });
+        pins.set(id, created);
+        pin = created;
+      }
+      pin.item = incident;
+      pin.marker.setLngLat([incident.longitude, incident.latitude]);
 
-        container.appendChild(el);
-        return new Marker({ element: container }).setLngLat([incident.longitude, incident.latitude]).addTo(map);
-      });
-  }, [incidents, status, focusTarget, selectedIncidentId]);
+      const cls = isDestination
+        ? `map-marker map-marker--destination ${priorityMarkerClass(incident.priority)}`
+        : `map-marker map-marker--incident ${isCritical ? 'map-marker--incident-critical' : ''} ${isSelected ? 'map-marker--focused' : ''}`;
+      if (pin.el.className !== cls) pin.el.className = cls;
+      pin.label.classList.add('live-map__pin-label--incident');
+      pin.label.classList.toggle('live-map__pin-label--critical', isCritical);
+      pin.container.classList.toggle('lm-pin--data-stale', !!dataStale);
+      pin.el.title = `${incident.incidentType.replace(/_/g, ' ')} · ${incident.priority} · ${Math.floor(incident.ageSeconds / 60)}m ago`;
+      pin.container.setAttribute(
+        'aria-label',
+        id < 0 ? 'Picked location' : incidentAriaLabel({ incidentId: id, priority: incident.priority, status: incident.status })
+      );
+    }
 
+    pins.forEach((pin, id) => {
+      if (!seen.has(id)) {
+        pin.marker.remove();
+        pins.delete(id);
+      }
+    });
+    applyLabelsRef.current();
+  }, [incidents, status, focusTarget, selectedIncidentId, dataStale]);
+
+  // Tanod markers: same reuse rule as incidents.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    tanodMarkersRef.current.forEach((m) => m.remove());
-    tanodMarkersRef.current = tanods
-      .filter((tanod: NearbyTanod) => typeof tanod.longitude === 'number' && typeof tanod.latitude === 'number' && !isNaN(tanod.longitude) && !isNaN(tanod.latitude))
-      .map((tanod: NearbyTanod) => {
-        const isSelected = selectedTanodId === tanod.userId;
-        const isDispatched = tanod.dispatchId !== null;
+    const pins = tanodPinsRef.current;
+    const seen = new Set<number>();
 
-        const container = document.createElement('div');
-        container.style.cursor = 'pointer';
+    for (const tanod of tanods) {
+      if (typeof tanod.longitude !== 'number' || typeof tanod.latitude !== 'number' || isNaN(tanod.longitude) || isNaN(tanod.latitude)) continue;
+      const id = tanod.userId;
+      seen.add(id);
+      const isSelected = selectedTanodId === id;
+      const isDispatched = tanod.dispatchId !== null;
 
-        const el = document.createElement('div');
-        el.className = `map-marker ${tanod.isStale ? 'map-marker--tanod-stale' : isDispatched ? 'map-marker--tanod-dispatched' : 'map-marker--tanod-live'} ${isSelected ? 'map-marker--focused' : ''}`;
-        
-        // Person SVG Icon matching web Dispatch Center
-        el.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
-
-        // Nameplate Callout Label
-        const labelEl = document.createElement('span');
-        labelEl.className = 'live-map__pin-label';
-        labelEl.textContent = shortPersonLabel(tanod.fullName);
-        el.appendChild(labelEl);
-
-        el.title = `${tanod.fullName} — ${tanod.isStale ? 'stale' : 'live'} · ${Math.floor(tanod.ageSeconds / 60)}m ago`;
-
-        container.addEventListener('click', (e) => {
+      let pin = pins.get(id);
+      if (!pin) {
+        const shell = createPinShell(TANOD_ICON);
+        const created: PinEntry<NearbyTanod> = {
+          ...shell,
+          item: tanod,
+          marker: new Marker({ element: shell.container }).setLngLat([tanod.longitude, tanod.latitude]).addTo(map),
+        };
+        shell.container.addEventListener('click', (e) => {
           e.stopPropagation();
-          onSelectTanodRef.current?.(tanod);
+          onSelectTanodRef.current?.(created.item);
         });
+        pins.set(id, created);
+        pin = created;
+      }
+      pin.item = tanod;
+      pin.marker.setLngLat([tanod.longitude, tanod.latitude]);
 
-        container.appendChild(el);
-        return new Marker({ element: container }).setLngLat([tanod.longitude, tanod.latitude]).addTo(map);
-      });
-  }, [tanods, status, selectedTanodId]);
+      const cls = `map-marker ${tanod.isStale ? 'map-marker--tanod-stale' : isDispatched ? 'map-marker--tanod-dispatched' : 'map-marker--tanod-live'} ${isSelected ? 'map-marker--focused' : ''}`;
+      if (pin.el.className !== cls) pin.el.className = cls;
+      pin.container.classList.toggle('lm-pin--data-stale', !!dataStale);
+      pin.el.title = `${tanod.fullName} — ${tanod.isStale ? 'stale' : 'live'} · ${Math.floor(tanod.ageSeconds / 60)}m ago`;
+      pin.container.setAttribute(
+        'aria-label',
+        tanodAriaLabel({ fullName: tanod.fullName, isStale: tanod.isStale, dispatchId: tanod.dispatchId, ageSeconds: tanod.ageSeconds })
+      );
+    }
+
+    pins.forEach((pin, id) => {
+      if (!seen.has(id)) {
+        pin.marker.remove();
+        pins.delete(id);
+      }
+    });
+    applyLabelsRef.current();
+  }, [tanods, status, selectedTanodId, dataStale]);
 
   // Draws/updates/clears the route line — a GeoJSON source+layer on top
   // of the raster basemap.
@@ -679,7 +818,6 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
       if (!map) return;
       // --- Fallback Guideline: When road route is not yet available, draw dashed direct line ---
       if (!routeGeometry && position && focusTarget) {
-        clearAllRouteLayers();
         const directFeature: GeoJSON.Feature = {
           type: 'Feature',
           properties: {},
@@ -691,6 +829,12 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
             ],
           },
         };
+        const existingGuide = map.getSource(ROUTE_GUIDELINE_SOURCE_ID) as GeoJSONSource | undefined;
+        if (existingGuide) {
+          existingGuide.setData(directFeature);
+          return;
+        }
+        clearAllRouteLayers();
         map.addSource(ROUTE_GUIDELINE_SOURCE_ID, { type: 'geojson', data: directFeature });
         map.addLayer({
           id: ROUTE_GUIDELINE_LAYER_ID,

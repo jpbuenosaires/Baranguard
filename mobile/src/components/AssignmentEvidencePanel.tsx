@@ -16,6 +16,7 @@
  * Only filenames-free thumbnails/icons and sizes are shown — no narrative.
  */
 
+import { Button } from './ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { IonIcon, IonSpinner } from '@ionic/react';
 import { Capacitor } from '@capacitor/core';
@@ -40,12 +41,14 @@ import tacticalFeedback from '../utils/tacticalFeedback';
 interface Props {
   /** `dispatch_local.local_id` of the assignment — the sync worker resolves the server incident id from it. */
   dispatchLocalId: string;
+  /** The parent section already names this panel. */
+  hideTitle?: boolean;
 }
 
 function stateOf(row: EvidenceAttachmentLocalRow): { label: string; pill: string } {
-  if (row.synced === 1) return { label: 'Uploaded', pill: 'status-pill--success' };
-  if (row.permanent_failure === 1) return { label: 'Upload failed', pill: 'status-pill--critical' };
-  return { label: 'Needs a connection to upload', pill: 'status-pill--pending' };
+  if (row.synced === 1) return { label: 'Sent', pill: 'status-pill--success' };
+  if (row.permanent_failure === 1) return { label: 'Not sent, needs attention', pill: 'status-pill--critical' };
+  return { label: 'Saved on this phone', pill: 'status-pill--pending' };
 }
 
 const TOO_LARGE_TEXT =
@@ -64,7 +67,7 @@ function captureErrorText(err: unknown, fallback: string): string | null {
   return fallback;
 }
 
-const AssignmentEvidencePanel: React.FC<Props> = ({ dispatchLocalId }) => {
+const AssignmentEvidencePanel: React.FC<Props> = ({ dispatchLocalId, hideTitle = false }) => {
   const [items, setItems] = useState<EvidenceAttachmentLocalRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -211,7 +214,7 @@ const AssignmentEvidencePanel: React.FC<Props> = ({ dispatchLocalId }) => {
 
   return (
     <div className="dispatch-on-scene-tools" data-testid="assignment-evidence-panel">
-      <span className="dispatch-section-title">Evidence</span>
+      {!hideTitle && <span className="dispatch-section-title">Evidence</span>}
 
       <div className="intake-action-btn-row">
         <button
@@ -235,40 +238,37 @@ const AssignmentEvidencePanel: React.FC<Props> = ({ dispatchLocalId }) => {
           disabled={capturing && !recording}
           aria-pressed={recording}
           aria-label={recording ? 'Stop recording and save voice note' : 'Record voice note'}
-          style={recording ? { borderColor: 'var(--color-critical)', color: 'var(--color-critical)' } : undefined}
-        >
+                  >
           <IonIcon icon={recording ? stopCircleOutline : micOutline} style={{ fontSize: '1.1rem' }} aria-hidden="true" />
           <span>{recording ? 'Stop & Save' : 'Record Audio'}</span>
         </button>
       </div>
 
       {recording && (
-        <div role="status" style={{ fontSize: '0.78rem', marginTop: 6, fontWeight: 600 }}>
+        <p className="p4d-ev__recording" role="status">
           Recording voice note. Tap Stop &amp; Save when done.
-        </div>
+        </p>
       )}
 
       {error && (
-        <div role="alert" style={{ color: 'var(--pill-critical-text)', fontSize: '0.78rem', marginTop: 6 }}>
+        <p className="p4d-field-error" role="alert">
           {error}
-        </div>
+        </p>
       )}
       {loadError && (
-        <div role="alert" style={{ color: 'var(--pill-critical-text)', fontSize: '0.78rem', marginTop: 6 }}>
-          {loadError}{' '}
-          <button type="button" className="dispatch-secondary-cta" onClick={() => void reload()}>
-            Retry
-          </button>
+        <div className="p4d-ev__loaderr">
+          <p className="p4d-field-error" role="alert">{loadError}</p>
+          <Button variant="secondary" onClick={() => void reload()}>Try again</Button>
         </div>
       )}
 
       {items.length === 0 && !loadError ? (
-        <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', margin: '8px 0 0' }}>
+        <p className="p4d-ev__empty">
           No evidence attached from this phone yet. Photos and voice notes are saved on the phone first and upload
           when a connection is available.
         </p>
       ) : (
-        <div className="media-grid" style={{ marginTop: 8 }}>
+        <div className="media-grid p4d-ev__grid">
           {items.map((item, itemIndex) => {
             const st = stateOf(item);
             return (
@@ -298,16 +298,15 @@ const AssignmentEvidencePanel: React.FC<Props> = ({ dispatchLocalId }) => {
       )}
 
       {waiting.length > 0 && (
-        <button
-          type="button"
-          className="dispatch-secondary-cta"
-          style={{ marginTop: 8 }}
-          disabled={syncing}
+        <Button
+          variant="secondary"
+          fullWidth
+          icon={refreshOutline}
+          loading={syncing}
           onClick={() => void (failed ? handleRetry() : pushUploads())}
         >
-          {syncing ? <IonSpinner name="dots" /> : <IonIcon icon={refreshOutline} aria-hidden="true" />}
-          <span>{failed ? 'Retry upload' : 'Upload now'}</span>
-        </button>
+          {failed ? 'Retry upload' : 'Send now'}
+        </Button>
       )}
     </div>
   );
