@@ -38,62 +38,15 @@ export const TacticalAlertBar: React.FC<TacticalAlertBarProps> = ({ alerts }) =>
     }
   }
 
-  /** Action button colours: the severity fill with its matching on-fill text (contrast-checked tokens, both themes). */
-  function actionColors(severity: 'critical' | 'warning' | 'info') {
-    return { background: `var(--color-${severity})`, color: `var(--color-on-${severity})` };
-  }
-
-  function getStyles(severity: 'critical' | 'warning' | 'info') {
-    switch (severity) {
-      case 'critical':
-        return {
-          bg: 'var(--tint-critical-bg)',
-          border: '1px solid var(--color-critical)',
-          text: 'var(--pill-critical-text)',
-        };
-      case 'warning':
-        return {
-          bg: 'var(--tint-warning-bg)',
-          border: '1px solid var(--color-warning)',
-          text: 'var(--pill-warning-text)',
-        };
-      default:
-        return {
-          bg: 'var(--tint-info-bg)',
-          border: '1px solid var(--color-border-blue)',
-          text: 'var(--pill-info-text)',
-        };
-    }
-  }
-
-  const primaryStyle = getStyles(primary.severity);
-
   return (
-    <div className="tactical-alert-container" style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '4px 0 10px' }}>
+    <div className="tactical-alert-container tab-container">
       {/* Primary Alert Card */}
       <div
-        style={{
-          background: primaryStyle.bg,
-          border: primaryStyle.border,
-          borderRadius: 'var(--radius-md, 8px)',
-          padding: '10px 14px',
-          color: primaryStyle.text,
-          fontSize: '0.8125rem',
-          fontWeight: 600,
-          lineHeight: 1.4,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '12px',
-        }}
+        className={`tab-card tab-card--${primary.severity}`}
         role={primary.severity === 'critical' ? 'alert' : 'status'}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', flex: 1 }}>
-          <IonIcon
-            icon={getIcon(primary.severity)}
-            style={{ fontSize: '1.25rem', flexShrink: 0, marginTop: '2px' }}
-            aria-hidden="true"
-          />
+        <div className="tab-card__body">
+          <IonIcon icon={getIcon(primary.severity)} className="tab-card__icon" aria-hidden="true" />
           <span>{primary.message}</span>
         </div>
 
@@ -104,20 +57,7 @@ export const TacticalAlertBar: React.FC<TacticalAlertBarProps> = ({ alerts }) =>
               tacticalFeedback.onTap();
               primary.onAction?.();
             }}
-            style={{
-              minHeight: 'var(--touch-min-size, 48px)',
-              padding: '0 14px',
-              borderRadius: 'var(--radius-sm, 6px)',
-              ...actionColors(primary.severity),
-              border: 'none',
-              fontWeight: 700,
-              fontSize: '0.8125rem',
-              cursor: 'pointer',
-              flexShrink: 0,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
+            className={`tab-action tab-action--${primary.severity}`}
           >
             {primary.actionLabel}
           </button>
@@ -133,81 +73,36 @@ export const TacticalAlertBar: React.FC<TacticalAlertBarProps> = ({ alerts }) =>
               tacticalFeedback.onTap();
               setExpanded(!expanded);
             }}
-            style={{
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-full, 9999px)',
-              padding: '6px 14px',
-              color: 'var(--color-text-secondary)',
-              fontSize: 'var(--text-sm)',
-              fontWeight: 700,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              cursor: 'pointer',
-              alignSelf: 'flex-start',
-              minHeight: 'var(--touch-min-size, 48px)',
-            }}
+            className="tab-more"
             aria-expanded={expanded}
           >
             <span>{expanded ? 'Hide extra notices' : `+ ${remaining.length} more notice${remaining.length === 1 ? '' : 's'}`}</span>
-            <IonIcon icon={expanded ? chevronUpOutline : chevronDownOutline} style={{ fontSize: '1rem' }} />
+            <IonIcon icon={expanded ? chevronUpOutline : chevronDownOutline} className="tab-more__icon" />
           </button>
 
           {expanded && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '4px' }}>
-              {remaining.map((item) => {
-                const s = getStyles(item.severity);
-                return (
-                  <div
-                    key={item.id}
-                    style={{
-                      background: s.bg,
-                      border: s.border,
-                      borderRadius: 'var(--radius-md, 8px)',
-                      padding: '8px 12px',
-                      color: s.text,
-                      fontSize: 'var(--text-sm)',
-                      fontWeight: 600,
-                      lineHeight: 1.35,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '10px',
-                    }}
-                    role="status"
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                      <IonIcon icon={getIcon(item.severity)} style={{ fontSize: '1.1rem', flexShrink: 0 }} aria-hidden="true" />
-                      <span>{item.message}</span>
-                    </div>
-
-                    {item.actionLabel && item.onAction && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          tacticalFeedback.onTap();
-                          item.onAction?.();
-                        }}
-                        style={{
-                          minHeight: 'var(--touch-min-size, 48px)',
-                          padding: '0 10px',
-                          borderRadius: 'var(--radius-sm, 6px)',
-                          ...actionColors(item.severity),
-                          border: 'none',
-                          fontWeight: 700,
-                          fontSize: 'var(--text-sm)',
-                          cursor: 'pointer',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {item.actionLabel}
-                      </button>
-                    )}
+            <div className="tab-list">
+              {remaining.map((item) => (
+                <div key={item.id} className={`tab-card tab-card--compact tab-card--${item.severity}`} role="status">
+                  <div className="tab-card__body tab-card__body--center">
+                    <IonIcon icon={getIcon(item.severity)} className="tab-card__icon tab-card__icon--sm" aria-hidden="true" />
+                    <span>{item.message}</span>
                   </div>
-                );
-              })}
+
+                  {item.actionLabel && item.onAction && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        tacticalFeedback.onTap();
+                        item.onAction?.();
+                      }}
+                      className={`tab-action tab-action--compact tab-action--${item.severity}`}
+                    >
+                      {item.actionLabel}
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </>

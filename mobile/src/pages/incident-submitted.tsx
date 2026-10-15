@@ -183,22 +183,16 @@ const IncidentSubmittedPage: React.FC = () => {
         defaultBackHref="/tabs/home"
       />
 
-      <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
+      <IonContent className="ion-padding content-bg">
         <div className="tactical-receipt-container">
           {loading ? (
             <LoadingBlock label="Loading report…" />
           ) : !row || !engineMeta ? (
             <div
-              className="card--elevated"
-              style={{
-                textAlign: 'center',
-                padding: 'var(--spacing-xl) var(--spacing-md)',
-                marginTop: 'var(--spacing-xl)',
-                borderTop: '4px solid var(--color-critical)',
-              }}
+              className="card--elevated receipt-not-found"
             >
-              <h3 style={{ color: 'var(--color-critical)', margin: '0 0 var(--spacing-xs)' }}>Report Not Found</h3>
-              <p style={{ color: 'var(--color-text-secondary)', marginBottom: 'var(--spacing-md)' }}>
+              <h3 className="receipt-not-found__title">Report Not Found</h3>
+              <p className="receipt-not-found__text">
                 That incident report could not be located in local device storage.
               </p>
               <IonButton expand="block" onClick={() => navigate('/tabs/home', { replace: true })}>
@@ -216,8 +210,8 @@ const IncidentSubmittedPage: React.FC = () => {
                   </div>
                   <h1 className="tactical-receipt-title">{engineMeta.headline}</h1>
                   <p className="tactical-receipt-subtitle">{engineMeta.subtitle}</p>
-                  <span className={`status-pill ${engineMeta.badgeClass}`} style={{ marginTop: '2px' }}>
-                    <IonIcon icon={engineMeta.badgeIcon} style={{ fontSize: '0.85rem' }} />
+                  <span className={`status-pill receipt-pill-offset ${engineMeta.badgeClass}`}>
+                    <IonIcon icon={engineMeta.badgeIcon} className="icon-xs" />
                     {engineMeta.badgeLabel}
                   </span>
                 </div>
@@ -256,7 +250,7 @@ const IncidentSubmittedPage: React.FC = () => {
                     <div className="tactical-receipt-value">
                       {row.latitude !== null && row.longitude !== null ? (
                         <>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--font-size-label)' }}>
+                          <span className="receipt-coords">
                             {row.latitude.toFixed(4)}, {row.longitude.toFixed(4)}
                           </span>
                           <button
@@ -273,7 +267,7 @@ const IncidentSubmittedPage: React.FC = () => {
                           </button>
                         </>
                       ) : (
-                        <span style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-label)' }}>
+                        <span className="receipt-no-gps">
                           No GPS Location
                         </span>
                       )}
@@ -324,8 +318,8 @@ const IncidentSubmittedPage: React.FC = () => {
                       aria-label="Copy report ID"
                     >
                       <span>#{row.client_event_id ? row.client_event_id.slice(0, 8) : '--------'}</span>
-                      <IonIcon icon={copied ? checkmarkOutline : copyOutline} style={{ color: copied ? 'var(--color-success)' : 'inherit' }} />
-                      {copied && <span style={{ color: 'var(--color-success)', fontWeight: 700 }}>Copied</span>}
+                      <IonIcon icon={copied ? checkmarkOutline : copyOutline} className={copied ? 'icon-success' : undefined} />
+                      {copied && <span className="receipt-copied">Copied</span>}
                     </button>
                   </div>
                 </div>
@@ -348,7 +342,7 @@ const IncidentSubmittedPage: React.FC = () => {
                     navigate('/tabs/home', { replace: true });
                   }}
                 >
-                  <IonIcon icon={homeOutline} style={{ fontSize: '1.2rem' }} />
+                  <IonIcon icon={homeOutline} className="icon-md" />
                   <span>Back to Home</span>
                 </button>
 
@@ -362,7 +356,7 @@ const IncidentSubmittedPage: React.FC = () => {
                       navigate('/tabs/incidents/new', { replace: true });
                     }}
                   >
-                    <IonIcon icon={addOutline} style={{ color: 'var(--color-primary)' }} />
+                    <IonIcon icon={addOutline} className="icon-primary" />
                     <span>Report Another</span>
                   </button>
 
@@ -374,7 +368,7 @@ const IncidentSubmittedPage: React.FC = () => {
                       navigate('/tabs/reports');
                     }}
                   >
-                    <IonIcon icon={listOutline} style={{ color: 'var(--color-primary)' }} />
+                    <IonIcon icon={listOutline} className="icon-primary" />
                     <span>View Reports</span>
                   </button>
                 </div>

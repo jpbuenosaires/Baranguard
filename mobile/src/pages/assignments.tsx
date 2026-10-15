@@ -30,76 +30,31 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  IonContent,
-  IonIcon,
-  IonPage,
-  IonRefresher,
-  IonRefresherContent,
-  useIonViewWillEnter,
-} from '@ionic/react';
+import { IonContent, IonIcon, IonPage, IonRefresher, IonRefresherContent, useIonViewWillEnter } from '@ionic/react';
 import type { RefresherEventDetail } from '@ionic/core';
-import {
-  alertCircleOutline,
-  carOutline,
-  chevronForwardOutline,
-  closeCircleOutline,
-  compassOutline,
-  documentTextOutline,
-  flameOutline,
-  flashOutline,
-  locationOutline,
-  mapOutline,
-  medkitOutline,
-  pawOutline,
-  refreshOutline,
-  searchOutline,
-  shieldCheckmarkOutline,
-  timeOutline,
-
-} from 'ionicons/icons';
+import { compassOutline, refreshOutline, shieldCheckmarkOutline } from 'ionicons/icons';
 import DispatchOfferCards from '../components/DispatchOfferCards';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
+import DispatchCard from '../components/dispatch/DispatchCard';
+import DispatchFilterBar, { type FilterTab } from '../components/dispatch/DispatchFilterBar';
+import DispatchHistory from '../components/dispatch/DispatchHistory';
 import { Banner, Button, EmptyState } from '../components/ui';
 import { ApiError, getDispatches } from '../services/apiService';
 import {
   cacheDispatchesFromServer,
-  isCacheStale,
   listActiveCachedDispatches,
   listRecentFinishedDispatches,
 } from '../services/db/dispatchRepository';
-import { formatIncidentCode } from '../utils/incidentCode';
 import type { DispatchLocalRow } from '../services/db/localSchema';
-import { getCurrentPosition, watchPosition, type DevicePosition } from '../services/geolocation';
-import { bearingLabel, distanceMeters, formatDistance, formatRelativeAge } from '../utils/geo';
-import { dispatchStatusLabel, sortDispatches } from '../utils/dispatchList';
+import { bearingLabel, distanceMeters, formatDistance } from '../utils/geo';
+import { sortDispatches } from '../utils/dispatchList';
+import { useSelfPosition } from '../utils/useSelfPosition';
 import tacticalFeedback from '../utils/tacticalFeedback';
 
-function getCategoryIcon(type?: string | null) {
-  const normalized = (type ?? '').toLowerCase();
-  if (normalized.includes('injury') || normalized.includes('medical') || normalized.includes('health')) {
-    return medkitOutline;
-  }
-  if (normalized.includes('theft') || normalized.includes('vandalism') || normalized.includes('robbery')) {
-    return shieldCheckmarkOutline;
-  }
-  if (normalized.includes('traffic') || normalized.includes('vehic') || normalized.includes('car')) {
-    return carOutline;
-  }
-  if (normalized.includes('animal') || normalized.includes('dog')) {
-    return pawOutline;
-  }
-  if (normalized.includes('fire') || normalized.includes('smoke')) {
-    return flameOutline;
-  }
-  if (normalized.includes('disturbance') || normalized.includes('dispute') || normalized.includes('noise')) {
-    return alertCircleOutline;
-  }
-  return documentTextOutline;
-}
 
-type FilterTab = 'all' | 'critical' | 'en_route' | 'assigned';
+
+
 
 const AssignmentsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -108,39 +63,12 @@ const AssignmentsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [offlineNote, setOfflineNote] = useState<string | null>(null);
   const [offlineDismissed, setOfflineDismissed] = useState(false);
-  const [position, setPosition] = useState<DevicePosition | null>(null);
+  const position = useSelfPosition();
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    let stopWatch: (() => void) | undefined;
-    let cancelled = false;
 
-    getCurrentPosition()
-      .then((p) => {
-        if (!cancelled) setPosition(p);
-      })
-      .catch(() => {
-        // No fix yet — cards fall back to "Distance unknown" below.
-      });
-
-    watchPosition((p) => {
-      if (!cancelled) setPosition(p);
-    })
-      .then((stop) => {
-        if (cancelled) stop();
-        else stopWatch = stop;
-      })
-      .catch(() => {
-        // Non-fatal watch failure treatment
-      });
-
-    return () => {
-      cancelled = true;
-      stopWatch?.();
-    };
-  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -258,6 +186,13 @@ const AssignmentsPage: React.FC = () => {
     navigate(`/tabs/assignments/${encodeURIComponent(row.local_id)}`);
   };
 
+  const handleToggleSearch = () => {
+    tacticalFeedback.onTap();
+    setShowSearch(!showSearch);
+    if (showSearch) setSearchQuery('');
+  };
+
+
   const openDirections = (row: DispatchLocalRow) => {
     tacticalFeedback.onTap();
     if (row.latitude !== null && row.longitude !== null) {
@@ -271,12 +206,8 @@ const AssignmentsPage: React.FC = () => {
       <MobileHeader title="Dispatches" />
 
       {/* No ion-padding to prevent outer white border bug */}
-      <IonContent style={{ '--background': 'var(--color-bg)' }}>
-        <IonRefresher
-          slot="fixed"
-          onIonRefresh={handleRefresh}
-          style={{ '--color': 'var(--color-primary, #3b82f6)' }}
-        >
+      <IonContent className="dispatch-content">
+        <IonRefresher slot="fixed" onIonRefresh={handleRefresh} className="dispatch-refresher">
           <IonRefresherContent refreshingSpinner="crescent" />
         </IonRefresher>
 
@@ -310,103 +241,18 @@ const AssignmentsPage: React.FC = () => {
 
           {/* Unified Tactical Segmented Filter Bar */}
           {!loading && rows.length > 0 && (
-            <div className="dispatch-control-bar">
-              <div className="dispatch-segmented-control" role="tablist" aria-label="Filter dispatches">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeFilter === 'all'}
-                  className={`dispatch-segment-btn ${activeFilter === 'all' ? 'dispatch-segment-btn--active' : ''}`}
-                  onClick={() => handleFilterChange('all')}
-                >
-                  <span>All</span>
-                  <span className="dispatch-segment-badge">{telemetry.counts.all}</span>
-                </button>
-
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeFilter === 'critical'}
-                  className={`dispatch-segment-btn dispatch-segment-btn--critical ${activeFilter === 'critical' ? 'dispatch-segment-btn--active' : ''}`}
-                  onClick={() => handleFilterChange('critical')}
-                >
-                  <span>Critical</span>
-                  {telemetry.counts.critical > 0 && (
-                    <span className="dispatch-segment-badge dispatch-segment-badge--urgent">
-                      {telemetry.counts.critical}
-                    </span>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeFilter === 'en_route'}
-                  className={`dispatch-segment-btn ${activeFilter === 'en_route' ? 'dispatch-segment-btn--active' : ''}`}
-                  onClick={() => handleFilterChange('en_route')}
-                >
-                  <span>En Route</span>
-                  {telemetry.counts.en_route > 0 && (
-                    <span className="dispatch-segment-badge">{telemetry.counts.en_route}</span>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeFilter === 'assigned'}
-                  className={`dispatch-segment-btn ${activeFilter === 'assigned' ? 'dispatch-segment-btn--active' : ''}`}
-                  onClick={() => handleFilterChange('assigned')}
-                >
-                  <span>Assigned</span>
-                  {telemetry.counts.assigned > 0 && (
-                    <span className="dispatch-segment-badge">{telemetry.counts.assigned}</span>
-                  )}
-                </button>
-              </div>
-
-              {/* On-demand Search Toggle */}
-              <button
-                type="button"
-                className={`dispatch-search-toggle ${showSearch ? 'dispatch-search-toggle--active' : ''}`}
-                onClick={() => {
-                  tacticalFeedback.onTap();
-                  setShowSearch(!showSearch);
-                  if (showSearch) setSearchQuery('');
-                }}
-                aria-label={showSearch ? 'Close search' : 'Open search'}
-                title={showSearch ? 'Close search' : 'Search dispatches'}
-              >
-                <IonIcon icon={showSearch ? closeCircleOutline : searchOutline} />
-              </button>
-            </div>
+            <DispatchFilterBar
+              activeFilter={activeFilter}
+              counts={telemetry.counts}
+              showSearch={showSearch}
+              searchQuery={searchQuery}
+              onFilterChange={handleFilterChange}
+              onToggleSearch={handleToggleSearch}
+              onSearchChange={setSearchQuery}
+            />
           )}
 
-          {/* Expandable Search Input */}
-          {showSearch && !loading && rows.length > 0 && (
-            <div className="dispatch-search-bar" role="search">
-              <IonIcon icon={searchOutline} className="dispatch-search-icon" aria-hidden="true" />
-              <input
-                type="text"
-                autoFocus
-                className="dispatch-search-field"
-                placeholder="Search by incident type, summary, or ID…"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                aria-label="Search dispatches"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  className="dispatch-search-clear-btn"
-                  onClick={() => setSearchQuery('')}
-                  aria-label="Clear search input"
-                >
-                  <IonIcon icon={closeCircleOutline} />
-                </button>
-              )}
-            </div>
-          )}
+
 
           {/* Nearest-call strip. Counts live once, on the filter tabs above. */}
           {!loading && rows.length > 0 && telemetry.closestFormatted && (
@@ -460,183 +306,13 @@ const AssignmentsPage: React.FC = () => {
             </div>
           ) : (
             <div className="dispatch-card-list">
-              {filteredAndSortedRows.map((row) => {
-                const stale = isCacheStale(row);
-                const isCritical = row.priority === 'critical';
-                const isHigh = row.priority === 'high';
-
-                const cardUrgencyClass = isCritical
-                  ? 'dispatch-card--critical'
-                  : isHigh
-                    ? 'dispatch-card--high'
-                    : 'dispatch-card--routine';
-
-                const hasCoords = row.latitude !== null && row.longitude !== null;
-                const distanceStr =
-                  hasCoords && position
-                    ? `${formatDistance(distanceMeters(position.latitude, position.longitude, row.latitude!, row.longitude!))} · ${bearingLabel(position.latitude, position.longitude, row.latitude!, row.longitude!)}`
-                    : hasCoords
-                      ? 'Location available'
-                      : 'Location not set';
-
-                const elapsedSeconds = row.dispatched_at
-                  ? Math.max(0, Math.floor((Date.now() - new Date(row.dispatched_at).getTime()) / 1000))
-                  : null;
-
-                const dispatchNo = row.server_dispatch_id ?? row.local_id.slice(0, 6);
-
-                return (
-                  <article key={row.local_id} className={`dispatch-card dispatch-card--p4 ${cardUrgencyClass}`}>
-                    {/* The whole top of the card is ONE link-like control; the action buttons below are siblings, never nested. */}
-                    <div
-                      className="dispatch-card__open"
-                      role="link"
-                      tabIndex={0}
-                      aria-label={`Open dispatch #${dispatchNo}: ${row.redacted_incident_type?.replace(/_/g, ' ') ?? 'Incident'}, priority ${row.priority}, status ${dispatchStatusLabel(row.status)}`}
-                      onClick={() => openDetail(row)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          openDetail(row);
-                        }
-                      }}
-                    >
-                    {/* Top Scannable Header */}
-                    <div className="dispatch-card__header">
-                      <div className="dispatch-card__badge-row">
-                        {isCritical ? (
-                          <span className="dispatch-badge dispatch-badge--critical">
-                            <IonIcon icon={flashOutline} aria-hidden="true" />
-                            <span>Critical</span>
-                          </span>
-                        ) : isHigh ? (
-                          <span className="dispatch-badge dispatch-badge--high">
-                            <IonIcon icon={alertCircleOutline} aria-hidden="true" />
-                            <span>High Priority</span>
-                          </span>
-                        ) : (
-                          <span className="dispatch-badge dispatch-badge--routine">
-                            <span>Normal</span>
-                          </span>
-                        )}
-
-                        <span className={`dispatch-badge dispatch-badge--status dispatch-badge--status-${row.status}`}>
-                          {dispatchStatusLabel(row.status)}
-                        </span>
-                      </div>
-
-                      <div className="dispatch-card__id-age">
-                        <span className="dispatch-card__id">
-                          #{dispatchNo}
-                        </span>
-                        {elapsedSeconds !== null && (
-                          <span className="dispatch-card__age">
-                            {formatRelativeAge(elapsedSeconds)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Incident Type & Category Title */}
-                    <div className="dispatch-card__body">
-                      <div className="dispatch-card__type-row">
-                        <div className="dispatch-card__category-icon" aria-hidden="true">
-                          <IonIcon icon={getCategoryIcon(row.redacted_incident_type)} />
-                        </div>
-                        <div className="dispatch-card__title-group">
-                          <h4 className="dispatch-card__title">
-                            {row.redacted_incident_type
-                              ? row.redacted_incident_type.replace(/_/g, ' ')
-                              : 'Incident Dispatch'}
-                          </h4>
-                          <span className="dispatch-card__location-sub">
-                            <IonIcon icon={locationOutline} className="dispatch-card__loc-icon" aria-hidden="true" />
-                            <span>{distanceStr}</span>
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Rich Incident Situation Excerpt */}
-                      <p className="dispatch-card__summary">
-                        {row.redacted_incident_summary ||
-                          'Patrol dispatched to check the area and assist with the incident.'}
-                      </p>
-
-                      {stale && (
-                        <div className="dispatch-card__telemetry-row dispatch-card__telemetry-row--stale">
-                          <div className="dispatch-card__stale-chip">
-                            <IonIcon icon={timeOutline} aria-hidden="true" />
-                            <span>Cached copy, may be out of date</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    </div>
-
-                    {/* Action bar: siblings of the link area */}
-                    <div className="dispatch-card__actions">
-                      {hasCoords && row.status !== 'arrived' && (
-                        <button
-                          type="button"
-                          className="dispatch-card__btn-directions"
-                          onClick={() => openDirections(row)}
-                          aria-label={`Open turn-by-turn directions to incident #${dispatchNo}`}
-                        >
-                          <IonIcon icon={mapOutline} aria-hidden="true" />
-                          <span>Directions</span>
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        className="dispatch-card__btn-primary"
-                        onClick={() => openDetail(row)}
-                        aria-label={`Open dispatch #${dispatchNo}`}
-                      >
-                        <IonIcon icon={chevronForwardOutline} aria-hidden="true" />
-                        <span>Open</span>
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
+              {filteredAndSortedRows.map((row) => (
+                <DispatchCard key={row.local_id} row={row} position={position} onOpen={openDetail} onDirections={openDirections} />
+              ))}
             </div>
           )}
 
-          {history.length > 0 && (
-            <section className="dispatch-history" aria-label="Recent history">
-              <h3 className="dispatch-empty-title dispatch-history__title">Recent history</h3>
-              <div className="dispatch-card-list">
-                {history.map((h) => (
-                  <article
-                    key={h.local_id}
-                    className="dispatch-card dispatch-card--p4 dispatch-card--history dispatch-card__open"
-                    role="link"
-                    tabIndex={0}
-                    aria-label={`Open past dispatch ${formatIncidentCode({ displayId: h.incident_display_id, serverIncidentId: h.server_incident_id })}, ${dispatchStatusLabel(h.status)}`}
-                    onClick={() => openDetail(h)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        openDetail(h);
-                      }
-                    }}
-                  >
-                    <div className="dispatch-card__telemetry-row">
-                      <strong>{formatIncidentCode({ displayId: h.incident_display_id, serverIncidentId: h.server_incident_id })}</strong>
-                      <span>
-                        {(h.redacted_incident_type ?? 'incident').replace(/_/g, ' ')} &bull; {dispatchStatusLabel(h.status)}
-                      </span>
-                    </div>
-                    <div className="dispatch-card__telemetry-row">
-                      <span>{new Date(h.completed_at ?? h.arrived_at ?? h.dispatched_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-          )}
+          {history.length > 0 && <DispatchHistory history={history} onOpen={openDetail} />}
         </div>
       </IonContent>
     </IonPage>

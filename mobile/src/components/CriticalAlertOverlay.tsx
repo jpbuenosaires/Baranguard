@@ -127,15 +127,11 @@ const CriticalAlertOverlay: React.FC = () => {
   return (
     <div className="critical-alert-overlay" role="alertdialog" aria-live="assertive" aria-label={TYPE_LABEL[alert.notificationType]}>
       <div
-        className="critical-alert-overlay__card"
-        style={{
-          borderTop: '4px solid var(--color-critical)',
-          boxShadow: 'var(--glow-critical), var(--shadow-floating)',
-        }}
+        className="critical-alert-overlay__card critical-alert-overlay__card--sos"
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-          <IonIcon icon={warningOutline} style={{ fontSize: '1.4rem', color: 'var(--color-critical)' }} />
-          <p className="critical-alert-overlay__title" style={{ margin: 0 }}>{TYPE_LABEL[alert.notificationType]}</p>
+        <div className="critical-alert-overlay__head">
+          <IonIcon icon={warningOutline} className="critical-alert-overlay__icon" />
+          <p className="critical-alert-overlay__title critical-alert-overlay__title--flush">{TYPE_LABEL[alert.notificationType]}</p>
         </div>
         <p className="critical-alert-overlay__body">{bodyText}</p>
         <div className="critical-alert-overlay__actions">
@@ -145,7 +141,7 @@ const CriticalAlertOverlay: React.FC = () => {
               color="danger"
               disabled={acknowledging}
               onClick={handleOpenOffer}
-              style={{ fontWeight: 700, height: '44px' }}
+              className="critical-alert-overlay__btn"
             >
               {acknowledging ? 'Opening…' : 'View Offer'}
             </IonButton>
@@ -156,7 +152,7 @@ const CriticalAlertOverlay: React.FC = () => {
             fill={isOffer ? 'outline' : 'solid'}
             disabled={acknowledging}
             onClick={isSos ? handleOpenSos : handleAcknowledge}
-            style={{ fontWeight: 700, height: '44px' }}
+            className="critical-alert-overlay__btn"
           >
             {acknowledging ? 'Acknowledging…' : 'Acknowledge Alert'}
           </IonButton>

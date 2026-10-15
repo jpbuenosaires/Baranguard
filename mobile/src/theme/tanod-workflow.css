@@ -108,28 +108,10 @@
   margin-top: 1px;
 }
 
-.wf-banner--info {
-  background: var(--tint-info-bg);
-  color: var(--pill-info-text);
-  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
-}
-
 .wf-banner--warning {
   background: var(--tint-warning-bg);
   color: var(--pill-warning-text);
   border-color: var(--color-warning);
-}
-
-.wf-banner--critical {
-  background: var(--tint-critical-bg);
-  color: var(--pill-critical-text);
-  border-color: var(--color-critical);
-}
-
-.wf-banner--success {
-  background: var(--tint-success-bg);
-  color: var(--pill-success-text);
-  border-color: var(--color-success);
 }
 
 /* Form fields */
@@ -389,19 +371,6 @@
 }
 
 /* Compact "needs a school" status strip on Home */
-.wf-strip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border: 1px solid var(--color-success);
-  background: var(--tint-success-bg);
-  color: var(--pill-success-text);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
-  font-size: var(--text-xs);
-  font-weight: 700;
-}
 
 /* Night-dispatch offer cards (Wave 2): Home + Dispatches tab. Non-identifying content only. */
 .dispatch-offer-card {

@@ -40,67 +40,38 @@
  */
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import {
-  LngLatBounds,
-  Map as MaplibreMap,
-  Marker,
-  NavigationControl,
-  addProtocol,
-  setWorkerUrl,
-  type GeoJSONSource,
-  type StyleSpecification,
-} from 'maplibre-gl';
+import { Map as MaplibreMap, Marker, NavigationControl } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { locateOutline } from 'ionicons/icons';
 import { IonIcon } from '@ionic/react';
 import { MbtilesReader } from '../services/mbtilesReader';
 import { getActiveMapPackage, readMapPackageBytes } from '../services/mapPackageService';
 import type { NearbyIncident, NearbyTanod } from '../services/apiService';
 import type { DevicePosition } from '../services/geolocation';
-import { splitRouteAtSnap } from '../utils/routeProgress';
-import { incidentAriaLabel, pinLabel, shortPersonLabel, tanodAriaLabel, tanodInitials } from '../utils/liveMapPolicy';
-import { thinLabels, type LabelCandidate } from '../utils/liveMapHud';
+import {
+  DEFAULT_CENTER,
+  DEFAULT_ZOOM,
+  NAV_FOLLOW_ZOOM,
+  POSITION_ZOOM,
+  buildOfflineStyle,
+  buildOnlineStyle,
+  centerMap,
+  closeCurrentReader,
+  ensureProtocolRegistered,
+  setCurrentReader,
+  type FocusTarget,
+} from './map/mapBasemap';
+import { applyPinLabels, syncIncidentPins, syncTanodPins, type PinEntry } from './map/mapPins';
+import { drawRoute } from './map/mapRoute';
 
-// Register MapLibre's worker bundle with Vite so GeoJSON sources (route polyline) can be tiled in the background.
-// Without this, MapLibre defaults to an empty workerUrl in bundled/Capacitor environments, causing GeoJSON sources
-// to remain unloaded indefinitely and preventing vector lines from rendering.
-setWorkerUrl(maplibreWorkerUrl);
+export type { FocusTarget };
 
-/** Pilar, Sorsogon — matches web/src/components/LiveMap.js's default center. */
-const DEFAULT_CENTER: [number, number] = [123.6667, 12.9186];
-const DEFAULT_ZOOM = 13;
-const POSITION_ZOOM = 15;
-const TILE_PROTOCOL = 'baranguard-mbtiles';
-const ROUTE_SOURCE_ID = 'route';
-const ROUTE_CASING_LAYER_ID = 'route-line-casing';
-const ROUTE_LAYER_ID = 'route-line';
-const ROUTE_TRAVELED_SOURCE_ID = 'route-traveled';
-const ROUTE_TRAVELED_LAYER_ID = 'route-line-traveled';
-const ROUTE_REMAINING_SOURCE_ID = 'route-remaining';
-const ROUTE_REMAINING_CASING_LAYER_ID = 'route-remaining-casing';
-const ROUTE_REMAINING_LAYER_ID = 'route-line-remaining';
-const ROUTE_GUIDELINE_SOURCE_ID = 'route-guideline';
-const ROUTE_GUIDELINE_LAYER_ID = 'route-guideline-line';
-
-/** Vibrant royal blue for the active route line (Google Maps style). */
-const ROUTE_LINE_COLOR = '#2563eb';
-/** White halo/casing separating the route from complex basemaps. */
-const ROUTE_CASING_COLOR = '#ffffff';
-/** Dimmed slate gray for the traveled portion of the route in navigation mode. */
-const ROUTE_TRAVELED_COLOR = '#cbd5e1';
-const NAV_FOLLOW_ZOOM = 17;
 
 export type BasemapStatus =
   | { kind: 'loading' }
   | { kind: 'offline'; version: string }
   | { kind: 'online' }
   | { kind: 'unavailable' };
-
-export interface FocusTarget {
-  latitude: number;
-  longitude: number;
-}
 
 export interface LiveMapCanvasHandle {
   /** Re-frames the camera on self + focusTarget (whichever are available) — the same logic the internal recenter FAB uses. */
@@ -182,147 +153,6 @@ interface Props {
   /** True when the nearby data on screen is old or failed to refresh: markers are dimmed so they never read as live. */
   dataStale?: boolean;
 }
-
-/** Frames the camera on whichever of self/focusTarget are available; both → fits bounds, one → centers on it. */
-function centerMap(
-  map: MaplibreMap,
-  position: DevicePosition | null,
-  focusTarget: FocusTarget | null | undefined,
-  animate: boolean
-): void {
-  const points: [number, number][] = [];
-  if (position) points.push([position.longitude, position.latitude]);
-  if (focusTarget) points.push([focusTarget.longitude, focusTarget.latitude]);
-  if (points.length === 0) return;
-
-  if (points.length === 1) {
-    if (animate) {
-      map.flyTo({ center: points[0], zoom: POSITION_ZOOM });
-    } else {
-      map.jumpTo({ center: points[0], zoom: POSITION_ZOOM });
-    }
-    return;
-  }
-
-  const bounds = points.slice(1).reduce((b, p) => b.extend(p), new LngLatBounds(points[0], points[0]));
-  map.fitBounds(bounds, { padding: 56, maxZoom: POSITION_ZOOM, duration: animate ? 800 : 0 });
-}
-
-// The active reader and protocol registration are module-level, not
-// per-component-instance: MapLibre's addProtocol() is a GLOBAL registry,
-// so registering once and swapping the reader it reads from avoids
-// double-registration races across mount/unmount (React dev double-invoke
-// included) rather than trying to add/remove the protocol every mount.
-let currentReader: MbtilesReader | null = null;
-let protocolRegistered = false;
-
-function ensureProtocolRegistered(): void {
-  if (protocolRegistered) return;
-  protocolRegistered = true;
-  addProtocol(TILE_PROTOCOL, async (params) => {
-    const match = /\/(\d+)\/(\d+)\/(\d+)$/.exec(params.url);
-    if (!match || !currentReader) {
-      throw new Error('Offline basemap tile not available.');
-    }
-    const [, z, x, y] = match;
-    const tile = currentReader.getTile(Number(z), Number(x), Number(y));
-    if (tile) {
-      return { data: tile.buffer.slice(tile.byteOffset, tile.byteOffset + tile.byteLength) };
-    }
-    // Not in the downloaded package — most likely the Tanod has walked
-    // outside its covered area. The local package stays the PRIMARY
-    // source (see this file's header comment); this per-tile network
-    // fetch only ever runs for coordinates the package doesn't have, so
-    // it never adds latency to a tile the offline reader could already
-    // serve. If there's no connectivity out here either, this throws
-    // like before and MapLibre just leaves that tile blank.
-    const online = await fetch(`https://tile.openstreetmap.org/${z}/${x}/${y}.png`);
-    if (!online.ok) {
-      throw new Error('Tile not present in the offline package, and the online fallback failed.');
-    }
-    return { data: await online.arrayBuffer() };
-  });
-}
-
-function buildOnlineStyle(): StyleSpecification {
-  return {
-    version: 8,
-    sources: {
-      basemap: {
-        type: 'raster',
-        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-        tileSize: 256,
-        attribution: '© OpenStreetMap contributors',
-      },
-    },
-    layers: [{ id: 'basemap', type: 'raster', source: 'basemap' }],
-  };
-}
-
-function buildOfflineStyle(reader: MbtilesReader): StyleSpecification {
-  const { minzoom, maxzoom } = reader.info;
-  return {
-    version: 8,
-    sources: {
-      basemap: {
-        type: 'raster',
-        tiles: [`${TILE_PROTOCOL}://tile/{z}/{x}/{y}`],
-        tileSize: 256,
-        minzoom: minzoom ?? 0,
-        maxzoom: maxzoom ?? 19,
-        // Deliberately NOT setting `bounds` from the package's metadata
-        // here: MapLibre uses a source's `bounds` to decide which tiles
-        // are even worth requesting, so a bounds clamp would stop it
-        // from ever asking the TILE_PROTOCOL handler for coordinates
-        // outside the downloaded package — which is exactly the case
-        // that handler's online fallback exists to serve. Leaving bounds
-        // unset costs nothing extra: the handler still answers
-        // in-package tiles from disk with zero network calls.
-      },
-    },
-    layers: [{ id: 'basemap', type: 'raster', source: 'basemap' }],
-  };
-}
-
-function priorityMarkerClass(priority: string): string {
-  if (priority === 'critical') return 'map-marker map-marker--critical';
-  if (priority === 'high') return 'map-marker map-marker--high';
-  return 'map-marker map-marker--normal';
-}
-
-/** One reusable MapLibre marker plus the DOM bits updated in place on each poll. */
-interface PinEntry<T> {
-  marker: Marker;
-  container: HTMLDivElement;
-  el: HTMLDivElement;
-  label: HTMLSpanElement;
-  item: T;
-}
-
-function createPinShell(iconSvg: string): { container: HTMLDivElement; el: HTMLDivElement; label: HTMLSpanElement } {
-  const container = document.createElement('div');
-  container.className = 'lm-pin-hit';
-  container.tabIndex = 0;
-  container.setAttribute('role', 'button');
-  const el = document.createElement('div');
-  el.innerHTML = iconSvg;
-  const label = document.createElement('span');
-  label.className = 'live-map__pin-label lm-pin-label--off';
-  el.appendChild(label);
-  container.appendChild(el);
-  container.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      container.click();
-    }
-  });
-  return { container, el, label };
-}
-
-const INCIDENT_ICON =
-  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>';
-const TANOD_ICON =
-  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
 
 const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCanvas(
   {
@@ -407,8 +237,7 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
               reader.close();
               return;
             }
-            currentReader?.close();
-            currentReader = reader;
+            setCurrentReader(reader);
             style = buildOfflineStyle(reader);
             nextStatus = { kind: 'offline', version: pkg.version };
           }
@@ -460,10 +289,7 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
       tanodPins.clear();
       mapRef.current?.remove();
       mapRef.current = null;
-      if (currentReader) {
-        currentReader.close();
-        currentReader = null;
-      }
+      closeCurrentReader();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- position is intentionally excluded: it only seeds the initial center, not a rebuild trigger.
   }, [barangayId]);
@@ -600,378 +426,48 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
     [position, focusTarget, navigationMode, routeProgress]
   );
 
+
   // Label policy: which markers show text at this zoom, thinned by overlap.
-  // Selected, destination and the user's own marker are always labelled.
   applyLabelsRef.current = () => {
     const map = mapRef.current;
     if (!map) return;
-    const zoom = map.getZoom();
-    const candidates: LabelCandidate[] = [];
-    const apply: Array<{ id: string; label: HTMLSpanElement; text: string }> = [];
-    const sel = selectedIdsRef.current;
-    const ft = focusTargetRef.current;
-
-    if (selfMarkerRef.current && selfLabelRef.current) {
-      const p = map.project(selfMarkerRef.current.getLngLat());
-      candidates.push({ id: 'self', x: p.x, y: p.y, text: 'You', always: true });
-      apply.push({ id: 'self', label: selfLabelRef.current, text: 'You' });
-    }
-    incidentPinsRef.current.forEach((pin, id) => {
-      const inc = pin.item;
-      const isDestination = !!ft && Math.abs(inc.latitude - ft.latitude) < 0.00005 && Math.abs(inc.longitude - ft.longitude) < 0.00005;
-      const selected = sel.incident === id;
-      const text = id < 0 ? '' : pinLabel({ kind: 'incident', zoom, selected, pinned: isDestination, fullText: `#${id}` }).text;
-      const p = map.project([inc.longitude, inc.latitude]);
-      candidates.push({ id: `i${id}`, x: p.x, y: p.y, text, always: selected || isDestination, rank: inc.priority === 'critical' ? 1 : 3 });
-      apply.push({ id: `i${id}`, label: pin.label, text });
+    applyPinLabels(map, {
+      selfMarker: selfMarkerRef.current,
+      selfLabel: selfLabelRef.current,
+      incidentPins: incidentPinsRef.current,
+      tanodPins: tanodPinsRef.current,
+      selected: selectedIdsRef.current,
+      focusTarget: focusTargetRef.current,
     });
-    tanodPinsRef.current.forEach((pin, id) => {
-      const t = pin.item;
-      const selected = sel.tanod === id;
-      const text = pinLabel({
-        kind: 'tanod',
-        zoom,
-        selected,
-        fullText: shortPersonLabel(t.fullName),
-        shortText: tanodInitials(t.fullName),
-      }).text;
-      const p = map.project([t.longitude, t.latitude]);
-      candidates.push({ id: `t${id}`, x: p.x, y: p.y, text, always: selected, rank: t.dispatchId !== null ? 2 : 4 });
-      apply.push({ id: `t${id}`, label: pin.label, text });
-    });
-
-    const keep = thinLabels(candidates);
-    for (const a of apply) {
-      const show = a.text !== '' && keep.has(a.id);
-      if (a.label.textContent !== a.text) a.label.textContent = a.text;
-      a.label.classList.toggle('lm-pin-label--off', !show);
-    }
   };
 
-  // Incident markers are created once and updated in place on every poll;
-  // only ids that disappeared are removed.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const pins = incidentPinsRef.current;
-    const seen = new Set<number>();
-
-    for (const incident of incidents) {
-      if (typeof incident.longitude !== 'number' || typeof incident.latitude !== 'number' || isNaN(incident.longitude) || isNaN(incident.latitude)) continue;
-      const id = incident.incidentId;
-      seen.add(id);
-
-      const isDestination =
-        !!focusTarget &&
-        Math.abs(incident.latitude - focusTarget.latitude) < 0.00005 &&
-        Math.abs(incident.longitude - focusTarget.longitude) < 0.00005;
-      const isCritical = incident.priority === 'critical';
-      const isSelected = selectedIncidentId === id;
-
-      let pin = pins.get(id);
-      if (!pin) {
-        const shell = createPinShell(INCIDENT_ICON);
-        const created: PinEntry<NearbyIncident> = {
-          ...shell,
-          item: incident,
-          marker: new Marker({ element: shell.container }).setLngLat([incident.longitude, incident.latitude]).addTo(map),
-        };
-        shell.container.addEventListener('click', (e) => {
-          e.stopPropagation();
-          onSelectIncidentRef.current?.(created.item);
-        });
-        pins.set(id, created);
-        pin = created;
-      }
-      pin.item = incident;
-      pin.marker.setLngLat([incident.longitude, incident.latitude]);
-
-      const cls = isDestination
-        ? `map-marker map-marker--destination ${priorityMarkerClass(incident.priority)}`
-        : `map-marker map-marker--incident ${isCritical ? 'map-marker--incident-critical' : ''} ${isSelected ? 'map-marker--focused' : ''}`;
-      if (pin.el.className !== cls) pin.el.className = cls;
-      pin.label.classList.add('live-map__pin-label--incident');
-      pin.label.classList.toggle('live-map__pin-label--critical', isCritical);
-      pin.container.classList.toggle('lm-pin--data-stale', !!dataStale);
-      pin.el.title = `${incident.incidentType.replace(/_/g, ' ')} · ${incident.priority} · ${Math.floor(incident.ageSeconds / 60)}m ago`;
-      pin.container.setAttribute(
-        'aria-label',
-        id < 0 ? 'Picked location' : incidentAriaLabel({ incidentId: id, priority: incident.priority, status: incident.status })
-      );
-    }
-
-    pins.forEach((pin, id) => {
-      if (!seen.has(id)) {
-        pin.marker.remove();
-        pins.delete(id);
-      }
+    syncIncidentPins(map, incidentPinsRef.current, incidents, {
+      focusTarget,
+      selectedIncidentId,
+      dataStale,
+      onSelect: () => onSelectIncidentRef.current,
     });
     applyLabelsRef.current();
   }, [incidents, status, focusTarget, selectedIncidentId, dataStale]);
 
-  // Tanod markers: same reuse rule as incidents.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const pins = tanodPinsRef.current;
-    const seen = new Set<number>();
-
-    for (const tanod of tanods) {
-      if (typeof tanod.longitude !== 'number' || typeof tanod.latitude !== 'number' || isNaN(tanod.longitude) || isNaN(tanod.latitude)) continue;
-      const id = tanod.userId;
-      seen.add(id);
-      const isSelected = selectedTanodId === id;
-      const isDispatched = tanod.dispatchId !== null;
-
-      let pin = pins.get(id);
-      if (!pin) {
-        const shell = createPinShell(TANOD_ICON);
-        const created: PinEntry<NearbyTanod> = {
-          ...shell,
-          item: tanod,
-          marker: new Marker({ element: shell.container }).setLngLat([tanod.longitude, tanod.latitude]).addTo(map),
-        };
-        shell.container.addEventListener('click', (e) => {
-          e.stopPropagation();
-          onSelectTanodRef.current?.(created.item);
-        });
-        pins.set(id, created);
-        pin = created;
-      }
-      pin.item = tanod;
-      pin.marker.setLngLat([tanod.longitude, tanod.latitude]);
-
-      const cls = `map-marker ${tanod.isStale ? 'map-marker--tanod-stale' : isDispatched ? 'map-marker--tanod-dispatched' : 'map-marker--tanod-live'} ${isSelected ? 'map-marker--focused' : ''}`;
-      if (pin.el.className !== cls) pin.el.className = cls;
-      pin.container.classList.toggle('lm-pin--data-stale', !!dataStale);
-      pin.el.title = `${tanod.fullName} — ${tanod.isStale ? 'stale' : 'live'} · ${Math.floor(tanod.ageSeconds / 60)}m ago`;
-      pin.container.setAttribute(
-        'aria-label',
-        tanodAriaLabel({ fullName: tanod.fullName, isStale: tanod.isStale, dispatchId: tanod.dispatchId, ageSeconds: tanod.ageSeconds })
-      );
-    }
-
-    pins.forEach((pin, id) => {
-      if (!seen.has(id)) {
-        pin.marker.remove();
-        pins.delete(id);
-      }
+    syncTanodPins(map, tanodPinsRef.current, tanods, {
+      selectedTanodId,
+      dataStale,
+      onSelect: () => onSelectTanodRef.current,
     });
     applyLabelsRef.current();
   }, [tanods, status, selectedTanodId, dataStale]);
 
-  // Draws/updates/clears the route line — a GeoJSON source+layer on top
-  // of the raster basemap.
-  //
-  // Visual Hierarchy (Google Maps quality):
-  //   1. Casing / Halo: 11px white line underneath, provides high contrast over roads & terrain
-  //   2. Core Line: 7px vibrant royal blue (#2563eb)
-  //   3. In Navigation mode: Traveled portion dims to 5px slate gray (#cbd5e1)
-  //   4. Fallback Guideline: If route is unavailable/loading, draws a 4px dashed vector
-  //      directly between user and target so a line is ALWAYS visible.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-
-    /** Removes all route-related layers and sources. */
-    function clearAllRouteLayers() {
-      if (!map) return;
-      const layers = [
-        ROUTE_CASING_LAYER_ID,
-        ROUTE_LAYER_ID,
-        ROUTE_TRAVELED_LAYER_ID,
-        ROUTE_REMAINING_CASING_LAYER_ID,
-        ROUTE_REMAINING_LAYER_ID,
-        ROUTE_GUIDELINE_LAYER_ID,
-      ];
-      for (const layerId of layers) {
-        if (map.getLayer(layerId)) map.removeLayer(layerId);
-      }
-      const sources = [
-        ROUTE_SOURCE_ID,
-        ROUTE_TRAVELED_SOURCE_ID,
-        ROUTE_REMAINING_SOURCE_ID,
-        ROUTE_GUIDELINE_SOURCE_ID,
-      ];
-      for (const sourceId of sources) {
-        if (map.getSource(sourceId)) map.removeSource(sourceId);
-      }
-    }
-
-    function applyRoute() {
-      if (!map) return;
-
-      if (!map.isStyleLoaded()) {
-        map.once('idle', applyRoute);
-        return;
-      }
-
-      try {
-        applyRouteBody();
-      } catch (err) {
-        console.warn('[LiveMapCanvas] applyRoute failed, retrying on idle:', err);
-        map.once('idle', applyRoute);
-      }
-    }
-
-    function applyRouteBody() {
-      if (!map) return;
-      // --- Fallback Guideline: When road route is not yet available, draw dashed direct line ---
-      if (!routeGeometry && position && focusTarget) {
-        const directFeature: GeoJSON.Feature = {
-          type: 'Feature',
-          properties: {},
-          geometry: {
-            type: 'LineString',
-            coordinates: [
-              [position.longitude, position.latitude],
-              [focusTarget.longitude, focusTarget.latitude],
-            ],
-          },
-        };
-        const existingGuide = map.getSource(ROUTE_GUIDELINE_SOURCE_ID) as GeoJSONSource | undefined;
-        if (existingGuide) {
-          existingGuide.setData(directFeature);
-          return;
-        }
-        clearAllRouteLayers();
-        map.addSource(ROUTE_GUIDELINE_SOURCE_ID, { type: 'geojson', data: directFeature });
-        map.addLayer({
-          id: ROUTE_GUIDELINE_LAYER_ID,
-          type: 'line',
-          source: ROUTE_GUIDELINE_SOURCE_ID,
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: {
-            'line-color': ROUTE_LINE_COLOR,
-            'line-width': 4,
-            'line-dasharray': [2, 2],
-            'line-opacity': 0.85,
-          },
-        });
-        return;
-      }
-
-      if (!routeGeometry) {
-        clearAllRouteLayers();
-        return;
-      }
-
-      // Remove fallback guideline if it was active
-      if (map.getLayer(ROUTE_GUIDELINE_LAYER_ID)) map.removeLayer(ROUTE_GUIDELINE_LAYER_ID);
-      if (map.getSource(ROUTE_GUIDELINE_SOURCE_ID)) map.removeSource(ROUTE_GUIDELINE_SOURCE_ID);
-
-      // --- Navigation mode: split into traveled + remaining (with casing) ---
-      if (navigationMode && routeProgress && routeGeometry.coordinates) {
-        // Remove the static line layers if they exist
-        if (map.getLayer(ROUTE_LAYER_ID)) map.removeLayer(ROUTE_LAYER_ID);
-        if (map.getLayer(ROUTE_CASING_LAYER_ID)) map.removeLayer(ROUTE_CASING_LAYER_ID);
-        if (map.getSource(ROUTE_SOURCE_ID)) map.removeSource(ROUTE_SOURCE_ID);
-
-        const { traveled, remaining } = splitRouteAtSnap(
-          routeGeometry.coordinates,
-          routeProgress.snappedSegmentIndex,
-          routeProgress.snappedPoint,
-        );
-
-        const traveledFeature: GeoJSON.Feature = {
-          type: 'Feature',
-          properties: {},
-          geometry: { type: 'LineString', coordinates: traveled },
-        };
-        const remainingFeature: GeoJSON.Feature = {
-          type: 'Feature',
-          properties: {},
-          geometry: { type: 'LineString', coordinates: remaining },
-        };
-
-        // 1. Traveled layer (dimmed gray trail)
-        const existingTraveled = map.getSource(ROUTE_TRAVELED_SOURCE_ID) as GeoJSONSource | undefined;
-        if (existingTraveled) {
-          existingTraveled.setData(traveledFeature);
-        } else {
-          map.addSource(ROUTE_TRAVELED_SOURCE_ID, { type: 'geojson', data: traveledFeature });
-          map.addLayer({
-            id: ROUTE_TRAVELED_LAYER_ID,
-            type: 'line',
-            source: ROUTE_TRAVELED_SOURCE_ID,
-            layout: { 'line-join': 'round', 'line-cap': 'round' },
-            paint: { 'line-color': ROUTE_TRAVELED_COLOR, 'line-width': 5, 'line-opacity': 0.6 },
-          });
-        }
-
-        // 2. Remaining layer (white casing halo + vibrant royal blue core)
-        const existingRemaining = map.getSource(ROUTE_REMAINING_SOURCE_ID) as GeoJSONSource | undefined;
-        if (existingRemaining) {
-          existingRemaining.setData(remainingFeature);
-        } else {
-          map.addSource(ROUTE_REMAINING_SOURCE_ID, { type: 'geojson', data: remainingFeature });
-          // Casing layer first (underneath)
-          map.addLayer({
-            id: ROUTE_REMAINING_CASING_LAYER_ID,
-            type: 'line',
-            source: ROUTE_REMAINING_SOURCE_ID,
-            layout: { 'line-join': 'round', 'line-cap': 'round' },
-            paint: { 'line-color': ROUTE_CASING_COLOR, 'line-width': 11, 'line-opacity': 0.95 },
-          });
-          // Core route line
-          map.addLayer({
-            id: ROUTE_REMAINING_LAYER_ID,
-            type: 'line',
-            source: ROUTE_REMAINING_SOURCE_ID,
-            layout: { 'line-join': 'round', 'line-cap': 'round' },
-            paint: { 'line-color': ROUTE_LINE_COLOR, 'line-width': 7, 'line-opacity': 0.95 },
-          });
-        }
-        return;
-      }
-
-      // --- Static Overview Mode: High-contrast line with white casing ---
-      // Clear navigation-mode split layers
-      if (map.getLayer(ROUTE_TRAVELED_LAYER_ID)) map.removeLayer(ROUTE_TRAVELED_LAYER_ID);
-      if (map.getSource(ROUTE_TRAVELED_SOURCE_ID)) map.removeSource(ROUTE_TRAVELED_SOURCE_ID);
-      if (map.getLayer(ROUTE_REMAINING_LAYER_ID)) map.removeLayer(ROUTE_REMAINING_LAYER_ID);
-      if (map.getLayer(ROUTE_REMAINING_CASING_LAYER_ID)) map.removeLayer(ROUTE_REMAINING_CASING_LAYER_ID);
-      if (map.getSource(ROUTE_REMAINING_SOURCE_ID)) map.removeSource(ROUTE_REMAINING_SOURCE_ID);
-
-      const data: GeoJSON.Feature = { type: 'Feature', properties: {}, geometry: routeGeometry as GeoJSON.Geometry };
-      const existing = map.getSource(ROUTE_SOURCE_ID) as GeoJSONSource | undefined;
-      if (existing) {
-        existing.setData(data);
-      } else {
-        map.addSource(ROUTE_SOURCE_ID, { type: 'geojson', data });
-        // White casing halo (bottom layer)
-        map.addLayer({
-          id: ROUTE_CASING_LAYER_ID,
-          type: 'line',
-          source: ROUTE_SOURCE_ID,
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: { 'line-color': ROUTE_CASING_COLOR, 'line-width': 11, 'line-opacity': 0.95 },
-        });
-        // Vibrant blue core line (top layer)
-        map.addLayer({
-          id: ROUTE_LAYER_ID,
-          type: 'line',
-          source: ROUTE_SOURCE_ID,
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: { 'line-color': ROUTE_LINE_COLOR, 'line-width': 7, 'line-opacity': 0.95 },
-        });
-      }
-    }
-
-    if (map.isStyleLoaded()) {
-      applyRoute();
-    } else {
-      map.once('load', applyRoute);
-      map.once('idle', applyRoute);
-    }
-    // This effect re-runs on every GPS tick (`position`), so without this
-    // cleanup every run that lands before the style is ready leaves
-    // another stale-closure `once()` listener queued; `off()` removes
-    // one-time listeners too.
-    return () => {
-      map.off('load', applyRoute);
-      map.off('idle', applyRoute);
-    };
+    return drawRoute(map, { routeGeometry, position, focusTarget, navigationMode, routeProgress });
   }, [routeGeometry, status, navigationMode, routeProgress, position, focusTarget]);
 
   function recenter() {
@@ -994,49 +490,14 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
   const mapHeight = height ?? (navigationMode ? '68dvh' : '340px');
 
   return (
-    <div
-      style={{
-        position: 'relative',
-        width: '100%',
-        height: isFull ? '100%' : 'auto',
-        borderRadius: isFull ? '0' : 'var(--radius-md)',
-        overflow: 'hidden',
-        boxShadow: isFull ? 'none' : 'var(--shadow-elevated)',
-      }}
-    >
+    <div className={`lm-canvas ${isFull ? 'lm-canvas--full' : ''}`}>
       <div
         ref={containerRef}
-        className={navigationMode ? 'map-container--navigating' : undefined}
-        style={{
-          width: '100%',
-          height: isFull ? '100%' : mapHeight,
-          background: 'var(--tint-neutral-bg)',
-          transition: 'height 0.3s ease',
-        }}
+        className={`lm-canvas__map ${isFull ? 'lm-canvas__map--full' : ''} ${navigationMode ? 'map-container--navigating' : ''}`}
+        style={isFull ? undefined : { height: mapHeight }}
       />
       {!hideRecenterFab && (position || focusTarget) && (
-        <button
-          type="button"
-          onClick={recenter}
-          aria-label="Recenter map"
-          style={{
-            position: 'absolute',
-            right: '12px',
-            bottom: '12px',
-            width: '40px',
-            height: '40px',
-            borderRadius: '50%',
-            border: 'none',
-            background: 'var(--color-bg)',
-            color: 'var(--color-primary)',
-            boxShadow: 'var(--shadow-fab)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '1.25rem',
-            zIndex: 8,
-          }}
-        >
+        <button type="button" onClick={recenter} aria-label="Recenter map" className="lm-canvas__recenter">
           <IonIcon icon={locateOutline} />
         </button>
       )}

@@ -1,0 +1,74 @@
+/* Extracted from inline styles and split components (UI overhaul Phase 6). Tokens only. */
+
+/* Page chrome */
+.dispatch-content {
+  --background: var(--color-bg);
+}
+.dispatch-refresher {
+  --color: var(--color-primary);
+}
+.card--elevated.dispatch-notfound {
+  text-align: center;
+  padding: var(--spacing-2xl) var(--spacing-md);
+  margin-top: var(--spacing-xl);
+}
+.dispatch-notfound__text {
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-md);
+}
+
+/* Navigation bottom sheet */
+.status-pill.nav-priority-pill {
+  font-size: 0.68rem;
+  padding: 2px var(--spacing-sm);
+}
+.nav-type-chip {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  background: var(--color-surface-blue);
+  padding: 2px var(--spacing-sm);
+  border-radius: var(--radius-pill);
+}
+.nav-complete-note {
+  text-align: center;
+  padding: var(--spacing-sm) 0;
+  color: var(--color-success);
+  font-weight: 700;
+}
+.nav-complete-note__icon {
+  margin-right: 6px;
+}
+.nav-bottom-sheet__tools .nav-tool-spinner {
+  width: 14px;
+  height: 14px;
+}
+.nav-pending-sync {
+  margin-top: var(--spacing-sm);
+  font-size: 0.72rem;
+  color: var(--color-warning);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* Dock */
+.dispatch-completed-banner .dispatch-completed-banner__icon {
+  font-size: 1.3rem;
+}
+
+/* Evidence panel */
+.intake-btn-touch .ev-btn-spinner {
+  width: 16px;
+  height: 16px;
+}
+.intake-btn-touch .ev-btn-icon,
+.media-tile__voice .ev-btn-icon {
+  font-size: 1.1rem;
+}
+.media-tile .status-pill.ev-tile-pill {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+}

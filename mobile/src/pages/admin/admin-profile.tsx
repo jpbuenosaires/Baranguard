@@ -52,7 +52,7 @@ const AdminProfilePage: React.FC = () => {
   return (
     <IonPage>
       <MobileHeader title="Profile" subtitle="Chief Tanod Console" hideStatusIndicator />
-      <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
+      <IonContent className="ion-padding content-bg">
         <div className="app-column profile-layout">
           <div className="profile-officer-card">
             <div className="profile-officer-header">
@@ -80,7 +80,7 @@ const AdminProfilePage: React.FC = () => {
             </div>
           </div>
 
-          <div className="wf-card" style={{ marginTop: 14 }}>
+          <div className="wf-card mt-14">
             <strong className="wf-card__title">What this phone can do</strong>
             <span className="wf-muted">
               Acknowledge and resolve SOS alerts, assign or cancel dispatches, open night-dispatch offers, and read incidents. Everything
@@ -88,7 +88,7 @@ const AdminProfilePage: React.FC = () => {
             </span>
           </div>
 
-          <button type="button" className="wf-btn wf-btn--block" style={{ marginTop: 14 }} onClick={() => setConfirming(true)}>
+          <button type="button" className="wf-btn wf-btn--block mt-14" onClick={() => setConfirming(true)}>
             <IonIcon icon={logOutOutline} />
             Sign Out
           </button>

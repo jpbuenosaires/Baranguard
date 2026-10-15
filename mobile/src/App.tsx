@@ -98,16 +98,14 @@ import './theme/variables.css';
 import './theme/app.css';
 import './theme/tanod-workflow.css';
 import './theme/admin-console.css';
-import './theme/phase1-home.css';
-import './theme/phase1-dispatch.css';
-import './theme/phase1-nav.css';
+import './theme/screens-base.css';
 import './theme/ui.css';
-import './theme/phase4-home.css';
-import './theme/phase4-workflow.css';
-import './theme/phase4-dispatch.css';
-import './theme/phase4-map.css';
-import './theme/phase4-admin.css';
-import './theme/phase5-layout.css';
+import './theme/screens.css';
+import './theme/x-map.css';
+import './theme/x-dispatch.css';
+import './theme/x-home.css';
+import './theme/x-forms.css';
+import './theme/layout.css';
 
 setupIonicReact();
 

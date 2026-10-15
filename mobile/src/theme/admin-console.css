@@ -30,15 +30,3 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: var(--text-xs);
 }
-
-.admin-incident-sheet {
-  max-height: 92dvh;
-  overflow-y: auto;
-}
-
-.admin-dock {
-  position: static;
-  border-top: none;
-  padding: 0;
-  background: transparent;
-}

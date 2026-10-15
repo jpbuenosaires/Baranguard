@@ -13,8 +13,7 @@ ion-tab-bar.mobile-tab-bar {
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
 }
-.home-sos-dock,
-.sticky-action-bar {
+.home-sos-dock {
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
