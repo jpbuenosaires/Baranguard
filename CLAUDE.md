@@ -43,6 +43,26 @@ thing twice in the same context.
 current-state section fresh each update; don't stack a new banner on the
 old one. Session history lives in DEVLOG, not here.
 
+## Skills and token-saving defaults
+
+Use ONE skill per task; don't load several that overlap. Never skip the
+rules above to follow a skill.
+
+- **Before building:** a feature or change touching more than one file →
+  `/plan`, then `/build` (add `auto` only if the user says so). Bugs →
+  `/test` (reproduce first). Before finishing → `/review`; for bloat
+  checks `/ponytail-review`. Keep changes minimal (ponytail).
+- **Mobile/web UI work:** use `impeccable` (read `.impeccable.md` if it
+  exists; run `/teach-impeccable` once if not). `design-taste-frontend` is
+  for public marketing pages only — not the dashboard or the mobile app.
+- **Finding code:** read `C:\Users\Jayson Buenosaires\Documents\graphify-mobile-app\GRAPH_REPORT.md`
+  before exploring `mobile/src`. If stale (commit differs from `git rev-parse HEAD`),
+  refresh with `graphify update mobile/src` and move the new `graphify-out/`
+  out of the repo. Otherwise `grep` before opening files.
+- **Notes/memory:** the user's Obsidian vault is `C:\Users\Jayson Buenosaires\Documents\SecondBrain`;
+  read its `Index.md` first, never the whole vault. Project decisions still
+  go in `backend/DEVLOG.md`.
+
 ## Working directory
 
 `C:\xampp\htdocs\baranguard` is an NTFS junction onto this repo (same
