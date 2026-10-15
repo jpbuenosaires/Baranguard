@@ -44,3 +44,22 @@ ion-tab-bar.mobile-tab-bar {
     padding-top: 4px;
   }
 }
+
+/* Short landscape: Report and SOS sit side by side so the dock takes one row, not two thirds of the screen. */
+@media (orientation: landscape) and (max-height: 480px) {
+  .home-sos-dock {
+    display: flex;
+    align-items: stretch;
+    gap: var(--spacing-sm);
+  }
+  .home-sos-dock .h4-report-btn,
+  .home-sos-dock .home-sos-button {
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
+    margin-bottom: 0;
+  }
+  .console-overhaul-container.console-overhaul-container--docked-sos.h4-home {
+    padding-bottom: 96px;
+  }
+}
