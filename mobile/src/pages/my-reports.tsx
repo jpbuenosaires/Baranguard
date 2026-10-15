@@ -29,6 +29,7 @@ import {
   IonRefresher,
   IonRefresherContent,
   IonSpinner,
+  useIonViewWillEnter,
 } from '@ionic/react';
 import {
   alertCircleOutline,
@@ -118,7 +119,7 @@ function getDateGroup(dateStr: string): string {
     d.getMonth() === now.getMonth() &&
     d.getFullYear() === now.getFullYear();
 
-  if (isToday) return "Today's Shift";
+  if (isToday) return "Today's shift";
 
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
@@ -169,16 +170,22 @@ const MyReportsPage: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => {
-    mountedRef.current = true;
-    setLoading(true);
+  // Tab-stack page stays mounted: reload on every visit; only the first load shows the spinner.
+  const loadedOnce = useRef(false);
+  useIonViewWillEnter(() => {
+    if (!loadedOnce.current) setLoading(true);
     void load().finally(() => {
+      loadedOnce.current = true;
       if (mountedRef.current) setLoading(false);
     });
+  });
+
+  useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
-  }, [load]);
+  }, []);
 
   async function handleRefresh(event: CustomEvent) {
     try {
@@ -360,7 +367,7 @@ const MyReportsPage: React.FC = () => {
                 type="button"
                 role="tab"
                 aria-selected={filter === 'pending'}
-                className={`reports-filter-pill ${filter === 'pending' ? 'reports-filter-pill--active' : ''}`}
+                className={`reports-filter-pill ${filter === 'pending' ? 'reports-filter-pill--active' : ''} ${pendingCount > 0 ? 'reports-filter-pill--warn' : ''}`}
                 onClick={() => {
                   tacticalFeedback.onTap();
                   setFilter('pending');
@@ -412,7 +419,6 @@ const MyReportsPage: React.FC = () => {
                   {/* Timeline Shift Header */}
                   <div className="reports-timeline-header">
                     <span>{group.title}</span>
-                    <span className="reports-timeline-count">{group.items.length} {group.items.length === 1 ? 'report' : 'reports'}</span>
                   </div>
 
                   {/* Blotter Cards */}
@@ -455,21 +461,21 @@ const MyReportsPage: React.FC = () => {
                           </span>
                         </div>
 
-                        {/* Row 2: Narrative Excerpt (Unquoted, clean typography) */}
-                        <p className="report-blotter-narrative">
-                          {row.from_server === 1 ? 'Details stay on the server' : excerpt(row.raw_narrative)}
-                        </p>
+                        {/* Incident code on its own line */}
+                        <div className="report-blotter-code">
+                          {formatIncidentCode({ displayId: row.display_id, serverIncidentId: row.server_incident_id }) ?? localReportRef(row.client_event_id)}
+                        </div>
+
+                        {/* Narrative excerpt (server-held reports have none on the phone) */}
+                        {row.from_server !== 1 && row.raw_narrative.trim() && (
+                          <p className="report-blotter-narrative">{excerpt(row.raw_narrative)}</p>
+                        )}
 
                         {/* Row 3: Clean Inline Metadata & Right-Aligned Sync Badge */}
                         <div className="report-blotter-bottom">
                           <div className="report-blotter-meta-left">
-                            <span className="report-blotter-case">
-                              {formatIncidentCode({ displayId: row.display_id, serverIncidentId: row.server_incident_id }) ?? localReportRef(row.client_event_id)}
-                            </span>
-
                             {row.from_server === 1 && row.location_text && (
                               <>
-                                <span className="report-blotter-meta-bullet">•</span>
                                 <span className="report-blotter-meta-item">
                                   <IonIcon icon={locationOutline} className="icon-primary" />
                                   <span>{row.location_text}</span>
@@ -479,7 +485,6 @@ const MyReportsPage: React.FC = () => {
 
                             {row.from_server !== 1 && row.latitude !== null && row.longitude !== null && (
                               <>
-                                <span className="report-blotter-meta-bullet">•</span>
                                 <span className="report-blotter-meta-item">
                                   <IonIcon icon={locationOutline} className="icon-primary" />
                                   <span>Location Saved</span>
@@ -489,7 +494,6 @@ const MyReportsPage: React.FC = () => {
 
                             {evidenceCount > 0 && (
                               <>
-                                <span className="report-blotter-meta-bullet">•</span>
                                 <span className="report-blotter-meta-item">
                                   <IonIcon icon={cameraOutline} className="icon-info" />
                                   <span>{evidenceCount} attachment{evidenceCount > 1 ? 's' : ''}</span>

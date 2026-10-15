@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { DEFAULT_PEEK_PX } from '../../utils/mapStatusLine';
 import tacticalFeedback from '../../utils/tacticalFeedback';
 import type { DrawerMode, SelectedItem } from '../../utils/mapFilters';
 
@@ -7,10 +8,12 @@ interface Args {
   setDrawerMode: Dispatch<SetStateAction<DrawerMode>>;
   selectedItem: SelectedItem | null;
   setSelectedItem: Dispatch<SetStateAction<SelectedItem | null>>;
+  /** Visible height of the collapsed drawer; fits its summary text. */
+  peekPx?: number;
 }
 
 /** Real-time touch engine for the bottom sheet: direct 1:1 finger tracking, flick and snap thresholds. */
-export function useDrawerGestures({ drawerMode, setDrawerMode, selectedItem, setSelectedItem }: Args) {
+export function useDrawerGestures({ drawerMode, setDrawerMode, selectedItem, setSelectedItem, peekPx = DEFAULT_PEEK_PX }: Args) {
   const [dragY, setDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const touchStartY = useRef(0);
@@ -125,7 +128,7 @@ export function useDrawerGestures({ drawerMode, setDrawerMode, selectedItem, set
   };
 
   const fabYStyle = useMemo(() => {
-    let base = '0px';
+    let base = `${DEFAULT_PEEK_PX - peekPx}px`;
     if (drawerMode === 'selected') base = '-139px';
     else if (drawerMode === 'expanded') base = 'calc(76px - 65dvh)';
 
@@ -133,10 +136,10 @@ export function useDrawerGestures({ drawerMode, setDrawerMode, selectedItem, set
       return `translateY(${base}) translateY(${dragY}px)`;
     }
     return `translateY(${base})`;
-  }, [drawerMode, isDragging, dragY]);
+  }, [drawerMode, isDragging, dragY, peekPx]);
 
   const drawerYStyle = useMemo(() => {
-    let base = 'calc(100% - 76px)';
+    let base = `calc(100% - ${peekPx}px)`;
     if (drawerMode === 'selected') base = 'calc(100% - 215px)';
     else if (drawerMode === 'expanded') base = '0%';
 
@@ -144,7 +147,7 @@ export function useDrawerGestures({ drawerMode, setDrawerMode, selectedItem, set
       return `translateY(${base}) translateY(${dragY}px)`;
     }
     return `translateY(${base})`;
-  }, [drawerMode, isDragging, dragY]);
+  }, [drawerMode, isDragging, dragY, peekPx]);
 
   return { isDragging, scrollListRef, handleTouchStart, handleTouchMove, handleTouchEnd, fabYStyle, drawerYStyle };
 }

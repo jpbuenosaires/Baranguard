@@ -8,6 +8,7 @@ import type { SmsFallbackInput } from '../../services/smsFallbackState';
 import tacticalFeedback from '../../utils/tacticalFeedback';
 import { runSosSmsFallback } from '../../utils/sosFallbackSms';
 import { uuid } from '../../services/uuid';
+import type { SosResult } from '../../utils/sosSheet';
 
 /** SOS raise / offline-fallback / failed-alert state for the Home page. */
 export function useSosFlow() {
@@ -15,6 +16,7 @@ export function useSosFlow() {
   const [raisingSos, setRaisingSos] = useState(false);
   const [sosError, setSosError] = useState<string | null>(null);
   const [sosToast, setSosToast] = useState<string | null>(null);
+  const [sosResult, setSosResult] = useState<SosResult | null>(null);
   const [sosFallbackOutcome, setSosFallbackOutcome] = useState<SmsFallbackInput | null>(null);
   // SOS alerts the sync worker gave up on after repeated server rejections —
   // persistent (not a toast) because an undelivered emergency must not
@@ -48,6 +50,8 @@ export function useSosFlow() {
 
   function handleOpenSosModal() {
     tacticalFeedback.onWarning();
+    setSosResult(null);
+    setSosError(null);
     setConfirmingSos(true);
   }
 
@@ -55,6 +59,7 @@ export function useSosFlow() {
     const result = await runSosSmsFallback(payload, clientEventId);
     setSosFallbackOutcome(result.outcome);
     setSosToast(result.toast);
+    setSosResult({ kind: 'saved', detail: result.toast });
   }
 
   async function handleRaiseSos() {
@@ -75,6 +80,7 @@ export function useSosFlow() {
         await postSos({ ...payload, clientEventId });
         setSosFallbackOutcome(null);
         setSosToast('EMERGENCY SOS BROADCAST SENT TO BARANGAY HQ.');
+        setSosResult({ kind: 'sent', detail: null });
       } catch {
         await enqueueSosItem(clientEventId, payload);
         await attemptSosSmsFallback(payload, clientEventId);
@@ -95,6 +101,7 @@ export function useSosFlow() {
     setConfirmingSos,
     raisingSos,
     sosError,
+    sosResult,
     sosToast,
     setSosToast,
     sosFallbackOutcome,

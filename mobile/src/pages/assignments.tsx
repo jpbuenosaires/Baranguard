@@ -49,6 +49,7 @@ import {
 import type { DispatchLocalRow } from '../services/db/localSchema';
 import { bearingLabel, distanceMeters, formatDistance } from '../utils/geo';
 import { sortDispatches } from '../utils/dispatchList';
+import { updatedLine } from '../utils/manilaFormat';
 import { useSelfPosition } from '../utils/useSelfPosition';
 import tacticalFeedback from '../utils/tacticalFeedback';
 
@@ -63,6 +64,7 @@ const AssignmentsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [offlineNote, setOfflineNote] = useState<string | null>(null);
   const [offlineDismissed, setOfflineDismissed] = useState(false);
+  const [lastLoadedMs, setLastLoadedMs] = useState<number | null>(null);
   const position = useSelfPosition();
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [showSearch, setShowSearch] = useState(false);
@@ -75,6 +77,7 @@ const AssignmentsPage: React.FC = () => {
       const entries = await getDispatches();
       await cacheDispatchesFromServer(entries);
       setOfflineNote(null);
+      setLastLoadedMs(Date.now());
     } catch (error) {
       setOfflineNote(
         error instanceof ApiError && error.isOffline
@@ -212,6 +215,8 @@ const AssignmentsPage: React.FC = () => {
         </IonRefresher>
 
         <div className="dispatch-container">
+          {lastLoadedMs !== null && <p className="dispatch-updated">{updatedLine(lastLoadedMs)}</p>}
+
           {/* Offline / Cache Banner */}
           {offlineNote && !offlineDismissed && (
             <Banner

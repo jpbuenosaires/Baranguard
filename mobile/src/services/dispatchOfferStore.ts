@@ -12,9 +12,9 @@
  * looking at doesn't vanish mid-decision, and its Accept button is disabled.
  *
  * Refresh triggers (reusing what the app already listens to):
- *   - a foreground poll every OFFER_POLL_MS while ANY subscriber is mounted and
- *     the app is active. The existing 60 s on-duty sync tick is too slow for a
- *     180 s accept window, so this runs at the web dashboard's 15 s cadence;
+ *   - a foreground poll while ANY subscriber is mounted and the app is visible:
+ *     every 12 s idle, every 4 s while an offer is open (utils/offerPollInterval.ts);
+ *     paused while document.hidden, refreshed at once when it becomes visible;
  *   - app resume and network reconnect (the same two Capacitor events
  *     `syncScheduler.ts` uses);
  *   - a push whose data carries `dispatch_offer` — `criticalAlertStore.ts`
@@ -32,9 +32,7 @@ import { App as CapacitorApp } from '@capacitor/app';
 import { Network } from '@capacitor/network';
 import { ApiError, getOpenDispatchOffers, type DispatchOfferEntry } from './apiService';
 import { loadSession } from './session';
-
-/** Foreground poll cadence for open offers (the accept window is 180 s server-side). */
-export const OFFER_POLL_MS = 15000;
+import { offerPollInterval } from '../utils/offerPollInterval';
 
 export interface DispatchOfferSnapshot {
   /** Unexpired open offers, soonest-expiring first. */
@@ -55,7 +53,8 @@ let lastFetchUnreachable = false;
 let loaded = false;
 let snapshot: DispatchOfferSnapshot = { offers: [], offline: false, loaded: false };
 
-let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let visibilityListening = false;
 let expiryTimer: ReturnType<typeof setTimeout> | null = null;
 let inFlight: Promise<void> | null = null;
 let appActive = true;
@@ -83,6 +82,7 @@ function publish(): void {
   const visible = unexpired(allOffers, now);
   snapshot = { offers: visible, offline: !networkConnected || lastFetchUnreachable, loaded };
   for (const listener of listeners) listener(snapshot);
+  if (pollTimer) schedulePoll();
 
   if (expiryTimer) clearTimeout(expiryTimer);
   expiryTimer = null;
@@ -141,13 +141,35 @@ export function isDispatchOfferPush(data: Record<string, unknown> | undefined): 
   return data?.type === 'dispatch_offer' || data?.notification_type === 'dispatch_offer';
 }
 
+/** (Re)arms the next poll: 4 s while an offer is open, 12 s idle; skipped while hidden. */
+function schedulePoll(): void {
+  if (pollTimer) clearTimeout(pollTimer);
+  pollTimer = setTimeout(() => {
+    if (typeof document !== 'undefined' && document.hidden) {
+      schedulePoll();
+      return;
+    }
+    void refreshDispatchOffers().finally(() => {
+      if (pollTimer) schedulePoll();
+    });
+  }, offerPollInterval(snapshot.offers.length > 0));
+}
+
+function onVisibilityChange(): void {
+  if (!document.hidden && pollTimer && listeners.size > 0) void refreshDispatchOffers();
+}
+
 function startPolling(): void {
   if (pollTimer || !appActive) return;
-  pollTimer = setInterval(() => void refreshDispatchOffers(), OFFER_POLL_MS);
+  if (!visibilityListening && typeof document !== 'undefined') {
+    visibilityListening = true;
+    document.addEventListener('visibilitychange', onVisibilityChange);
+  }
+  schedulePoll();
 }
 
 function stopPolling(): void {
-  if (pollTimer) clearInterval(pollTimer);
+  if (pollTimer) clearTimeout(pollTimer);
   pollTimer = null;
 }
 

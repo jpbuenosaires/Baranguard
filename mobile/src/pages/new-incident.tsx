@@ -14,14 +14,15 @@ import {
   carOutline,
   chevronDownOutline,
   chevronUpOutline,
+  ellipsisHorizontalCircleOutline,
   flameOutline,
+  hammerOutline,
   medicalOutline,
   medkitOutline,
   pawOutline,
   peopleOutline,
   personOutline,
   shieldCheckmarkOutline,
-  warningOutline,
 } from 'ionicons/icons';
 import LocationPickerModal from '../components/LocationPickerModal';
 import MobileHeader from '../components/MobileHeader';
@@ -46,21 +47,6 @@ import { getCurrentPosition, type DevicePosition } from '../services/geolocation
 import { loadSession } from '../services/session';
 import tacticalFeedback from '../utils/tacticalFeedback';
 
-/** Human labels for §5's incident_type enum. Values are never re-cased. */
-const TYPE_LABELS: Record<IncidentType, string> = {
-  theft: 'Theft',
-  physical_injury: 'Physical Injury',
-  disturbance: 'Disturbance',
-  domestic_dispute: 'Domestic Dispute',
-  vandalism: 'Vandalism',
-  traffic_incident: 'Traffic Incident',
-  fire: 'Fire',
-  medical_emergency: 'Medical Emergency',
-  missing_person: 'Missing Person',
-  animal_complaint: 'Animal Complaint',
-  other: 'Other Incident',
-};
-
 const ALL_INCIDENT_TYPES: { type: IncidentType; label: string; icon: typeof alertCircleOutline }[] = [
   { type: 'disturbance', label: 'Disturbance', icon: alertCircleOutline },
   { type: 'theft', label: 'Theft', icon: shieldCheckmarkOutline },
@@ -69,10 +55,10 @@ const ALL_INCIDENT_TYPES: { type: IncidentType; label: string; icon: typeof aler
   { type: 'medical_emergency', label: 'Medical', icon: medicalOutline },
   { type: 'fire', label: 'Fire', icon: flameOutline },
   { type: 'domestic_dispute', label: 'Domestic', icon: peopleOutline },
-  { type: 'vandalism', label: 'Vandalism', icon: warningOutline },
+  { type: 'vandalism', label: 'Vandalism', icon: hammerOutline },
   { type: 'missing_person', label: 'Missing', icon: personOutline },
   { type: 'animal_complaint', label: 'Animal', icon: pawOutline },
-  { type: 'other', label: 'Other', icon: alertCircleOutline },
+  { type: 'other', label: 'Other', icon: ellipsisHorizontalCircleOutline },
 ];
 
 const NARRATIVE_TEMPLATES = [
@@ -363,9 +349,6 @@ const NewIncidentPage: React.FC = () => {
               <span className="intake-block-title">
                 <IonIcon icon={shieldCheckmarkOutline} />
                 Incident Type
-              </span>
-              <span className="intake-type-label">
-                {TYPE_LABELS[incidentType]}
               </span>
             </div>
 

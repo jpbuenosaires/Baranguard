@@ -8,10 +8,12 @@ interface ShiftCardProps {
   shift: ShiftEntry;
   pendingSwap: ShiftSwapRequestEntry | undefined;
   isNext: boolean;
+  /** False for shifts that already ended: no swap button. */
+  canSwap?: boolean;
   onRequestSwap: (shift: ShiftEntry) => void;
 }
 
-export function ShiftCard({ shift, pendingSwap, isNext, onRequestSwap }: ShiftCardProps) {
+export function ShiftCard({ shift, pendingSwap, isNext, canSwap = true, onRequestSwap }: ShiftCardProps) {
   const timing = parseShiftTiming(shift.startAt, shift.endAt);
   const isPendingReapproval = shift.pendingReapproval;
 
@@ -29,7 +31,7 @@ export function ShiftCard({ shift, pendingSwap, isNext, onRequestSwap }: ShiftCa
         {isNext && (
           <div className="status-indicator status-indicator--info">
             <span className="status-indicator__dot" aria-hidden="true" />
-            <span className="status-indicator__label">Next Duty</span>
+            <span className="status-indicator__label">Next duty</span>
           </div>
         )}
         {isPendingReapproval && (
@@ -64,10 +66,10 @@ export function ShiftCard({ shift, pendingSwap, isNext, onRequestSwap }: ShiftCa
           <span className="roster-card__zone-row">
             This shift is waiting for the desk to re-publish it before it counts as confirmed duty.
           </span>
-        ) : pendingSwap ? (
+        ) : !canSwap && !pendingSwap ? null : pendingSwap ? (
           <div className="status-indicator status-indicator--pending">
             <span className="status-indicator__dot" aria-hidden="true" />
-            <span className="status-indicator__label">Swap Pending Approval</span>
+            <span className="status-indicator__label">Swap pending approval</span>
           </div>
         ) : (
           <button
@@ -80,7 +82,7 @@ export function ShiftCard({ shift, pendingSwap, isNext, onRequestSwap }: ShiftCa
             aria-label={`Request shift swap for ${timing.dateLabel}`}
           >
             <IonIcon icon={swapHorizontalOutline} className="icon-primary" />
-            <span>Request Swap</span>
+            <span>Request swap</span>
           </button>
         )}
       </div>

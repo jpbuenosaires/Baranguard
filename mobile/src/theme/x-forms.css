@@ -2,7 +2,6 @@
 
 /* ---- shared ---- */
 .content-bg { --background: var(--color-bg); }
-.icon-chevron { color: var(--color-text-tertiary); font-size: 1.1rem; }
 .icon-lg-primary { font-size: 1.25rem; color: var(--color-primary); }
 .icon-lg-warning { font-size: 1.25rem; color: var(--color-warning); }
 .icon-md { font-size: 1.2rem; }
@@ -21,14 +20,6 @@
 .loading-block__label { font-size: var(--font-size-sm); color: var(--color-text-secondary); }
 
 /* ---- profile ---- */
-.profile-sync-btn {
-  --background: var(--color-primary);
-  --border-radius: var(--radius-sm);
-  font-weight: 700;
-  min-height: 48px;
-  box-shadow: none;
-}
-.profile-prune-btn { font-weight: 600; --border-radius: var(--radius-sm); }
 .profile-storage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
 .profile-storage-tile {
   background: var(--color-bg);
@@ -77,3 +68,55 @@
   box-shadow: var(--shadow-fab);
 }
 .ml-8 { margin-left: 8px; }
+
+/* ---- my-shifts (audit 2026-10-15) ---- */
+.roster-next { flex-direction: column; align-items: flex-start; gap: 2px; }
+.roster-next__label { font-size: var(--font-size-label); font-weight: 700; color: var(--color-text-secondary); }
+.roster-next__time { font-size: var(--text-2xl, 1.75rem); font-weight: 800; color: var(--color-text-primary); line-height: 1.15; }
+.roster-next__date { font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+.roster-card .roster-card__swap-link {
+  border: 0;
+  background: transparent;
+  color: var(--color-link, var(--color-primary));
+  padding: 6px 4px;
+  margin-left: -4px;
+}
+.roster-past-toggle {
+  min-height: 48px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-link, var(--color-primary));
+}
+
+/* ---- availability (audit 2026-10-15) ---- */
+.ui-banner.wf-info-note {
+  --ui-banner-bg: var(--color-surface);
+  --ui-banner-fg: var(--color-text-primary);
+  --ui-banner-edge: var(--color-border);
+}
+.wf-card--ended { opacity: 0.65; }
+.wf-card__edit { align-self: flex-start; }
+
+/* ---- accomplishments (audit 2026-10-15) ---- */
+.p4w-dock-secondary .ui-btn:disabled:not(.ui-btn--loading) { color: var(--color-text-primary); }
+
+/* ---- school check-in (audit 2026-10-15) ---- */
+.ui-btn.wf-link-btn {
+  background: transparent;
+  border: 0;
+  color: var(--color-link);
+  min-height: var(--touch-min-size, 48px);
+  justify-content: flex-start;
+  padding-left: 0;
+  text-decoration: underline;
+}
+.ui-btn.wf-link-btn:disabled:not(.ui-btn--loading) { background: transparent; border: 0; }
+
+/* ---- my-reports (audit 2026-10-15) ---- */
+.report-blotter-code { font-family: var(--font-mono); font-size: var(--font-size-label); color: var(--color-text-secondary); }
+.reports-timeline-header { text-transform: none; letter-spacing: normal; }
+.reports-filter-pill.reports-filter-pill--warn:not(.reports-filter-pill--active) { color: var(--pill-warning-text); border-color: var(--color-warning); }
+.reports-filter-pill--warn .reports-filter-count { background: var(--tint-warning-bg); color: var(--pill-warning-text); }

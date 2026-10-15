@@ -12,6 +12,8 @@ interface Props {
   shiftElapsed: string;
   patrolTracking: boolean | null;
   todayIncidentCount: number;
+  /** Something saved on this phone is still waiting to reach HQ. */
+  waitingToSend?: boolean;
   onToggleDuty: () => void;
 }
 
@@ -25,6 +27,7 @@ const DutyStatusCard: React.FC<Props> = ({
   shiftElapsed,
   patrolTracking,
   todayIncidentCount,
+  waitingToSend = false,
   onToggleDuty,
 }) => {
   const initials = fullName
@@ -84,9 +87,12 @@ const DutyStatusCard: React.FC<Props> = ({
         {status === 'on_duty' ? 'End shift' : 'Go on duty'}
       </Button>
 
-      <p className="h4-today">
-        <IonIcon icon={documentTextOutline} aria-hidden="true" /> Reports saved today: {todayIncidentCount}
-      </p>
+      {(todayIncidentCount > 0 || waitingToSend) && (
+        <p className="h4-today">
+          <IonIcon icon={documentTextOutline} aria-hidden="true" /> Reports saved today: {todayIncidentCount}
+          {waitingToSend ? ' (some waiting to send)' : ''}
+        </p>
+      )}
     </section>
   );
 };

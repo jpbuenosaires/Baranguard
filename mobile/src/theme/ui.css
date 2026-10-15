@@ -43,10 +43,16 @@
   outline-offset: 2px;
 }
 
-/* Disabled stays legible: the label is never swapped, only dimmed. */
-.ui-btn:disabled { cursor: not-allowed; opacity: 0.6; }
-.ui-btn--loading:disabled { cursor: progress; opacity: 1; }
-.ui-btn--primary:disabled, .ui-btn--danger:disabled { filter: saturate(0.6); }
+/* Disabled: neutral filled style (label keeps >= 4.5:1), dashed border; never faded blue. */
+.ui-btn:disabled:not(.ui-btn--loading) {
+  background: var(--color-surface-hover);
+  color: var(--color-text-secondary);
+  border: 1px dashed var(--color-border-strong, var(--color-text-tertiary));
+  opacity: 1;
+  filter: none;
+  cursor: not-allowed;
+}
+.ui-btn--loading:disabled { cursor: progress; }
 
 /* ---------- Card ---------- */
 .ui-card {
@@ -114,14 +120,14 @@
   border: 1px solid var(--ui-banner-edge);
   border-radius: var(--radius-md);
   background: var(--ui-banner-bg);
-  color: var(--ui-banner-fg);
+  color: var(--color-text-primary);
   font-size: var(--text-sm, 0.875rem);
   line-height: 1.4;
 }
 .ui-banner--success { --ui-banner-bg: var(--tint-success-bg); --ui-banner-fg: var(--pill-success-text); --ui-banner-edge: var(--color-success); }
 .ui-banner--warning { --ui-banner-bg: var(--tint-warning-bg); --ui-banner-fg: var(--pill-warning-text); --ui-banner-edge: var(--color-warning); }
 .ui-banner--error { --ui-banner-bg: var(--tint-critical-bg); --ui-banner-fg: var(--pill-critical-text); --ui-banner-edge: var(--color-critical); }
-.ui-banner__icon { flex: none; font-size: 1.25rem; margin-top: 10px; }
+.ui-banner__icon { flex: none; color: var(--ui-banner-fg); font-size: 1.25rem; margin-top: 10px; }
 .ui-banner__body { flex: 1; min-width: 0; padding: 10px 0; overflow-wrap: anywhere; }
 .ui-banner__action { margin-top: var(--spacing-sm); }
 .ui-banner__dismiss {

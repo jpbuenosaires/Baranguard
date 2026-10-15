@@ -2,6 +2,8 @@
 import type { DispatchLocalRow } from '../../services/db/localSchema';
 import { dispatchStatusLabel } from '../../utils/dispatchList';
 import { formatIncidentCode } from '../../utils/incidentCode';
+import { formatManilaDateTime } from '../../utils/manilaFormat';
+import { Chip } from '../ui';
 
 export default function DispatchHistory({
   history,
@@ -29,15 +31,16 @@ export default function DispatchHistory({
               }
             }}
           >
-            <div className="dispatch-card__telemetry-row">
-              <strong>{formatIncidentCode({ displayId: h.incident_display_id, serverIncidentId: h.server_incident_id })}</strong>
-              <span>
-                {(h.redacted_incident_type ?? 'incident').replace(/_/g, ' ')} &bull; {dispatchStatusLabel(h.status)}
+            <h4 className="dispatch-history__type">{(h.redacted_incident_type ?? 'incident').replace(/_/g, ' ')}</h4>
+            <div className="dispatch-history__meta">
+              <span className="dispatch-history__code">
+                {formatIncidentCode({ displayId: h.incident_display_id, serverIncidentId: h.server_incident_id })}
               </span>
+              <Chip tone={h.status === 'completed' ? 'success' : 'neutral'}>{dispatchStatusLabel(h.status)}</Chip>
             </div>
-            <div className="dispatch-card__telemetry-row">
-              <span>{new Date(h.completed_at ?? h.arrived_at ?? h.dispatched_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-            </div>
+            <span className="dispatch-history__date">
+              {formatManilaDateTime(h.completed_at ?? h.arrived_at ?? h.dispatched_at)}
+            </span>
           </article>
         ))}
       </div>

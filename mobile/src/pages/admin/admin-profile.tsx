@@ -51,34 +51,24 @@ const AdminProfilePage: React.FC = () => {
 
   return (
     <IonPage>
-      <MobileHeader title="Profile" subtitle="Chief Tanod Console" hideStatusIndicator />
+      <MobileHeader title="Profile" hideStatusIndicator />
       <IonContent className="ion-padding content-bg">
         <div className="app-column profile-layout">
-          <div className="profile-officer-card">
-            <div className="profile-officer-header">
-              <div className="profile-avatar-circle">{initials}</div>
-              <div className="profile-officer-meta">
-                <div className="profile-officer-top-row">
-                  <h2 className="profile-officer-name">{session?.fullName ?? 'Chief Tanod'}</h2>
-                  <span className="profile-verified-badge">
-                    <IonIcon icon={shieldCheckmarkOutline} />
-                    Admin
-                  </span>
-                </div>
-                <div className="profile-officer-role">Chief Tanod · Brgy {barangay}</div>
-              </div>
+          <section className="profile-identity" aria-label="Your account">
+            <div className="profile-avatar-circle" aria-hidden="true">{initials}</div>
+            <div className="profile-identity__body">
+              <h2 className="profile-identity__name">{session?.fullName ?? 'Chief Tanod'}</h2>
+              <p className="profile-identity__role">Chief Tanod, Brgy {barangay}</p>
+              <span className="profile-verified-badge">
+                <IonIcon icon={shieldCheckmarkOutline} aria-hidden="true" />
+                Admin
+              </span>
+              <p className="profile-identity__line">
+                Workstation: {reachable === null ? 'Checking…' : reachable ? 'Reachable' : 'Not reachable'}
+              </p>
+              <p className="profile-identity__line">Device: <span className="admin-device-id">{deviceId ? deviceId.slice(0, 12) : '—'}</span></p>
             </div>
-            <div className="profile-officer-stats">
-              <div className="profile-stat-cell">
-                <span className="profile-stat-label">Workstation</span>
-                <span className="profile-stat-val">{reachable === null ? 'Checking…' : reachable ? 'Reachable' : 'Not reachable'}</span>
-              </div>
-              <div className="profile-stat-cell">
-                <span className="profile-stat-label">Device</span>
-                <span className="profile-stat-val admin-device-id">{deviceId ? deviceId.slice(0, 12) : '—'}</span>
-              </div>
-            </div>
-          </div>
+          </section>
 
           <div className="wf-card mt-14">
             <strong className="wf-card__title">What this phone can do</strong>
@@ -88,9 +78,9 @@ const AdminProfilePage: React.FC = () => {
             </span>
           </div>
 
-          <button type="button" className="wf-btn wf-btn--block mt-14" onClick={() => setConfirming(true)}>
-            <IonIcon icon={logOutOutline} />
-            Sign Out
+          <button type="button" className="profile-signout-btn" onClick={() => setConfirming(true)}>
+            <IonIcon icon={logOutOutline} className="icon-md" aria-hidden="true" />
+            <span>Sign out</span>
           </button>
         </div>
 

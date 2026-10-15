@@ -551,25 +551,6 @@
 }
 
 /* --- Freshness and basemap chips ---------------------------------------- */
-.lm-info {
-  position: absolute;
-  left: max(12px, env(safe-area-inset-left, 0px));
-  bottom: 84px;
-  right: calc(max(16px, env(safe-area-inset-right, 0px)) + 64px);
-  z-index: 15;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-xs, 4px);
-  pointer-events: none;
-  will-change: transform;
-  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lm-info {
-    transition: none;
-  }
-}
 
 /* --- Markers ------------------------------------------------------------ */
 /* Each marker sits in a 48dp hit box; the visible dot stays its own size. */

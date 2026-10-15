@@ -123,10 +123,9 @@
 }
 
 .wf-label {
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: normal;
   color: var(--color-text-secondary);
 }
 
@@ -195,7 +194,11 @@
 }
 
 .wf-btn:disabled {
-  opacity: 0.55;
+  background: var(--color-surface-hover);
+  color: var(--color-text-secondary);
+  border: 1px dashed var(--color-border-strong, var(--color-text-tertiary));
+  opacity: 1;
+  filter: none;
   cursor: not-allowed;
 }
 
@@ -423,10 +426,9 @@
 }
 
 .dispatch-offer-card__timer-label {
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: normal;
 }
 
 /* Pending-reapproval shift (swap approved, awaiting re-publish): visibly not confirmed duty. */
