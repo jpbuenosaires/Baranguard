@@ -30,3 +30,19 @@ export function writeCachedDutyStatus(value: DutyStatus): void {
     // Storage unavailable — the cache is optional.
   }
 }
+
+/** Hours-and-minutes text for a shift that started `diffMs` ago. */
+export function formatShiftElapsed(diffMs: number): string {
+  const diffMins = Math.floor(Math.max(0, diffMs) / 60000);
+  const hours = Math.floor(diffMins / 60);
+  const mins = diffMins % 60;
+  return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+}
+
+/** Message under the duty card when the duty status could not be fetched. */
+export function dutyStatusErrorMessage(offline: boolean, hasCached: boolean): string {
+  if (!offline) return 'Could not fetch duty status.';
+  return hasCached
+    ? 'Offline — showing your last known status.'
+    : 'Offline — duty status unknown until you reconnect.';
+}

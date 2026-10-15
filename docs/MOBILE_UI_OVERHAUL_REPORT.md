@@ -8,7 +8,7 @@ Branch `mobile-ui-overhaul` (not pushed). Commits: `e2e62b3` Phase 1, `b8c8faf` 
 |---|---|
 | Automated | tsc, eslint, vitest (jsdom), contrast, touch-target and local-schema scripts, `vite build`, a dead-CSS static scan |
 | Manual inspection | Login screen only, in the browser pane at 768x1024 and 812x375. The web build cannot open the encrypted local database, so no logged-in screen renders there |
-| Device | **None this session's final pass.** No phone was connected over adb when Phase 7 ran. Phase 1 had one Home screenshot on the Infinix X6840 (light mode, SOS dock). Nothing else in this report has been seen on a device |
+| Device | Infinix X6840, bundled debug build (no live reload), signed in as the seeded Tanod test account: Home, Dispatches, Map, Report form (incl. More details and inline validation), Profile, dark mode, landscape Home. See the on-device section below. Not tested: Chief Tanod tabs, dispatch detail with a live call, tablet widths |
 
 ## Changes per option
 
@@ -54,3 +54,14 @@ tsc clean; eslint 0 problems; vitest 159/159; contrast 184/184; touch 0; schema 
 - Dispatch SMS and push still include coordinates (open owner decision).
 - The Android manifest change (`adjustResize`) needs a native rebuild to take effect.
 - Dev server on 5173 and live reload on the phone are not set up now; the normal bundled build still needs to be rebuilt and installed.
+
+## On-device findings (2026-10-15, Infinix X6840, Android 16)
+
+Seen working: Home (light and dark), Dispatches (empty state plus history with real codes), Map (signed in, "Sharing location", own pin, "Updated hh:mm", "Offline map v3-real-osm"), Report form (type, location, required description with inline error, "More details" expands, dark mode), Profile (dark). Cold start from a stopped app: about 4.9 s and 6.0 s (`am start -W`); there is no pre-overhaul figure, so this is a baseline, not a before/after.
+
+Found and fixed during the pass:
+- **Landscape Home:** the stacked Report and SOS buttons covered about two thirds of a short landscape screen. They now sit side by side and the content scrolls above them (`layout.css`).
+- **Signature failure logged the Tanod out:** any 401 was treated as a dead session. The workstation clock was 2 h 38 min behind real time, so every signed location post failed the 5-minute skew check and the app dropped to Login. A 401 whose message says the device signature failed no longer ends the session (`utils/authErrors.ts`, tests added). Root cause was the PC clock, not the overhaul; syncing it fixed the posts (`POST /gps` 201).
+- Offline banner: removed the 4px coloured left border. "Which school?" label no longer repeats the section title. `admin-section-title` is sentence case. `home.tsx` is down to 605 lines.
+
+Still not verified: Chief Tanod (admin) tabs on a device, dispatch detail with a live call, tablet widths, light-mode Profile and landscape on other screens.

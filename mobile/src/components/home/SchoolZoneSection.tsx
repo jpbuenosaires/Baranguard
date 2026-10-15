@@ -59,7 +59,7 @@ const SchoolZoneSection: React.FC<Props> = ({
     ) : (
       <div className="wf-field">
         <label className="wf-label" htmlFor="incident-school">
-          Incident happened at / near a school
+          Which school?
         </label>
         <select
           id="incident-school"
