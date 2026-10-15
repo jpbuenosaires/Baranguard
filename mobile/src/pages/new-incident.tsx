@@ -32,6 +32,8 @@ import {
   alertCircleOutline,
   cameraOutline,
   carOutline,
+  chevronDownOutline,
+  chevronUpOutline,
   closeOutline,
   flameOutline,
   locateOutline,
@@ -51,7 +53,7 @@ import {
 import { Capacitor } from '@capacitor/core';
 import LocationPickerModal from '../components/LocationPickerModal';
 import MobileHeader from '../components/MobileHeader';
-import { Banner } from '../components/ui';
+import { Banner, Button } from '../components/ui';
 import { C1_FIELD_MAX, saveIncidentLocally, type IncidentType } from '../services/db/incidentRepository';
 import { saveEvidenceLocally } from '../services/db/evidenceRepository';
 import { listCachedSchools } from '../services/db/schoolRepository';
@@ -122,6 +124,8 @@ const NewIncidentPage: React.FC = () => {
   const [incidentType, setIncidentType] = useState<IncidentType>('theft');
   const [narrative, setNarrative] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [narrativeError, setNarrativeError] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [staged, setStaged] = useState<StagedItem[]>([]);
   const [capturing, setCapturing] = useState(false);
@@ -176,6 +180,7 @@ const NewIncidentPage: React.FC = () => {
           setC1Summary(draft.c1Summary);
           setC1ActionTaken(draft.c1ActionTaken);
           setC1StatusNotes(draft.c1StatusNotes);
+          if (draft.schoolId) setMoreOpen(true);
           setDraftRestored(true);
         }
       } catch {
@@ -372,7 +377,8 @@ const NewIncidentPage: React.FC = () => {
   async function handleSave() {
     setError(null);
     if (!narrative.trim()) {
-      setError('Please describe what happened before submitting.');
+      setNarrativeError('Please describe what happened before submitting.');
+      document.getElementById('narrative-error')?.scrollIntoView({ block: 'center' });
       return;
     }
 
@@ -413,7 +419,7 @@ const NewIncidentPage: React.FC = () => {
       if (failedAttachments.length > 0) {
         savedLocalIdRef.current = saved.localId;
         setError(
-          `Report saved, but ${failedAttachments.length} of ${staged.length} attachment${
+          `Report saved on this phone, will send when online. But ${failedAttachments.length} of ${staged.length} attachment${
             staged.length === 1 ? '' : 's'
           } could not be saved on this device. Tap Submit again to retry the attachment${
             failedAttachments.length === 1 ? '' : 's'
@@ -491,44 +497,6 @@ const NewIncidentPage: React.FC = () => {
                   </button>
                 );
               })}
-            </div>
-          </div>
-
-          {/* Section 2: Narrative Description & Field Templates */}
-          <div className="intake-block">
-            <div className="intake-block-header">
-              <span className="intake-block-title">What Happened</span>
-              <span style={{ fontSize: '0.72rem', color: 'var(--color-text-tertiary)', fontWeight: 600 }}>
-                {narrative.length} chars
-              </span>
-            </div>
-
-            <textarea
-              className="intake-textarea-box"
-              rows={4}
-              placeholder="Describe what happened (people involved, exact location, what you did)…"
-              value={narrative}
-              onChange={(e) => setNarrative(e.target.value)}
-              disabled={saving}
-              aria-label="Incident narrative description"
-            />
-
-            {/* Quick 1-Tap Field Template Chips */}
-            <div className="intake-template-strip" aria-label="Quick narrative templates">
-              {NARRATIVE_TEMPLATES.map((tpl) => (
-                <button
-                  key={tpl}
-                  type="button"
-                  className="intake-template-chip"
-                  onClick={() => {
-                    tacticalFeedback.vibrate(15);
-                    setNarrative((prev) => (prev ? `${prev}. ${tpl}` : tpl));
-                  }}
-                  disabled={saving}
-                >
-                  + {tpl}
-                </button>
-              ))}
             </div>
           </div>
 
@@ -616,6 +584,77 @@ const NewIncidentPage: React.FC = () => {
             )}
           </div>
 
+          {/* Section 2: Narrative Description & Field Templates */}
+          <div className="intake-block">
+            <div className="intake-block-header">
+              <span className="intake-block-title">What Happened <span className="h4-required">(required)</span></span>
+              <span style={{ fontSize: '0.72rem', color: 'var(--color-text-tertiary)', fontWeight: 600 }}>
+                {narrative.length} chars
+              </span>
+            </div>
+
+            <textarea
+              className="intake-textarea-box"
+              rows={4}
+              placeholder="Describe what happened (people involved, exact location, what you did)…"
+              value={narrative}
+              onChange={(e) => {
+                setNarrative(e.target.value);
+                if (narrativeError) setNarrativeError(null);
+              }}
+              disabled={saving}
+              aria-label="Incident narrative description (required)"
+              aria-required="true"
+              aria-invalid={narrativeError ? 'true' : undefined}
+              aria-describedby={narrativeError ? 'narrative-error' : undefined}
+            />
+            {narrativeError && (
+              <div id="narrative-error" role="alert" className="text-field-error">
+                {narrativeError}
+              </div>
+            )}
+
+            {/* Quick 1-Tap Field Template Chips */}
+            <div className="intake-template-strip" aria-label="Quick narrative templates">
+              {NARRATIVE_TEMPLATES.map((tpl) => (
+                <button
+                  key={tpl}
+                  type="button"
+                  className="intake-template-chip"
+                  onClick={() => {
+                    tacticalFeedback.vibrate(15);
+                    setNarrative((prev) => (prev ? `${prev}. ${tpl}` : tpl));
+                  }}
+                  disabled={saving}
+                >
+                  + {tpl}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Optional detail, collapsed: school link + C-1 notes, photos and audio. */}
+          <div className="intake-block h4-more">
+            <button
+              type="button"
+              className="h4-more__toggle"
+              aria-expanded={moreOpen}
+              aria-controls="h4-more-body"
+              onClick={() => {
+                tacticalFeedback.onTap();
+                setMoreOpen((v) => !v);
+              }}
+            >
+              <span>More details (optional)</span>
+              {(staged.length > 0 || schoolId) && (
+                <span className="status-pill status-pill--info">
+                  {[schoolId ? 'School' : '', staged.length > 0 ? `${staged.length} attached` : ''].filter(Boolean).join(' + ')}
+                </span>
+              )}
+              <IonIcon icon={moreOpen ? chevronUpOutline : chevronDownOutline} aria-hidden="true" />
+            </button>
+            {moreOpen && (
+              <div id="h4-more-body" className="h4-more__body">
           {/* Section 3b: Safer School Zones link + Annex C-1 notes (optional) */}
           <div className="intake-block">
             <div className="intake-block-header">
@@ -856,6 +895,10 @@ const NewIncidentPage: React.FC = () => {
             )}
           </div>
 
+              </div>
+            )}
+          </div>
+
           {/* Error Banner */}
           {error && (
             <Banner tone="error" role="alert">
@@ -863,23 +906,22 @@ const NewIncidentPage: React.FC = () => {
             </Banner>
           )}
 
-          {/* Sticky Tactical Bottom CTA Dock */}
-          <div className="dispatch-action-dock" style={{ marginTop: '2px' }}>
-            <button
-              type="button"
-              className="dispatch-primary-cta dispatch-primary-cta--blue"
+          {/* Submit: saves on this phone first (Rule 7), sends when online. */}
+          <div className="dispatch-action-dock h4-submit">
+            <Button
+              variant="primary"
+              size="lg"
+              fullWidth
+              icon={shieldCheckmarkOutline}
+              loading={saving}
+              disabled={recording}
               onClick={handleSave}
-              disabled={saving || recording}
             >
-              {saving ? (
-                <IonSpinner name="dots" />
-              ) : (
-                <>
-                  <IonIcon icon={shieldCheckmarkOutline} style={{ fontSize: '1.2rem' }} />
-                  <span>Submit Report</span>
-                </>
-              )}
-            </button>
+              {saving ? 'Saving on this phone…' : 'Submit report'}
+            </Button>
+            <p className="h4-submit__hint">
+              {recording ? 'Stop the audio recording to submit.' : 'Saved on this phone, will send when online.'}
+            </p>
           </div>
         </div>
 

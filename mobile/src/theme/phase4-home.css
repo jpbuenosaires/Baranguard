@@ -1,1 +1,78 @@
 /* Phase 4 (UI overhaul 2026-10-14): home screens. Tokens and shared ui/ components only; consolidated in Phase 6. */
+
+/* ---- Home ---- */
+.h4-home { gap: var(--spacing-md); }
+.console-overhaul-container.console-overhaul-container--docked-sos.h4-home { padding-bottom: 176px; }
+
+.h4-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+.h4-identity { display: flex; align-items: center; gap: var(--spacing-md); min-width: 0; }
+.h4-identity__text { display: flex; flex-direction: column; min-width: 0; }
+.h4-identity__name { font-size: var(--text-md); font-weight: 800; color: var(--color-text-primary); overflow-wrap: anywhere; }
+.h4-identity__sub { font-size: var(--text-sm); color: var(--color-text-secondary); }
+.h4-telemetry { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); }
+.h4-today {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.h4-clear__title { display: flex; align-items: center; gap: var(--spacing-sm); color: var(--pill-success-text); }
+
+.h4-dials { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: var(--spacing-sm); }
+.h4-dial {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  min-height: var(--touch-min-size, 48px);
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-link, var(--color-primary));
+  font-size: var(--text-sm);
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+}
+.h4-dial ion-icon { font-size: 1.25rem; }
+.h4-dial:focus-visible { outline: 3px solid var(--color-text-primary); outline-offset: 2px; }
+
+/* Report button lives in the pinned dock above SOS; the dock itself is pointer-events:none. */
+.home-sos-dock .h4-report-btn { pointer-events: auto; margin-bottom: var(--spacing-sm); }
+
+/* ---- Report form ---- */
+.h4-required { font-size: var(--text-sm); font-weight: 700; color: var(--color-text-secondary); }
+.h4-more__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  min-height: var(--touch-min-size, 48px);
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--color-text-primary);
+  font-size: var(--text-md);
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.h4-more__toggle > span:first-child { flex: 1; }
+.h4-more__toggle:focus-visible { outline: 3px solid var(--color-text-primary); outline-offset: 2px; }
+.h4-more__body { display: flex; flex-direction: column; gap: var(--spacing-md); margin-top: var(--spacing-sm); }
+.h4-more__body > .intake-block { padding: 0; border: none; background: none; box-shadow: none; }
+.h4-submit { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+.h4-submit__hint { margin: 0; text-align: center; font-size: var(--text-sm); color: var(--color-text-secondary); }

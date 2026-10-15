@@ -1,1 +1,126 @@
 /* Phase 4 (UI overhaul 2026-10-14): map screens. Tokens and shared ui/ components only; consolidated in Phase 6. */
+
+/* --- No blur on overlays that sit over a moving map --------------------- */
+.lm-rail,
+.live-map-scrim {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.lm-rail {
+  background: var(--color-surface);
+  left: max(12px, env(safe-area-inset-left, 0px));
+}
+
+.live-map-hud-status {
+  left: max(12px, env(safe-area-inset-left, 0px));
+}
+
+.live-map-recenter-fab {
+  right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+/* Drawer height follows the dynamic viewport so landscape and a collapsing
+   browser bar never push it off screen. */
+.live-map-drawer {
+  height: 65dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* --- Freshness and basemap chips ---------------------------------------- */
+.lm-info {
+  position: absolute;
+  left: max(12px, env(safe-area-inset-left, 0px));
+  bottom: 84px;
+  right: calc(max(16px, env(safe-area-inset-right, 0px)) + 64px);
+  z-index: 15;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs, 4px);
+  pointer-events: none;
+  will-change: transform;
+  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lm-info {
+    transition: none;
+  }
+}
+
+/* --- Markers ------------------------------------------------------------ */
+/* Each marker sits in a 48dp hit box; the visible dot stays its own size. */
+.lm-pin-hit {
+  width: var(--touch-min-size, 48px);
+  height: var(--touch-min-size, 48px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.lm-pin-hit:focus-visible {
+  outline: 3px solid var(--color-link);
+  outline-offset: -3px;
+  border-radius: 50%;
+}
+
+/* Labels the thinning policy decided not to draw. */
+.lm-pin-label--off {
+  display: none;
+}
+
+/* Shown data is old or failed to refresh: markers must not read as live. */
+.lm-pin--data-stale {
+  opacity: 0.6;
+}
+
+/* --- Location picker ---------------------------------------------------- */
+.lm-picker {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.lm-picker__map {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.lm-picker__panel {
+  flex: none;
+  padding: var(--spacing-md) max(var(--spacing-md), env(safe-area-inset-right, 0px)) max(var(--spacing-md), env(safe-area-inset-bottom, 0px))
+    max(var(--spacing-md), env(safe-area-inset-left, 0px));
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+}
+
+.lm-picker__gps {
+  margin: 0 0 var(--spacing-xs, 4px);
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text-secondary);
+}
+
+.lm-picker__coords {
+  margin: 0 0 var(--spacing-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text-primary);
+}
+
+.lm-picker__actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.lm-picker__actions > * {
+  flex: 1 1 0;
+}
+
+.lm-picker__close {
+  --min-width: var(--touch-min-size, 48px);
+  --min-height: var(--touch-min-size, 48px);
+  min-width: var(--touch-min-size, 48px);
+  min-height: var(--touch-min-size, 48px);
+}

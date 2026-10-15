@@ -4,6 +4,8 @@ import {
   IonIcon,
   IonPage,
   IonToast,
+  useIonViewDidLeave,
+  useIonViewWillEnter,
 } from '@ionic/react';
 import {
   alertCircleOutline,
@@ -21,7 +23,8 @@ import {
   shieldCheckmarkOutline,
   timeOutline,
 } from 'ionicons/icons';
-import LiveMapCanvas, { type LiveMapCanvasHandle } from '../components/LiveMapCanvas';
+import LiveMapCanvas, { type BasemapStatus, type LiveMapCanvasHandle } from '../components/LiveMapCanvas';
+import { Chip } from '../components/ui';
 import MobileHeader from '../components/MobileHeader';
 import {
   getNearbyIncidents,
@@ -37,6 +40,9 @@ import { loadSession } from '../services/session';
 import { uuid } from '../services/uuid';
 import { bearingLabel, distanceMeters, formatDistance, formatRelativeAge } from '../utils/geo';
 import tacticalFeedback from '../utils/tacticalFeedback';
+import { basemapChip, freshnessLine } from '../utils/liveMapHud';
+import { combinedLastOk, shouldRefetchOnMove, type LatLng } from '../utils/liveMapPolicy';
+import { createPoller, type Poller } from '../utils/pollLoop';
 
 const MIN_BROADCAST_INTERVAL_MS = 15000;
 const NEARBY_REFRESH_INTERVAL_MS = 30000;
@@ -162,48 +168,103 @@ const LiveMapPage: React.FC = () => {
     };
   }, []);
 
+  // Polling runs only while this page is the active route AND the document is
+  // visible. Returning resumes with an immediate fetch.
+  const [pageActive, setPageActive] = useState(true);
+  const [docVisible, setDocVisible] = useState(
+    () => typeof document === 'undefined' || document.visibilityState !== 'hidden'
+  );
+  useIonViewWillEnter(() => setPageActive(true));
+  useIonViewDidLeave(() => setPageActive(false));
   useEffect(() => {
+    const onVisibility = () => setDocVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+  const pollActive = pageActive && docVisible;
+
+  const [deviceOnline, setDeviceOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine !== false);
+  useEffect(() => {
+    const up = () => setDeviceOnline(true);
+    const down = () => setDeviceOnline(false);
+    window.addEventListener('online', up);
+    window.addEventListener('offline', down);
+    return () => {
+      window.removeEventListener('online', up);
+      window.removeEventListener('offline', down);
+    };
+  }, []);
+  const [basemap, setBasemap] = useState<BasemapStatus>({ kind: 'loading' });
+
+  // Real times of the last successful load of each list, and whether the
+  // latest attempt failed. Drives the "Updated hh:mm" / offline chip.
+  const [incidentsAt, setIncidentsAt] = useState<number | null>(null);
+  const [tanodsAt, setTanodsAt] = useState<number | null>(null);
+  const [fetchFailing, setFetchFailing] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  const positionRef = useRef<DevicePosition | null>(position);
+  positionRef.current = position;
+  const lastFetchPosRef = useRef<LatLng | null>(null);
+  const pollerRef = useRef<Poller | null>(null);
+
+  useEffect(() => {
+    if (!pollActive) return;
     let cancelled = false;
+    setNowMs(Date.now());
 
-    async function fetchNearby() {
-      if (!position) return;
-      try {
-        const result = await getNearbyIncidents({
-          latitude: position.latitude,
-          longitude: position.longitude,
-        });
-        if (!cancelled) {
-          setNearby(result);
+    const poller = createPoller(async () => {
+      const pos = positionRef.current;
+      if (pos) lastFetchPosRef.current = { latitude: pos.latitude, longitude: pos.longitude };
+      const [inc, tan] = await Promise.allSettled([
+        pos ? getNearbyIncidents({ latitude: pos.latitude, longitude: pos.longitude }) : Promise.resolve(null),
+        getNearbyTanods(),
+      ]);
+      if (cancelled) return true;
+      const at = Date.now();
+      let ok = true;
+      if (inc.status === 'fulfilled') {
+        if (inc.value) {
+          setNearby(inc.value);
+          setIncidentsAt(at);
         }
-      } catch {
-        // Keep cached
+      } else {
+        ok = false;
       }
-    }
-
-    async function fetchNearbyTanods() {
-      try {
-        const result = await getNearbyTanods();
-        if (!cancelled) {
-          setNearbyTanods(result);
-        }
-      } catch {
-        // Keep cached
+      if (tan.status === 'fulfilled') {
+        setNearbyTanods(tan.value);
+        setTanodsAt(at);
+      } else {
+        ok = false;
       }
-    }
-
-    void fetchNearby();
-    void fetchNearbyTanods();
-
-    const intervalId = window.setInterval(() => {
-      void fetchNearby();
-      void fetchNearbyTanods();
+      setFetchFailing(!ok);
+      setNowMs(at);
+      return ok;
     }, NEARBY_REFRESH_INTERVAL_MS);
+
+    pollerRef.current = poller;
+    poller.start();
+    const clockId = window.setInterval(() => setNowMs(Date.now()), 15000);
 
     return () => {
       cancelled = true;
-      clearInterval(intervalId);
+      poller.stop();
+      pollerRef.current = null;
+      clearInterval(clockId);
     };
-  }, [position]);
+  }, [pollActive]);
+
+  // A GPS fix that moved far (or the first fix) fetches early; the timer above is independent.
+  useEffect(() => {
+    if (!pollActive || !position) return;
+    if (shouldRefetchOnMove(lastFetchPosRef.current, position)) pollerRef.current?.trigger();
+  }, [position, pollActive]);
+
+  const freshness = freshnessLine(combinedLastOk(incidentsAt, tanodsAt, position !== null), fetchFailing, nowMs);
+  const basemapInfo = basemapChip(
+    basemap.kind === 'offline' ? { kind: 'offline', version: basemap.version } : { kind: basemap.kind },
+    deviceOnline
+  );
 
   const ageSeconds = position
     ? Math.max(0, Math.floor((Date.now() - new Date(position.recordedAt).getTime()) / 1000))
@@ -478,7 +539,7 @@ const LiveMapPage: React.FC = () => {
   const fabYStyle = useMemo(() => {
     let base = '0px';
     if (drawerMode === 'selected') base = '-139px';
-    else if (drawerMode === 'expanded') base = 'calc(76px - 65vh)';
+    else if (drawerMode === 'expanded') base = 'calc(76px - 65dvh)';
 
     if (isDragging) {
       return `translateY(${base}) translateY(${dragY}px)`;
@@ -514,6 +575,8 @@ const LiveMapPage: React.FC = () => {
               fullScreen={true}
               height="100%"
               hideRecenterFab={true}
+              onStatusChange={setBasemap}
+              dataStale={freshness.offline}
               onSelectIncident={handleSelectIncident}
               onSelectTanod={handleSelectTanod}
               onDeselect={handleDeselect}
@@ -567,6 +630,12 @@ const LiveMapPage: React.FC = () => {
                 ? `Sharing location · ±${position.accuracyM.toFixed(0)}m`
                 : `GPS fix · ±${position.accuracyM.toFixed(0)}m`}
             </span>
+          </div>
+
+          {/* Data freshness and basemap in use. Glides with the drawer like the recenter FAB. */}
+          <div className="lm-info" style={{ transform: fabYStyle }} role="status" aria-live="polite">
+            <Chip tone={freshness.offline ? 'warning' : 'neutral'}>{freshness.text}</Chip>
+            <Chip tone={basemapInfo.tone}>{basemapInfo.label}</Chip>
           </div>
 
           {/* Compact Icon+Count Filter Rail — Option A */}

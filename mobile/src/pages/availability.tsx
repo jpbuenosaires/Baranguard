@@ -19,12 +19,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { IonAlert, IonContent, IonIcon, IonPage, IonSpinner } from '@ionic/react';
+import { IonAlert, IonContent, IonIcon, IonPage } from '@ionic/react';
 import { addOutline, calendarOutline, closeOutline, createOutline, trashOutline } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
 import { Banner, SyncChip } from '../components/WorkflowBits';
-import { EmptyState, ErrorState } from '../components/ui';
+import { Button, EmptyState, ErrorState } from '../components/ui';
 import {
   isPeriodPast,
   listAvailability,
@@ -38,6 +38,7 @@ import { forceSyncNow, subscribeSyncSummary } from '../services/syncScheduler';
 import { refreshAvailabilityFromServer } from '../services/workflowRefresh';
 import { addDays, daysBetween, eachDate, formatDayLabel, formatPeriodLabel, manilaToday } from '../utils/manilaTime';
 import tacticalFeedback from '../utils/tacticalFeedback';
+import { fillAllDays, fillWeekdays } from '../utils/workflowForm';
 
 /** A single period longer than this is hard to read on a phone; the form asks for a shorter one. */
 const MAX_PERIOD_DAYS = 31;
@@ -84,6 +85,8 @@ const AvailabilityPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // A change that would drop or overwrite windows the Tanod already entered waits for a yes.
+  const [pendingChange, setPendingChange] = useState<{ message: string; apply: () => void } | null>(null);
   // Snapshot taken when the editor opens, to tell whether the drafts changed.
   const initialSnapshot = useRef('');
   const snapshot = (s: string, e: string, d: DraftWindow[]) => JSON.stringify([s, e, d.map((w) => [w.date, w.start, w.end])]);
@@ -169,14 +172,47 @@ const AvailabilityPage: React.FC = () => {
   const days = useMemo(() => (periodValid ? eachDate(periodStart, periodEnd) : []), [periodValid, periodStart, periodEnd]);
 
   function changePeriod(nextStart: string, nextEnd: string) {
-    setPeriodStart(nextStart);
-    setPeriodEnd(nextEnd);
-    // Windows must stay inside the period.
-    setDrafts((prev) => prev.filter((w) => w.date >= nextStart && w.date <= nextEnd));
+    const apply = () => {
+      setPeriodStart(nextStart);
+      setPeriodEnd(nextEnd);
+      // Windows must stay inside the period.
+      setDrafts((prev) => prev.filter((w) => w.date >= nextStart && w.date <= nextEnd));
+    };
+    const dropped = drafts.filter((w) => w.date < nextStart || w.date > nextEnd).length;
+    if (dropped > 0) {
+      setPendingChange({
+        message: `This period change removes ${dropped} window${dropped === 1 ? '' : 's'} that fall outside the new dates.`,
+        apply,
+      });
+      return;
+    }
+    apply();
+  }
+
+  function quickFill(kind: 'all' | 'weekdays') {
+    tacticalFeedback.onTap();
+    const apply = () => {
+      const filled = kind === 'all' ? fillAllDays(days, [{ from: DEFAULT_START, to: DEFAULT_END }]) : fillWeekdays(days, [{ from: DEFAULT_START, to: DEFAULT_END }]);
+      setDrafts(days.flatMap((d) => (filled[d] ?? []).map((w) => newDraft(d, w.from, w.to))));
+    };
+    if (drafts.length > 0) {
+      setPendingChange({ message: 'This replaces the days and times you have already set.', apply });
+      return;
+    }
+    apply();
   }
 
   function toggleDay(date: string) {
     tacticalFeedback.vibrate(15);
+    const dayWindows = drafts.filter((w) => w.date === date);
+    const customised = dayWindows.length > 1 || dayWindows.some((w) => w.start !== DEFAULT_START || w.end !== DEFAULT_END);
+    if (customised) {
+      setPendingChange({
+        message: `This clears the times you set for ${formatDayLabel(date)}.`,
+        apply: () => setDrafts((prev) => prev.filter((w) => w.date !== date)),
+      });
+      return;
+    }
     setDrafts((prev) =>
       prev.some((w) => w.date === date) ? prev.filter((w) => w.date !== date) : [...prev, newDraft(date)]
     );
@@ -204,7 +240,7 @@ const AvailabilityPage: React.FC = () => {
       await saveAvailabilityLocally({ periodStart, periodEnd, windows });
       tacticalFeedback.onSuccess();
       setEditing(null);
-      setNote('Saved on this phone. It will be sent to the desk as soon as you are connected.');
+      setNote('Saved on this phone, will send when online.');
       await reload();
       void forceSyncNow();
     } catch (err) {
@@ -241,6 +277,20 @@ const AvailabilityPage: React.FC = () => {
               handler: () => {
                 setEditing(null);
               },
+            },
+          ]}
+        />
+        <IonAlert
+          isOpen={pendingChange !== null}
+          onDidDismiss={() => setPendingChange(null)}
+          header="Replace your entries?"
+          message={pendingChange?.message}
+          buttons={[
+            { text: 'Keep what I have', role: 'cancel' },
+            {
+              text: 'Continue',
+              role: 'destructive',
+              handler: () => pendingChange?.apply(),
             },
           ]}
         />
@@ -284,8 +334,10 @@ const AvailabilityPage: React.FC = () => {
                 </div>
               </div>
               {isEdit && <span className="wf-hint">The period is fixed once submitted. Change the days and times below.</span>}
-              {!periodValid && periodStart && periodEnd && (
-                <Banner tone="warning">Choose a period of 1 to {MAX_PERIOD_DAYS} days.</Banner>
+              {!isEdit && (
+                <span className={!periodValid && periodStart && periodEnd ? 'p4w-error' : 'wf-hint'}>
+                  Choose a period of 1 to {MAX_PERIOD_DAYS} days.
+                </span>
               )}
             </div>
 
@@ -298,6 +350,14 @@ const AvailabilityPage: React.FC = () => {
                   </span>
                 </div>
                 <span className="wf-hint">Tap a day to mark it available, then set the hours. You can add more than one window per day.</span>
+                <div className="p4w-quickfill">
+                  <Button variant="secondary" disabled={saving} onClick={() => quickFill('weekdays')}>
+                    Weekdays {DEFAULT_START}-{DEFAULT_END}
+                  </Button>
+                  <Button variant="secondary" disabled={saving} onClick={() => quickFill('all')}>
+                    Every day {DEFAULT_START}-{DEFAULT_END}
+                  </Button>
+                </div>
 
                 <div className="wf-stack">
                   {days.map((date) => {
@@ -379,18 +439,12 @@ const AvailabilityPage: React.FC = () => {
         </IonContent>
 
         <div className="wf-dock">
-          <button type="button" className="dispatch-primary-cta dispatch-primary-cta--blue" onClick={handleSave} disabled={saving}>
-            {saving ? <IonSpinner name="dots" /> : <span>{isEdit ? 'Save Changes' : 'Submit Availability'}</span>}
-          </button>
-          <button
-            type="button"
-            className="dispatch-secondary-cta"
-            onClick={() => setEditing(null)}
-            disabled={saving}
-          >
-            <IonIcon icon={closeOutline} />
-            <span>Cancel</span>
-          </button>
+          <Button variant="primary" size="lg" fullWidth loading={saving} onClick={handleSave}>
+            {isEdit ? 'Save changes' : 'Submit availability'}
+          </Button>
+          <Button variant="ghost" fullWidth disabled={saving} onClick={closeEditor}>
+            Cancel
+          </Button>
         </div>
       </IonPage>
     );
@@ -457,10 +511,9 @@ const AvailabilityPage: React.FC = () => {
       </IonContent>
 
       <div className="wf-dock">
-        <button type="button" className="dispatch-primary-cta dispatch-primary-cta--blue" onClick={openNew}>
-          <IonIcon icon={addOutline} style={{ fontSize: '1.2rem' }} />
-          <span>New Availability</span>
-        </button>
+        <Button variant="primary" size="lg" fullWidth icon={addOutline} onClick={openNew}>
+          New availability
+        </Button>
       </div>
     </IonPage>
   );

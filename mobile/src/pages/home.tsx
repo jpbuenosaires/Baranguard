@@ -49,7 +49,7 @@ import {
 } from 'ionicons/icons';
 import DispatchOfferCards from '../components/DispatchOfferCards';
 import MobileHeader from '../components/MobileHeader';
-import { Banner } from '../components/ui';
+import { Banner, Button, Chip } from '../components/ui';
 import SmsFallbackBadge from '../components/SmsFallbackBadge';
 import TacticalAlertBar, { type TacticalAlertItem } from '../components/TacticalAlertBar';
 import tacticalFeedback from '../utils/tacticalFeedback';
@@ -682,74 +682,59 @@ const HomePage: React.FC = () => {
       <MobileHeader title="Baranguard" subtitle="Dashboard" />
 
       <IonContent style={{ '--background': 'var(--color-bg)' }}>
-        <div className="console-overhaul-container console-overhaul-container--docked-sos">
-          {/* 1. Compact Duty Command Strip */}
-          <div className="console-duty-strip">
-            <div className="console-duty-strip__header">
-              <div className="profile-avatar-circle">{initials}</div>
-              <div className="console-duty-strip__info">
-                <div className="console-duty-strip__top-row">
-                  <span className="console-duty-strip__name">{fullName || 'Field Officer'}</span>
-                  <button
-                    type="button"
-                    className={`console-duty-pill-btn ${
-                      status === 'on_duty' ? 'console-duty-pill-btn--on' : 'console-duty-pill-btn--off'
-                    }`}
-                    disabled={loadingStatus || toggling}
-                    onClick={handleToggleDuty}
-                    title={status === 'on_duty' ? 'End active patrol shift' : 'Start patrol shift'}
-                  >
-                    {toggling ? (
-                      <IonSpinner name="dots" style={{ width: '14px', height: '14px' }} />
-                    ) : status === 'on_duty' ? (
-                      <>
-                        <span className="duty-dot duty-dot--pulse" aria-hidden="true" />
-                        <span>On Duty</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="duty-dot" aria-hidden="true" />
-                        <span>Go On Duty</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-                <span className="console-duty-strip__sector">
-                  Barangay Tanod &bull; Barangay {barangayName}
-                </span>
+        <div className="console-overhaul-container console-overhaul-container--docked-sos h4-home">
+          {/* 1. Status card: one identity line, duty state, elapsed time, GPS (while on duty), duty control. */}
+          <section className="h4-status" aria-label="Duty status">
+            <div className="h4-identity">
+              <div className="profile-avatar-circle" aria-hidden="true">{initials}</div>
+              <div className="h4-identity__text">
+                <span className="h4-identity__name">{fullName || 'Field Officer'}</span>
+                <span className="h4-identity__sub">Barangay Tanod &bull; Barangay {barangayName}</span>
               </div>
             </div>
 
-            {/* 3-Cell Telemetry Strip */}
-            <div className="console-telemetry-grid">
-              <div className="console-telemetry-item">
-                <span className="console-telemetry-item__label">Duty Shift</span>
-                <span className="console-telemetry-item__val">
-                  <IonIcon icon={timeOutline} style={{ color: 'var(--color-primary)' }} />
-                  {status === 'on_duty' ? shiftElapsed : 'Off Duty'}
-                </span>
-              </div>
-
-              <div className="console-telemetry-item">
-                <span className="console-telemetry-item__label">GPS Status</span>
-                <span className="console-telemetry-item__val">
-                  <IonIcon
-                    icon={radioOutline}
-                    style={{ color: status === 'on_duty' ? 'var(--color-success)' : 'var(--color-text-tertiary)' }}
-                  />
-                  {status === 'on_duty' ? (patrolTracking === false ? 'No Signal' : 'Sharing Live') : 'Standby'}
-                </span>
-              </div>
-
-              <div className="console-telemetry-item">
-                <span className="console-telemetry-item__label">Today's Reports</span>
-                <span className="console-telemetry-item__val">
-                  <IonIcon icon={documentTextOutline} style={{ color: 'var(--color-primary)' }} />
-                  {todayIncidentCount} Submitted
-                </span>
-              </div>
+            <div className="h4-telemetry">
+              {status === null ? (
+                <Chip tone="neutral">{loadingStatus ? 'Checking duty status…' : 'Duty status unknown'}</Chip>
+              ) : status === 'on_duty' ? (
+                <>
+                  <Chip tone="success">
+                    <IonIcon icon={shieldCheckmarkOutline} aria-hidden="true" /> On duty
+                  </Chip>
+                  <Chip tone="neutral">
+                    <IonIcon icon={timeOutline} aria-hidden="true" /> {shiftElapsed}
+                  </Chip>
+                  <Chip tone={patrolTracking === false ? 'critical' : 'info'}>
+                    <IonIcon icon={radioOutline} aria-hidden="true" />{' '}
+                    {patrolTracking === false
+                      ? 'GPS: no signal'
+                      : patrolTracking === null
+                        ? 'GPS: starting'
+                        : 'GPS: sharing live'}
+                  </Chip>
+                </>
+              ) : (
+                <Chip tone="neutral">
+                  <IonIcon icon={shieldOutline} aria-hidden="true" /> {status === 'responding' ? 'Responding' : 'Off duty'}
+                </Chip>
+              )}
             </div>
-          </div>
+
+            <Button
+              variant={status === 'on_duty' ? 'secondary' : 'primary'}
+              fullWidth
+              loading={toggling}
+              disabled={loadingStatus || status === null}
+              onClick={handleToggleDuty}
+              title={status === 'on_duty' ? 'End active patrol shift' : 'Start patrol shift'}
+            >
+              {status === 'on_duty' ? 'End shift' : 'Go on duty'}
+            </Button>
+
+            <p className="h4-today">
+              <IonIcon icon={documentTextOutline} aria-hidden="true" /> Reports saved today: {todayIncidentCount}
+            </p>
+          </section>
 
           {/* Consolidated Prioritized Tactical Alert Bar */}
           <TacticalAlertBar alerts={homeAlerts} />
@@ -757,7 +742,7 @@ const HomePage: React.FC = () => {
           {/* Night-dispatch offers: online-only, accept is never queued (see DispatchOfferCards). */}
           <DispatchOfferCards />
 
-          {/* 2. Mission Hero Card */}
+          {/* 2. One status headline: active call, or all clear. */}
           {topDispatch ? (
             <div
               className={`console-mission-card ${
@@ -770,21 +755,12 @@ const HomePage: React.FC = () => {
             >
               <div className="console-mission-header">
                 <span className="console-mission-tag">
-                  <IonIcon icon={alertCircleOutline} />
-                  Active Call #{topDispatch.server_dispatch_id ?? topDispatch.local_id.slice(0, 6)}
+                  <IonIcon icon={alertCircleOutline} aria-hidden="true" />
+                  Active call #{topDispatch.server_dispatch_id ?? topDispatch.local_id.slice(0, 6)}
                 </span>
-                <span
-                  className={`status-pill ${
-                    topDispatch.priority === 'critical'
-                      ? 'status-pill--critical is-urgent'
-                      : topDispatch.priority === 'high'
-                        ? 'status-pill--pending'
-                        : 'status-pill--info'
-                  }`}
-                  style={{ fontSize: '0.7rem' }}
-                >
-                  {topDispatch.priority.toUpperCase()} PRIORITY
-                </span>
+                <Chip tone={topDispatch.priority === 'critical' ? 'critical' : topDispatch.priority === 'high' ? 'warning' : 'info'}>
+                  {topDispatch.priority.toUpperCase()} priority
+                </Chip>
               </div>
 
               <h2 className="console-mission-title">
@@ -793,10 +769,9 @@ const HomePage: React.FC = () => {
                   : 'INCIDENT REPORT'}
               </h2>
 
-              <p className="console-mission-desc">
-                Assigned to you
-                {activeDispatchCount > 1 ? ` &bull; 1 of ${activeDispatchCount} active calls` : ''} &bull; Barangay {barangayName}.
-              </p>
+              {activeDispatchCount > 1 && (
+                <p className="console-mission-desc">1 of {activeDispatchCount} active calls assigned to you.</p>
+              )}
 
               <button
                 type="button"
@@ -815,66 +790,36 @@ const HomePage: React.FC = () => {
               </button>
             </div>
           ) : (
-            <div className="console-mission-card console-mission-card--clear">
-              <div className="console-mission-header">
-                <span className="console-mission-tag" style={{ color: 'var(--color-success)' }}>
-                  <IonIcon icon={shieldCheckmarkOutline} />
-                  All Clear &bull; Barangay {barangayName}
-                </span>
-                <span className="status-pill status-pill--success" style={{ fontSize: '0.7rem' }}>
-                  READY
-                </span>
-              </div>
-              <h2 className="console-mission-title">
-                No Active Dispatches
+            <div className="console-mission-card console-mission-card--clear h4-clear">
+              <h2 className="console-mission-title h4-clear__title">
+                <IonIcon icon={shieldCheckmarkOutline} aria-hidden="true" />
+                All clear
               </h2>
-              <p className="console-mission-desc">
-                Barangay {barangayName} is all clear. Continue regular patrol or report an observed incident below.
-              </p>
+              <p className="console-mission-desc">No active dispatches assigned to you.</p>
             </div>
           )}
 
-
-          {/* 4. Direct Emergency Voice Lines Strip */}
-          <div className="console-dial-section">
-            <span className="console-dial-label">
-              <IonIcon icon={callOutline} />
-              Direct Emergency Lines
-            </span>
-
-            <div className="console-dial-grid">
-              {deskContact && deskContact.replace(/[^0-9+]/g, '') !== '' && (
-                <a
-                  href={`tel:${deskContact.replace(/[^0-9+]/g, '')}`}
-                  className="console-dial-tile"
-                  onClick={() => tacticalFeedback.onTap()}
-                >
-                  <IonIcon icon={callOutline} className="console-dial-icon" />
-                  <span className="console-dial-name">Call backup contact</span>
-                </a>
-              )}
-
+          {/* 3. Emergency voice lines: one compact row. */}
+          <nav className="h4-dials" aria-label="Emergency phone lines">
+            {deskContact && deskContact.replace(/[^0-9+]/g, '') !== '' && (
               <a
-                href="tel:911"
-                className="console-dial-tile"
+                href={`tel:${deskContact.replace(/[^0-9+]/g, '')}`}
+                className="h4-dial"
                 onClick={() => tacticalFeedback.onTap()}
               >
-                <IonIcon icon={shieldOutline} className="console-dial-icon" />
-                <span className="console-dial-name">Police 911</span>
-                <span className="console-dial-sub">PNP Station</span>
+                <IonIcon icon={callOutline} aria-hidden="true" />
+                <span>Backup contact</span>
               </a>
-
-              <a
-                href="tel:160"
-                className="console-dial-tile"
-                onClick={() => tacticalFeedback.onTap()}
-              >
-                <IonIcon icon={medkitOutline} className="console-dial-icon" />
-                <span className="console-dial-name">MDRRMO</span>
-                <span className="console-dial-sub">Rescue / BFP</span>
-              </a>
-            </div>
-          </div>
+            )}
+            <a href="tel:911" className="h4-dial" onClick={() => tacticalFeedback.onTap()}>
+              <IonIcon icon={shieldOutline} aria-hidden="true" />
+              <span>Police 911</span>
+            </a>
+            <a href="tel:160" className="h4-dial" onClick={() => tacticalFeedback.onTap()}>
+              <IonIcon icon={medkitOutline} aria-hidden="true" />
+              <span>MDRRMO 160</span>
+            </a>
+          </nav>
 
           {sosFallbackOutcome && (
             <div style={{ marginTop: '2px', display: 'flex', justifyContent: 'center' }}>
@@ -913,6 +858,19 @@ const HomePage: React.FC = () => {
 
         {/* 5. SOS control: docked above the tab bar so it never needs scrolling. Same confirm sheet and send flow. */}
         <div slot="fixed" className="home-sos-dock">
+          <Button
+            variant="primary"
+            size="lg"
+            fullWidth
+            icon={documentTextOutline}
+            className="h4-report-btn"
+            onClick={() => {
+              tacticalFeedback.onTap();
+              navigate('/tabs/incidents/new');
+            }}
+          >
+            Report incident
+          </Button>
           <button
             type="button"
             className="home-sos-button"

@@ -1,1 +1,332 @@
 /* Phase 4 (UI overhaul 2026-10-14): dispatch screens. Tokens and shared ui/ components only; consolidated in Phase 6. */
+
+/* ---- Dispatches list --------------------------------------------------- */
+.dispatch-card--p4 {
+  gap: var(--spacing-sm);
+  cursor: default;
+}
+
+.dispatch-card__open {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  min-height: var(--touch-min-size);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+}
+
+.dispatch-card__open:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.dispatch-card--history.dispatch-card__open {
+  padding: var(--spacing-md);
+}
+
+.dispatch-card__loc-icon {
+  color: var(--color-link, var(--color-primary));
+}
+
+.dispatch-card__telemetry-row--stale {
+  margin-top: var(--spacing-sm);
+}
+
+.dispatch-empty-desc--tight {
+  margin-top: var(--spacing-sm);
+}
+
+.dispatch-history__title {
+  margin-top: var(--spacing-lg);
+}
+
+/* ---- Assignment detail -------------------------------------------------- */
+.p4d-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.p4d-next {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  background: var(--color-surface);
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-primary);
+}
+
+.p4d-next__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.p4d-next__code {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.p4d-next__type {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.p4d-next__loc,
+.p4d-next__age {
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.p4d-next__tele {
+  display: block;
+}
+
+.p4d-next__hint {
+  margin: var(--spacing-xs) 0 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.p4d-next__why {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.p4d-next__done {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-weight: 700;
+  color: var(--color-success);
+}
+
+/* Collapsible secondary sections */
+.p4d-section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.p4d-section__head {
+  width: 100%;
+  min-height: var(--touch-min-size);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 0 var(--spacing-md);
+  background: transparent;
+  border: 0;
+  color: var(--color-text-primary);
+  font-size: var(--text-md);
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.p4d-section__title {
+  flex: 1;
+}
+
+.p4d-section__summary {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.p4d-section__chev {
+  flex: none;
+  transition: transform 0.15s ease;
+}
+
+.p4d-section__chev--open {
+  transform: rotate(180deg);
+}
+
+.p4d-section__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: 0 var(--spacing-md) var(--spacing-md);
+}
+
+.p4d-section__body[hidden] {
+  display: none;
+}
+
+/* Panels inside a section are not cards inside a card */
+.p4d-section__body .wf-card,
+.p4d-section__body .dispatch-on-scene-tools,
+.p4d-section__body .dispatch-briefing-card {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.p4d-call {
+  min-height: var(--touch-min-size);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  color: var(--color-link, var(--color-primary));
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.p4d-field-error {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--pill-critical-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.p4d-referral__name {
+  font-size: var(--text-sm);
+}
+
+/* Evidence panel */
+.p4d-ev__recording {
+  margin: var(--spacing-sm) 0 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.p4d-ev__loaderr {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.p4d-ev__empty {
+  margin: var(--spacing-sm) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.p4d-ev__grid {
+  margin: var(--spacing-sm) 0;
+}
+
+/* Dispatch offer */
+.p4d-offer__why {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.p4d-offer .dispatch-offer-card__tag {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Turn-by-turn HUD (ActiveStepCard): tokens instead of inline colours */
+.p4d-hud__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.p4d-hud--ok,
+.p4d-hud--warn {
+  background: var(--color-navy-deep);
+  color: var(--color-white);
+}
+
+.p4d-hud--ok {
+  border-color: var(--color-success-bright);
+}
+
+.p4d-hud--warn {
+  border-color: var(--color-warning-bright);
+}
+
+.p4d-hud__icon {
+  background: transparent;
+}
+
+.p4d-hud--ok .p4d-hud__icon,
+.p4d-hud--ok .p4d-hud__title {
+  color: var(--color-success-bright);
+}
+
+.p4d-hud--warn .p4d-hud__icon,
+.p4d-hud--warn .p4d-hud__title {
+  color: var(--color-warning-bright);
+}
+
+.p4d-hud__sub {
+  color: var(--color-white);
+}
+
+.p4d-hud__reroute {
+  min-height: var(--touch-min-size);
+  min-width: var(--touch-min-size);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 0 var(--spacing-md);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--color-warning-bright);
+  color: var(--color-navy-deep);
+  font-size: var(--text-sm);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.p4d-hud__upcoming {
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--dark-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.p4d-hud__step {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--text-xs);
+  color: var(--color-white);
+}
+
+.p4d-hud__step-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.p4d-hud__step-dist {
+  flex: none;
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .p4d-next {
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+  .p4d-next__code {
+    font-size: var(--text-lg);
+  }
+  .p4d-hud__upcoming {
+    max-height: 72px;
+  }
+}

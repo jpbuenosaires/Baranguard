@@ -7,10 +7,9 @@
  * is only ever shown after the server answered 200/201.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { IonIcon, IonModal, IonSpinner } from '@ionic/react';
-import { closeOutline } from 'ionicons/icons';
-import { Banner } from './WorkflowBits';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { IonSpinner } from '@ionic/react';
+import { Banner, Button, SheetModal } from './ui';
 import { useOnline } from './useOnline';
 import {
   adminErrorMessage,
@@ -25,8 +24,7 @@ import {
 } from '../services/apiService';
 import { uuid } from '../services/uuid';
 import { formatIncidentCode } from '../utils/incidentCode';
-import { humanize, isActiveDispatchStatus, MAX_REASON, NEEDS_CONNECTION } from './adminFormat';
-import { formatServerTime } from './adminFormat';
+import { buildAssignOptions, formatServerTime, humanize, isActiveDispatchStatus, MAX_REASON, NEEDS_CONNECTION } from './adminFormat';
 
 // ---------------------------------------------------------------------------
 
@@ -35,6 +33,10 @@ interface ReasonSheetProps {
   title: string;
   hint: string;
   confirmLabel: string;
+  /** Label of the dismiss button (default "Back"). */
+  dismissLabel?: string;
+  /** "danger" for destructive confirmations such as cancelling a dispatch. */
+  tone?: 'primary' | 'danger';
   busy: boolean;
   error: string | null;
   onConfirm: (reason: string) => void;
@@ -42,9 +44,21 @@ interface ReasonSheetProps {
 }
 
 /** Required 1-255 character reason (cancel dispatch, assignment override). */
-export const ReasonSheet: React.FC<ReasonSheetProps> = ({ isOpen, title, hint, confirmLabel, busy, error, onConfirm, onClose }) => {
+export const ReasonSheet: React.FC<ReasonSheetProps> = ({
+  isOpen,
+  title,
+  hint,
+  confirmLabel,
+  dismissLabel = 'Back',
+  tone = 'primary',
+  busy,
+  error,
+  onConfirm,
+  onClose,
+}) => {
   const online = useOnline();
   const [reason, setReason] = useState('');
+  const fieldId = `${useId()}-reason`;
 
   useEffect(() => {
     if (isOpen) setReason('');
@@ -54,28 +68,36 @@ export const ReasonSheet: React.FC<ReasonSheetProps> = ({ isOpen, title, hint, c
   const valid = trimmed.length >= 1 && trimmed.length <= MAX_REASON;
 
   return (
-    <IonModal
+    <SheetModal
       isOpen={isOpen}
-      onDidDismiss={() => {
-        if (!busy) onClose();
-      }}
-      initialBreakpoint={0.7}
-      breakpoints={[0, 0.7, 1]}
-      className="wf-sheet-modal"
-    >
-      <div className="wf-sheet">
-        <div className="wf-sheet__head">
-          <h3 className="wf-sheet__title">{title}</h3>
-          <button type="button" className="wf-icon-btn" onClick={onClose} disabled={busy} aria-label="Close">
-            <IonIcon icon={closeOutline} />
-          </button>
+      onClose={onClose}
+      title={title}
+      busy={busy}
+      footer={
+        <div className="admin-sheet-footer">
+          <Button
+            variant={tone === 'danger' ? 'danger' : 'primary'}
+            size="lg"
+            fullWidth
+            loading={busy}
+            disabled={!valid || !online}
+            onClick={() => onConfirm(trimmed)}
+          >
+            {confirmLabel}
+          </Button>
+          <Button variant="secondary" fullWidth disabled={busy} onClick={onClose}>
+            {dismissLabel}
+          </Button>
         </div>
+      }
+    >
+      <div className="admin-sheet-stack">
         <div className="wf-field">
-          <label className="wf-label" htmlFor="admin-reason">
+          <label className="wf-label" htmlFor={fieldId}>
             Reason (required)
           </label>
           <textarea
-            id="admin-reason"
+            id={fieldId}
             className="wf-input admin-textarea"
             rows={3}
             maxLength={MAX_REASON}
@@ -87,21 +109,10 @@ export const ReasonSheet: React.FC<ReasonSheetProps> = ({ isOpen, title, hint, c
             {hint} <span className="wf-counter">{trimmed.length}/{MAX_REASON}</span>
           </span>
         </div>
-        {!online && <Banner tone="warning">{NEEDS_CONNECTION}. This action is never queued.</Banner>}
-        {error && <Banner tone="critical">{error}</Banner>}
-        <button
-          type="button"
-          className="dispatch-primary-cta dispatch-primary-cta--blue"
-          onClick={() => onConfirm(trimmed)}
-          disabled={busy || !valid || !online}
-        >
-          {busy ? <IonSpinner name="dots" /> : <span>{online ? confirmLabel : NEEDS_CONNECTION}</span>}
-        </button>
-        <button type="button" className="dispatch-secondary-cta" onClick={onClose} disabled={busy}>
-          Back
-        </button>
+        {!online && <Banner tone="warning">{NEEDS_CONNECTION}. This action is never queued, so the button is disabled.</Banner>}
+        {error && <Banner tone="error">{error}</Banner>}
       </div>
-    </IonModal>
+    </SheetModal>
   );
 };
 
@@ -115,7 +126,7 @@ interface IncidentSheetProps {
 }
 
 /**
- * Read-only incident (no narrative is requested or rendered) with the
+ * Incident summary (no narrative is requested or rendered) with the
  * Chief Tanod's dispatch controls: assign another responder, cancel a
  * responder's dispatch, and "Take over" (a manual night-dispatch offer).
  */
@@ -251,37 +262,33 @@ export const AdminIncidentSheet: React.FC<IncidentSheetProps> = ({ incidentId, o
 
   const activeDispatches = incident?.dispatches.filter((d) => isActiveDispatchStatus(d.status)) ?? [];
   const assignedIds = new Set(activeDispatches.map((d) => d.tanodId));
+  const assignFieldId = `${useId()}-assign-tanod`;
+  // Only one sheet at a time: the incident sheet steps aside while a reason sheet is up.
+  const subSheetOpen = overrideOpen || cancelTarget !== null;
 
   return (
     <>
-      <IonModal
-        isOpen={incidentId !== null}
-        onDidDismiss={() => {
-          if (!busy) onClose();
+      <SheetModal
+        isOpen={incidentId !== null && !subSheetOpen}
+        onClose={() => {
+          if (!subSheetOpen) onClose();
         }}
-        initialBreakpoint={0.92}
-        breakpoints={[0, 0.92]}
-        className="wf-sheet-modal"
+        title={(incidentId ? formatIncidentCode({ displayId: incident?.displayId, serverIncidentId: incidentId }) : null) ?? 'Incident'}
+        busy={busy}
+        closeLabel="Close incident"
       >
-        <div className="wf-sheet admin-incident-sheet">
-          <div className="wf-sheet__head">
-            <h3 className="wf-sheet__title">{incidentId ? formatIncidentCode({ displayId: incident?.displayId, serverIncidentId: incidentId }) : 'Incident'}</h3>
-            <button type="button" className="wf-icon-btn" onClick={onClose} disabled={busy} aria-label="Close incident">
-              <IonIcon icon={closeOutline} />
-            </button>
-          </div>
-
+        <div className="admin-sheet-stack">
           {loading && !incident && (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}>
+            <div className="admin-sheet-loading">
               <IonSpinner name="dots" />
             </div>
           )}
           {loadError && (
             <>
-              <Banner tone="critical">{loadError}</Banner>
-              <button type="button" className="wf-btn" onClick={() => incidentId !== null && void load(incidentId)}>
+              <Banner tone="error">{loadError}</Banner>
+              <Button variant="secondary" onClick={() => incidentId !== null && void load(incidentId)}>
                 Retry
-              </button>
+              </Button>
             </>
           )}
 
@@ -296,7 +303,7 @@ export const AdminIncidentSheet: React.FC<IncidentSheetProps> = ({ incidentId, o
                 <div className="wf-card__sub">Reported: {formatServerTime(incident.createdAt)}</div>
                 {incident.reportChannel && <div className="wf-card__sub">Channel: {humanize(incident.reportChannel)}</div>}
                 <div className="wf-card__sub">Location: {incident.locationDescription ?? 'No description recorded'}</div>
-                <span className="wf-hint">Read-only. Narratives are never shown in this app.</span>
+                <span className="wf-hint">Narratives are never shown in this app.</span>
               </div>
 
               <div className="wf-card">
@@ -309,9 +316,8 @@ export const AdminIncidentSheet: React.FC<IncidentSheetProps> = ({ incidentId, o
                       <span className="wf-card__sub">{humanize(d.status)}</span>
                     </div>
                     {isActiveDispatchStatus(d.status) && (
-                      <button
-                        type="button"
-                        className="wf-btn wf-btn--small"
+                      <Button
+                        variant="danger"
                         disabled={busy || !online}
                         onClick={() => {
                           setActionError(null);
@@ -319,77 +325,66 @@ export const AdminIncidentSheet: React.FC<IncidentSheetProps> = ({ incidentId, o
                           setCancelTarget({ dispatchId: d.dispatchId, tanodName: d.tanodName });
                         }}
                       >
-                        {online ? 'Cancel dispatch' : NEEDS_CONNECTION}
-                      </button>
+                        Cancel dispatch
+                      </Button>
                     )}
                   </div>
                 ))}
               </div>
 
               {notice && <Banner tone="success">{notice}</Banner>}
-              {actionError && !overrideOpen && !cancelTarget && <Banner tone="critical">{actionError}</Banner>}
-              {!online && <Banner tone="warning">{NEEDS_CONNECTION}. Dispatch actions are never queued.</Banner>}
+              {actionError && !subSheetOpen && <Banner tone="error">{actionError}</Banner>}
+              {!online && <Banner tone="warning">{NEEDS_CONNECTION}. Dispatch actions are disabled and never queued.</Banner>}
 
               {assigning ? (
                 <div className="wf-card">
                   <strong className="wf-card__title">Assign another responder</strong>
-                  {directoryError && <Banner tone="critical">{directoryError}</Banner>}
+                  {directoryError && <Banner tone="error">{directoryError}</Banner>}
                   {directory && (
                     <div className="wf-field">
-                      <label className="wf-label" htmlFor="admin-assign-tanod">
+                      <label className="wf-label" htmlFor={assignFieldId}>
                         Responder
                       </label>
                       <select
-                        id="admin-assign-tanod"
+                        id={assignFieldId}
                         className="wf-select"
                         value={pickedTanod}
                         onChange={(e) => setPickedTanod(e.target.value)}
                         disabled={busy}
                       >
                         <option value="">Select a Tanod…</option>
-                        {directory
-                          .filter((u) => !assignedIds.has(u.userId))
-                          .map((u) => (
-                            <option key={u.userId} value={u.userId}>
-                              {u.fullName}
-                            </option>
-                          ))}
+                        {buildAssignOptions(directory, assignedIds).map((u) => (
+                          <option key={u.userId} value={u.userId} disabled={u.assigned}>
+                            {u.label}
+                          </option>
+                        ))}
                       </select>
+                      <span className="wf-hint">Shift availability is not available on the phone. Check the roster on the dashboard if unsure.</span>
                     </div>
                   )}
-                  <div className="wf-row">
-                    <button
-                      type="button"
-                      className="wf-btn wf-btn--primary"
-                      disabled={busy || !online || !pickedTanod}
-                      onClick={() => void submitAssign()}
-                    >
-                      {busy ? <IonSpinner name="dots" /> : online ? 'Assign' : NEEDS_CONNECTION}
-                    </button>
-                    <button type="button" className="wf-btn" disabled={busy} onClick={() => setAssigning(false)}>
+                  <div className="admin-actions">
+                    <Button loading={busy} disabled={!online || !pickedTanod} onClick={() => void submitAssign()}>
+                      Assign
+                    </Button>
+                    <Button variant="secondary" disabled={busy} onClick={() => setAssigning(false)}>
                       Back
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ) : (
-                <div className="wf-dock admin-dock">
-                  <button
-                    type="button"
-                    className="dispatch-primary-cta dispatch-primary-cta--blue"
-                    disabled={busy || !online}
-                    onClick={() => void openAssign()}
-                  >
-                    <span>{online ? 'Assign more responders' : NEEDS_CONNECTION}</span>
-                  </button>
-                  <button type="button" className="dispatch-secondary-cta" disabled={busy || !online} onClick={() => void takeOver()}>
-                    {online ? 'Take over (offer to on-duty Tanods)' : NEEDS_CONNECTION}
-                  </button>
+                <div className="admin-sheet-footer">
+                  <Button size="lg" fullWidth disabled={busy || !online} onClick={() => void openAssign()}>
+                    Assign more responders
+                  </Button>
+                  <Button variant="secondary" fullWidth disabled={busy || !online} onClick={() => void takeOver()}>
+                    Take over (offer to on-duty Tanods)
+                  </Button>
                 </div>
               )}
             </>
           )}
         </div>
-      </IonModal>
+      </SheetModal>
 
       <ReasonSheet
         isOpen={overrideOpen}
@@ -405,7 +400,9 @@ export const AdminIncidentSheet: React.FC<IncidentSheetProps> = ({ incidentId, o
         isOpen={cancelTarget !== null}
         title={`Cancel dispatch${cancelTarget?.tanodName ? ` for ${cancelTarget.tanodName}` : ''}`}
         hint="Required. Say why this responder is being pulled off."
-        confirmLabel="Cancel dispatch"
+        confirmLabel="Confirm cancellation"
+        dismissLabel="Keep dispatch"
+        tone="danger"
         busy={busy}
         error={cancelTarget ? actionError : null}
         onConfirm={(reason) => void submitCancel(reason)}

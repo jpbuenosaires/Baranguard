@@ -24,11 +24,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IonAlert, IonContent, IonIcon, IonModal, IonPage, IonSpinner } from '@ionic/react';
-import { addOutline, chevronBackOutline, chevronForwardOutline, closeOutline, paperPlaneOutline } from 'ionicons/icons';
+import { addOutline, chevronBackOutline, chevronDownOutline, chevronForwardOutline, closeOutline, paperPlaneOutline } from 'ionicons/icons';
 import MobileHeader from '../components/MobileHeader';
 import { LoadingBlock } from '../components/LoadingBlock';
 import { Banner, SyncChip } from '../components/WorkflowBits';
-import { EmptyState, ErrorState } from '../components/ui';
+import { Button, EmptyState, ErrorState } from '../components/ui';
 import {
   ApiError,
   checkHealth,
@@ -63,11 +63,15 @@ import {
 } from '../utils/manilaTime';
 import tacticalFeedback from '../utils/tacticalFeedback';
 import { uuid } from '../services/uuid';
+import { clampHours, clampMinutes, formatDurationTotal, routeAccomplishmentProblem } from '../utils/workflowForm';
+
+/** Sync events can arrive in bursts; reload at most about once a second. */
+const SYNC_REFRESH_DEBOUNCE_MS = 1000;
 
 const STATUS_PILL: Record<AccomplishmentReportStatus, { label: string; className: string }> = {
-  open: { label: 'Open — add your entries', className: 'status-pill--info' },
-  prepared: { label: 'Submitted — print and sign it at the barangay hall', className: 'status-pill--success' },
-  returned: { label: 'Returned for changes', className: 'status-pill--critical' },
+  open: { label: 'Open', className: 'status-pill--info' },
+  prepared: { label: 'Prepared', className: 'status-pill--success' },
+  returned: { label: 'Returned', className: 'status-pill--critical' },
 };
 
 const LOCKED: AccomplishmentReportStatus[] = ['prepared'];
@@ -106,6 +110,7 @@ const AccomplishmentsPage: React.FC = () => {
   const [durationTouched, setDurationTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [timesOpen, setTimesOpen] = useState(false);
 
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -137,18 +142,26 @@ const AccomplishmentsPage: React.FC = () => {
       setReport(result.report);
       if (result.fresh) await reloadEntries(month);
     })();
+    let syncTimer: ReturnType<typeof setTimeout> | null = null;
     const unsubscribe = subscribeSyncSummary(() => {
-      void reloadEntries(month);
-      void refreshAccomplishmentMonth(month).then((r) => {
-        if (!cancelled) {
-          setReport(r.report);
-          setStatusFresh(r.fresh);
-          void reloadEntries(month);
-        }
-      });
+      // Debounced: same reload and refresh, just not once per sync event.
+      if (syncTimer !== null) clearTimeout(syncTimer);
+      syncTimer = setTimeout(() => {
+        syncTimer = null;
+        if (cancelled) return;
+        void reloadEntries(month);
+        void refreshAccomplishmentMonth(month).then((r) => {
+          if (!cancelled) {
+            setReport(r.report);
+            setStatusFresh(r.fresh);
+            void reloadEntries(month);
+          }
+        });
+      }, SYNC_REFRESH_DEBOUNCE_MS);
     });
     return () => {
       cancelled = true;
+      if (syncTimer !== null) clearTimeout(syncTimer);
       unsubscribe();
     };
   }, [month, reloadEntries]);
@@ -162,6 +175,7 @@ const AccomplishmentsPage: React.FC = () => {
     setFormError(null);
     setNote(null);
     setDurationTouched(existing !== null);
+    setTimesOpen(Boolean(existing?.start_time || existing?.end_time));
     if (existing) {
       setForm({
         workDate: existing.work_date,
@@ -211,11 +225,11 @@ const AccomplishmentsPage: React.FC = () => {
     try {
       if (!existing) {
         await saveEntryLocally(input);
-        setNote({ tone: 'success', text: 'Entry saved on this phone. It will sync when you are connected.' });
+        setNote({ tone: 'success', text: 'Saved on this phone, will send when online.' });
         void forceSyncNow();
       } else if (existing.synced === 0) {
         await updateUnsyncedEntry(existing.local_id, input);
-        setNote({ tone: 'success', text: 'Entry updated on this phone. It will sync when you are connected.' });
+        setNote({ tone: 'success', text: 'Updated. Saved on this phone, will send when online.' });
         void forceSyncNow();
       } else if (existing.server_entry_id !== null) {
         // Already on the server: the edit is an online PATCH (contract §4).
@@ -332,6 +346,10 @@ const AccomplishmentsPage: React.FC = () => {
   const editingExisting = editor?.existing ?? null;
   const suggestion = editingExisting?.suggested_duration_minutes ?? null;
   const pill = report ? STATUS_PILL[report.status] : null;
+  const submitBlockedReason = entries.length === 0 ? 'Add an entry first. Submitting needs a connection.' : null;
+  const durationTotal = formatDurationTotal(form.hours, form.minutes);
+  const problemField = formError ? routeAccomplishmentProblem(formError) : null;
+  const errFor = (f: 'date' | 'text' | 'duration' | 'times') => (problemField === f ? formError : null);
 
   return (
     <IonPage>
@@ -375,7 +393,7 @@ const AccomplishmentsPage: React.FC = () => {
                 </span>
               )}
               <span className="wf-muted">
-                {entries.length} entr{entries.length === 1 ? 'y' : 'ies'} · {formatMinutes(totalMinutes)} confirmed
+                {entries.length} entr{entries.length === 1 ? 'y' : 'ies'} · {formatMinutes(totalMinutes)}
               </span>
             </div>
 
@@ -386,7 +404,9 @@ const AccomplishmentsPage: React.FC = () => {
               </Banner>
             )}
             {locked && (
-              <Banner tone="info">Entries are locked while the report is with the officials. They will unlock only if it is returned.</Banner>
+              <Banner tone="info">
+                Submitted. Print and sign it at the barangay hall. Entries stay locked unless it is returned.
+              </Banner>
             )}
             {flaggedCount > 0 && !locked && (
               <Banner tone="warning">
@@ -396,7 +416,6 @@ const AccomplishmentsPage: React.FC = () => {
             )}
           </div>
 
-          {note && <Banner tone={note.tone}>{note.text}</Banner>}
           {loadError && entries.length > 0 && <Banner tone="critical">{loadError}</Banner>}
 
           {loading ? (
@@ -412,36 +431,36 @@ const AccomplishmentsPage: React.FC = () => {
             <div className="wf-stack">
               {entries.map((entry) => {
                 const editable = !locked;
+                const flagged = entry.duration_flag === 1;
                 const body = (
                   <>
                     <div className="wf-row wf-row--between">
-                      <strong style={{ fontSize: '0.88rem' }}>{formatDayLabel(entry.work_date)}</strong>
+                      <strong className="p4w-entry__date">{formatDayLabel(entry.work_date)}</strong>
                       <SyncChip row={entry} />
                     </div>
                     <p className="wf-entry__text">{entry.accomplishment_text}</p>
                     <div className="wf-row">
-                      <span className="status-pill status-pill--info">Confirmed {formatMinutes(entry.duration_minutes)}</span>
-                      {entry.suggested_duration_minutes !== null && (
+                      <span className="status-pill status-pill--info">{formatMinutes(entry.duration_minutes)}</span>
+                      {flagged && entry.suggested_duration_minutes !== null && (
                         <span className="status-pill status-pill--neutral">
                           Suggested {formatMinutes(entry.suggested_duration_minutes)}
                         </span>
                       )}
-                      {entry.duration_flag === 1 && <span className="status-pill status-pill--critical">Check duration</span>}
+                      {flagged && <span className="status-pill status-pill--critical">Differs from the duty record</span>}
                     </div>
-                    {entry.suggested_duration_minutes === null && (
-                      <span className="wf-muted">
-                        {entry.synced === 0
-                          ? 'A suggested duration (from your on-duty time) appears after this entry syncs.'
-                          : 'No suggested duration available for this entry.'}
-                      </span>
-                    )}
                     {entry.last_sync_error && entry.synced === 0 && (
                       <span className="wf-muted">The desk could not save this yet: {entry.last_sync_error}</span>
                     )}
                   </>
                 );
                 return editable ? (
-                  <button key={entry.local_id} type="button" className="wf-entry" onClick={() => openEditor(entry)}>
+                  <button
+                    key={entry.local_id}
+                    type="button"
+                    className="wf-entry"
+                    aria-label={`Edit entry ${formatDayLabel(entry.work_date)}`}
+                    onClick={() => openEditor(entry)}
+                  >
                     {body}
                   </button>
                 ) : (
@@ -456,25 +475,28 @@ const AccomplishmentsPage: React.FC = () => {
       </IonContent>
 
       <div className="wf-dock">
+        {note && <Banner tone={note.tone}>{note.text}</Banner>}
         {!locked && (
-          <button type="button" className="dispatch-primary-cta dispatch-primary-cta--blue" onClick={() => openEditor(null)} disabled={submitting}>
-            <IonIcon icon={addOutline} style={{ fontSize: '1.2rem' }} />
-            <span>Add Entry</span>
-          </button>
-        )}
-        {!locked && (
-          <button
-            type="button"
-            className="dispatch-secondary-cta"
-            disabled={!canSubmit || submitting}
-            onClick={() => {
-              tacticalFeedback.onTap();
-              setConfirmSubmit(true);
-            }}
-          >
-            {submitting ? <IonSpinner name="dots" /> : <IonIcon icon={paperPlaneOutline} />}
-            <span>{report?.status === 'returned' ? 'Resubmit Month' : 'Submit Month'} (needs connection)</span>
-          </button>
+          <>
+            <Button variant="primary" size="lg" fullWidth icon={addOutline} onClick={() => openEditor(null)} disabled={submitting}>
+              Add entry
+            </Button>
+            <div className="p4w-dock-secondary">
+              {submitBlockedReason && <span className="wf-hint p4w-dock-reason">{submitBlockedReason}</span>}
+              <Button
+                variant="secondary"
+                icon={paperPlaneOutline}
+                loading={submitting}
+                disabled={!canSubmit}
+                onClick={() => {
+                  tacticalFeedback.onTap();
+                  setConfirmSubmit(true);
+                }}
+              >
+                {report?.status === 'returned' ? 'Resubmit month' : 'Submit month'}
+              </Button>
+            </div>
+          </>
         )}
       </div>
 
@@ -518,8 +540,13 @@ const AccomplishmentsPage: React.FC = () => {
               min={earliestWorkDate()}
               max={manilaToday()}
               disabled={saving || editingExisting !== null}
+              aria-invalid={errFor('date') ? true : undefined}
+              aria-describedby="acc-date-hint"
               onChange={(e) => patchForm({ workDate: e.target.value })}
             />
+            <span id="acc-date-hint" className={errFor('date') ? 'p4w-error' : 'wf-hint'}>
+              {errFor('date') ?? 'Not in the future, and no more than 62 days back.'}
+            </span>
           </div>
 
           <div className="wf-field">
@@ -533,25 +560,45 @@ const AccomplishmentsPage: React.FC = () => {
               maxLength={MAX_ENTRY_TEXT}
               value={form.text}
               disabled={saving}
+              aria-invalid={errFor('text') ? true : undefined}
+              aria-describedby="acc-text-hint"
               onChange={(e) => patchForm({ text: e.target.value })}
               placeholder="e.g. Night patrol of Purok 3; assisted traffic at the school gate"
             />
-            <span className="wf-hint">Describe the work only — leave out names of victims, complainants or students.</span>
+            <span id="acc-text-hint" className={errFor('text') ? 'p4w-error' : 'wf-hint'}>
+              {errFor('text') ?? 'Describe the work only. Leave out names of victims, complainants or students.'}
+            </span>
             <span className="wf-counter">
               {form.text.length}/{MAX_ENTRY_TEXT}
             </span>
           </div>
 
+          <button
+            type="button"
+            className="p4w-expander"
+            aria-expanded={timesOpen}
+            aria-controls="acc-times"
+            onClick={() => setTimesOpen((v) => !v)}
+          >
+            <IonIcon
+              icon={chevronDownOutline}
+              aria-hidden="true"
+              className={timesOpen ? 'p4w-expander__icon p4w-expander__icon--open' : 'p4w-expander__icon'}
+            />
+            <span>Add start and end time</span>
+          </button>
+          {timesOpen && (
+            <div id="acc-times" className="p4w-times">
           <div className="wf-field-row">
             <div className="wf-field">
               <label className="wf-label" htmlFor="acc-start">
-                Start (with end, optional)
+                Start
               </label>
               <input id="acc-start" className="wf-input" type="time" value={form.startTime} disabled={saving} onChange={(e) => patchForm({ startTime: e.target.value })} />
             </div>
             <div className="wf-field">
               <label className="wf-label" htmlFor="acc-end">
-                End (with start, optional)
+                End
               </label>
               <input id="acc-end" className="wf-input" type="time" value={form.endTime} disabled={saving} onChange={(e) => patchForm({ endTime: e.target.value })} />
             </div>
@@ -562,49 +609,63 @@ const AccomplishmentsPage: React.FC = () => {
             the next day — it counts as the following day.
           </span>
 
+            </div>
+          )}
+
           <div className="wf-field">
             <span className="wf-label">Confirmed duration</span>
-            <div className="wf-field-row">
-              <input
-                className="wf-input"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                max={24}
-                placeholder="Hours"
-                aria-label="Hours"
-                value={form.hours}
-                disabled={saving}
-                onChange={(e) => {
-                  setDurationTouched(true);
-                  patchForm({ hours: e.target.value });
-                }}
-              />
-              <input
-                className="wf-input"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                max={59}
-                placeholder="Minutes"
-                aria-label="Minutes"
-                value={form.minutes}
-                disabled={saving}
-                onChange={(e) => {
-                  setDurationTouched(true);
-                  patchForm({ minutes: e.target.value });
-                }}
-              />
+            <div className="p4w-duration">
+              <div className="p4w-duration__part">
+                <label className="wf-label" htmlFor="acc-hours">
+                  Hours
+                </label>
+                <input
+                  id="acc-hours"
+                  className="wf-input"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={2}
+                  value={form.hours}
+                  disabled={saving}
+                  onChange={(e) => {
+                    setDurationTouched(true);
+                    patchForm({ hours: clampHours(e.target.value) });
+                  }}
+                />
+              </div>
+              <div className="p4w-duration__part">
+                <label className="wf-label" htmlFor="acc-minutes">
+                  Minutes
+                </label>
+                <input
+                  id="acc-minutes"
+                  className="wf-input"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={2}
+                  value={form.minutes}
+                  disabled={saving}
+                  onChange={(e) => {
+                    setDurationTouched(true);
+                    patchForm({ minutes: clampMinutes(e.target.value) });
+                  }}
+                />
+              </div>
+              <span className="p4w-duration__total" aria-live="polite">
+                {durationTotal ?? ''}
+              </span>
             </div>
-            <span className="wf-hint">
-              You confirm this time yourself. {formMinutes(form) > 0 ? `Total: ${formatMinutes(formMinutes(form))}.` : ''}
+            <span className={errFor('duration') ? 'p4w-error' : 'wf-hint'}>
+              {errFor('duration') ?? 'You confirm this yourself. Between 1 minute and 24 hours.'}
             </span>
           </div>
 
           {suggestion !== null ? (
             <Banner tone="info">
               Suggested from your on-duty time that day: <strong>{formatMinutes(suggestion)}</strong>.
-              {editingExisting?.duration_flag === 1 ? ' Your confirmed time differs a lot from it.' : ''}{' '}
+              {editingExisting?.duration_flag === 1 ? ' Your confirmed time differs from the duty record.' : ''}{' '}
               <button
                 type="button"
                 className="wf-btn wf-btn--small"
@@ -616,16 +677,12 @@ const AccomplishmentsPage: React.FC = () => {
                 Use suggested
               </button>
             </Banner>
-          ) : (
-            <span className="wf-hint">
-              A suggested duration (from your on-duty time) is shown once the entry has been sent to the desk.
-            </span>
-          )}
+          ) : null}
 
-          {formError && <Banner tone="critical">{formError}</Banner>}
+          {formError && (problemField === 'general' || problemField === 'times') && <Banner tone="critical">{formError}</Banner>}
 
           <button type="button" className="dispatch-primary-cta dispatch-primary-cta--blue" onClick={handleSaveEntry} disabled={saving}>
-            {saving ? <IonSpinner name="dots" /> : <span>{editingExisting ? 'Save Changes' : 'Save Entry'}</span>}
+            {saving ? <IonSpinner name="dots" /> : <span>{editingExisting ? 'Save changes' : 'Save entry'}</span>}
           </button>
           <button type="button" className="dispatch-secondary-cta" onClick={() => setEditor(null)} disabled={saving}>
             Cancel
