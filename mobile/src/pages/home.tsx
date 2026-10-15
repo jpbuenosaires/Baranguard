@@ -16,7 +16,13 @@ import DutyStatusCard from '../components/home/DutyStatusCard';
 import DispatchHeadline from '../components/home/DispatchHeadline';
 import EmergencyDials from '../components/home/EmergencyDials';
 import SosConfirmSheet from '../components/home/SosConfirmSheet';
-import { barangayLabel, readCachedDutyStatus, writeCachedDutyStatus } from '../utils/homeDuty';
+import {
+  barangayLabel,
+  dutyStatusErrorMessage,
+  formatShiftElapsed,
+  readCachedDutyStatus,
+  writeCachedDutyStatus,
+} from '../utils/homeDuty';
 import { useSosFlow } from '../components/home/useSosFlow';
 import SmsFallbackBadge from '../components/SmsFallbackBadge';
 import TacticalAlertBar, { type TacticalAlertItem } from '../components/TacticalAlertBar';
@@ -176,15 +182,7 @@ const HomePage: React.FC = () => {
       }
 
       const updateTimer = () => {
-        const diffMs = Math.max(0, Date.now() - (startTime ?? Date.now()));
-        const diffMins = Math.floor(diffMs / (1000 * 60));
-        const hours = Math.floor(diffMins / 60);
-        const mins = diffMins % 60;
-        if (hours > 0) {
-          setShiftElapsed(`${hours}h ${mins}m`);
-        } else {
-          setShiftElapsed(`${mins}m`);
-        }
+        setShiftElapsed(formatShiftElapsed(Date.now() - (startTime ?? Date.now())));
       };
 
       updateTimer();
@@ -288,13 +286,7 @@ const HomePage: React.FC = () => {
           setStatus(cached);
           if (cached === 'on_duty') setPatrolTracking(false);
         }
-        setDutyError(
-          offline
-            ? cached
-              ? 'Offline — showing your last known status.'
-              : 'Offline — duty status unknown until you reconnect.'
-            : 'Could not fetch duty status.'
-        );
+        setDutyError(dutyStatusErrorMessage(offline, Boolean(cached)));
       } finally {
         if (!cancelled) setLoadingStatus(false);
       }

@@ -26,6 +26,7 @@
  * working regardless of session/API state.
  */
 
+import { isSessionEndingUnauthorized } from '../utils/authErrors';
 import { Preferences } from '@capacitor/preferences';
 import type { AvailabilityStatus, AvailabilityWindow, ReferralTarget } from './db/localSchema';
 import { getDeviceId, signDeviceRequest } from './deviceIdentity';
@@ -175,7 +176,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     // change) — this is a session dying, not "workstation unreachable."
     // `auth === false` calls (namely /auth/login itself) are excluded:
     // their 401 means wrong credentials, not an expired session.
-    if (auth && response.status === 401) {
+    if (auth && isSessionEndingUnauthorized(response.status, error?.message)) {
       await clearSession();
       emitSessionExpired();
     }
