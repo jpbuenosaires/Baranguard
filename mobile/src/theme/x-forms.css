@@ -1,0 +1,79 @@
+/* Extracted from inline styles and split components (UI overhaul Phase 6). Tokens only. */
+
+/* ---- shared ---- */
+.content-bg { --background: var(--color-bg); }
+.icon-chevron { color: var(--color-text-tertiary); font-size: 1.1rem; }
+.icon-lg-primary { font-size: 1.25rem; color: var(--color-primary); }
+.icon-lg-warning { font-size: 1.25rem; color: var(--color-warning); }
+.icon-md { font-size: 1.2rem; }
+.icon-sm { font-size: 1.1rem; flex-shrink: 0; }
+.icon-primary { color: var(--color-primary); }
+.icon-info { color: var(--color-info); }
+.col-gap-md { display: flex; flex-direction: column; gap: var(--spacing-md); }
+.col-gap-sm { display: flex; flex-direction: column; gap: var(--spacing-sm); }
+.col-gap-xs { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+.mt-14 { margin-top: 14px; }
+
+/* ---- LoadingBlock ---- */
+.loading-block--inline { display: flex; justify-content: center; padding: 16px 0; }
+.loading-block--page { display: flex; justify-content: center; padding-top: 64px; }
+.loading-block--labelled { display: flex; flex-direction: column; align-items: center; padding-top: 64px; gap: 12px; }
+.loading-block__label { font-size: var(--font-size-sm); color: var(--color-text-secondary); }
+
+/* ---- profile ---- */
+.profile-sync-btn {
+  --background: var(--color-primary);
+  --border-radius: var(--radius-sm);
+  font-weight: 700;
+  min-height: 48px;
+  box-shadow: none;
+}
+.profile-prune-btn { font-weight: 600; --border-radius: var(--radius-sm); }
+.profile-storage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.profile-storage-tile {
+  background: var(--color-bg);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+.profile-storage-tile__label { font-size: 0.68rem; color: var(--color-text-secondary); font-weight: 600; }
+.profile-storage-tile__value { font-size: 0.95rem; font-weight: 700; color: var(--color-text-primary); }
+.profile-storage-tile__count { font-weight: 400; font-size: 0.72rem; color: var(--color-text-secondary); }
+
+/* ---- my-reports ---- */
+.reports-sync-spinner { display: flex; align-items: center; gap: 4px; }
+.reports-sync-spinner ion-spinner { width: 20px; height: 16px; }
+.icon-mr-4 { margin-right: 4px; }
+
+/* ---- incident-submitted ---- */
+.receipt-not-found {
+  text-align: center;
+  padding: var(--spacing-xl) var(--spacing-md);
+  margin-top: var(--spacing-xl);
+  border-top: 4px solid var(--color-critical);
+}
+.receipt-not-found__title { color: var(--color-critical); margin: 0 0 var(--spacing-xs); }
+.receipt-not-found__text { color: var(--color-text-secondary); margin-bottom: var(--spacing-md); }
+.receipt-pill-offset { margin-top: 2px; }
+.icon-xs { font-size: 0.85rem; }
+.receipt-coords { font-family: var(--font-mono); font-size: var(--font-size-label); }
+.receipt-no-gps { color: var(--color-text-tertiary); font-size: var(--font-size-label); }
+.icon-success { color: var(--color-success); }
+.receipt-copied { color: var(--color-success); font-weight: 700; }
+
+/* ---- my-shifts ---- */
+.roster-glance-icon--warning { color: var(--color-warning); background: var(--tint-warning-bg); }
+.roster-glance-icon--info { color: var(--color-primary); background: var(--tint-info-bg); }
+.roster-swap-card__box-label { text-transform: none; letter-spacing: normal; font-weight: 700; }
+.swap-reason-label { font-size: var(--font-size-label); font-weight: 700; color: var(--color-text-secondary); }
+.spinner-16 { width: 16px; height: 16px; }
+
+/* ---- sync queue ---- */
+.sync-queue__column { padding-top: 0; }
+.sync-queue__send-btn {
+  --background: linear-gradient(135deg, var(--color-navy) 0%, var(--color-primary) 100%);
+  font-weight: 700;
+  height: 48px;
+  box-shadow: var(--shadow-fab);
+}
+.ml-8 { margin-left: 8px; }

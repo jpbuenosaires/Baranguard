@@ -1,0 +1,102 @@
+/* Extracted from inline styles and split components (UI overhaul Phase 6). Tokens only. */
+
+.h4-content { --background: var(--color-bg); }
+.h4-fallback-badge { margin-top: 2px; display: flex; justify-content: center; }
+.tactical-sos-spinner { color: var(--color-critical-solid); }
+
+/* New incident form (extracted from inline styles) */
+
+.intake-type-label { font-size: 0.74rem; font-weight: 700; color: var(--color-primary); }
+.intake-char-count { font-size: 0.72rem; color: var(--color-text-tertiary); font-weight: 600; }
+.intake-clear-btn {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: var(--touch-min-size, 48px);
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+}
+.intake-loc-icon { color: var(--color-primary); font-size: 1.2rem; flex-shrink: 0; }
+.intake-pill-sm { font-size: 0.68rem; margin-top: 2px; }
+.intake-spinner { width: 16px; height: 16px; }
+.intake-btn-icon { font-size: 1.1rem; }
+.intake-btn-touch.intake-btn-touch--recording { border-color: var(--color-critical); color: var(--color-critical); }
+.intake-recording-done {
+  background: var(--color-critical);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-white);
+  font-weight: 700;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.media-grid--staged { margin-top: 4px; }
+
+/* TacticalAlertBar */
+.tab-container { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 10px; }
+.tab-card {
+  border-radius: var(--radius-md, 8px);
+  padding: 10px 14px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tab-card--compact { padding: 8px 12px; font-size: var(--text-sm); line-height: 1.35; gap: 10px; }
+.tab-card--critical { background: var(--tint-critical-bg); border: 1px solid var(--color-critical); color: var(--pill-critical-text); }
+.tab-card--warning { background: var(--tint-warning-bg); border: 1px solid var(--color-warning); color: var(--pill-warning-text); }
+.tab-card--info { background: var(--tint-info-bg); border: 1px solid var(--color-border-blue); color: var(--pill-info-text); }
+.tab-card__body { display: flex; align-items: flex-start; gap: 10px; flex: 1; }
+.tab-card__body--center { align-items: center; gap: 8px; }
+.tab-card__icon { font-size: 1.25rem; flex-shrink: 0; margin-top: 2px; }
+.tab-card__icon--sm { font-size: 1.1rem; margin-top: 0; }
+.tab-action {
+  min-height: var(--touch-min-size, 48px);
+  padding: 0 14px;
+  border-radius: var(--radius-sm, 6px);
+  border: none;
+  font-weight: 700;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tab-action--compact { padding: 0 10px; font-size: var(--text-sm); }
+.tab-action--critical { background: var(--color-critical); color: var(--color-on-critical); }
+.tab-action--warning { background: var(--color-warning); color: var(--color-on-warning); }
+.tab-action--info { background: var(--color-info); color: var(--color-on-info); }
+.tab-more {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full, 9999px);
+  padding: 6px 14px;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  align-self: flex-start;
+  min-height: var(--touch-min-size, 48px);
+}
+.tab-more__icon { font-size: 1rem; }
+.tab-list { display: flex; flex-direction: column; gap: 6px; padding-left: 4px; }
+
+/* CriticalAlertOverlay */
+.critical-alert-overlay__card--sos { border-top: 4px solid var(--color-critical); box-shadow: var(--glow-critical), var(--shadow-floating); }
+.critical-alert-overlay__head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.critical-alert-overlay__icon { font-size: 1.4rem; color: var(--color-critical); }
+.critical-alert-overlay__title.critical-alert-overlay__title--flush { margin: 0; }
+.critical-alert-overlay__btn { font-weight: 700; height: var(--touch-min-size, 48px); }

@@ -195,7 +195,7 @@ const ProfilePage: React.FC = () => {
     <IonPage>
       <MobileHeader title="Console & Profile" subtitle="Responder Diagnostics" />
 
-      <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
+      <IonContent className="ion-padding content-bg">
         <div className="app-column profile-layout">
           {/* Section 1: Responder Identity & Duty Status */}
           <div className="profile-officer-card">
@@ -240,7 +240,7 @@ const ProfilePage: React.FC = () => {
               <div className="profile-nav-card__body">
                 <div className="profile-nav-card__title-row">
                   <h3 className="profile-nav-card__title">My Filed Reports</h3>
-                  <IonIcon icon={chevronForwardOutline} style={{ color: 'var(--color-text-tertiary)', fontSize: '1.1rem' }} />
+                  <IonIcon icon={chevronForwardOutline} className="icon-chevron" />
                 </div>
                 <p className="profile-nav-card__sub">
                   Review submitted incidents, attach supplementary evidence, and track dispatch status.
@@ -259,7 +259,7 @@ const ProfilePage: React.FC = () => {
               <div className="profile-nav-card__body">
                 <div className="profile-nav-card__title-row">
                   <h3 className="profile-nav-card__title">My Duty Shifts</h3>
-                  <IonIcon icon={chevronForwardOutline} style={{ color: 'var(--color-text-tertiary)', fontSize: '1.1rem' }} />
+                  <IonIcon icon={chevronForwardOutline} className="icon-chevron" />
                 </div>
                 <p className="profile-nav-card__sub">
                   View scheduled patrol assignments, shift hours, and request replacements.
@@ -277,7 +277,7 @@ const ProfilePage: React.FC = () => {
               <div className="profile-nav-card__body">
                 <div className="profile-nav-card__title-row">
                   <h3 className="profile-nav-card__title">My Availability</h3>
-                  <IonIcon icon={chevronForwardOutline} style={{ color: 'var(--color-text-tertiary)', fontSize: '1.1rem' }} />
+                  <IonIcon icon={chevronForwardOutline} className="icon-chevron" />
                 </div>
                 <p className="profile-nav-card__sub">
                   Tell the desk when you can serve so your shifts can be scheduled.
@@ -292,7 +292,7 @@ const ProfilePage: React.FC = () => {
               <div className="profile-nav-card__body">
                 <div className="profile-nav-card__title-row">
                   <h3 className="profile-nav-card__title">My Accomplishments</h3>
-                  <IonIcon icon={chevronForwardOutline} style={{ color: 'var(--color-text-tertiary)', fontSize: '1.1rem' }} />
+                  <IonIcon icon={chevronForwardOutline} className="icon-chevron" />
                 </div>
                 <p className="profile-nav-card__sub">
                   Log what you did each day and submit your monthly accomplishment report.
@@ -307,7 +307,7 @@ const ProfilePage: React.FC = () => {
               <div className="profile-nav-card__body">
                 <div className="profile-nav-card__title-row">
                   <h3 className="profile-nav-card__title">School Check-in</h3>
-                  <IonIcon icon={chevronForwardOutline} style={{ color: 'var(--color-text-tertiary)', fontSize: '1.1rem' }} />
+                  <IonIcon icon={chevronForwardOutline} className="icon-chevron" />
                 </div>
                 <p className="profile-nav-card__sub">
                   Check in and out when posted at a school (Safer School Zones). Works offline.
@@ -320,7 +320,7 @@ const ProfilePage: React.FC = () => {
           <div className="profile-section-card">
             <div className="profile-section-header">
               <div className="profile-section-title">
-                <IonIcon icon={syncOutline} style={{ fontSize: '1.25rem', color: 'var(--color-primary)' }} />
+                <IonIcon icon={syncOutline} className="icon-lg-primary" />
                 <span>Station Sync & Storage</span>
               </div>
               <span
@@ -375,13 +375,7 @@ const ProfilePage: React.FC = () => {
               expand="block"
               disabled={syncing || !isOnline}
               onClick={handleManualSync}
-              style={{
-                '--background': 'var(--color-primary)',
-                '--border-radius': 'var(--radius-sm)',
-                fontWeight: 700,
-                minHeight: '46px',
-                boxShadow: 'none',
-              }}
+              className="profile-sync-btn"
             >
               {syncing ? (
                 <IonSpinner name="dots" />
@@ -410,46 +404,25 @@ const ProfilePage: React.FC = () => {
 
                 {showStorageDetails && (
                   <div className="profile-drawer-content">
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 1fr',
-                        gap: '8px',
-                        marginBottom: '10px',
-                      }}
-                    >
-                      <div
-                        style={{
-                          background: 'var(--color-bg)',
-                          padding: '8px 12px',
-                          borderRadius: 'var(--radius-sm)',
-                          border: '1px solid var(--color-border)',
-                        }}
-                      >
-                        <div style={{ fontSize: '0.68rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>
+                    <div className="profile-storage-grid">
+                      <div className="profile-storage-tile">
+                        <div className="profile-storage-tile__label">
                           Evidence Files
                         </div>
-                        <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                        <div className="profile-storage-tile__value">
                           {formatBytes(storage.evidence.totalBytes)}{' '}
-                          <span style={{ fontWeight: 400, fontSize: '0.72rem', color: 'var(--color-text-secondary)' }}>
+                          <span className="profile-storage-tile__count">
                             ({storage.evidence.fileCount})
                           </span>
                         </div>
                       </div>
-                      <div
-                        style={{
-                          background: 'var(--color-bg)',
-                          padding: '8px 12px',
-                          borderRadius: 'var(--radius-sm)',
-                          border: '1px solid var(--color-border)',
-                        }}
-                      >
-                        <div style={{ fontSize: '0.68rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>
+                      <div className="profile-storage-tile">
+                        <div className="profile-storage-tile__label">
                           Offline Map
                         </div>
-                        <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                        <div className="profile-storage-tile__value">
                           {formatBytes(storage.mapPackages.totalBytes)}{' '}
-                          <span style={{ fontWeight: 400, fontSize: '0.72rem', color: 'var(--color-text-secondary)' }}>
+                          <span className="profile-storage-tile__count">
                             ({storage.mapPackages.fileCount})
                           </span>
                         </div>
@@ -457,14 +430,10 @@ const ProfilePage: React.FC = () => {
                     </div>
                     <IonButton
                       fill="outline"
-                      className="btn-touch-compact"
+                      className="btn-touch-compact profile-prune-btn"
                       expand="block"
                       disabled={pruning}
                       onClick={handlePruneEvidence}
-                      style={{
-                        fontWeight: 600,
-                        '--border-radius': 'var(--radius-sm)',
-                      }}
                     >
                       {pruning ? <IonSpinner name="dots" /> : 'Clear Old Sent Evidence (30+ days)'}
                     </IonButton>
@@ -478,7 +447,7 @@ const ProfilePage: React.FC = () => {
           <div className="profile-section-card">
             <div className="profile-section-header">
               <div className="profile-section-title">
-                <IonIcon icon={notificationsOutline} style={{ fontSize: '1.25rem', color: 'var(--color-warning)' }} />
+                <IonIcon icon={notificationsOutline} className="icon-lg-warning" />
                 <span>Emergency Push Alert Readiness</span>
               </div>
             </div>
@@ -510,7 +479,7 @@ const ProfilePage: React.FC = () => {
               className="profile-signout-btn"
               onClick={() => setConfirmingSignOut(true)}
             >
-              <IonIcon icon={logOutOutline} style={{ fontSize: '1.2rem' }} />
+              <IonIcon icon={logOutOutline} className="icon-md" />
               <span>SIGN OUT OF TERMINAL</span>
             </button>
           </div>

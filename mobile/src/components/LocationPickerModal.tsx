@@ -64,7 +64,7 @@ const LocationPickerModal: React.FC<Props> = ({ isOpen, barangayId, selfPosition
           </IonButton>
         </IonToolbar>
       </IonHeader>
-      <IonContent scrollY={false} style={{ '--background': 'var(--color-bg)' }}>
+      <IonContent scrollY={false} className="lm-content-bg">
         <div className="lm-picker">
           <div className="lm-picker__map">
             <LiveMapCanvas

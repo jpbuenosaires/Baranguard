@@ -1,66 +1,31 @@
 /**
  * home.tsx — M2 Home / Patrol Console (§9 Mobile).
  *
- * PRODUCTION-GRADE OVERHAUL:
- * Clean, flat, modern, minimal mobile HUD designed specifically for Tanods in the field.
- *
- * UX & ACCESSIBILITY ENHANCEMENTS:
- * 1. Solves Severe Color Affordance Misalignment (Nielsen Heuristics #4 & #8):
- *    - Normal priority dispatches now render in Baranguard's signature Brand Blue/Navy
- *      palette instead of false-urgency alarming red. Red is strictly reserved for
- *      Life-Safety Emergency SOS and Critical dispatches.
- * 2. Inverted Hierarchy & Vanity De-cluttering:
- *    - Replaces oversized static profile card with an integrated ambient duty HUD
- *      displaying live telemetry (Patrol time, GPS broadcast status, and filed reports).
- * 3. Error Prevention (Nielsen Heuristic #5):
- *    - Off-duty transition now includes a safety confirmation dialog to prevent accidental
- *      dropping from the barangay dispatch board while on patrol.
- * 4. Full-Width Tactile SOS Panic Bar:
- *    - High-visibility 2-second press-and-hold trigger with multi-cadence haptic feedback,
- *      linear progress fill, and offline SMS fallback.
- * 5. Touch Targets & WCAG 2.2 AAA/AA Contrast:
- *    - 48px+ touch targets across all emergency speed-dialers and navigation shortcuts.
- *    - Full parity across Light (#F8FAFC) and Dark (#0F172A) palettes.
+ * Priority-ordered HUD: duty status, alerts, active call, emergency lines,
+ * with Report/SOS docked above the tab bar. Sections live in components/home/*.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  IonAlert,
-  IonButton,
-  IonContent,
-  IonIcon,
-  IonModal,
-  IonPage,
-  IonSpinner,
-  IonToast,
-} from '@ionic/react';
-import {
-  alertCircleOutline,
-  arrowForwardOutline,
-  callOutline,
-  documentTextOutline,
-  medkitOutline,
-  radioOutline,
-  shieldCheckmarkOutline,
-  shieldOutline,
-  timeOutline,
-  warningOutline,
-} from 'ionicons/icons';
+import { IonAlert, IonButton, IonContent, IonIcon, IonPage, IonSpinner, IonToast } from '@ionic/react';
+import { documentTextOutline, warningOutline } from 'ionicons/icons';
 import DispatchOfferCards from '../components/DispatchOfferCards';
 import MobileHeader from '../components/MobileHeader';
-import { Banner, Button, Chip } from '../components/ui';
+import { Banner, Button } from '../components/ui';
+import DutyStatusCard from '../components/home/DutyStatusCard';
+import DispatchHeadline from '../components/home/DispatchHeadline';
+import EmergencyDials from '../components/home/EmergencyDials';
+import SosConfirmSheet from '../components/home/SosConfirmSheet';
+import { barangayLabel, readCachedDutyStatus, writeCachedDutyStatus } from '../utils/homeDuty';
+import { useSosFlow } from '../components/home/useSosFlow';
 import SmsFallbackBadge from '../components/SmsFallbackBadge';
 import TacticalAlertBar, { type TacticalAlertItem } from '../components/TacticalAlertBar';
 import tacticalFeedback from '../utils/tacticalFeedback';
-import { getDispatches, getOwnDutyStatus, postSos, setDutyStatus, type DutyStatus } from '../services/apiService';
+import { getDispatches, getOwnDutyStatus, setDutyStatus, type DutyStatus } from '../services/apiService';
 import { ApiError } from '../services/apiService';
-import { getCurrentPosition } from '../services/geolocation';
 import {
-  countFailedSosItems,
   dismissRejectedDutyStatus,
   enqueueOffDuty,
-  enqueueSosItem,
   listPendingDutyStatusUpdates,
   listRejectedDutyStatusUpdates,
   type QueuedDutyStatus,
@@ -72,10 +37,7 @@ import { formatManilaTime } from '../utils/manilaTime';
 import type { DispatchLocalRow, SchoolCheckinLocalRow } from '../services/db/localSchema';
 import { startPatrolTracking, stopPatrolTracking } from '../services/patrolLocationService';
 import { loadSession } from '../services/session';
-import { getCachedSosFallbackContact, getCachedSosGatewayNumber } from '../services/sosFallbackContact';
-import SosSms from '../services/sosSms';
-import { buildSosEnvelopeText } from '../services/sosEnvelope';
-import type { SmsFallbackInput } from '../services/smsFallbackState';
+import { getCachedSosFallbackContact } from '../services/sosFallbackContact';
 import {
   forceSyncNow,
   isSyncDeviceBlocked,
@@ -83,35 +45,7 @@ import {
   subscribeSyncDeviceBlocked,
   subscribeSyncSummary,
 } from '../services/syncScheduler';
-import { retryNeedsAttention } from '../services/syncService';
 import { uuid } from '../services/uuid';
-
-const BARANGAY_NAMES: Record<number, string> = { 1: 'Dao', 2: 'Binanuahan', 3: 'Marifosque', 4: 'Banuyo' };
-
-/**
- * Last duty status this device learned from the server (or set itself), so a
- * cold start with no signal can still show it — and still let an on-duty
- * Tanod go OFF duty offline. A per-device display convenience only: the
- * server stays the source of truth whenever it is reachable.
- */
-const LAST_DUTY_STATUS_KEY = 'baranguard.lastKnownDutyStatus';
-
-function readCachedDutyStatus(): DutyStatus | null {
-  try {
-    const value = localStorage.getItem(LAST_DUTY_STATUS_KEY);
-    return value === 'on_duty' || value === 'off_duty' || value === 'responding' ? value : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeCachedDutyStatus(value: DutyStatus): void {
-  try {
-    localStorage.setItem(LAST_DUTY_STATUS_KEY, value);
-  } catch {
-    // Storage unavailable — the cache is optional.
-  }
-}
 
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
@@ -138,16 +72,20 @@ const HomePage: React.FC = () => {
   const [deskContact, setDeskContact] = useState<string | null>(null);
 
   const [dutyToast, setDutyToast] = useState<string | null>(null);
-  const [confirmingSos, setConfirmingSos] = useState(false);
-  const [raisingSos, setRaisingSos] = useState(false);
-  const [sosError, setSosError] = useState<string | null>(null);
-  const [sosToast, setSosToast] = useState<string | null>(null);
-  const [sosFallbackOutcome, setSosFallbackOutcome] = useState<SmsFallbackInput | null>(null);
-  // SOS alerts the sync worker gave up on after repeated server rejections —
-  // persistent (not a toast) because an undelivered emergency must not
-  // quietly disappear from view.
-  const [failedSosCount, setFailedSosCount] = useState(0);
-  const [retryingSos, setRetryingSos] = useState(false);
+  const {
+    confirmingSos,
+    setConfirmingSos,
+    raisingSos,
+    sosError,
+    sosToast,
+    setSosToast,
+    sosFallbackOutcome,
+    failedSosCount,
+    retryingSos,
+    handleRetryFailedSos,
+    handleOpenSosModal,
+    handleRaiseSos,
+  } = useSosFlow();
   // The workstation refuses this phone's whole sync because its device id
   // belongs to another account: saved reports and SOS alerts cannot leave.
   const [deviceBlocked, setDeviceBlocked] = useState(isSyncDeviceBlocked());
@@ -224,30 +162,6 @@ const HomePage: React.FC = () => {
       await dismissRejectedDutyStatus(rejectedOffDuty.queueId);
     } finally {
       await refreshOfflineDutyState();
-    }
-  }
-
-  async function refreshFailedSosCount() {
-    try {
-      setFailedSosCount(await countFailedSosItems());
-    } catch {
-      // Local DB unavailable (e.g. web preview) — no banner rather than a false one.
-    }
-  }
-
-  useEffect(() => {
-    void refreshFailedSosCount();
-    return subscribeSyncSummary(() => void refreshFailedSosCount());
-  }, []);
-
-  async function handleRetryFailedSos() {
-    setRetryingSos(true);
-    try {
-      await retryNeedsAttention();
-      await forceSyncNow();
-    } finally {
-      await refreshFailedSosCount();
-      setRetryingSos(false);
     }
   }
 
@@ -332,7 +246,7 @@ const HomePage: React.FC = () => {
     loadSession().then((session) => {
       if (cancelled || !session) return;
       setFullName(session.fullName);
-      setBarangayName(BARANGAY_NAMES[session.barangayId] ?? `Barangay ${session.barangayId}`);
+      setBarangayName(barangayLabel(session.barangayId));
     });
 
     // Backup contact comes from the cached SOS fallback number only; no number cached = no tile.
@@ -512,129 +426,6 @@ const HomePage: React.FC = () => {
     setDutyToast(`You are OFF DUTY as of ${formatManilaTime(tappedAt)}. Saved on this phone — waiting to sync with HQ.`);
   }
 
-  function handleOpenSosModal() {
-    tacticalFeedback.onWarning();
-    setConfirmingSos(true);
-  }
-
-  async function attemptSosSmsFallback(payload: { latitude?: number; longitude?: number }, clientEventId: string) {
-    const backupNumber = await getCachedSosFallbackContact();
-    const gatewayNumber = await getCachedSosGatewayNumber();
-    if (!backupNumber && !gatewayNumber) {
-      setSosFallbackOutcome({ reachedWorkstation: false, smsAttempted: false, smsStatus: null });
-      setSosToast('SOS saved locally — will dispatch automatically upon reconnect. (No backup contact configured.)');
-      return;
-    }
-
-    setSosFallbackOutcome({ reachedWorkstation: false, smsAttempted: true, smsStatus: 'pending' });
-
-    // Tier A — encrypted envelope to the command-center gateway phone. If the
-    // workstation is up but only the app's internet path is down, the gateway's
-    // ingest daemon turns this into a real SOS on the dashboard. Uses the same
-    // client_event_id as the queued SOS, so the later sync cannot double it.
-    let gatewaySent = false;
-    if (gatewayNumber) {
-      try {
-        const envelopeText = await buildSosEnvelopeText({ clientEventId, ...payload });
-        if (envelopeText) {
-          await SosSms.sendDirect({ number: gatewayNumber, message: envelopeText });
-          gatewaySent = true;
-        }
-      } catch {
-        // Falls through to the plain-text contact below; never blocks it.
-      }
-    }
-
-    // Tier B — plain-text SMS to a human-monitored number. Independent of the
-    // workstation entirely (survives the workstation itself being down).
-    if (!backupNumber) {
-      setSosFallbackOutcome({ reachedWorkstation: false, smsAttempted: true, smsStatus: gatewaySent ? 'sent' : 'failed' });
-      setSosToast(
-        gatewaySent
-          ? 'Internet unreachable — SOS texted to the command center gateway.'
-          : 'SOS saved locally. Gateway SMS could not be sent.'
-      );
-      return;
-    }
-    try {
-      const session = await loadSession();
-      const bName = session ? (BARANGAY_NAMES[session.barangayId] ?? `Barangay ${session.barangayId}`) : 'Unknown';
-      const hasFix = payload.latitude !== undefined && payload.longitude !== undefined;
-      const message = [
-        'BARANGUARD EMERGENCY SOS',
-        `Tanod: ${session?.fullName ?? 'Unknown'} (Brgy ${bName})`,
-        hasFix
-          ? `Location: ${payload.latitude!.toFixed(5)}, ${payload.longitude!.toFixed(5)}`
-          : 'Location: unavailable (no GPS fix)',
-        hasFix ? `Map: https://maps.google.com/?q=${payload.latitude},${payload.longitude}` : null,
-        `Time: ${new Date().toLocaleString()}`,
-      ]
-        .filter((line): line is string => line !== null)
-        .join('\n');
-
-      await SosSms.sendDirect({ number: backupNumber, message });
-      setSosFallbackOutcome({ reachedWorkstation: false, smsAttempted: true, smsStatus: 'sent' });
-      setSosToast(
-        gatewaySent
-          ? 'Internet unreachable — SOS texted to the command center gateway and the backup contact.'
-          : 'Workstation unreachable — emergency SMS sent directly to backup contact.'
-      );
-    } catch (smsError) {
-      // Honest status: "sent" if the gateway text went out even though the
-      // backup-contact text failed; "failed" only when nothing was sent.
-      setSosFallbackOutcome({ reachedWorkstation: false, smsAttempted: true, smsStatus: gatewaySent ? 'sent' : 'failed' });
-      setSosToast(
-        gatewaySent
-          ? 'SOS texted to the command center gateway. Backup contact SMS failed.'
-          : smsError instanceof Error
-            ? `SOS saved locally. Backup SMS also failed: ${smsError.message}`
-            : 'SOS saved locally. Backup SMS also failed.'
-      );
-    }
-  }
-
-  async function handleRaiseSos() {
-    setSosError(null);
-    setRaisingSos(true);
-    tacticalFeedback.onSosFired();
-    const clientEventId = uuid();
-    try {
-      let payload: { latitude?: number; longitude?: number } = {};
-      try {
-        const position = await getCurrentPosition();
-        payload = { latitude: position.latitude, longitude: position.longitude };
-      } catch {
-        // Fallback without coordinates per §2 Rule 27
-      }
-
-      try {
-        await postSos({ ...payload, clientEventId });
-        setSosFallbackOutcome(null);
-        setSosToast('EMERGENCY SOS BROADCAST SENT TO BARANGAY HQ.');
-      } catch {
-        await enqueueSosItem(clientEventId, payload);
-        await attemptSosSmsFallback(payload, clientEventId);
-        // Kick a sync right away: a 5s SOS timeout can be a blip, and the
-        // queued row (same client_event_id) is idempotent if the first
-        // attempt actually landed.
-        void forceSyncNow();
-      }
-    } catch (error) {
-      setSosError(error instanceof Error ? error.message : 'Could not raise SOS.');
-    } finally {
-      setRaisingSos(false);
-    }
-  }
-
-  const initials = fullName
-    ? fullName
-        .split(' ')
-        .map((p) => p[0])
-        .slice(0, 2)
-        .join('')
-        .toUpperCase()
-    : 'TR';
-
   const homeAlerts: TacticalAlertItem[] = [];
   if (dutyError) {
     homeAlerts.push({
@@ -678,60 +469,19 @@ const HomePage: React.FC = () => {
     <IonPage>
       <MobileHeader title="Baranguard" subtitle="Dashboard" />
 
-      <IonContent style={{ '--background': 'var(--color-bg)' }}>
+      <IonContent className="h4-content">
         <div className="console-overhaul-container console-overhaul-container--docked-sos h4-home">
-          {/* 1. Status card: one identity line, duty state, elapsed time, GPS (while on duty), duty control. */}
-          <section className="h4-status" aria-label="Duty status">
-            <div className="h4-identity">
-              <div className="profile-avatar-circle" aria-hidden="true">{initials}</div>
-              <div className="h4-identity__text">
-                <span className="h4-identity__name">{fullName || 'Field Officer'}</span>
-                <span className="h4-identity__sub">Barangay Tanod &bull; Barangay {barangayName}</span>
-              </div>
-            </div>
-
-            <div className="h4-telemetry">
-              {status === null ? (
-                <Chip tone="neutral">{loadingStatus ? 'Checking duty status…' : 'Duty status unknown'}</Chip>
-              ) : status === 'on_duty' ? (
-                <>
-                  <Chip tone="success">
-                    <IonIcon icon={shieldCheckmarkOutline} aria-hidden="true" /> On duty
-                  </Chip>
-                  <Chip tone="neutral">
-                    <IonIcon icon={timeOutline} aria-hidden="true" /> {shiftElapsed}
-                  </Chip>
-                  <Chip tone={patrolTracking === false ? 'critical' : 'info'}>
-                    <IonIcon icon={radioOutline} aria-hidden="true" />{' '}
-                    {patrolTracking === false
-                      ? 'GPS: no signal'
-                      : patrolTracking === null
-                        ? 'GPS: starting'
-                        : 'GPS: sharing live'}
-                  </Chip>
-                </>
-              ) : (
-                <Chip tone="neutral">
-                  <IonIcon icon={shieldOutline} aria-hidden="true" /> {status === 'responding' ? 'Responding' : 'Off duty'}
-                </Chip>
-              )}
-            </div>
-
-            <Button
-              variant={status === 'on_duty' ? 'secondary' : 'primary'}
-              fullWidth
-              loading={toggling}
-              disabled={loadingStatus || status === null}
-              onClick={handleToggleDuty}
-              title={status === 'on_duty' ? 'End active patrol shift' : 'Start patrol shift'}
-            >
-              {status === 'on_duty' ? 'End shift' : 'Go on duty'}
-            </Button>
-
-            <p className="h4-today">
-              <IonIcon icon={documentTextOutline} aria-hidden="true" /> Reports saved today: {todayIncidentCount}
-            </p>
-          </section>
+          <DutyStatusCard
+            fullName={fullName}
+            barangayName={barangayName}
+            status={status}
+            loadingStatus={loadingStatus}
+            toggling={toggling}
+            shiftElapsed={shiftElapsed}
+            patrolTracking={patrolTracking}
+            todayIncidentCount={todayIncidentCount}
+            onToggleDuty={handleToggleDuty}
+          />
 
           {/* Consolidated Prioritized Tactical Alert Bar */}
           <TacticalAlertBar alerts={homeAlerts} />
@@ -739,87 +489,12 @@ const HomePage: React.FC = () => {
           {/* Night-dispatch offers: online-only, accept is never queued (see DispatchOfferCards). */}
           <DispatchOfferCards />
 
-          {/* 2. One status headline: active call, or all clear. */}
-          {topDispatch ? (
-            <div
-              className={`console-mission-card ${
-                topDispatch.priority === 'critical'
-                  ? 'console-mission-card--critical'
-                  : topDispatch.priority === 'high'
-                    ? 'console-mission-card--high'
-                    : 'console-mission-card--normal'
-              }`}
-            >
-              <div className="console-mission-header">
-                <span className="console-mission-tag">
-                  <IonIcon icon={alertCircleOutline} aria-hidden="true" />
-                  Active call #{topDispatch.server_dispatch_id ?? topDispatch.local_id.slice(0, 6)}
-                </span>
-                <Chip tone={topDispatch.priority === 'critical' ? 'critical' : topDispatch.priority === 'high' ? 'warning' : 'info'}>
-                  {topDispatch.priority.toUpperCase()} priority
-                </Chip>
-              </div>
+          <DispatchHeadline topDispatch={topDispatch} activeDispatchCount={activeDispatchCount} />
 
-              <h2 className="console-mission-title">
-                {topDispatch.redacted_incident_type
-                  ? topDispatch.redacted_incident_type.replace(/_/g, ' ')
-                  : 'INCIDENT REPORT'}
-              </h2>
-
-              {activeDispatchCount > 1 && (
-                <p className="console-mission-desc">1 of {activeDispatchCount} active calls assigned to you.</p>
-              )}
-
-              <button
-                type="button"
-                className={`console-mission-btn ${
-                  topDispatch.priority === 'critical'
-                    ? 'console-mission-btn--critical'
-                    : 'console-mission-btn--blue'
-                }`}
-                onClick={() => {
-                  tacticalFeedback.onTap();
-                  navigate(`/tabs/assignments/${encodeURIComponent(topDispatch.local_id)}`);
-                }}
-              >
-                <span>Respond to Call</span>
-                <IonIcon icon={arrowForwardOutline} />
-              </button>
-            </div>
-          ) : (
-            <div className="console-mission-card console-mission-card--clear h4-clear">
-              <h2 className="console-mission-title h4-clear__title">
-                <IonIcon icon={shieldCheckmarkOutline} aria-hidden="true" />
-                All clear
-              </h2>
-              <p className="console-mission-desc">No active dispatches assigned to you.</p>
-            </div>
-          )}
-
-          {/* 3. Emergency voice lines: one compact row. */}
-          <nav className="h4-dials" aria-label="Emergency phone lines">
-            {deskContact && deskContact.replace(/[^0-9+]/g, '') !== '' && (
-              <a
-                href={`tel:${deskContact.replace(/[^0-9+]/g, '')}`}
-                className="h4-dial"
-                onClick={() => tacticalFeedback.onTap()}
-              >
-                <IonIcon icon={callOutline} aria-hidden="true" />
-                <span>Backup contact</span>
-              </a>
-            )}
-            <a href="tel:911" className="h4-dial" onClick={() => tacticalFeedback.onTap()}>
-              <IonIcon icon={shieldOutline} aria-hidden="true" />
-              <span>Police 911</span>
-            </a>
-            <a href="tel:160" className="h4-dial" onClick={() => tacticalFeedback.onTap()}>
-              <IonIcon icon={medkitOutline} aria-hidden="true" />
-              <span>MDRRMO 160</span>
-            </a>
-          </nav>
+          <EmergencyDials deskContact={deskContact} />
 
           {sosFallbackOutcome && (
-            <div style={{ marginTop: '2px', display: 'flex', justifyContent: 'center' }}>
+            <div className="h4-fallback-badge">
               <SmsFallbackBadge input={sosFallbackOutcome} />
             </div>
           )}
@@ -902,57 +577,16 @@ const HomePage: React.FC = () => {
           onDidDismiss={() => setSosToast(null)}
         />
 
-        {/* Red Tactical Emergency SOS Confirmation Modal */}
-        <IonModal
+        <SosConfirmSheet
           isOpen={confirmingSos}
-          onDidDismiss={() => {
-            if (!raisingSos) setConfirmingSos(false);
+          raisingSos={raisingSos}
+          barangayName={barangayName}
+          onClose={() => setConfirmingSos(false)}
+          onConfirm={() => {
+            setConfirmingSos(false);
+            void handleRaiseSos();
           }}
-          className="tactical-sos-modal"
-        >
-          <div className="tactical-sos-sheet">
-            <div className="tactical-sos-sheet__handle" />
-            <div className="tactical-sos-sheet__icon-box">
-              <IonIcon icon={warningOutline} />
-            </div>
-
-            <h2 className="tactical-sos-sheet__title">Transmit Emergency SOS?</h2>
-
-            <p className="tactical-sos-sheet__desc">
-              This will immediately broadcast high-priority distress coordinates to Barangay HQ and nearby patrol officers in Sector {barangayName}.
-            </p>
-
-            <div className="tactical-sos-sheet__actions">
-              <button
-                type="button"
-                className="tactical-sos-btn-confirm"
-                disabled={raisingSos}
-                onClick={() => {
-                  setConfirmingSos(false);
-                  void handleRaiseSos();
-                }}
-              >
-                {raisingSos ? (
-                  <IonSpinner name="dots" style={{ color: '#dc2626' }} />
-                ) : (
-                  <>
-                    <IonIcon icon={radioOutline} />
-                    <span>Confirm &amp; Broadcast SOS</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                type="button"
-                className="tactical-sos-btn-cancel"
-                disabled={raisingSos}
-                onClick={() => setConfirmingSos(false)}
-              >
-                Cancel / Stand Down
-              </button>
-            </div>
-          </div>
-        </IonModal>
+        />
 
         {/* Safety Confirmation Dialog for Ending Patrol Shift (Nielsen Heuristic #5: Error Prevention) */}
         <IonAlert

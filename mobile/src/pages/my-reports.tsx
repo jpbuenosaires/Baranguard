@@ -261,7 +261,7 @@ const MyReportsPage: React.FC = () => {
     <IonPage>
       <MobileHeader title="My Reports" showBack defaultBackHref="/tabs/profile" />
 
-      <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
+      <IonContent className="ion-padding content-bg">
         <IonRefresher slot="fixed" onIonRefresh={handleRefresh}>
           <IonRefresherContent />
         </IonRefresher>
@@ -289,12 +289,12 @@ const MyReportsPage: React.FC = () => {
                 aria-label="Synchronize pending reports now"
               >
                 {syncing ? (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <IonSpinner name="dots" style={{ width: '20px', height: '16px' }} />
+                  <span className="reports-sync-spinner">
+                    <IonSpinner name="dots" />
                   </span>
                 ) : (
                   <>
-                    <IonIcon icon={syncOutline} style={{ marginRight: '4px' }} />
+                    <IonIcon icon={syncOutline} className="icon-mr-4" />
                     Sync
                   </>
                 )}
@@ -406,9 +406,9 @@ const MyReportsPage: React.FC = () => {
               title={searchQuery ? `No reports matching "${searchQuery}".` : `No ${FILTER_EMPTY_LABEL[filter]} reports found.`}
             />
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
+            <div className="col-gap-md">
               {timelineGroups.map((group) => (
-                <div key={group.title} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-xs)' }}>
+                <div key={group.title} className="col-gap-xs">
                   {/* Timeline Shift Header */}
                   <div className="reports-timeline-header">
                     <span>{group.title}</span>
@@ -471,7 +471,7 @@ const MyReportsPage: React.FC = () => {
                               <>
                                 <span className="report-blotter-meta-bullet">•</span>
                                 <span className="report-blotter-meta-item">
-                                  <IonIcon icon={locationOutline} style={{ color: 'var(--color-primary)' }} />
+                                  <IonIcon icon={locationOutline} className="icon-primary" />
                                   <span>{row.location_text}</span>
                                 </span>
                               </>
@@ -481,7 +481,7 @@ const MyReportsPage: React.FC = () => {
                               <>
                                 <span className="report-blotter-meta-bullet">•</span>
                                 <span className="report-blotter-meta-item">
-                                  <IonIcon icon={locationOutline} style={{ color: 'var(--color-primary)' }} />
+                                  <IonIcon icon={locationOutline} className="icon-primary" />
                                   <span>Location Saved</span>
                                 </span>
                               </>
@@ -491,7 +491,7 @@ const MyReportsPage: React.FC = () => {
                               <>
                                 <span className="report-blotter-meta-bullet">•</span>
                                 <span className="report-blotter-meta-item">
-                                  <IonIcon icon={cameraOutline} style={{ color: 'var(--color-info)' }} />
+                                  <IonIcon icon={cameraOutline} className="icon-info" />
                                   <span>{evidenceCount} attachment{evidenceCount > 1 ? 's' : ''}</span>
                                 </span>
                               </>

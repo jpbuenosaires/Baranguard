@@ -225,9 +225,9 @@ const AssignmentEvidencePanel: React.FC<Props> = ({ dispatchLocalId, hideTitle =
           aria-label="Add photo evidence"
         >
           {capturing && !recording ? (
-            <IonSpinner name="dots" style={{ width: '16px', height: '16px' }} />
+            <IonSpinner name="dots" className="ev-btn-spinner" />
           ) : (
-            <IonIcon icon={cameraOutline} style={{ fontSize: '1.1rem' }} aria-hidden="true" />
+            <IonIcon icon={cameraOutline} className="ev-btn-icon" aria-hidden="true" />
           )}
           <span>Add Photo</span>
         </button>
@@ -239,7 +239,7 @@ const AssignmentEvidencePanel: React.FC<Props> = ({ dispatchLocalId, hideTitle =
           aria-pressed={recording}
           aria-label={recording ? 'Stop recording and save voice note' : 'Record voice note'}
                   >
-          <IonIcon icon={recording ? stopCircleOutline : micOutline} style={{ fontSize: '1.1rem' }} aria-hidden="true" />
+          <IonIcon icon={recording ? stopCircleOutline : micOutline} className="ev-btn-icon" aria-hidden="true" />
           <span>{recording ? 'Stop & Save' : 'Record Audio'}</span>
         </button>
       </div>
@@ -284,11 +284,11 @@ const AssignmentEvidencePanel: React.FC<Props> = ({ dispatchLocalId, hideTitle =
                   />
                 ) : (
                   <div className="media-tile__voice">
-                    <IonIcon icon={item.type === 'photo' ? cameraOutline : micOutline} style={{ fontSize: '1.1rem' }} aria-label={item.type === 'photo' ? 'Photo' : 'Voice note'} />
+                    <IonIcon icon={item.type === 'photo' ? cameraOutline : micOutline} className="ev-btn-icon" aria-label={item.type === 'photo' ? 'Photo' : 'Voice note'} />
                     <span className="media-tile__voice-size">{(item.byte_size / 1024).toFixed(0)} KB</span>
                   </div>
                 )}
-                <span className={`status-pill ${st.pill}`} style={{ position: 'absolute', left: 2, bottom: 2 }}>
+                <span className={`status-pill ev-tile-pill ${st.pill}`}>
                   {st.label}
                 </span>
               </div>

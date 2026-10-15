@@ -21,20 +21,13 @@ import {
   IonAlert,
   IonContent,
   IonIcon,
-  IonModal,
   IonPage,
-  IonSpinner,
 } from '@ionic/react';
 import {
   calendarOutline,
-  closeOutline,
-  informationCircleOutline,
-  locationOutline,
   swapHorizontalOutline,
   timeOutline,
-  checkmarkCircleOutline,
   hourglassOutline,
-  alertCircleOutline,
 } from 'ionicons/icons';
 import { useNavigate } from 'react-router-dom';
 import MobileHeader from '../components/MobileHeader';
@@ -51,50 +44,11 @@ import {
 } from '../services/apiService';
 import { uuid } from '../services/uuid';
 import tacticalFeedback from '../utils/tacticalFeedback';
+import { parseShiftTiming } from '../utils/shiftTiming';
+import { ShiftCard } from '../components/forms/ShiftCard';
+import { SwapRequestCard } from '../components/forms/SwapRequestCard';
+import { SwapRequestSheet } from '../components/forms/SwapRequestSheet';
 
-
-interface FormattedShiftTime {
-  dateLabel: string;
-  isToday: boolean;
-  isTomorrow: boolean;
-  timeRange: string;
-  durationLabel: string;
-}
-
-function parseShiftTiming(startAt: string, endAt: string): FormattedShiftTime {
-  const start = new Date(startAt);
-  const end = new Date(endAt);
-
-  const now = new Date();
-  const todayStr = now.toDateString();
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toDateString();
-
-  const isToday = start.toDateString() === todayStr;
-  const isTomorrow = start.toDateString() === tomorrowStr;
-
-  const dateOptions: Intl.DateTimeFormatOptions = {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
-  };
-  const baseDate = start.toLocaleDateString(undefined, dateOptions);
-  const dateLabel = isToday ? `Today · ${baseDate}` : isTomorrow ? `Tomorrow · ${baseDate}` : baseDate;
-
-  const startTimeStr = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const endTimeStr = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const diffHours = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60));
-  const durationLabel = diffHours > 0 ? `${diffHours}h` : '';
-
-  return {
-    dateLabel,
-    isToday,
-    isTomorrow,
-    timeRange: `${startTimeStr} – ${endTimeStr}`,
-    durationLabel,
-  };
-}
 
 const MyShiftsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -205,7 +159,7 @@ const MyShiftsPage: React.FC = () => {
     <IonPage>
       <MobileHeader title="My Shifts" showBack defaultBackHref="/tabs/profile" />
 
-      <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
+      <IonContent className="ion-padding content-bg">
         <div className="roster-container">
           {note && <Banner tone="info">{note}</Banner>}
           {/* Availability entry point — the desk builds the roster from what Tanods submit here. */}
@@ -257,12 +211,8 @@ const MyShiftsPage: React.FC = () => {
               <div className="roster-glance-banner" role="region" aria-label="Swap Overview">
                 <div className="roster-glance-left">
                   <div
-                    className="roster-glance-icon"
+                    className={`roster-glance-icon ${pendingSwapCount > 0 ? 'roster-glance-icon--warning' : 'roster-glance-icon--info'}`}
                     aria-hidden="true"
-                    style={{
-                      color: pendingSwapCount > 0 ? 'var(--color-warning)' : 'var(--color-primary)',
-                      background: pendingSwapCount > 0 ? 'var(--tint-warning-bg)' : 'var(--tint-info-bg)',
-                    }}
                   >
                     <IonIcon icon={pendingSwapCount > 0 ? hourglassOutline : swapHorizontalOutline} />
                   </div>
@@ -340,86 +290,24 @@ const MyShiftsPage: React.FC = () => {
                 body="Only shifts the desk has published appear here. Submit your availability, then check back once the roster is published."
               />
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+              <div className="col-gap-sm">
                 {shifts.map((shift) => {
                   const pendingSwap = pendingSwapForShift(shift.shiftId);
-                  const timing = parseShiftTiming(shift.startAt, shift.endAt);
                   const isPendingReapproval = shift.pendingReapproval;
                   const isNext = !isPendingReapproval && shift.shiftId === nextShift?.shiftId;
 
                   return (
-                    <article
+                    <ShiftCard
                       key={shift.shiftId}
-                      className={`roster-card ${isPendingReapproval ? 'roster-card--pending-reapproval' : ''}`}
-                      aria-label={`Shift on ${timing.dateLabel}${isPendingReapproval ? ', pending re-approval' : ''}`}
-                    >
-                      {/* Top: Date & Next Up Indicator */}
-                      <div className="roster-card__top">
-                        <div className="roster-card__date-group">
-                          <IonIcon icon={calendarOutline} className="roster-card__cal-icon" />
-                          <span className="roster-card__date">{timing.dateLabel}</span>
-                        </div>
-                        {isNext && (
-                          <div className="status-indicator status-indicator--info">
-                            <span className="status-indicator__dot" aria-hidden="true" />
-                            <span className="status-indicator__label">Next Duty</span>
-                          </div>
-                        )}
-                        {isPendingReapproval && (
-                          <div className="status-indicator status-indicator--pending">
-                            <span className="status-indicator__dot" aria-hidden="true" />
-                            <span className="status-indicator__label">Pending re-approval</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Middle: Hours & Duration */}
-                      <div className="roster-card__hours-row">
-                        <span className="roster-card__hours">{timing.timeRange}</span>
-                        {timing.durationLabel && (
-                          <span className="roster-card__duration">({timing.durationLabel} shift)</span>
-                        )}
-                      </div>
-
-                      {/* Patrol Zone */}
-                      {shift.patrolZone && (
-                        <div className="roster-card__zone-row">
-                          <IonIcon icon={locationOutline} className="roster-card__zone-icon" />
-                          <span>{shift.patrolZone}</span>
-                        </div>
-                      )}
-
-                      <div className="roster-card__divider" aria-hidden="true" />
-
-                      {/* Footer: Contextual Swap Action */}
-                      <div className="roster-card__footer">
-                        {isPendingReapproval ? (
-                          <span className="roster-card__zone-row">
-                            This shift is waiting for the desk to re-publish it before it counts as confirmed duty.
-                          </span>
-                        ) : pendingSwap ? (
-                          <div className="status-indicator status-indicator--pending">
-                            <span className="status-indicator__dot" aria-hidden="true" />
-                            <span className="status-indicator__label">Swap Pending Approval</span>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            className="roster-card__swap-link"
-                            onClick={() => {
-                              tacticalFeedback.onTap();
-                              setSwapReason('');
-                              setSwapError(null);
-                              setSwapTarget(shift);
-                            }}
-                            aria-label={`Request shift swap for ${timing.dateLabel}`}
-                          >
-                            <IonIcon icon={swapHorizontalOutline} style={{ color: 'var(--color-primary)' }} />
-                            <span>Request Swap</span>
-                          </button>
-                        )}
-                      </div>
-                    </article>
+                      shift={shift}
+                      pendingSwap={pendingSwap}
+                      isNext={isNext}
+                      onRequestSwap={(s) => {
+                        setSwapReason('');
+                        setSwapError(null);
+                        setSwapTarget(s);
+                      }}
+                    />
                   );
                 })}
               </div>
@@ -445,120 +333,18 @@ const MyShiftsPage: React.FC = () => {
                 }
               />
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
+              <div className="col-gap-md">
                 {swapRequests.map((r) => {
                   const targetShift = shifts.find((s) => s.shiftId === r.shiftId);
-                  const targetTiming = targetShift ? parseShiftTiming(targetShift.startAt, targetShift.endAt) : null;
-                  const isPending = r.status === 'pending';
-                  const isApproved = r.status === 'approved';
-                  const isDenied = r.status === 'denied';
 
                   return (
-                    <article
+                    <SwapRequestCard
                       key={r.requestId}
-                      className="roster-swap-card"
-                      aria-label={`Swap request for ${targetTiming ? targetTiming.dateLabel : `Shift #${r.shiftId}`}`}
-                    >
-                      {/* Top: Status Indicator + Submission Date */}
-                      <div className="roster-swap-card__top">
-                        <div className={`status-indicator status-indicator--${isPending ? 'pending' : isApproved ? 'success' : 'critical'}`}>
-                          <span className="status-indicator__dot" aria-hidden="true" />
-                          <span className="status-indicator__label">
-                            {isPending ? 'Pending Desk Review' : isApproved ? 'Swap Approved' : 'Swap Denied'}
-                          </span>
-                        </div>
-                        <span className="roster-swap-card__date">
-                          <IonIcon icon={timeOutline} />
-                          <span>Requested on {new Date(r.requestedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                        </span>
-                      </div>
-
-                      {/* Affected Duty Shift Box */}
-                      <div className="roster-swap-card__shift-box">
-                        <span className="roster-swap-card__box-label">DUTY TO SWAP</span>
-                        {targetShift && targetTiming ? (
-                          <div className="roster-swap-card__shift-content">
-                            <div className="roster-swap-card__shift-date-row">
-                              <IonIcon icon={calendarOutline} className="roster-swap-card__cal-icon" />
-                              <span className="roster-swap-card__shift-date">{targetTiming.dateLabel}</span>
-                            </div>
-                            <div className="roster-swap-card__shift-hours-row">
-                              <IonIcon icon={timeOutline} className="roster-swap-card__time-icon" />
-                              <span className="roster-swap-card__shift-hours">{targetTiming.timeRange}</span>
-                              {targetTiming.durationLabel && (
-                                <span className="roster-swap-card__shift-duration">({targetTiming.durationLabel} shift)</span>
-                              )}
-                            </div>
-                            {targetShift.patrolZone && (
-                              <div className="roster-swap-card__shift-zone-row">
-                                <IonIcon icon={locationOutline} className="roster-swap-card__zone-icon" />
-                                <span>{targetShift.patrolZone}</span>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="roster-swap-card__shift-fallback">
-                            <IonIcon icon={calendarOutline} />
-                            <span>Shift Record #{r.shiftId}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Reason Provided Box */}
-                      <div className="roster-swap-card__reason-box">
-                        <span className="roster-swap-card__box-label">REASON</span>
-                        {r.reason ? (
-                          <p className="roster-swap-card__reason-text">"{r.reason}"</p>
-                        ) : (
-                          <p className="roster-swap-card__reason-text roster-swap-card__reason-text--empty">
-                            No reason note provided.
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Resolution Notices */}
-                      {isApproved && (
-                        <div className="roster-swap-card__resolution roster-swap-card__resolution--approved">
-                          <IonIcon icon={checkmarkCircleOutline} style={{ fontSize: '1.1rem', flexShrink: 0 }} />
-                          <span>Approved by Desk — You are excused from this duty. A replacement Tanod has been assigned.</span>
-                        </div>
-                      )}
-
-                      {isDenied && (
-                        <div className="roster-swap-card__resolution roster-swap-card__resolution--denied">
-                          <IonIcon icon={alertCircleOutline} style={{ fontSize: '1.1rem', flexShrink: 0 }} />
-                          <span>Denied by Desk — You are still scheduled to report for this duty.</span>
-                        </div>
-                      )}
-
-                      {/* Footer Action: Withdraw for Pending Requests */}
-                      {isPending && (
-                        <div className="roster-swap-card__footer">
-                          <button
-                            type="button"
-                            className="roster-swap-card__withdraw-btn"
-                            disabled={withdrawingId === r.requestId}
-                            onClick={() => {
-                              tacticalFeedback.onTap();
-                              setConfirmWithdrawTarget(r);
-                            }}
-                            aria-label={`Cancel swap request for ${targetTiming ? targetTiming.dateLabel : `Shift #${r.shiftId}`}`}
-                          >
-                            {withdrawingId === r.requestId ? (
-                              <>
-                                <IonSpinner name="dots" style={{ width: '16px', height: '16px' }} />
-                                <span>Cancelling…</span>
-                              </>
-                            ) : (
-                              <>
-                                <IonIcon icon={closeOutline} />
-                                <span>Cancel Swap Request</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      )}
-                    </article>
+                      request={r}
+                      targetShift={targetShift}
+                      withdrawing={withdrawingId === r.requestId}
+                      onAskWithdraw={setConfirmWithdrawTarget}
+                    />
                   );
                 })}
               </div>
@@ -593,112 +379,15 @@ const MyShiftsPage: React.FC = () => {
         />
       </IonContent>
 
-      {/* Shift Swap Bottom Sheet Modal */}
-      <IonModal
-        isOpen={swapTarget !== null}
-        onDidDismiss={() => {
-          if (!submittingSwap) setSwapTarget(null);
-        }}
-        initialBreakpoint={0.72}
-        breakpoints={[0, 0.72, 1.0]}
-        className="tactical-swap-modal"
-      >
-        {swapTarget && (() => {
-          const modalTiming = parseShiftTiming(swapTarget.startAt, swapTarget.endAt);
-          return (
-            <div className="tactical-swap-sheet">
-              <div className="tactical-swap-modal__header">
-                <h3 className="tactical-swap-modal__title">Request Shift Swap</h3>
-                <button
-                  type="button"
-                  className="tactical-swap-modal__close-btn"
-                  onClick={() => setSwapTarget(null)}
-                  disabled={submittingSwap}
-                  aria-label="Close swap modal"
-                >
-                  <IonIcon icon={closeOutline} />
-                </button>
-              </div>
-
-              {/* Target Shift Recap Card */}
-              <div className="tactical-swap-recap">
-                <span className="tactical-swap-recap__label">Shift Details</span>
-                <div className="tactical-swap-recap__date">
-                  <IonIcon icon={calendarOutline} style={{ color: 'var(--color-primary)' }} />
-                  <span>{modalTiming.dateLabel}</span>
-                </div>
-                <div className="tactical-swap-recap__details">
-                  <div className="tactical-swap-recap__detail-item">
-                    <IonIcon icon={timeOutline} />
-                    <span>{modalTiming.timeRange}</span>
-                    {modalTiming.durationLabel && <span>({modalTiming.durationLabel} shift)</span>}
-                  </div>
-                  {swapTarget.patrolZone && (
-                    <div className="tactical-swap-recap__detail-item">
-                      <IonIcon icon={locationOutline} />
-                      <span>{swapTarget.patrolZone}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Reason / Notes Textarea */}
-              <div className="tactical-swap-input-group">
-                <label
-                  htmlFor="swap-reason-input"
-                  style={{
-                    fontSize: 'var(--font-size-label)',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
-                    color: 'var(--color-text-secondary)',
-                  }}
-                >
-                  Reason for Swap (Optional)
-                </label>
-                <textarea
-                  id="swap-reason-input"
-                  className="tactical-swap-textarea"
-                  placeholder="Explain why you need coverage (e.g. family emergency, illness, schedule conflict)…"
-                  value={swapReason}
-                  onChange={(e) => setSwapReason(e.target.value)}
-                  maxLength={300}
-                  rows={3}
-                  disabled={submittingSwap}
-                />
-                <span className="wf-hint">Optional. Up to 300 characters ({swapReason.length}/300).</span>
-              </div>
-
-              {/* Desk Routing Notice */}
-              <div className="tactical-swap-notice">
-                <IonIcon icon={informationCircleOutline} className="tactical-swap-notice__icon" />
-                <span>
-                  Your request will be sent to the <strong>Desk Officer</strong> to find an available replacement Tanod.
-                </span>
-              </div>
-
-              {/* Actions */}
-              {swapError && <p className="p4w-error" role="alert">{swapError}</p>}
-
-              <div className="tactical-swap-actions">
-                <Button
-                  variant="primary"
-                  size="lg"
-                  fullWidth
-                  icon={swapHorizontalOutline}
-                  loading={submittingSwap}
-                  onClick={() => handleSubmitSwap(swapTarget, swapReason)}
-                >
-                  Send swap request
-                </Button>
-                <Button variant="ghost" fullWidth disabled={submittingSwap} onClick={() => setSwapTarget(null)}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          );
-        })()}
-      </IonModal>
+      <SwapRequestSheet
+        target={swapTarget}
+        reason={swapReason}
+        submitting={submittingSwap}
+        error={swapError}
+        onReasonChange={setSwapReason}
+        onSubmit={handleSubmitSwap}
+        onClose={() => setSwapTarget(null)}
+      />
     </IonPage>
   );
 };

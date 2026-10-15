@@ -212,8 +212,8 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
         </IonToolbar>
       </IonHeader>
 
-      <IonContent className="ion-padding" style={{ '--background': 'var(--color-bg)' }}>
-        <div className="app-column" style={{ paddingTop: 0 }}>
+      <IonContent className="ion-padding content-bg">
+        <div className="app-column sync-queue__column">
           {/* Connectivity of the phone, not the state of any record */}
           <div className="card--elevated sync-queue__section">
             <div className="ui-queue__conn">
@@ -343,17 +343,12 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
             expand="block"
             disabled={syncing || !isOnline}
             onClick={handleTriggerSync}
-            style={{
-              '--background': 'linear-gradient(135deg, var(--color-navy) 0%, var(--color-primary) 100%)',
-              fontWeight: 700,
-              height: '48px',
-              boxShadow: 'var(--shadow-fab)',
-            }}
+            className="sync-queue__send-btn"
           >
             {syncing ? (
               <>
                 <IonSpinner name="dots" />
-                <span style={{ marginLeft: '8px' }}>Sending to HQ…</span>
+                <span className="ml-8">Sending to HQ…</span>
               </>
             ) : (
               <>

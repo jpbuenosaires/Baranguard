@@ -31,10 +31,6 @@
   padding-top: var(--spacing-2xl);
 }
 
-.app-stack > * + * {
-  margin-top: var(--spacing-md);
-}
-
 .app-section {
   margin-top: var(--spacing-xl);
 }
@@ -48,12 +44,6 @@
   margin: 0 0 var(--spacing-xs);
 }
 
-.app-subtitle {
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  margin: 0;
-}
-
 /* Secondary explanatory copy — e.g. "saved on this device first". */
 .app-note {
   display: block;
@@ -61,13 +51,6 @@
   color: var(--color-text-secondary);
   line-height: 1.5;
   margin-top: var(--spacing-md);
-}
-
-.app-error {
-  display: block;
-  color: var(--color-critical);
-  font-size: var(--text-sm);
-  padding: 0 var(--spacing-md) var(--spacing-sm);
 }
 
 /* --- Status pills ---------------------------------------------------- */
@@ -367,12 +350,6 @@
 
 /* --- Reference / monospace identifiers -------------------------------- */
 
-.app-reference {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  color: var(--color-text-primary);
-}
-
 /* --- Cards (M5 Assignments List, M6 Assignment Detail) ----------------- */
 /* §9 M5's own UI reference: "card per assignment (priority dot, ID,
    priority pill, type, location, distance)". Built from tokens only, same
@@ -414,31 +391,10 @@
   color: var(--color-text-secondary);
 }
 
-.card__meta--warning {
-  color: var(--color-warning);
-}
-
 .card__actions {
   display: flex;
   gap: var(--spacing-sm);
   margin-top: var(--spacing-md);
-}
-
-.priority-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: var(--radius-pill);
-  flex-shrink: 0;
-}
-.priority-dot--normal {
-  background: var(--color-info);
-}
-.priority-dot--high {
-  background: var(--color-warning);
-}
-.priority-dot--critical {
-  background: var(--color-critical);
 }
 
 /* --- Critical Alert Overlay (M12) -------------------------------------- */
@@ -674,24 +630,6 @@ ion-header,
   padding: var(--spacing-md);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
-.card--tactical {
-  background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg) 100%);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card);
-  padding: var(--spacing-md);
-  position: relative;
-  overflow: hidden;
-}
-.card--critical-accent {
-  border-color: color-mix(in srgb, var(--color-critical) 40%, var(--color-border));
-}
-.card--warning-accent {
-  border-color: color-mix(in srgb, var(--color-warning) 40%, var(--color-border));
-}
-.card--info-accent {
-  border-color: color-mix(in srgb, var(--color-info) 40%, var(--color-border));
-}
 
 /* Duty pulse keyframe — shared with .tactical-duty-pulse--on below
    (home.tsx's current duty indicator; this file's only remaining user). */
@@ -702,118 +640,10 @@ ion-header,
 }
 
 /* Telemetry Strip */
-.telemetry-strip {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-md);
-}
-.telemetry-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-sm) var(--spacing-md);
-  box-shadow: var(--shadow-card);
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-.telemetry-card__icon {
-  font-size: 1.25rem;
-  color: var(--color-link);
-  display: flex;
-}
-.telemetry-card__details {
-  display: flex;
-  flex-direction: column;
-}
-.telemetry-card__label {
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-  font-weight: 600;
-}
-.telemetry-card__value {
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
 
 /* Assignment 4-Stage Stepper */
-.stepper-container {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: var(--spacing-lg) 0;
-  position: relative;
-  padding: 0 var(--spacing-sm);
-}
-.stepper-container::before {
-  content: '';
-  position: absolute;
-  top: 14px;
-  left: 36px;
-  right: 36px;
-  height: 2px;
-  background: var(--color-border);
-  z-index: 0;
-}
-.stepper-step {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-.stepper-node {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--color-surface);
-  border: 2px solid var(--color-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-xs);
-  font-weight: 700;
-  color: var(--color-text-tertiary);
-  transition: all 0.2s ease;
-}
-.stepper-node--active {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  box-shadow: 0 0 0 4px var(--color-surface-blue);
-}
-.stepper-node--completed {
-  border-color: var(--color-success);
-  background: var(--color-success);
-  color: var(--color-on-success);
-}
-.stepper-text {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  text-align: center;
-}
-.stepper-text--active {
-  color: var(--color-link);
-  font-weight: 700;
-}
 
 /* Sticky Action Bar */
-.sticky-action-bar {
-  position: sticky;
-  bottom: 0;
-  background: var(--glass-bg);
-  border-top: 1px solid var(--color-border);
-  padding: var(--spacing-sm) var(--spacing-md);
-  margin: 0 calc(var(--spacing-md) * -1) calc(var(--spacing-md) * -1);
-  display: flex;
-  gap: var(--spacing-sm);
-  z-index: 10;
-}
 
 /* Evidence Media Gallery */
 .media-grid {
@@ -870,21 +700,6 @@ ion-header,
 }
 
 /* Voice Recording Active Card */
-.recording-active-card {
-  background: var(--tint-critical-bg);
-  border: 1.5px solid var(--color-critical);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-md);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: var(--spacing-sm);
-}
-.recording-live-indicator {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
 .recording-live-dot {
   width: 12px;
   height: 12px;
@@ -1326,10 +1141,6 @@ ion-tab-bar.mobile-tab-bar,
   font-size: var(--text-xs);
 }
 
-.mobile-login-workstation-btn {
-  margin-top: var(--spacing-xs);
-}
-
 /* Sync Queue Modal */
 .sync-queue__section {
   margin-bottom: var(--spacing-md);
@@ -1350,70 +1161,8 @@ ion-tab-bar.mobile-tab-bar,
   color: var(--color-text-secondary);
   margin-bottom: var(--spacing-md);
 }
-.sync-queue__row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--spacing-sm) 0;
-  border-bottom: 1px solid var(--color-border-subtle);
-}
-.sync-queue__row:last-child {
-  border-bottom: none;
-}
-.sync-queue__row-label {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  font-size: var(--text-sm);
-}
 
 /* Assignment cards and detail */
-.assignment-card {
-  display: flex;
-  align-items: center;
-  border: none;
-  cursor: pointer;
-  padding: var(--spacing-md);
-  width: 100%;
-}
-.assignment-card__body {
-  flex: 1;
-  padding-right: var(--spacing-md);
-}
-.assignment-card__header {
-  margin-bottom: var(--spacing-xs);
-}
-.assignment-card__id {
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  margin-left: auto;
-  font-family: var(--font-mono);
-}
-.assignment-card__type {
-  font-size: var(--text-md);
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin-bottom: var(--spacing-xs);
-}
-.assignment-card__location {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-}
-.assignment-card__stale {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  margin-top: var(--spacing-xs);
-  font-size: var(--text-xs);
-  color: var(--color-warning);
-}
-.assignment-card__chevron {
-  font-size: var(--text-lg);
-  color: var(--color-text-tertiary);
-}
 
 /* --- Dark Theme Component Overrides --------------------------------- */
 
@@ -1431,21 +1180,10 @@ ion-tab-bar.mobile-tab-bar,
   border-color: var(--color-border);
 }
 
-[data-theme="dark"] .maplibregl-ctrl-group,
-[data-theme="dark"] .mapboxgl-ctrl-group {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-}
-
 /* MapLibre's stock zoom +/- buttons default to 29x29 — below the 44px
    mobile touch-target minimum. Pinch-to-zoom is the primary gesture on
    a touch device, but these buttons are still on-screen and tappable,
    so they get the same minimum as everything else on this screen. */
-.maplibregl-ctrl-group > button,
-.mapboxgl-ctrl-group > button {
-  width: 48px !important;
-  height: 48px !important;
-}
 
 /* ====================================================================
    Live Navigation HUD — Turn-by-turn overlay & markers
@@ -1591,46 +1329,7 @@ ion-tab-bar.mobile-tab-bar,
 
 /* --- Start / Stop navigation button --------------------------------- */
 
-.nav-toggle-btn {
-  border-radius: var(--radius-pill);
-  font-weight: 700;
-  font-size: var(--text-sm);
-  padding: 6px 16px;
-  cursor: pointer;
-  border: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.nav-toggle-btn--start {
-  background: linear-gradient(135deg, var(--color-navy), var(--color-primary));
-  color: var(--color-white);
-  box-shadow: var(--shadow-fab);
-}
-
-.nav-toggle-btn--stop {
-  background: transparent;
-  border: 1px solid var(--color-text-tertiary);
-  color: var(--color-text-secondary);
-}
-
 /* --- Upcoming step preview ------------------------------------------ */
-
-.nav-upcoming__step {
-  display: flex;
-  flex-direction: row;
-  gap: var(--spacing-sm);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  padding: 6px 0;
-  border-bottom: 1px solid var(--color-border-subtle, var(--color-border));
-}
-
-.nav-upcoming__step--active {
-  color: var(--color-text-primary);
-  font-weight: 700;
-}
 
 /* --- Reduced-motion overrides --------------------------------------- */
 
@@ -1645,145 +1344,11 @@ ion-tab-bar.mobile-tab-bar,
    Field Incident Intake Overhaul (new-incident.tsx)
    ==================================================================== */
 
-.intake-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 16px;
-  box-shadow: none;
-  margin-bottom: 16px;
-}
-
-.intake-section {
-  margin-bottom: 20px;
-}
-
-.intake-section:last-child {
-  margin-bottom: 0;
-}
-
-.intake-section-title {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  color: var(--color-text-secondary);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
 /* Category Grid */
-.intake-category-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.intake-category-chip {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 4px;
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  border: 1.5px solid var(--color-border);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  text-align: center;
-}
-
-.intake-category-chip__icon {
-  font-size: 1.25rem;
-  color: var(--color-text-tertiary);
-  transition: color 0.2s ease;
-}
-
-.intake-category-chip--active {
-  background: var(--color-surface-blue);
-  border-color: var(--color-primary);
-  color: var(--color-link);
-  box-shadow: none;
-}
-
-.intake-category-chip--active .intake-category-chip__icon {
-  color: var(--color-link);
-}
 
 /* Location Strip */
-.intake-location-box {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 12px;
-}
-
-.intake-location-badge {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.intake-location-coords {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--color-text-primary);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.intake-location-clear-btn {
-  background: none;
-  border: none;
-  color: var(--color-text-tertiary);
-  font-size: var(--text-xs);
-  text-decoration: underline;
-  cursor: pointer;
-  padding: 2px 4px;
-}
-
-.intake-location-empty {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  margin-bottom: 10px;
-}
-
-.intake-btn-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.intake-btn-action {
-  min-height: var(--touch-min-size, 48px);
-  --min-height: var(--touch-min-size, 48px);
-  /* Touch-target minimum (44px) — was 40px. */
-  --border-radius: var(--radius-md);
-  font-weight: 600;
-  text-transform: none;
-  font-size: var(--text-sm);
-  margin: 0;
-}
 
 /* Media Dock */
-.intake-media-bar {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
 
 .intake-recording-chip {
   margin-top: 10px;
@@ -1806,671 +1371,20 @@ ion-tab-bar.mobile-tab-bar,
 }
 
 /* Sticky Action Footer */
-.intake-sticky-footer {
-  position: sticky;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: var(--color-surface);
-  padding: 12px 16px;
-  margin: 16px -16px -16px -16px;
-  border-top: 1px solid var(--color-border);
-  box-shadow: none;
-  z-index: 20;
-}
-
-.intake-security-note {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  margin-top: 6px;
-}
 
 /* ====================================================================
    Tactical Field Console Overhaul (home.tsx)
    ==================================================================== */
 
-.home-dashboard-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 4px 0 18px;
-}
-
 /* --- Tactical Officer Hub (Flat) --- */
-.tactical-officer-hub {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 16px;
-  box-shadow: none;
-  position: relative;
-}
-
-[data-theme="dark"] .tactical-officer-hub {
-  background: var(--dark-surface);
-  border: 1px solid var(--dark-border);
-  box-shadow: none;
-}
-
-.tactical-officer-hub::after {
-  display: none !important;
-}
-
-.tactical-officer-top {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  position: relative;
-  z-index: 1;
-}
-
-.tactical-officer-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  border: 2px solid var(--color-surface);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-md);
-  font-weight: 700;
-  color: var(--color-on-primary);
-  flex-shrink: 0;
-  box-shadow: none;
-}
-
-[data-theme="dark"] .tactical-officer-avatar {
-  background: var(--dark-primary);
-  border: 2px solid var(--dark-surface);
-  box-shadow: none;
-}
-
-.tactical-officer-meta {
-  flex: 1;
-  min-width: 0;
-}
-
-.tactical-officer-name {
-  font-size: var(--text-md);
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin: 0;
-  line-height: 1.2;
-}
-
-[data-theme="dark"] .tactical-officer-name {
-  color: var(--color-white);
-}
-
-.tactical-officer-sub {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-  font-weight: 500;
-  margin-top: 3px;
-}
-
-[data-theme="dark"] .tactical-officer-sub {
-  color: var(--dark-text-secondary);
-}
-
-.tactical-officer-divider {
-  height: 1px;
-  background: var(--color-border);
-  margin: 12px 0;
-}
-
-[data-theme="dark"] .tactical-officer-divider {
-  background: var(--dark-border);
-}
-
-.tactical-duty-error {
-  margin-top: 10px;
-  background: var(--tint-critical-bg);
-  border: 1px solid var(--color-critical);
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  color: var(--pill-critical-text);
-  position: relative;
-  z-index: 1;
-}
-
-[data-theme="dark"] .tactical-duty-error {
-  background: var(--dark-tint-critical-bg);
-  border: 1px solid var(--dark-critical);
-  color: var(--dark-pill-critical-text);
-}
-
-.tactical-officer-bottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  position: relative;
-  z-index: 1;
-}
-
-.tactical-duty-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.tactical-duty-pulse {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.tactical-duty-pulse--on {
-  background: var(--color-success);
-  box-shadow: none;
-}
-
-.tactical-duty-pulse--off {
-  background: var(--color-text-disabled);
-}
-
-.tactical-duty-pulse--unknown {
-  background: var(--color-warning);
-}
-
-.tactical-duty-text {
-  display: flex;
-  flex-direction: column;
-}
-
-.tactical-duty-title {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.tactical-duty-title--on {
-  color: var(--color-success);
-}
-
-.tactical-duty-title--off {
-  color: var(--color-text-secondary);
-}
-
-[data-theme="dark"] .tactical-duty-title--off {
-  color: var(--dark-text-secondary);
-}
-
-.tactical-duty-title--unknown {
-  color: var(--color-warning);
-}
-
-.tactical-duty-telemetry {
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-}
-
-[data-theme="dark"] .tactical-duty-telemetry {
-  color: var(--dark-text-tertiary);
-}
-
-.tactical-duty-btn {
-  min-height: var(--touch-min-size, 48px);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  padding: 6px 14px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: background 0.15s ease;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: none;
-}
-
-.tactical-duty-btn--on {
-  background: var(--color-navy);
-  color: var(--color-white);
-  border-color: var(--color-navy);
-}
-
-[data-theme="dark"] .tactical-duty-btn--on {
-  background: var(--dark-primary);
-  color: var(--color-white);
-  border-color: var(--dark-primary);
-}
-
-.tactical-duty-btn--off {
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  border: 1px solid var(--color-border);
-}
-
-[data-theme="dark"] .tactical-duty-btn--off {
-  background: var(--dark-surface);
-  color: var(--dark-text-primary);
-  border: 1px solid var(--dark-border);
-}
 
 /* --- Situational Awareness Hub (Flat) --- */
-.situational-hub {
-  border-radius: var(--radius-md);
-  padding: 14px 16px;
-  box-shadow: none;
-  transition: border-color 0.15s ease;
-}
-
-.situational-hub--mission {
-  background: var(--tint-critical-bg);
-  border: 1px solid var(--color-critical);
-  box-shadow: none;
-}
-
-.situational-hub--clear {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  box-shadow: none;
-}
-
-[data-theme="dark"] .situational-hub--clear {
-  background: var(--dark-surface);
-  border-color: var(--dark-border);
-}
-
-.situational-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
-.situational-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--text-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.situational-badge--mission {
-  color: var(--color-critical);
-}
-
-.situational-badge--clear {
-  color: var(--color-success);
-}
-
-.situational-sub {
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin: 0;
-  line-height: 1.3;
-}
-
-[data-theme="dark"] .situational-sub {
-  color: var(--dark-text-primary);
-}
-
-.situational-detail {
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-  margin-top: 3px;
-}
-
-[data-theme="dark"] .situational-detail {
-  color: var(--dark-text-secondary);
-}
-
-.situational-mission-action {
-  margin-top: 10px;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.situational-navigate-btn {
-  background: var(--color-critical);
-  color: var(--color-on-critical);
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: 8px 16px;
-  font-size: var(--text-xs);
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  box-shadow: none;
-  min-height: 44px;
-}
-
-.situational-navigate-btn:active {
-  background: var(--color-critical-deep);
-}
 
 /* --- Shift Patrol Telemetry Strip (Flat) --- */
-.tactical-shift-strip {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 10px 14px;
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  align-items: center;
-  gap: 8px;
-  box-shadow: none;
-}
-
-[data-theme="dark"] .tactical-shift-strip {
-  background: var(--dark-surface);
-  border-color: var(--dark-border);
-}
-
-.tactical-shift-metric {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.tactical-shift-metric + .tactical-shift-metric {
-  border-left: 1px solid var(--color-border);
-  padding-left: 8px;
-}
-
-[data-theme="dark"] .tactical-shift-metric + .tactical-shift-metric {
-  border-left-color: var(--dark-border);
-}
-
-.tactical-shift-icon-wrap {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  background: var(--tint-info-bg);
-  color: var(--color-link);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.95rem;
-  flex-shrink: 0;
-}
-
-[data-theme="dark"] .tactical-shift-icon-wrap {
-  background: var(--dark-tint-info-bg);
-  color: var(--dark-info);
-}
-
-.tactical-shift-icon-wrap--live {
-  background: var(--tint-success-bg);
-  color: var(--color-success);
-}
-
-[data-theme="dark"] .tactical-shift-icon-wrap--live {
-  background: var(--dark-tint-success-bg);
-  color: var(--dark-success);
-}
-
-.tactical-shift-icon-wrap--idle {
-  background: var(--tint-neutral-bg);
-  color: var(--color-text-tertiary);
-}
-
-[data-theme="dark"] .tactical-shift-icon-wrap--idle {
-  background: var(--dark-tint-neutral-bg);
-  color: var(--dark-text-tertiary);
-}
-
-.tactical-shift-info {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.tactical-shift-value {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.2;
-}
-
-[data-theme="dark"] .tactical-shift-value {
-  color: var(--dark-text-primary);
-}
-
-.tactical-shift-label {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  color: var(--color-text-secondary);
-  letter-spacing: 0.02em;
-  line-height: 1.2;
-  margin-top: 1px;
-}
-
-[data-theme="dark"] .tactical-shift-label {
-  color: var(--dark-text-secondary);
-}
 
 /* --- Flat Tactical SOS & Emergency Dock --- */
-.tactical-sos-panel {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 12px;
-  box-shadow: none;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-[data-theme="dark"] .tactical-sos-panel {
-  background: var(--dark-surface);
-  border-color: var(--dark-border);
-}
-
-.tactical-sos-hold-strip {
-  position: relative;
-  background: var(--tint-critical-bg);
-  border: 1px solid var(--color-critical);
-  border-radius: var(--radius-sm);
-  padding: 12px 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  overflow: hidden;
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: none;
-  min-height: 52px;
-}
-
-[data-theme="dark"] .tactical-sos-hold-strip {
-  background: var(--dark-tint-critical-bg);
-  border-color: var(--dark-critical);
-}
-
-.tactical-sos-progress-fill {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  background: color-mix(in srgb, var(--color-critical) 30%, transparent);
-  transition: width 0.05s linear;
-  pointer-events: none;
-}
-
-.tactical-sos-content {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-}
-
-.tactical-sos-icon-wrap {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  background: var(--color-critical);
-  color: var(--color-on-critical);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.15rem;
-  flex-shrink: 0;
-  box-shadow: none;
-}
-
-.tactical-sos-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.tactical-sos-title {
-  font-size: var(--text-xs);
-  font-weight: 800;
-  color: var(--color-critical);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  line-height: 1.2;
-}
-
-[data-theme="dark"] .tactical-sos-title {
-  color: var(--dark-critical);
-}
-
-.tactical-sos-sub {
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-  line-height: 1.2;
-  margin-top: 2px;
-}
-
-[data-theme="dark"] .tactical-sos-sub {
-  color: var(--dark-text-secondary);
-}
-
-.tactical-sos-countdown {
-  font-size: var(--text-xs);
-  font-weight: 800;
-  color: var(--color-critical);
-  background: var(--color-surface);
-  border: 1px solid var(--color-critical);
-  border-radius: var(--radius-sm);
-  padding: 4px 10px;
-  white-space: nowrap;
-}
-
-[data-theme="dark"] .tactical-sos-countdown {
-  background: var(--dark-surface);
-  color: var(--dark-critical);
-  border-color: var(--dark-critical);
-}
 
 /* --- Direct Emergency Voice Lines (Flat) --- */
-.tactical-speed-dial-dock {
-  border-top: 1px solid var(--color-border);
-  padding-top: 10px;
-}
-
-[data-theme="dark"] .tactical-speed-dial-dock {
-  border-top-color: var(--dark-border);
-}
-
-.tactical-speed-dial-label {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 8px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-[data-theme="dark"] .tactical-speed-dial-label {
-  color: var(--dark-text-secondary);
-}
-
-.tactical-speed-dial-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 8px;
-}
-
-.tactical-speed-dial-btn {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 8px 4px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  color: var(--color-text-primary);
-  text-decoration: none;
-  cursor: pointer;
-  transition: background 0.15s ease;
-  box-shadow: none;
-  min-height: 48px;
-}
-
-[data-theme="dark"] .tactical-speed-dial-btn {
-  background: var(--dark-surface-hover);
-  border-color: var(--dark-border);
-  color: var(--dark-text-primary);
-}
-
-.tactical-speed-dial-btn:active {
-  background: var(--color-border);
-}
-
-.tactical-speed-dial-btn ion-icon {
-  font-size: 1.15rem;
-  color: var(--color-critical);
-}
-
-.tactical-speed-dial-btn-title {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  line-height: 1.1;
-  color: var(--color-text-primary);
-}
-
-[data-theme="dark"] .tactical-speed-dial-btn-title {
-  color: var(--dark-text-primary);
-}
-
-.tactical-speed-dial-btn-sub {
-  font-size: var(--text-xs);
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  line-height: 1;
-}
-
-[data-theme="dark"] .tactical-speed-dial-btn-sub {
-  color: var(--dark-text-secondary);
-}
-
-
 
 /* ====================================================================
    Tactical Field Dispatches Queue Overhaul (assignments.tsx)
@@ -2488,115 +1402,6 @@ ion-tab-bar.mobile-tab-bar,
 }
 
 /* Offline / Workstation Unreachable Banner */
-.dispatch-offline-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  background: var(--tint-warning-bg);
-  border: 1px solid color-mix(in srgb, var(--color-warning) 35%, transparent);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
-  color: var(--pill-warning-text);
-  font-size: var(--text-sm);
-  margin-top: 2px;
-  box-shadow: none;
-}
-
-[data-theme="dark"] .dispatch-offline-banner {
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.45);
-  color: var(--dark-warning);
-}
-
-.dispatch-offline-banner-content {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  min-width: 0;
-}
-
-.dispatch-offline-icon {
-  font-size: 1.25rem;
-  flex-shrink: 0;
-  color: var(--color-warning);
-}
-
-[data-theme="dark"] .dispatch-offline-icon {
-  color: var(--color-warning-bright);
-}
-
-.dispatch-offline-text {
-  line-height: 1.35;
-  word-break: break-word;
-}
-
-.dispatch-offline-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.dispatch-offline-btn {
-  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-warning) 45%, transparent);
-  border-radius: var(--radius-sm);
-  color: var(--pill-warning-text);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  padding: 0 12px;
-  min-height: 48px;
-  min-width: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  transition: background 0.15s ease;
-}
-
-[data-theme="dark"] .dispatch-offline-btn {
-  background: rgba(245, 158, 11, 0.22);
-  border: 1px solid rgba(245, 158, 11, 0.5);
-  color: var(--dark-warning);
-}
-
-.dispatch-offline-btn:active {
-  background: color-mix(in srgb, var(--color-warning) 30%, transparent);
-}
-
-[data-theme="dark"] .dispatch-offline-btn:active {
-  background: rgba(245, 158, 11, 0.4);
-}
-
-.dispatch-offline-dismiss {
-  background: none;
-  border: none;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  min-height: 48px;
-  min-width: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-lg);
-  transition: color 0.15s ease;
-}
-
-[data-theme="dark"] .dispatch-offline-dismiss {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.dispatch-offline-dismiss:active {
-  color: var(--color-text-primary);
-}
-
-[data-theme="dark"] .dispatch-offline-dismiss:active {
-  color: var(--color-white);
-}
 
 /* Unified Tactical Segmented Filter Bar */
 .dispatch-control-bar {
@@ -2786,25 +1591,6 @@ ion-tab-bar.mobile-tab-bar,
 [data-theme="dark"] .dispatch-triage-strip {
   background: var(--dark-surface);
   border-color: var(--dark-border);
-}
-
-.dispatch-triage-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--text-xs);
-  font-weight: 800;
-  color: var(--color-text-primary);
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.dispatch-triage-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  flex-shrink: 0;
 }
 
 .dispatch-triage-right {
@@ -3034,26 +1820,6 @@ ion-tab-bar.mobile-tab-bar,
   margin-top: 2px;
 }
 
-.dispatch-card__location-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-link);
-  background: var(--color-surface-subtle);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 4px 8px;
-  font-family: var(--font-mono, monospace);
-}
-
-[data-theme="dark"] .dispatch-card__location-chip {
-  background: var(--dark-surface-hover);
-  border-color: var(--dark-border);
-  color: var(--dark-info);
-}
-
 .dispatch-card__stale-chip {
   display: inline-flex;
   align-items: center;
@@ -3146,19 +1912,6 @@ ion-tab-bar.mobile-tab-bar,
 [data-theme="dark"] .dispatch-empty-card {
   background: var(--dark-surface);
   border-color: var(--dark-border);
-}
-
-.dispatch-empty-icon-ring {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: rgba(22, 163, 74, 0.1);
-  color: var(--color-success);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 2.2rem;
-  margin-bottom: 16px;
 }
 
 .dispatch-empty-title {
@@ -3671,83 +2424,6 @@ ion-tab-bar.mobile-tab-bar,
 }
 
 /* Actionable Empty State */
-.roster-empty-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  text-align: center;
-  padding: var(--spacing-2xl) var(--spacing-lg);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-top: var(--spacing-xs);
-}
-
-[data-theme="dark"] .roster-empty-card {
-  background: var(--dark-surface);
-  border-color: var(--dark-border);
-}
-
-.roster-empty-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: var(--tint-neutral-bg);
-  color: var(--color-text-secondary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.8rem;
-  margin-bottom: var(--spacing-md);
-}
-
-[data-theme="dark"] .roster-empty-icon {
-  background: var(--dark-tint-neutral-bg);
-  color: var(--dark-text-secondary);
-}
-
-.roster-empty-title {
-  margin: 0 0 var(--spacing-xs);
-  font-size: var(--text-lg);
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-
-[data-theme="dark"] .roster-empty-title {
-  color: var(--dark-text-primary);
-}
-
-.roster-empty-desc {
-  margin: 0 0 var(--spacing-lg);
-  color: var(--color-text-secondary);
-  font-size: var(--text-sm);
-  max-width: 290px;
-  line-height: 1.45;
-}
-
-[data-theme="dark"] .roster-empty-desc {
-  color: var(--dark-text-secondary);
-}
-
-.roster-empty-cta {
-  min-height: var(--touch-min-size, 48px);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
-  font-weight: 700;
-  padding: 10px 18px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  transition: opacity 0.15s ease;
-}
-
-.roster-empty-cta:active {
-  opacity: 0.85;
-}
 
 /* Tactical Shift Swap Sheet Modal */
 .tactical-swap-modal {
@@ -3872,59 +2548,6 @@ ion-tab-bar.mobile-tab-bar,
 }
 
 /* Quick Reason Chips */
-.tactical-swap-presets {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.tactical-swap-presets__label {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-text-tertiary);
-}
-
-.tactical-swap-presets__row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.tactical-swap-chip {
-  padding: 8px 12px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-[data-theme="dark"] .tactical-swap-chip {
-  background: var(--dark-surface);
-  border-color: var(--dark-border);
-  color: var(--dark-text-secondary);
-}
-
-.tactical-swap-chip--active {
-  background: var(--tint-info-bg);
-  border-color: var(--color-primary);
-  color: var(--color-link);
-  font-weight: 700;
-}
-
-[data-theme="dark"] .tactical-swap-chip--active {
-  background: rgba(59, 130, 246, 0.2);
-  border-color: var(--color-primary);
-  color: var(--dark-info);
-}
 
 /* Textarea input */
 .tactical-swap-input-group {
@@ -3997,53 +2620,6 @@ ion-tab-bar.mobile-tab-bar,
   flex-direction: column;
   gap: 10px;
   padding-top: 6px;
-}
-
-.tactical-swap-btn-submit {
-  min-height: 48px;
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  border: 1px solid var(--color-primary);
-  color: var(--color-on-primary);
-  font-size: var(--text-sm);
-  font-weight: 800;
-  letter-spacing: 0.03em;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  cursor: pointer;
-  box-shadow: var(--shadow-1);
-  transition: transform 0.1s ease, background 0.15s ease;
-}
-
-[data-theme="dark"] .tactical-swap-btn-submit {
-  background: var(--dark-primary);
-  border-color: var(--dark-primary);
-}
-
-.tactical-swap-btn-submit:active {
-  transform: scale(0.98);
-}
-
-.tactical-swap-btn-cancel {
-  min-height: var(--touch-min-size, 48px);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-[data-theme="dark"] .tactical-swap-btn-cancel {
-  background: var(--dark-surface);
-  border-color: var(--dark-border);
-  color: var(--dark-text-secondary);
 }
 
 /* ====================================================================
@@ -4259,16 +2835,6 @@ ion-tab-bar.mobile-tab-bar,
   color: var(--color-white);
 }
 
-.profile-nav-card__badge {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  color: var(--color-link);
-}
-
-[data-theme="dark"] .profile-nav-card__badge {
-  color: var(--dark-accent);
-}
-
 .profile-nav-card__sub {
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
@@ -4340,38 +2906,6 @@ ion-tab-bar.mobile-tab-bar,
 }
 
 /* Sync & Station Health Card (Flat) */
-.profile-sync-banner {
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.profile-sync-banner--synced {
-  background: var(--tint-success-bg);
-  border: 1px solid var(--color-success);
-  color: var(--pill-success-text);
-}
-
-[data-theme="dark"] .profile-sync-banner--synced {
-  background: var(--dark-tint-success-bg);
-  border-color: var(--dark-success);
-  color: var(--dark-pill-success-text);
-}
-
-.profile-sync-banner--pending {
-  background: var(--tint-warning-bg);
-  border: 1px solid var(--color-warning);
-  color: var(--pill-warning-text);
-}
-
-[data-theme="dark"] .profile-sync-banner--pending {
-  background: var(--dark-tint-warning-bg);
-  border-color: var(--dark-warning);
-  color: var(--dark-pill-warning-text);
-}
 
 .profile-sync-badge-row {
   display: flex;
@@ -4467,48 +3001,6 @@ ion-tab-bar.mobile-tab-bar,
 }
 
 /* Theme Picker Control */
-.profile-theme-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 8px;
-}
-
-.profile-theme-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 4px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  cursor: pointer;
-  min-height: 52px;
-  transition: all 0.15s ease;
-}
-
-[data-theme="dark"] .profile-theme-btn {
-  background: var(--dark-surface);
-  border-color: var(--dark-border);
-  color: var(--dark-text-secondary);
-}
-
-.profile-theme-btn--active {
-  border: 2px solid var(--color-primary);
-  background: var(--color-row-active-bg);
-  color: var(--color-link);
-  font-weight: 700;
-}
-
-[data-theme="dark"] .profile-theme-btn--active {
-  border: 2px solid var(--dark-info);
-  background: var(--dark-surface-hover);
-  color: var(--dark-info);
-}
 
 /* Sign Out Card */
 .profile-signout-card {
@@ -4751,33 +3243,6 @@ ion-tab-bar.mobile-tab-bar,
   color: var(--color-white);
 }
 
-.live-map-drawer__peek-chips {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.live-map-peek-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 9px;
-  border-radius: var(--radius-pill);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-hover);
-  color: var(--color-text-primary);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-[data-theme="dark"] .live-map-peek-chip {
-  background: var(--dark-surface-hover);
-  border-color: var(--dark-border);
-  color: var(--dark-text-primary);
-}
-
 /* Selected Marker Preview Card */
 .live-map-selected-card {
   padding: 4px 16px 16px;
@@ -4900,41 +3365,6 @@ ion-tab-bar.mobile-tab-bar,
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-}
-
-.live-map-drawer__filter-strip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 16px 10px;
-  border-bottom: 1px solid var(--color-border);
-  overflow-x: auto;
-}
-
-[data-theme="dark"] .live-map-drawer__filter-strip {
-  border-color: var(--dark-border);
-}
-
-.live-map-filter-tab {
-  padding: 6px 12px;
-  border-radius: var(--radius-pill);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.live-map-filter-tab--active {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  border-color: var(--color-primary);
-  font-weight: 700;
 }
 
 .live-map-drawer__scroll-list {
@@ -5197,7 +3627,6 @@ ion-tab-bar.mobile-tab-bar,
   padding: 0;
 }
 
-
 /* Detailed Filter Sheet Modal */
 .live-map-modal-backdrop {
   position: fixed;
@@ -5370,151 +3799,6 @@ ion-tab-bar.mobile-tab-bar,
   border-top-color: var(--dark-border);
 }
 
-.radar-item-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
-.radar-item-title {
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--color-text-primary);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-[data-theme="dark"] .radar-item-title {
-  color: var(--color-white);
-}
-
-.radar-item-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-  margin-top: 4px;
-}
-
-[data-theme="dark"] .radar-item-meta {
-  color: var(--dark-text-secondary);
-}
-
-.radar-distance-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-weight: 600;
-  color: var(--color-link);
-  background: var(--color-surface-blue);
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-}
-
-[data-theme="dark"] .radar-distance-chip {
-  background: var(--dark-tint-info-bg);
-  color: var(--dark-info);
-}
-
-.radar-focus-btn {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 4px 10px;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-text-primary);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 44px;
-  min-width: 44px;
-  justify-content: center;
-  transition: background 0.15s ease;
-}
-
-[data-theme="dark"] .radar-focus-btn {
-  background: var(--dark-surface-hover);
-  border-color: var(--dark-border);
-  color: var(--dark-text-primary);
-}
-
-.radar-focus-btn:active {
-  background: var(--color-border);
-}
-
-.radar-empty-card {
-  text-align: center;
-  padding: 32px 16px;
-  color: var(--color-text-secondary);
-  font-size: var(--text-sm);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-}
-
-[data-theme="dark"] .radar-empty-card {
-  background: var(--dark-surface);
-  border-color: var(--dark-border);
-}
-
-.radar-item-title {
-  font-size: var(--text-sm);
-  font-weight: 800;
-  color: var(--color-text-primary);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.radar-item-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-  margin-top: 4px;
-}
-
-.radar-distance-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-weight: 700;
-  color: var(--color-link);
-  background: var(--color-surface-blue);
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-}
-
-.radar-focus-btn {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 3px 8px;
-  font-size: var(--text-xs);
-  font-weight: 700;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  transition: all 0.15s ease;
-  min-height: 44px;
-  min-width: 44px;
-}
-
-.radar-focus-btn:active {
-  background: var(--color-surface-hover);
-  color: var(--color-link);
-}
-
 /* ====================================================================
    Tactical Assignment Detail & Navigation Overhaul
    ==================================================================== */
@@ -5534,10 +3818,6 @@ ion-tab-bar.mobile-tab-bar.mobile-tab-bar--hidden,
 }
 
 /* Assignment Detail Layout (removes default 48px top void) */
-.dispatch-detail-layout {
-  padding-top: 8px !important;
-  padding-bottom: 24px;
-}
 
 /* Navigation Full-Bleed Viewport */
 .nav-viewport-container {
@@ -5546,14 +3826,6 @@ ion-tab-bar.mobile-tab-bar.mobile-tab-bar--hidden,
   width: 100%;
   height: 100%;
   overflow: hidden;
-}
-
-.nav-viewport-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100% !important;
-  height: 100% !important;
-  z-index: 1;
 }
 
 /* High-Contrast Tactical Navigation HUD */
@@ -5913,36 +4185,6 @@ ion-tab-bar.mobile-tab-bar.mobile-tab-bar--hidden,
    only ~22px of tappable height — enforce the 44px minimum here.
    ==================================================================== */
 
-.dispatch-detail-map-btn {
-  background: none;
-  border: none;
-  padding: 4px 8px;
-  color: var(--color-link);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-  min-height: 44px;
-  min-width: 44px;
-  border-radius: var(--radius-sm);
-  transition: background 0.15s ease;
-}
-
-.dispatch-detail-map-btn:active {
-  background: var(--color-surface-hover);
-}
-
-.dispatch-detail-map-btn:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
-.dispatch-detail-map-btn--secondary {
-  color: var(--color-text-secondary);
-}
-
 /* ====================================================================
    OVERHAULED MOBILE DISPATCH DETAIL SYSTEM
    Clean, flat, accessible, modern UI optimized for field Tanods.
@@ -5956,89 +4198,6 @@ ion-tab-bar.mobile-tab-bar.mobile-tab-bar--hidden,
 }
 
 /* Unified Hero Incident Card */
-.dispatch-hero-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.dispatch-hero-badges {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.dispatch-category-pill {
-  font-size: var(--text-xs);
-  font-weight: 800;
-  background: var(--color-surface-blue);
-  color: var(--color-link);
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
-  letter-spacing: 0.02em;
-}
-
-[data-theme="dark"] .dispatch-category-pill {
-  background: rgba(37, 99, 235, 0.25);
-  color: var(--dark-accent);
-}
-
-.dispatch-case-pill {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  color: var(--color-text-secondary);
-  background: var(--color-surface-hover);
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-}
-
-.dispatch-hero-time {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-text-tertiary);
-}
-
-.dispatch-hero-location {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.dispatch-hero-loc-icon {
-  font-size: 1.35rem;
-  color: var(--color-link);
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.dispatch-hero-loc-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.dispatch-hero-landmark {
-  font-size: var(--text-md);
-  font-weight: 800;
-  color: var(--color-text-primary);
-  line-height: 1.3;
-}
-
-.dispatch-hero-telemetry {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  margin-top: 3px;
-}
 
 /* Compact Linear Operational Stage Bar */
 .dispatch-stage-bar {
@@ -6061,20 +4220,6 @@ ion-tab-bar.mobile-tab-bar.mobile-tab-bar--hidden,
   font-size: var(--text-xs);
   font-weight: 800;
   color: var(--color-text-primary);
-}
-
-.dispatch-stage-bar__step-name {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  color: var(--color-link);
-  background: var(--color-surface-blue);
-  padding: 2px 8px;
-  border-radius: var(--radius-pill);
-}
-
-[data-theme="dark"] .dispatch-stage-bar__step-name {
-  background: rgba(37, 99, 235, 0.25);
-  color: var(--dark-accent);
 }
 
 .dispatch-stage-segments {
@@ -6100,21 +4245,6 @@ ion-tab-bar.mobile-tab-bar.mobile-tab-bar--hidden,
 }
 
 /* Field Incident Briefing Card */
-.dispatch-briefing-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.dispatch-briefing-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
 
 .dispatch-section-title {
   font-size: var(--text-xs);
@@ -6188,24 +4318,6 @@ ion-tab-bar.mobile-tab-bar.mobile-tab-bar--hidden,
   transform: scale(0.99);
 }
 
-.dispatch-map-launch-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  background: var(--color-surface-hover);
-  border-top: 1px solid var(--color-border);
-  color: var(--color-link);
-  font-size: var(--text-xs);
-  font-weight: 700;
-}
-
-.dispatch-map-launch-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 /* On-Scene Operational Tools */
 .dispatch-on-scene-tools {
   background: var(--color-surface);
@@ -6215,59 +4327,6 @@ ion-tab-bar.mobile-tab-bar.mobile-tab-bar--hidden,
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.dispatch-scene-tools-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.dispatch-scene-tool-btn {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-hover);
-  text-decoration: none;
-  color: inherit;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-}
-
-.dispatch-scene-tool-btn:active {
-  filter: brightness(0.95);
-}
-
-.dispatch-scene-tool-btn .ion-icon {
-  font-size: 1.4rem;
-  flex-shrink: 0;
-}
-
-.dispatch-scene-tool-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.dispatch-scene-tool-label {
-  font-size: var(--text-xs);
-  font-weight: 800;
-  color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dispatch-scene-tool-sub {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Sticky Bottom Action Dock */
@@ -6541,30 +4600,6 @@ ion-tab-bar.mobile-tab-bar.mobile-tab-bar--hidden,
 
 :root[data-theme="dark"] .intake-tile-chip--active .intake-tile-chip__icon {
   color: var(--dark-accent);
-}
-
-.intake-more-row {
-  margin-top: 4px;
-}
-
-.intake-more-pill {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  border-radius: var(--radius-md);
-  background: var(--color-surface-hover);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  cursor: pointer;
-  min-height: 44px;
-}
-
-.intake-more-pill:active {
-  background: var(--color-border);
 }
 
 /* Narrative & Template Chips */
@@ -6923,113 +4958,6 @@ ion-tab-bar.mobile-tab-bar.mobile-tab-bar--hidden,
 }
 
 /* 1. Compact Tactical Duty Command Strip (Aligned with Profile Officer Card) */
-.console-duty-strip {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 16px;
-  box-shadow: none;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-[data-theme="dark"] .console-duty-strip {
-  background: var(--dark-surface);
-  border: 1px solid var(--dark-border);
-}
-
-.console-duty-strip__header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.console-duty-strip__info {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  flex: 1;
-}
-
-.console-duty-strip__top-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.console-duty-strip__name {
-  font-size: var(--text-md);
-  font-weight: 800;
-  color: var(--color-text-primary);
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-[data-theme="dark"] .console-duty-strip__name {
-  color: var(--color-white);
-}
-
-.console-duty-strip__sector {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-[data-theme="dark"] .console-duty-strip__sector {
-  color: var(--dark-text-secondary);
-}
-
-.console-duty-pill-btn {
-  min-height: 48px;
-  min-width: 48px;
-  padding: 0 16px;
-  border-radius: var(--radius-pill);
-  font-size: var(--text-sm);
-  font-weight: 800;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  border: none;
-  flex-shrink: 0;
-  transition: all 0.15s ease;
-}
-
-.console-duty-pill-btn--on {
-  background: var(--tint-success-bg);
-  color: var(--pill-success-text);
-  border: 1px solid var(--color-success);
-}
-
-.console-duty-pill-btn--off {
-  background: var(--color-surface-hover);
-  color: var(--color-text-secondary);
-  border: 1px solid var(--color-border);
-}
-
-.console-duty-pill-btn:active {
-  transform: scale(0.96);
-}
-
-.duty-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.duty-dot--pulse {
-  animation: duty-pulse 2s infinite;
-}
 
 @keyframes duty-pulse {
   0% { transform: scale(1); opacity: 1; }
@@ -7038,54 +4966,6 @@ ion-tab-bar.mobile-tab-bar.mobile-tab-bar--hidden,
 }
 
 /* 3-Cell Telemetry Strip (Aligned with Profile Officer Stats) */
-.console-telemetry-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-border);
-}
-
-[data-theme="dark"] .console-telemetry-grid {
-  border-top-color: var(--dark-border);
-}
-
-.console-telemetry-item {
-  background: var(--color-surface-hover);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-[data-theme="dark"] .console-telemetry-item {
-  background: var(--dark-bg);
-}
-
-.console-telemetry-item__label {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-text-tertiary);
-}
-
-.console-telemetry-item__val {
-  font-size: var(--text-xs);
-  font-weight: 800;
-  color: var(--color-text-primary);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-[data-theme="dark"] .console-telemetry-item__val {
-  color: var(--color-white);
-}
 
 /* 2. Tactical Mission Hero Card */
 .console-mission-card {
@@ -7192,218 +5072,10 @@ ion-tab-bar.mobile-tab-bar.mobile-tab-bar--hidden,
 }
 
 /* 3. Quick Field Navigation Row */
-.console-quick-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-}
-
-.console-quick-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 14px 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  cursor: pointer;
-  min-height: 60px;
-  transition: background 0.15s ease;
-  text-align: left;
-}
-
-.console-quick-card:active {
-  background: var(--color-surface-hover);
-}
-
-.console-quick-icon {
-  font-size: 1.45rem;
-  color: var(--color-link);
-  flex-shrink: 0;
-}
-
-:root[data-theme="dark"] .console-quick-icon {
-  color: var(--dark-accent);
-}
-
-.console-quick-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.console-quick-title {
-  font-size: var(--text-sm);
-  font-weight: 800;
-  color: var(--color-text-primary);
-}
-
-.console-quick-sub {
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  font-weight: 500;
-}
 
 /* 4. Unified Emergency Speed-Dial Comms Hub */
-.console-dial-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.console-dial-label {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--color-text-tertiary);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.console-dial-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.console-dial-tile {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 12px 6px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  text-decoration: none;
-  min-height: 68px;
-  transition: background 0.15s ease, transform 0.1s ease;
-  cursor: pointer;
-}
-
-.console-dial-tile:active {
-  background: var(--color-surface-hover);
-  transform: scale(0.97);
-}
-
-.console-dial-icon {
-  font-size: 1.2rem;
-  color: var(--color-link);
-}
-
-[data-theme="dark"] .console-dial-icon {
-  color: var(--dark-accent);
-}
-
-.console-dial-name {
-  font-size: var(--text-xs);
-  font-weight: 800;
-  color: var(--color-text-primary);
-  text-align: center;
-}
-
-.console-dial-sub {
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  font-weight: 600;
-}
 
 /* 5. Full-Width Tactile SOS Panic Module */
-.console-sos-container {
-  margin-top: 2px;
-  position: relative;
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  border: 1.5px solid var(--color-critical);
-  background: var(--tint-critical-bg);
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-  min-height: 72px;
-  display: flex;
-  align-items: center;
-  transition: transform 0.12s ease, box-shadow 0.15s ease, background 0.15s ease;
-}
-
-.console-sos-container:active {
-  transform: scale(0.985);
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.25);
-}
-
-[data-theme="dark"] .console-sos-container {
-  background: rgba(220, 38, 38, 0.14);
-  border-color: rgba(239, 68, 68, 0.6);
-}
-
-.console-sos-content {
-  position: relative;
-  z-index: 2;
-  padding: 14px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-}
-
-.console-sos-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.console-sos-icon-box {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: var(--color-critical);
-  color: var(--color-on-critical);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.4rem;
-  flex-shrink: 0;
-}
-
-.console-sos-text-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.console-sos-heading {
-  font-size: var(--text-sm);
-  font-weight: 750;
-  color: var(--pill-critical-text);
-  letter-spacing: 0.01em;
-}
-
-.console-sos-hint {
-  font-size: var(--text-xs);
-  color: var(--pill-critical-text);
-  opacity: 0.9;
-  font-weight: 500;
-}
-
-.console-sos-badge {
-  background: var(--color-critical);
-  color: var(--color-on-critical);
-  font-size: var(--text-xs);
-  font-weight: 800;
-  padding: 8px 16px;
-  border-radius: var(--radius-pill);
-  flex-shrink: 0;
-  min-width: 82px;
-  text-align: center;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  letter-spacing: 0.03em;
-}
 
 /* Red Tactical Emergency SOS Modal */
 .tactical-sos-modal {
@@ -7892,13 +5564,6 @@ ion-searchbar {
 }
 
 /* Hit-area utility: guarantees a 48px touch target without resizing the visual. */
-.hit-48 {
-  min-height: var(--touch-min-size);
-  min-width: var(--touch-min-size);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
 
 /* Reduced motion: every animation and transition is effectively off, and the
    urgent pulses keep a STATIC ring so urgency is not lost. */
