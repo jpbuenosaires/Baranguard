@@ -18,9 +18,9 @@ declare(strict_types=1);
  * always looks "recent", which means individual rows can differ slightly between
  * runs on different days; the manifest records the exact figures of each run.
  *
- * SAFETY: refuses to run unless --db is literally "baranguard_ch4" (or, with
- * --profile=uat, "baranguard_uat"). It never touches `baranguard` or
- * `baranguard_uiseed`. Normally run through
+ * SAFETY: refuses to run unless --db is literally "baranguard_ch4" (profile ch4)
+ * or, with --profile=uat, "baranguard_uat" or "baranguard_uiseed". It never
+ * touches the real `baranguard`. Normally run through
  * backend/scripts/reset-ch4.ps1, which drops + recreates the database,
  * applies every migration, then calls this.
  *
@@ -44,8 +44,12 @@ $DAYS = max(7, min(90, (int) ($opts['days'] ?? 30)));
 // needs. See docs/UAT_DATA_REQUIREMENTS.md. Any other combination is refused.
 $PROFILE = (string) ($opts['profile'] ?? ($dbName === 'baranguard_uat' ? 'uat' : 'ch4'));
 $UAT = $PROFILE === 'uat';
-if (!in_array($dbName, ['baranguard_ch4', 'baranguard_uat'], true) || $UAT !== ($dbName === 'baranguard_uat')) {
-    fwrite(STDERR, "Refusing to run: --db '{$dbName}' with --profile '{$PROFILE}'. Allowed: baranguard_ch4 (profile ch4) or baranguard_uat (profile uat).\n");
+// The project keeps only two databases: the real `baranguard` and `baranguard_uiseed`, which holds the Chapter 4 / UAT
+// test data. So the uat profile may fill baranguard_uiseed (it must be asked for explicitly: --db and --profile=uat) or
+// baranguard_uat. The real `baranguard` is never an allowed target.
+$ALLOWED_TARGETS = ['ch4' => ['baranguard_ch4'], 'uat' => ['baranguard_uat', 'baranguard_uiseed']];
+if (!isset($ALLOWED_TARGETS[$PROFILE]) || !in_array($dbName, $ALLOWED_TARGETS[$PROFILE], true)) {
+    fwrite(STDERR, "Refusing to run: --db '{$dbName}' with --profile '{$PROFILE}'. Allowed: baranguard_ch4 (profile ch4); baranguard_uat or baranguard_uiseed (profile uat).\n");
     exit(1);
 }
 
@@ -928,9 +932,9 @@ try {
         [0, 'prev', 'prepared'], [1, 'prev', 'prepared'], [2, 'prev', 'prepared'], [3, 'prev', 'returned'], [4, 'prev', 'prepared'],
         [0, 'this', 'open'], [1, 'this', 'prepared'], [2, 'this', 'open'], [3, 'this', 'prepared'], [4, 'this', 'prepared'],
     ];
-    if ($UAT) $plan[0] = [0, 'prev', 'open'];   // reyes (Tanod tester): BOTH months open, so he can submit one online (T-21) and try the other offline (T-22)
+    if ($UAT) { $plan[0] = [0, 'prev', 'open']; $plan[] = [0, 'prev2', 'prepared']; }   // reyes (Tanod tester): BOTH months open, so he can submit one online (T-21) and try the other offline (T-22)
     foreach ($plan as [$ti, $mk, $status]) {
-        $t = $TANODS[$ti]; $mStart = $mk === 'prev' ? $prevMonthStart : $thisMonthStart; $month = $mStart->format('Y-m');
+        $t = $TANODS[$ti]; $mStart = $mk === 'prev' ? $prevMonthStart : ($mk === 'prev2' ? $today->modify('first day of -2 months') : $thisMonthStart); $month = $mStart->format('Y-m');
         $days = (int) $mStart->format('t');
         $workDays = [];
         for ($dd = 1; $dd <= $days; $dd++) {
@@ -949,7 +953,7 @@ try {
             $sum += $dur;
         }
         $created = $mStart->modify('+1 day');
-        $prepared = in_array($status, ['prepared', 'returned'], true) ? ($mk === 'prev' ? $thisMonthStart->modify('+1 day') : $today->modify('-1 day')) : null;
+        $prepared = in_array($status, ['prepared', 'returned'], true) ? ($mk === 'prev' ? $thisMonthStart->modify('+1 day') : ($mk === 'prev2' ? $prevMonthStart->modify('+1 day') : $today->modify('-1 day'))) : null;
         $insRep->execute([BARANGAY_ID, $t, $month, $status, $prepared ? fmt($prepared) : null,
             $status === 'returned' ? 'Please add the time out for the 3rd week entries.' : null, $status === 'prepared' ? $sum : null, fmt($created), fmt($prepared ?? $created)]);
         $rid = (int) $pdo->lastInsertId();
@@ -1066,6 +1070,134 @@ try {
         $insSet = $pdo->prepare('INSERT INTO system_settings (setting_key, setting_value, updated_at, updated_by) VALUES (?,?,?,?)');
         $insSet->execute(['sos_fallback.backup_contact_number', '09170000099', fmt($now), $ADMIN]);
         $insSet->execute(['sos_fallback.gateway_number', '09170000001', fmt($now), $ADMIN]);
+    }
+
+    if ($UAT) {
+        // ------------------------------------------------------------------------------------------------
+        // UAT richness: the history a real evaluator expects to find behind every screen, so no list the Tanod,
+        // Chief Tanod, Secretary or Punong Barangay opens is empty, and tanod.reyes (the primary phone tester)
+        // has a believable record of his own. Everything here is simulated test data.
+        // ------------------------------------------------------------------------------------------------
+        $REYES = $uid['tanod.reyes'];
+
+        // 1. reyes' own school-zone reports: three resolved school-linked incidents become his phone-filed reports
+        //    (the base seed links schools only to incidents located OUTSIDE the school, see $C1_SUMMARY).
+        $schoolInc = $pdo->query("SELECT incident_id FROM incident WHERE school_id IS NOT NULL AND status = 'resolved' ORDER BY incident_id LIMIT 3")->fetchAll(PDO::FETCH_COLUMN);
+        $takeInc = $pdo->prepare("UPDATE incident SET reported_by = ?, device_id = ?, source = 'app', report_channel = 'tanod_alerted', client_event_id = COALESCE(client_event_id, ?) WHERE incident_id = ?");
+        foreach ($schoolInc as $iid) $takeInc->execute([$REYES, $deviceOf[$REYES], uuidv4(), (int) $iid]);
+
+        // 2. Evidence photos on four of his resolved incidents. Flat striped PNGs, plainly placeholders (no real person
+        //    or place is pictured); real files so the Digital Evidence panel and the download endpoint work.
+        $evDir = rtrim((string) (baranguard_env('EVIDENCE_DIR') ?: dirname(__DIR__) . '/storage/evidence'), '/\\');
+        if (!is_dir($evDir)) @mkdir($evDir, 0750, true);
+        $makePng = function (int $w, int $h, array $a, array $b): string {
+            $raw = '';
+            for ($y = 0; $y < $h; $y++) {
+                $raw .= "\0";
+                for ($x = 0; $x < $w; $x++) { $c = ((intdiv($x + $y, 40)) % 2 === 0) ? $a : $b; $raw .= chr($c[0]) . chr($c[1]) . chr($c[2]); }
+            }
+            $chunk = function (string $type, string $data): string { return pack('N', strlen($data)) . $type . $data . pack('N', crc32($type . $data)); };
+            return "\x89PNG\r\n\x1a\n" . $chunk('IHDR', pack('NNCCCCC', $w, $h, 8, 2, 0, 0, 0)) . $chunk('IDAT', gzcompress($raw, 6)) . $chunk('IEND', '');
+        };
+        $evInc = $pdo->prepare("SELECT incident_id, created_at FROM incident WHERE reported_by = ? AND status = 'resolved' ORDER BY created_at DESC LIMIT 4");
+        $evInc->execute([$REYES]);
+        $insEv = $pdo->prepare('INSERT INTO evidence_attachment (incident_id, type, file_path, uploaded_by, uploaded_at, sha256, byte_size, mime_type, original_filename, legal_hold, client_request_id) VALUES (?,?,?,?,?,?,?,?,?,0,?)');
+        $palette = [[[90, 110, 130], [120, 140, 160]], [[110, 120, 90], [140, 150, 120]], [[130, 100, 90], [160, 130, 120]], [[100, 100, 120], [130, 130, 150]]];
+        $evCount = 0;
+        foreach ($evInc->fetchAll(PDO::FETCH_ASSOC) as $k => $ev) {
+            $png = $makePng(640, 480, $palette[$k % 4][0], $palette[$k % 4][1]);
+            $fname = 'incident-' . $ev['incident_id'] . '-' . bin2hex(random_bytes(8)) . '.png';
+            file_put_contents($evDir . DIRECTORY_SEPARATOR . $fname, $png);
+            $insEv->execute([(int) $ev['incident_id'], 'photo', $fname, $REYES, fmt((new DateTimeImmutable($ev['created_at']))->modify('+12 minutes')), hash('sha256', $png), strlen($png),
+                'image/png', 'SIMULATED-evidence-photo-' . ($k + 1) . '.png', uuidv4()]);
+            $evCount++;
+        }
+
+        // 3. Swap history for reyes: one approved, one denied, both on past published shifts (T-24 files a new one).
+        $pastShifts = $pdo->prepare("SELECT shift_id, start_at FROM shift_schedule WHERE user_id = ? AND approval_status = 'published' AND start_at < ? ORDER BY start_at DESC LIMIT 2");
+        $pastShifts->execute([$REYES, fmt($now->modify('-4 days'))]);
+        $insSwap = $pdo->prepare('INSERT INTO shift_swap_request (requesting_user_id, shift_id, target_user_id, reason, status, requested_at, resolved_at, resolved_by, version, client_request_id) VALUES (?,?,?,?,?,?,?,?,1,?)');
+        foreach ($pastShifts->fetchAll(PDO::FETCH_ASSOC) as $k => $sh) {
+            $req = (new DateTimeImmutable($sh['start_at']))->modify('-3 days');
+            $insSwap->execute([$REYES, (int) $sh['shift_id'], $uid[$k === 0 ? 'tanod.gubaton' : 'tanod.delacruz'], $k === 0 ? 'Clinic appointment that morning.' : 'Needed to attend a school meeting.',
+                $k === 0 ? 'approved' : 'denied', fmt($req), fmt($req->modify('+1 day')), $SEC, uuidv4()]);
+        }
+
+        // 4. One flagged accomplishment entry on reyes' open September report (confirmed 12 h, the duty record saw 7 h),
+        //    so the "differs from the duty record" prompt is something the tester can see and talk about.
+        $flagEntry = $pdo->prepare("SELECT e.entry_id FROM accomplishment_entry e JOIN accomplishment_report r ON r.report_id = e.report_id WHERE r.user_id = ? AND r.month = ? ORDER BY e.work_date LIMIT 1 OFFSET 3");
+        $flagEntry->execute([$REYES, $prevM]);
+        if (($fe = $flagEntry->fetchColumn()) !== false) {
+            $pdo->prepare('UPDATE accomplishment_entry SET duration_minutes = 720, suggested_duration_minutes = 420, duration_flag = 1, start_time = ?, end_time = ? WHERE entry_id = ?')->execute(['06:00:00', '18:00:00', (int) $fe]);
+        }
+
+        // 5. Offline map packages: the .mbtiles files already on disk under backend/storage/map-packages (the table is
+        //    truncated by the seed). The newest version is the published one the phones download.
+        $mapDir = dirname(__DIR__) . '/storage/map-packages';
+        $mapFiles = [];
+        foreach (glob($mapDir . '/barangay-' . BARANGAY_ID . '-v*.mbtiles') ?: [] as $f) {
+            if (preg_match('/^barangay-(\d+)-(v(\d+)[^.]*)-[0-9a-f]{8}\.mbtiles$/', basename($f), $m)) $mapFiles[(int) $m[3]] = [$f, $m[2]];
+        }
+        ksort($mapFiles);
+        $insMap = $pdo->prepare('INSERT INTO offline_map_package (barangay_id, version, file_path, checksum_sha256, byte_size, created_by, created_at, is_published) VALUES (?,?,?,?,?,?,?,?)');
+        $lastMap = array_key_last($mapFiles);
+        foreach ($mapFiles as $n => [$f, $ver]) {
+            $insMap->execute([BARANGAY_ID, $ver, basename($f), hash_file('sha256', $f), filesize($f), $ADMIN, gmdate('Y-m-d H:i:s', filemtime($f)), $n === $lastMap ? 1 : 0]);
+        }
+
+        // 6. SMS broadcast list (Admin): consented subscribers, one who opted out. Fictitious numbers.
+        $insSub = $pdo->prepare('INSERT INTO sms_subscriber (barangay_id, contact_number, consent_at, consent_source, consent_note, opted_out_at, created_by_user_id, created_at) VALUES (?,?,?,?,?,?,?,?)');
+        foreach ([['09175550201', 'walk_in', null], ['09175550202', 'walk_in', null], ['09175550203', 'staff_entry', null], ['09175550204', 'staff_entry', null],
+                  ['09175550205', 'sms_keyword', null], ['09175550206', 'walk_in', 12]] as $i => [$num, $src, $optDays]) {
+            $at = $now->modify('-' . (40 + $i * 3) . ' days');
+            $insSub->execute([BARANGAY_ID, $num, fmt($at), $src, 'Simulated consent record for test data.', $optDays ? fmt($now->modify("-{$optDays} days")) : null, $SEC, fmt($at)]);
+        }
+
+        // 7. Notifications for every role (the web bell, the phone alerts, the Approvals hints). Ids and types only,
+        //    exactly what NotificationService stores; the text is composed by the app from the linked rows.
+        $insN = $pdo->prepare('INSERT INTO notification (barangay_id, notification_type, dispatch_id, sos_id, incident_id, created_by, created_at, dispatch_offer_id, accomplishment_report_id) VALUES (?,?,?,?,?,?,?,?,?)');
+        $insT = $pdo->prepare('INSERT INTO notification_target (notification_id, user_id, device_id, targeted_at, acknowledged_at, ack_status) VALUES (?,?,?,?,?,?)');
+        $insD = $pdo->prepare("INSERT INTO notification_delivery (notification_id, notification_target_id, channel, attempt_no, status, initiated_at, sent_at) VALUES (?,?,'fcm',1,'sent',?,?)");
+        $notifCount = 0;
+        $notify = function (string $type, array $ent, DateTimeImmutable $at, int $creator, array $targets) use ($insN, $insT, $insD, &$notifCount, $pdo, $deviceOf): void {
+            $insN->execute([BARANGAY_ID, $type, $ent['dispatch'] ?? null, $ent['sos'] ?? null, $ent['incident'] ?? null, $creator, fmt($at), $ent['offer'] ?? null, $ent['report'] ?? null]);
+            $nid = (int) $pdo->lastInsertId();
+            foreach ($targets as [$uidT, $read]) {
+                $dev = $deviceOf[$uidT] ?? null;
+                $insT->execute([$nid, $uidT, $dev, fmt($at), $read ? fmt($at->modify('+40 seconds')) : null, $read === null ? 'not_required' : ($read ? 'acknowledged' : 'pending')]);
+                $tid = (int) $pdo->lastInsertId();
+                $insD->execute([$nid, $tid, fmt($at), fmt($at->modify('+2 seconds'))]);
+            }
+            $notifCount++;
+        };
+        // dispatches of the last 7 days -> the assigned tanod (all read; the live ones too, the tanod already acted)
+        foreach ($pdo->query("SELECT dispatch_id, tanod_id, incident_id, dispatched_by, dispatched_at FROM dispatch WHERE status <> 'cancelled' AND dispatched_at >= '" . fmt($now->modify('-7 days')) . "'")->fetchAll(PDO::FETCH_ASSOC) as $d) {
+            $notify('dispatch', ['dispatch' => (int) $d['dispatch_id'], 'incident' => (int) $d['incident_id']], new DateTimeImmutable($d['dispatched_at']), (int) $d['dispatched_by'], [[(int) $d['tanod_id'], true]]);
+        }
+        // SOS -> the Chief Tanod and the on-duty tanods (NotificationService::sosRecipients); active ones unread, the rest read
+        foreach ($pdo->query('SELECT sos_id, received_at, status FROM tanod_sos')->fetchAll(PDO::FETCH_ASSOC) as $s) {
+            $read = $s['status'] !== 'active';
+            $targets = [[$ADMIN, $read]];
+            if (!$read) { $targets[] = [$uid['tanod.delacruz'], false]; $targets[] = [$uid['tanod.gubaton'], false]; }
+            $notify('sos', ['sos' => (int) $s['sos_id']], new DateTimeImmutable($s['received_at']), $ADMIN, $targets);
+        }
+        // open critical/high incidents -> priority alert to the Chief Tanod and the Secretary (NotificationService::adminRecipients), unread
+        foreach ($pdo->query("SELECT incident_id, created_at FROM incident WHERE priority IN ('critical','high') AND status IN ('pending','dispatched') ORDER BY created_at DESC LIMIT 6")->fetchAll(PDO::FETCH_ASSOC) as $i) {
+            $notify('priority_alert', ['incident' => (int) $i['incident_id']], new DateTimeImmutable($i['created_at']), $SEC, [[$ADMIN, false], [$SEC, false]]);
+        }
+        // night offers -> every recipient (no acknowledgement needed)
+        foreach ($pdo->query('SELECT o.offer_id, o.incident_id, o.created_at, r.user_id FROM dispatch_offer o JOIN dispatch_offer_recipient r ON r.offer_id = o.offer_id ORDER BY o.offer_id')->fetchAll(PDO::FETCH_ASSOC) as $o) {
+            $notify('dispatch_offer', ['offer' => (int) $o['offer_id'], 'incident' => (int) $o['incident_id']], new DateTimeImmutable($o['created_at']), $ADMIN, [[(int) $o['user_id'], null]]);
+        }
+        // the published roster -> every rostered tanod; reyes and delacruz have not opened theirs yet (unread)
+        foreach ($TANODS as $t) {
+            $notify('roster_published', [], $now->modify('-1 day'), $PB, [[$t, !in_array($t, [$REYES, $uid['tanod.delacruz']], true)]]);
+        }
+        // a returned accomplishment report -> its tanod (unread)
+        foreach ($pdo->query("SELECT report_id, user_id, updated_at FROM accomplishment_report WHERE status = 'returned'")->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $notify('report_update', ['report' => (int) $r['report_id']], new DateTimeImmutable($r['updated_at']), $SEC, [[(int) $r['user_id'], false]]);
+        }
+        $M['uat_richness'] = ['reyes_school_reports' => count($schoolInc), 'evidence_photos' => $evCount, 'map_packages' => count($mapFiles), 'sms_subscribers' => 6, 'notifications' => $notifCount];
     }
 
     $pdo->commit();

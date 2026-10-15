@@ -35,4 +35,4 @@ Dates are relative to the moment of the reset, so the "pending" queue, the activ
 
 ## Final testing / UAT database
 
-For the UAT sign-off and the ISO evaluation sessions use `baranguard_uat` instead (`Reset UAT Data.bat`, reset before each tester). Same simulated Dao data plus fixtures arranged for every UAT scenario; see `docs/UAT_DATA_REQUIREMENTS.md`.
+**Only two databases exist now: the real `baranguard` and `baranguard_uiseed`, which holds the Chapter 4 / UAT test data** (`baranguard_ch4` and `baranguard_uat` were dropped 2026-10-14; the Chapter 4 profile above still works if you ever need a separate database). For the UAT sign-off and the ISO evaluation sessions use `Reset UAT Data.bat`, which rebuilds `baranguard_uiseed` (reset before each tester). Same simulated Dao data plus fixtures arranged for every UAT scenario; see `docs/UAT_DATA_REQUIREMENTS.md`.
