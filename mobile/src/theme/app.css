@@ -807,8 +807,6 @@ ion-header,
   position: sticky;
   bottom: 0;
   background: var(--glass-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   border-top: 1px solid var(--color-border);
   padding: var(--spacing-sm) var(--spacing-md);
   margin: 0 calc(var(--spacing-md) * -1) calc(var(--spacing-md) * -1);
@@ -1493,8 +1491,6 @@ ion-tab-bar.mobile-tab-bar,
   left: 10px;
   right: 10px;
   background: var(--glass-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12), var(--shadow-card);
@@ -1589,7 +1585,7 @@ ion-tab-bar.mobile-tab-bar,
 /* --- Map container in navigation mode ------------------------------- */
 
 .map-container--navigating {
-  height: 68vh;
+  height: 68dvh;
   transition: height 0.3s ease;
 }
 
@@ -4677,7 +4673,7 @@ ion-tab-bar.mobile-tab-bar,
   left: 0;
   right: 0;
   bottom: 0;
-  height: 65vh;
+  height: 65dvh;
   z-index: 20;
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
@@ -5218,7 +5214,7 @@ ion-tab-bar.mobile-tab-bar,
   bottom: 0;
   left: 0;
   right: 0;
-  max-height: 80vh;
+  max-height: 80dvh;
   background: var(--color-surface);
   border-top-left-radius: var(--radius-lg);
   border-top-right-radius: var(--radius-lg);
@@ -5573,8 +5569,6 @@ ion-tab-bar.mobile-tab-bar.mobile-tab-bar--hidden,
   box-shadow: var(--shadow-3);
   border: 1px solid rgba(255, 255, 255, 0.12);
   z-index: 20;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   transition: all 0.25s ease;
 }
 
@@ -5886,8 +5880,6 @@ ion-tab-bar.mobile-tab-bar.mobile-tab-bar--hidden,
   left: 50%;
   transform: translateX(-50%);
   background: rgba(15, 23, 42, 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   color: var(--color-white);
   border-radius: var(--radius-pill);
   padding: 8px 18px;
@@ -7416,7 +7408,7 @@ ion-tab-bar.mobile-tab-bar.mobile-tab-bar--hidden,
 /* Red Tactical Emergency SOS Modal */
 .tactical-sos-modal {
   --height: fit-content;
-  --max-height: 88vh;
+  --max-height: 88dvh;
   --width: 100%;
   --max-width: 100%;
   --background: var(--color-critical-solid);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Navigate, Route, useLocation, useNavigate } from 'react-router-dom';
 import {
   IonApp,
@@ -32,23 +32,23 @@ import {
   personOutline,
 } from 'ionicons/icons';
 import CriticalAlertOverlay from './components/CriticalAlertOverlay';
-import AccomplishmentsPage from './pages/accomplishments';
-import AssignmentDetailPage from './pages/assignment-detail';
-import AssignmentsPage from './pages/assignments';
-import AvailabilityPage from './pages/availability';
-import AdminDispatchPage from './pages/admin/admin-dispatch';
-import AdminIncidentsPage from './pages/admin/admin-incidents';
-import AdminProfilePage from './pages/admin/admin-profile';
+const AccomplishmentsPage = lazy(() => import('./pages/accomplishments'));
+const AssignmentDetailPage = lazy(() => import('./pages/assignment-detail'));
+const AssignmentsPage = lazy(() => import('./pages/assignments'));
+const AvailabilityPage = lazy(() => import('./pages/availability'));
+const AdminDispatchPage = lazy(() => import('./pages/admin/admin-dispatch'));
+const AdminIncidentsPage = lazy(() => import('./pages/admin/admin-incidents'));
+const AdminProfilePage = lazy(() => import('./pages/admin/admin-profile'));
 import AdminSosPage from './pages/admin/admin-sos';
 import HomePage from './pages/home';
-import IncidentSubmittedPage from './pages/incident-submitted';
-import LiveMapPage from './pages/live-map';
+const IncidentSubmittedPage = lazy(() => import('./pages/incident-submitted'));
+const LiveMapPage = lazy(() => import('./pages/live-map'));
 import LoginPage from './pages/login';
-import MyReportsPage from './pages/my-reports';
-import MyShiftsPage from './pages/my-shifts';
-import NewIncidentPage from './pages/new-incident';
-import ProfilePage from './pages/profile';
-import SchoolCheckinPage from './pages/school-checkin';
+const MyReportsPage = lazy(() => import('./pages/my-reports'));
+const MyShiftsPage = lazy(() => import('./pages/my-shifts'));
+const NewIncidentPage = lazy(() => import('./pages/new-incident'));
+const ProfilePage = lazy(() => import('./pages/profile'));
+const SchoolCheckinPage = lazy(() => import('./pages/school-checkin'));
 import { getSessionRole, type AppRole } from './services/role';
 import { hasStoredSession, onSessionExpired } from './services/session';
 import { registerCriticalAlertListeners, checkForPendingNativeAlert } from './services/criticalAlertStore';
@@ -62,6 +62,15 @@ import { startSchoolCacheResumeRefresh } from './services/workflowRefresh';
 import { pruneOldSyncedEvidenceFiles } from './services/storageMaintenance';
 import { initThemeListener } from './utils/theme';
 import tacticalFeedback from './utils/tacticalFeedback';
+
+/** Shown for the instant a route chunk loads; the shell (tab bar, SOS dock) is already on screen. */
+function PageFallback() {
+  return (
+    <div className="page-fallback" role="status" aria-label="Loading">
+      <IonSpinner name="dots" />
+    </div>
+  );
+}
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
@@ -98,6 +107,7 @@ import './theme/phase4-workflow.css';
 import './theme/phase4-dispatch.css';
 import './theme/phase4-map.css';
 import './theme/phase4-admin.css';
+import './theme/phase5-layout.css';
 
 setupIonicReact();
 
@@ -245,22 +255,22 @@ const TabbedShell: React.FC = () => {
       <IonRouterOutlet>
         <Route path="home" element={<HomePage />} />
         {/* M5. */}
-        <Route path="assignments" element={<AssignmentsPage />} />
+        <Route path="assignments" element={<Suspense fallback={<PageFallback />}><AssignmentsPage /></Suspense>} />
         {/* M6 — reached by tapping a card on M5, not a tab of its own. */}
-        <Route path="assignments/:localId" element={<AssignmentDetailPage />} />
+        <Route path="assignments/:localId" element={<Suspense fallback={<PageFallback />}><AssignmentDetailPage /></Suspense>} />
         {/* M3. */}
-        <Route path="incidents/new" element={<NewIncidentPage />} />
+        <Route path="incidents/new" element={<Suspense fallback={<PageFallback />}><NewIncidentPage /></Suspense>} />
         {/* M14 — reached from Profile and from M4's confirmation screen, not its own tab (a 6th bottom tab for a reference screen would crowd the four the Tanod actually needs dozens of times a shift). */}
-        <Route path="reports" element={<MyReportsPage />} />
+        <Route path="reports" element={<Suspense fallback={<PageFallback />}><MyReportsPage /></Suspense>} />
         {/* M8/M9 — reached from Profile, same "not a tab" reasoning as M14 above (used at most twice a week). */}
-        <Route path="shifts" element={<MyShiftsPage />} />
+        <Route path="shifts" element={<Suspense fallback={<PageFallback />}><MyShiftsPage /></Suspense>} />
         {/* 2026-10 tanod workflow — reached from My Shifts / Profile, same "not a tab" reasoning as M8/M14. */}
-        <Route path="availability" element={<AvailabilityPage />} />
-        <Route path="accomplishments" element={<AccomplishmentsPage />} />
-        <Route path="school" element={<SchoolCheckinPage />} />
+        <Route path="availability" element={<Suspense fallback={<PageFallback />}><AvailabilityPage /></Suspense>} />
+        <Route path="accomplishments" element={<Suspense fallback={<PageFallback />}><AccomplishmentsPage /></Suspense>} />
+        <Route path="school" element={<Suspense fallback={<PageFallback />}><SchoolCheckinPage /></Suspense>} />
         {/* M7. */}
-        <Route path="map" element={<LiveMapPage />} />
-        <Route path="profile" element={<ProfilePage />} />
+        <Route path="map" element={<Suspense fallback={<PageFallback />}><LiveMapPage /></Suspense>} />
+        <Route path="profile" element={<Suspense fallback={<PageFallback />}><ProfilePage /></Suspense>} />
         {/* Bare `/tabs` — nothing in the app navigates there; a safety net only. */}
         <Route index element={<Navigate to="/tabs/home" replace />} />
       </IonRouterOutlet>
@@ -363,9 +373,9 @@ const AdminShell: React.FC = () => {
     <IonTabs>
       <IonRouterOutlet>
         <Route path="sos" element={<AdminSosPage />} />
-        <Route path="dispatch" element={<AdminDispatchPage />} />
-        <Route path="incidents" element={<AdminIncidentsPage />} />
-        <Route path="profile" element={<AdminProfilePage />} />
+        <Route path="dispatch" element={<Suspense fallback={<PageFallback />}><AdminDispatchPage /></Suspense>} />
+        <Route path="incidents" element={<Suspense fallback={<PageFallback />}><AdminIncidentsPage /></Suspense>} />
+        <Route path="profile" element={<Suspense fallback={<PageFallback />}><AdminProfilePage /></Suspense>} />
         <Route path="home" element={<Navigate to="/tabs/sos" replace />} />
         <Route index element={<Navigate to="/tabs/sos" replace />} />
       </IonRouterOutlet>

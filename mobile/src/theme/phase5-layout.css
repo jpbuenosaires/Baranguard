@@ -1,0 +1,47 @@
+/* Phase 5: landscape, tablet widths, safe-area on every side, keyboard behaviour. */
+
+.page-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40dvh;
+  color: var(--color-text-secondary);
+}
+
+/* Fixed bars must clear the display cutout and gesture area on the left and right too (landscape). */
+ion-tab-bar.mobile-tab-bar {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+.home-sos-dock,
+.sticky-action-bar {
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wf-page {
+  padding-left: max(14px, env(safe-area-inset-left, 0px));
+  padding-right: max(14px, env(safe-area-inset-right, 0px));
+}
+
+/* Tablet and wide landscape: keep reading width sane instead of stretching forms edge to edge. */
+@media (min-width: 720px) {
+  .wf-page {
+    max-width: 720px;
+    margin-inline: auto;
+    width: 100%;
+  }
+}
+
+/* Short landscape phones: free vertical space, keep every target 48dp. */
+@media (orientation: landscape) and (max-height: 480px) {
+  .wf-page {
+    padding-top: 8px;
+    gap: 10px;
+  }
+  ion-tab-bar.mobile-tab-bar {
+    height: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
+  .home-sos-dock {
+    padding-top: 4px;
+  }
+}

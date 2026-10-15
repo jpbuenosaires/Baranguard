@@ -8,6 +8,7 @@
  * - Contextual title and back button support
  */
 
+import { visibleInterval } from '../utils/visibleInterval';
 import React, { useEffect, useState } from 'react';
 import {
   IonButtons,
@@ -65,10 +66,10 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
     }
 
     probe();
-    const interval = setInterval(probe, 30000);
+    const stop = visibleInterval(probe, 30000);
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      stop();
     };
   }, []);
 

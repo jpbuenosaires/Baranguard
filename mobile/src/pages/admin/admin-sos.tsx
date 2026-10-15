@@ -10,6 +10,7 @@
  * cards show who, when, and how trustworthy the location is.
  */
 
+import { visibleInterval } from '../../utils/visibleInterval';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { IonAlert, IonContent, IonPage, IonRefresher, IonRefresherContent } from '@ionic/react';
 import { LoadingBlock } from '../../components/LoadingBlock';
@@ -78,8 +79,7 @@ const AdminSosPage: React.FC = () => {
     getSosFallbackContact()
       .then((n) => setFallbackNumber(n))
       .catch(() => setFallbackNumber(undefined));
-    const timer = setInterval(() => void load(), 20000);
-    return () => clearInterval(timer);
+    return visibleInterval(() => void load(), 20000);
   }, [load]);
 
   async function acknowledge(sosId: number) {

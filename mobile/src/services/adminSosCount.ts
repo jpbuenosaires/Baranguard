@@ -4,6 +4,7 @@
  * screen also publishes its own fresh list, so they never disagree). Offline
  * or on error the last known count is kept; nothing is polled when signed out.
  */
+import { visibleInterval } from '../utils/visibleInterval';
 import { useEffect, useState } from 'react';
 import { getSosAlerts } from './apiService';
 import { hasStoredSession } from './session';
@@ -33,10 +34,10 @@ export function useActiveSosCount(): number {
       }
     };
     void poll();
-    const timer = setInterval(() => void poll(), 20000);
+    const stop = visibleInterval(() => void poll(), 20000);
     return () => {
       alive = false;
-      clearInterval(timer);
+      stop();
       listeners.delete(setN);
     };
   }, []);
