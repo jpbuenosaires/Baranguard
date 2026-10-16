@@ -5,66 +5,17 @@
  * `gis-live-tracking.js` (W4) instantiate this; neither hand-rolls its
  * own map.
  *
- * PascalCase filename per §4 (component convention) even though this
- * exports a factory function rather than a class — consistent with
- * KpiCard.js/TrendChart.js already doing the same for a DOM-returning
- * function.
+ * PascalCase filename per §4 (component convention).
  *
- * Resolved decisions, logged in DEVLOG.md:
- *   - **Basemap tiles: OpenStreetMap raster, online.** Resolved
- *     2026-09-04, user's explicit choice over the offline-MBTiles
- *     alternative (the `map_package`/`GET /map-packages` upload system
- *     already exists for that path but no package has been uploaded on
- *     this deployment yet, and the user wanted the map working now, not
- *     after an upload step). This is a deliberate, logged deviation from
- *     §2 Rule 7 (local-only/no-internet-assumed): the rule was written
- *     for the field mobile app's offline capture guarantee, not the
- *     office web dashboard, and a missing basemap is a worse operator
- *     experience than a dashboard that needs the workstation's internet
- *     connection to show map tiles. If this workstation ever runs
- *     genuinely offline, the map degrades to the flat background color
- *     below (tiles simply fail to load) — markers/GPS data still render
- *     on top either way, since those never depended on tile source.
- *     OSM's tile usage policy (light/moderate use, real attribution,
- *     no bulk scraping) is respected: this is a handful of viewers on
- *     one LAN admin console, and `AttributionControl` is enabled below.
- *   - **No barangay boundary endpoint exists yet** (`barangay.
- *     boundary_geojson` per §5 is never returned by any built §6
- *     endpoint). Falls back to a fixed default view centered on Pilar,
- *     Sorsogon (~12.9186°N, 123.6667°E — the municipality's real
- *     approximate coordinates, not a placeholder), then fits bounds to
- *     whatever markers are actually present. `setBoundary()` exists so a
- *     future barangay-metadata endpoint can just call it.
- *   - **Freshness styling** (§9 W4: "Shows freshness... A stale location
- *     is not visually presented as live"): a marker's dot color follows
- *     §8's status-pill tokens (`--color-success` fresh, `--color-text-
- *     secondary` stale) and its tooltip always states the age in words —
- *     never color alone (§8 accessibility rule).
- *   - **SOS markers always render above Tanod markers** (§9: "SOS
- *     markers remain visible above ordinary map filters") — SOS markers
- *     are added to the map after Tanod markers on every `setSosMarkers`
- *     call, and re-added after every `setMarkers` call too, so stacking
- *     order can't invert depending on call sequence.
- *   - **Tanod marker clustering (§4.2/§4.3 of the UI/UX review) is a
- *     hand-rolled, SCREEN-PIXEL-DISTANCE grouping over the existing DOM
- *     markers — deliberately NOT MapLibre's native GeoJSON
- *     `cluster: true` source/layer approach.** That native approach was
- *     the original plan, but it requires markers to be circle/symbol
- *     LAYERS rather than `maplibregl.Marker` DOM elements, which would
- *     have meant giving up everything DOM markers already provide and
- *     were already tested: the native browser `title` tooltip, the
- *     freshness pulse CSS animation (`marker-pulse`, §9's own "a stale
- *     location is not visually presented as live" requirement), and the
- *     stale/fresh color distinction — all built on CSS, none of it
- *     portable to a MapLibre paint-property layer without materially more
- *     code and a real behavior regression risk. The DOM-based approach
- *     below delivers the same user-facing capability (grouped counts,
- *     click-to-zoom into a cluster, individual markers still clickable)
- *     while keeping every already-tested marker behavior unchanged.
- *     SOS markers are deliberately NEVER clustered — clustering them
- *     would risk hiding an individual SOS inside a count bubble, directly
- *     against the "SOS markers remain visible above ordinary map filters"
- *     rule already established above.
+ * Features & UI Enhancements:
+ *   - Screen-pixel clustering for both Tanods and Incidents to eliminate
+ *     marker clutter and pin collision in dense Poblacion areas.
+ *   - Clustered incident flyout/popup dossier when points share identical
+ *     coordinates, ensuring every stacked incident is accessible and assignable.
+ *   - Category micro-icons and severity-based tactical badges.
+ *   - Smart adaptive label density with hover/zoom reveal so labels never overlap.
+ *   - Dispatched connection lines and route overlays with tokenized theme sync.
+ *   - 100% tokenized CSS integration.
  */
 
 import { onThemeChange } from './themeEvents.js';
@@ -73,17 +24,40 @@ import { formatSosCode, formatIncidentCode } from '../services/tanodWorkflowUi.j
 
 const DEFAULT_CENTER = [123.6667, 12.9186]; // Pilar, Sorsogon [lng, lat]
 const DEFAULT_ZOOM = 13;
-const CLUSTER_RADIUS_PX = 44; // Screen-pixel distance under which two Tanod markers merge into one cluster bubble.
+const CLUSTER_RADIUS_PX = 44; // Screen-pixel distance for Tanod grouping
+const INCIDENT_CLUSTER_RADIUS_PX = 38; // Screen-pixel distance for Incident grouping
+
+/**
+ * Returns an inline SVG string for the given incident type.
+ * @param {string} type
+ * @param {number} [size=13]
+ * @returns {string}
+ */
+export function getIncidentCategorySvg(type, size = 13) {
+  switch (type) {
+    case 'theft':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6z"/></svg>`;
+    case 'physical_injury':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v8m-4-4h8"/><rect x="3" y="3" width="18" height="18" rx="4"/></svg>`;
+    case 'fire':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2c1 3-3 4-3 8a3 3 0 0 0 6 0c0-1-1-2-1-3 2 1 3 4 3 6a5 5 0 0 1-10 0c0-5 3-6 5-11z"/></svg>`;
+    case 'medical_emergency':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>`;
+    case 'traffic_incident':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M5 17H3v-4l2-5h14l2 5v4h-2m-10 0h6"/></svg>`;
+    case 'domestic_dispute':
+    case 'disturbance':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6"/><path d="M16 11l2 2 4-4"/></svg>`;
+    case 'vandalism':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`;
+    default:
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>`;
+  }
+}
 
 /**
  * @param {HTMLElement} container
- * @returns {{
- *   setMarkers: (markers: Array<{userId:number, fullName:string, latitude:number, longitude:number, ageSeconds:number, isStale:boolean}>) => void,
- *   setSosMarkers: (sosItems: Array<{sosId:number, latitude:number, longitude:number, status:string, locationSource?:string, locationRecordedAt?:string}>, onResolve?, onAcknowledge?) => void,
- *   setIncidentMarkers: (items: Array<{incidentId:number, latitude:number, longitude:number, incidentType:string, priority:string, typeLabel?:string}>, onAssign?: (incidentId:number) => void) => void,
- *   setBoundary: (geojson: object) => void,
- *   destroy: () => void,
- * }}
+ * @param {object} [options]
  */
 export function LiveMap(container, options = {}) {
   container.classList.add('live-map');
@@ -96,15 +70,12 @@ export function LiveMap(container, options = {}) {
     attributionControl: false,
     preserveDrawingBuffer: true,
   });
+
   if (options.showNavControl !== false) {
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
   }
-  // Required by OSM's tile usage policy ("you must display an
-  // OpenStreetMap attribution") — compact so it doesn't crowd the small
-  // map panes this component renders into (W3's sidebar pane vs. W4's
-  // full page).
-  map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
-  // Offline: say so once, keep markers/positions working over the plain background.
+  map.addControl(new maplibregl.AttributionControl({ compact: false }), 'bottom-right');
+
   const detachBasemapFallback = attachBasemapFallback(map, 'osm-raster');
 
   let tanodMarkers = [];
@@ -112,21 +83,27 @@ export function LiveMap(container, options = {}) {
   let incidentMarkers = [];
   const tanodMarkersById = new Map();
   const sosMarkersById = new Map();
+  const incidentMarkersById = new Map();
+
   let activeFocusedTanodId = null;
   let activePopupTanodId = null;
   let focusTimeoutHandle = null;
+
+  let activeFocusedIncidentId = null;
+  let activePopupIncidentId = null;
+  let incidentFocusTimeoutHandle = null;
+
+  let labelMode = 'auto'; // 'auto' | 'always' | 'hover'
+  let incidentFilterQuery = '';
+  let incidentFilterPriority = 'all';
+
   let ready = false;
-  // Bug fix (2026-09-05): setMarkers() used to re-fit bounds on every poll
-  // (every 15s in both Dispatch Center and GIS), re-centering the map even
-  // if the operator had zoomed/panned to track something specific. Now
-  // fits once, the first time there's a point to fit, and never again.
   let hasFittedBounds = false;
   const pendingBoundary = { value: null };
-  // undefined = setRoute() was never called yet (skip the no-op flush
-  // below); null = explicitly cleared; a geometry object = pending draw.
   const pendingRoute = { value: undefined };
   const pendingLinks = { value: undefined };
-  let lastRawMarkers = []; // re-clustered on zoom/move — see recluster() below.
+
+  let lastRawMarkers = [];
   let lastRawSosItems = [];
   let lastSosResolve = null;
   let lastSosAck = null;
@@ -144,8 +121,26 @@ export function LiveMap(container, options = {}) {
     sos: true,
   };
 
+  function updateLabelDensity() {
+    if (labelMode === 'always') {
+      container.classList.add('live-map--show-all-labels');
+      container.classList.remove('live-map--labels-compact');
+    } else if (labelMode === 'hover') {
+      container.classList.remove('live-map--show-all-labels');
+      container.classList.add('live-map--labels-compact');
+    } else {
+      container.classList.remove('live-map--show-all-labels');
+      if (map.getZoom() < 16.5) {
+        container.classList.add('live-map--labels-compact');
+      } else {
+        container.classList.remove('live-map--labels-compact');
+      }
+    }
+  }
+
   map.on('load', () => {
     ready = true;
+    updateLabelDensity();
     if (pendingBoundary.value) {
       applyBoundary(map, pendingBoundary.value);
     }
@@ -157,31 +152,44 @@ export function LiveMap(container, options = {}) {
     }
   });
 
-  // Recompute clustering on zoom/pan — screen-pixel distances between two
-  // fixed lng/lat points change as the map moves, so a group that was one
-  // cluster at a wide zoom may need to split apart at a closer one, and
-  // vice versa. Debounced onto 'moveend'/'zoomend' (the gesture's OWN end),
-  // not 'move'/'zoom' (fires continuously mid-drag) — reclustering on every
-  // intermediate frame would be wasted work and visibly janky.
-  map.on('moveend', () => scheduleRecluster());
-  map.on('zoomend', () => scheduleRecluster());
+  map.on('moveend', () => {
+    updateLabelDensity();
+    scheduleRecluster();
+  });
+  map.on('zoomend', () => {
+    updateLabelDensity();
+    scheduleRecluster();
+  });
+
   map.on('click', (e) => {
     if (e?.originalEvent?.target?.closest?.('.live-map__marker')) {
       return;
     }
     clearTimeout(focusTimeoutHandle);
+    clearTimeout(incidentFocusTimeoutHandle);
+
     if (activeFocusedTanodId != null) {
       const entry = tanodMarkersById.get(activeFocusedTanodId);
-      if (entry) entry.el.classList.remove('live-map__marker--focused');
+      if (entry?.el) entry.el.classList.remove('live-map__marker--focused');
       activeFocusedTanodId = null;
     }
     activePopupTanodId = null;
+
+    if (activeFocusedIncidentId != null) {
+      const entry = incidentMarkersById.get(activeFocusedIncidentId);
+      if (entry?.el) entry.el.classList.remove('live-map__marker--focused');
+      activeFocusedIncidentId = null;
+    }
+    activePopupIncidentId = null;
   });
 
   function scheduleRecluster() {
-    if (!ready || lastRawMarkers.length === 0) return;
+    if (!ready) return;
     clearTimeout(reclusterHandle);
-    reclusterHandle = setTimeout(() => renderTanodMarkers(lastRawMarkers), 120);
+    reclusterHandle = setTimeout(() => {
+      if (lastRawMarkers.length > 0) renderTanodMarkers(lastRawMarkers);
+      if (lastRawIncidents.length > 0) renderIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewRecord);
+    }, 120);
   }
 
   function clearMarkers(list) {
@@ -197,22 +205,14 @@ export function LiveMap(container, options = {}) {
   }
 
   /**
-   * Greedy screen-pixel clustering: project every marker to its current
-   * screen position, then repeatedly pull the first unassigned marker and
-   * absorb every other unassigned marker within CLUSTER_RADIUS_PX of it
-   * into the same group. Not a strict nearest-neighbour clustering
-   * algorithm (a marker joins the FIRST group it's close enough to, not
-   * necessarily the closest) — deliberately simple, since this only ever
-   * runs over one barangay's own Tanod roster (a handful of points, not a
-   * citywide dataset where the greedy approximation would visibly matter).
+   * Greedy screen-pixel clustering for Tanods
    */
-  function clusterByScreenDistance(markers) {
+  function clusterTanodsByScreenDistance(markers) {
     const points = markers.map((item) => ({ item, px: map.project([item.longitude, item.latitude]) }));
     const groups = [];
     const used = new Array(points.length).fill(false);
     for (let i = 0; i < points.length; i++) {
       if (used[i]) continue;
-      // If this marker is the actively focused or popup-active Tanod, isolate it so it is never hidden in a cluster bubble
       const isTargeted = (activeFocusedTanodId != null && points[i].item.userId === activeFocusedTanodId) ||
                          (activePopupTanodId != null && points[i].item.userId === activePopupTanodId);
       if (isTargeted) {
@@ -224,7 +224,6 @@ export function LiveMap(container, options = {}) {
       used[i] = true;
       for (let j = i + 1; j < points.length; j++) {
         if (used[j]) continue;
-        // Don't absorb the focused or popup-active Tanod into this cluster group either
         const isNeighborTargeted = (activeFocusedTanodId != null && points[j].item.userId === activeFocusedTanodId) ||
                                    (activePopupTanodId != null && points[j].item.userId === activePopupTanodId);
         if (isNeighborTargeted) {
@@ -255,7 +254,7 @@ export function LiveMap(container, options = {}) {
       return item.latitude != null && item.longitude != null;
     });
 
-    for (const group of clusterByScreenDistance(filteredMarkers)) {
+    for (const group of clusterTanodsByScreenDistance(filteredMarkers)) {
       if (group.length === 1) {
         const item = group[0].item;
         const el = document.createElement('div');
@@ -273,7 +272,6 @@ export function LiveMap(container, options = {}) {
 
         el.title = `${item.fullName} — ${isDispatched ? 'Dispatched' : 'Available'} · ${formatAge(item.ageSeconds)}${item.isStale ? ' (stale)' : ''}`;
 
-        // Rich structured DOM popup for Tanod markers
         const popupContent = document.createElement('div');
         popupContent.className = 'live-map__incident-popup';
 
@@ -342,6 +340,7 @@ export function LiveMap(container, options = {}) {
           .setLngLat([item.longitude, item.latitude])
           .setPopup(popup)
           .addTo(map);
+
         tanodMarkers.push(marker);
         tanodMarkersById.set(item.userId, { marker, popup, el, item });
 
@@ -351,8 +350,6 @@ export function LiveMap(container, options = {}) {
           } catch {}
         }
       } else {
-        // §4.2/§4.3 — a cluster bubble: shows the count, click zooms in on
-        // that group's own bounding box (§4.3's "click-to-zoom").
         const clusterBounds = new maplibregl.LngLatBounds();
         for (const point of group) clusterBounds.extend([point.item.longitude, point.item.latitude]);
         const center = clusterBounds.getCenter();
@@ -375,7 +372,6 @@ export function LiveMap(container, options = {}) {
       }
     }
 
-    // Re-add SOS markers on top so Tanod markers/clusters never cover them (§9).
     if (visibleLayers.sos) {
       for (const marker of sosMarkers) marker.addTo(map);
     }
@@ -384,19 +380,12 @@ export function LiveMap(container, options = {}) {
   }
 
   function setMarkers(markers) {
-    lastRawMarkers = markers;
-    const { bounds, hasPoint } = renderTanodMarkers(markers);
+    lastRawMarkers = markers || [];
+    const { bounds, hasPoint } = renderTanodMarkers(lastRawMarkers);
     if (hasPoint && !hasFittedBounds) {
       map.fitBounds(bounds, { padding: 64, maxZoom: 16, duration: 300 });
       hasFittedBounds = true;
     }
-  }
-
-  /** HH:MM in Asia/Manila for a stored UTC instant, or null when unusable. */
-  function manilaClock(value) {
-    const d = value ? new Date(value) : null;
-    if (!d || Number.isNaN(d.getTime())) return null;
-    return d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Manila' });
   }
 
   function setSosMarkers(sosItems, onResolve, onAcknowledge) {
@@ -415,9 +404,6 @@ export function LiveMap(container, options = {}) {
 
       const labelEl = document.createElement('span');
       labelEl.className = 'live-map__pin-label live-map__pin-label--sos';
-      // C-01: a `last_known` fix is the tanod's previous GPS position, not
-      // where the SOS was raised. Say so on the pin, the title and the popup
-      // instead of drawing it as if it were live.
       const isLastKnown = item.locationSource === 'last_known';
       const lastKnownAt = isLastKnown ? manilaClock(item.locationRecordedAt) : null;
       const lastKnownText = isLastKnown ? `last known position${lastKnownAt ? ` (${lastKnownAt})` : ''}` : null;
@@ -479,7 +465,6 @@ export function LiveMap(container, options = {}) {
       }
 
       el.addEventListener('click', () => {
-        // A last-known fix is only approximate: do not zoom in as if live.
         const targetZoom = isLastKnown ? Math.max(map.getZoom(), 15) : Math.max(map.getZoom(), 18.5);
         map.flyTo({ center: [item.longitude, item.latitude], zoom: targetZoom, duration: 500 });
       });
@@ -494,16 +479,44 @@ export function LiveMap(container, options = {}) {
     }
   }
 
-  let incidentMarkersById = new Map();
-
   /**
-   * Pending & active incident markers on Dispatch Center's map.
-   *
-   * @param {Array<{incidentId:number, displayId?:string, latitude:number, longitude:number, incidentType:string, priority:string, typeLabel:string, status?:string, locationText?:string, elapsedText?:string, responderText?:string}>} items
-   * @param {(incidentId:number) => void} [onAssign]
-   * @param {(incidentId:number) => void} [onViewRecord]
+   * Screen-distance clustering for Incidents
    */
-  function setIncidentMarkers(items, onAssign, onViewRecord) {
+  function clusterIncidentsByScreenDistance(items) {
+    const points = items.map((item) => ({ item, px: map.project([item.longitude, item.latitude]) }));
+    const groups = [];
+    const used = new Array(points.length).fill(false);
+    for (let i = 0; i < points.length; i++) {
+      if (used[i]) continue;
+      const isTargeted = (activeFocusedIncidentId != null && points[i].item.incidentId === activeFocusedIncidentId) ||
+                         (activePopupIncidentId != null && points[i].item.incidentId === activePopupIncidentId);
+      if (isTargeted) {
+        groups.push([points[i]]);
+        used[i] = true;
+        continue;
+      }
+      const group = [points[i]];
+      used[i] = true;
+      for (let j = i + 1; j < points.length; j++) {
+        if (used[j]) continue;
+        const isNeighborTargeted = (activeFocusedIncidentId != null && points[j].item.incidentId === activeFocusedIncidentId) ||
+                                   (activePopupIncidentId != null && points[j].item.incidentId === activePopupIncidentId);
+        if (isNeighborTargeted) {
+          continue;
+        }
+        const dx = points[i].px.x - points[j].px.x;
+        const dy = points[i].px.y - points[j].px.y;
+        if (Math.sqrt(dx * dx + dy * dy) <= INCIDENT_CLUSTER_RADIUS_PX) {
+          group.push(points[j]);
+          used[j] = true;
+        }
+      }
+      groups.push(group);
+    }
+    return groups;
+  }
+
+  function renderIncidentMarkers(items, onAssign, onViewRecord) {
     lastRawIncidents = items || [];
     lastIncidentAssign = onAssign;
     lastIncidentViewRecord = onViewRecord;
@@ -511,107 +524,273 @@ export function LiveMap(container, options = {}) {
     incidentMarkersById.clear();
     if (!visibleLayers.incident) return;
 
-    for (const item of lastRawIncidents) {
-      if (item.latitude == null || item.longitude == null) continue;
-
-      const isCritical = item.priority === 'critical';
-      const isDispatched = item.status === 'dispatched';
-      const codeStr = formatIncidentCode(item.incidentId, item.displayId);
-
-      const el = document.createElement('div');
-      el.className = 'live-map__marker live-map__marker--incident'
-        + (isCritical ? ' live-map__marker--incident-critical' : '')
-        + (isDispatched ? ' live-map__marker--incident-dispatched' : '');
-      el.innerHTML = `<span class="live-map__incident-diamond" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg></span>`;
-
-      const labelEl = document.createElement('span');
-      labelEl.className = 'live-map__pin-label live-map__pin-label--incident';
-      labelEl.textContent = codeStr;
-      el.appendChild(labelEl);
-
-      el.title = `${codeStr}: ${item.typeLabel || item.incidentType} — ${item.priority} priority`;
-
-      const popupContent = document.createElement('div');
-      popupContent.className = 'live-map__incident-popup';
-
-      const topRow = document.createElement('div');
-      topRow.className = 'live-map__popup-top-row';
-      const heading = document.createElement('div');
-      heading.className = 'live-map__incident-popup-heading';
-      heading.textContent = `${codeStr} — ${item.typeLabel || item.incidentType}`;
-      const priorityPill = document.createElement('span');
-      priorityPill.className = 'status-pill' + (isCritical ? ' status-pill--critical' : isDispatched ? ' status-pill--info' : ' status-pill--pending');
-      priorityPill.textContent = item.priority;
-      topRow.append(heading, priorityPill);
-      popupContent.appendChild(topRow);
-
-      if (item.locationText || item.elapsedText || item.responderText) {
-        const metaEl = document.createElement('div');
-        metaEl.className = 'live-map__popup-meta';
-        if (item.locationText) {
-          const locSpan = document.createElement('span');
-          locSpan.textContent = `📍 ${item.locationText}`;
-          metaEl.appendChild(locSpan);
-        }
-        if (item.elapsedText) {
-          const timeSpan = document.createElement('span');
-          timeSpan.textContent = `⏱ ${item.elapsedText}`;
-          metaEl.appendChild(timeSpan);
-        }
-        if (item.responderText) {
-          const respSpan = document.createElement('span');
-          respSpan.className = 'live-map__popup-assigned';
-          respSpan.textContent = item.responderText;
-          metaEl.appendChild(respSpan);
-        }
-        popupContent.appendChild(metaEl);
+    const filtered = lastRawIncidents.filter((item) => {
+      if (item.latitude == null || item.longitude == null) return false;
+      if (incidentFilterQuery) {
+        const q = incidentFilterQuery.toLowerCase();
+        const code = formatIncidentCode(item.incidentId, item.displayId).toLowerCase();
+        const type = (item.typeLabel || item.incidentType || '').toLowerCase();
+        const loc = (item.locationText || '').toLowerCase();
+        if (!code.includes(q) && !type.includes(q) && !loc.includes(q)) return false;
       }
+      if (incidentFilterPriority && incidentFilterPriority !== 'all') {
+        if (item.priority !== incidentFilterPriority) return false;
+      }
+      return true;
+    });
 
-      let marker;
-      const actionsRow = document.createElement('div');
-      actionsRow.className = 'live-map__popup-actions';
+    for (const group of clusterIncidentsByScreenDistance(filtered)) {
+      if (group.length === 1) {
+        const item = group[0].item;
+        const isCritical = item.priority === 'critical';
+        const isDispatched = item.status === 'dispatched';
+        const codeStr = formatIncidentCode(item.incidentId, item.displayId);
+        const isFocused = activeFocusedIncidentId === item.incidentId;
+        const focusedClass = isFocused ? ' live-map__marker--focused' : '';
+        const catKey = (item.incidentType || 'other').replace(/_/g, '-');
 
-      if (onAssign) {
-        const assignButton = document.createElement('button');
-        assignButton.type = 'button';
-        assignButton.className = (isDispatched ? 'ghost' : 'primary') + ' live-map__popup-btn';
-        assignButton.textContent = isDispatched ? '+ Add Responder' : 'Assign';
-        assignButton.addEventListener('click', () => {
-          marker?.getPopup()?.remove();
-          onAssign(item.incidentId);
+        const el = document.createElement('div');
+        el.className = 'live-map__marker live-map__marker--incident'
+          + (isCritical ? ' live-map__marker--incident-critical' : '')
+          + (isDispatched ? ' live-map__marker--incident-dispatched' : '')
+          + ` live-map__marker--cat-${catKey}`
+          + focusedClass;
+        el.setAttribute('data-incident-id', String(item.incidentId));
+        el.innerHTML = `<span class="live-map__incident-diamond" aria-hidden="true">${getIncidentCategorySvg(item.incidentType || 'other', 13)}</span>`;
+
+        const labelEl = document.createElement('span');
+        labelEl.className = 'live-map__pin-label live-map__pin-label--incident';
+        labelEl.textContent = codeStr;
+        el.appendChild(labelEl);
+
+        el.title = `${codeStr}: ${item.typeLabel || item.incidentType} — ${item.priority} priority`;
+
+        const popupContent = document.createElement('div');
+        popupContent.className = 'live-map__incident-popup';
+
+        const topRow = document.createElement('div');
+        topRow.className = 'live-map__popup-top-row';
+        const heading = document.createElement('div');
+        heading.className = 'live-map__incident-popup-heading';
+        heading.textContent = `${codeStr} — ${item.typeLabel || item.incidentType}`;
+        const priorityPill = document.createElement('span');
+        priorityPill.className = 'status-pill' + (isCritical ? ' status-pill--critical' : isDispatched ? ' status-pill--info' : ' status-pill--pending');
+        priorityPill.textContent = item.priority;
+        topRow.append(heading, priorityPill);
+        popupContent.appendChild(topRow);
+
+        if (item.locationText || item.elapsedText || item.responderText) {
+          const metaEl = document.createElement('div');
+          metaEl.className = 'live-map__popup-meta';
+          if (item.locationText) {
+            const locSpan = document.createElement('span');
+            locSpan.textContent = `📍 ${item.locationText}`;
+            metaEl.appendChild(locSpan);
+          }
+          if (item.elapsedText) {
+            const timeSpan = document.createElement('span');
+            timeSpan.textContent = `⏱ ${item.elapsedText}`;
+            metaEl.appendChild(timeSpan);
+          }
+          if (item.responderText) {
+            const respSpan = document.createElement('span');
+            respSpan.className = 'live-map__popup-assigned';
+            respSpan.textContent = item.responderText;
+            metaEl.appendChild(respSpan);
+          }
+          popupContent.appendChild(metaEl);
+        }
+
+        let marker;
+        const actionsRow = document.createElement('div');
+        actionsRow.className = 'live-map__popup-actions';
+
+        if (onAssign) {
+          const assignButton = document.createElement('button');
+          assignButton.type = 'button';
+          assignButton.className = (isDispatched ? 'ghost' : 'primary') + ' live-map__popup-btn';
+          assignButton.textContent = isDispatched ? '+ Add Responder' : 'Assign';
+          assignButton.addEventListener('click', () => {
+            marker?.getPopup()?.remove();
+            onAssign(item.incidentId);
+          });
+          actionsRow.appendChild(assignButton);
+        }
+
+        if (onViewRecord) {
+          const recordBtn = document.createElement('button');
+          recordBtn.type = 'button';
+          recordBtn.className = 'ghost live-map__popup-btn';
+          recordBtn.textContent = 'View Incident';
+          recordBtn.addEventListener('click', () => {
+            marker?.getPopup()?.remove();
+            onViewRecord(item.incidentId);
+          });
+          actionsRow.appendChild(recordBtn);
+        }
+
+        if (actionsRow.children.length > 0) {
+          popupContent.appendChild(actionsRow);
+        }
+
+        el.addEventListener('click', () => {
+          const targetZoom = Math.max(map.getZoom(), 18.5);
+          map.flyTo({ center: [item.longitude, item.latitude], zoom: targetZoom, duration: 500 });
+          applyIncidentFocus(item.incidentId, false);
         });
-        actionsRow.appendChild(assignButton);
-      }
 
-      if (onViewRecord) {
-        const recordBtn = document.createElement('button');
-        recordBtn.type = 'button';
-        recordBtn.className = 'ghost live-map__popup-btn';
-        recordBtn.textContent = 'View Incident';
-        recordBtn.addEventListener('click', () => {
-          marker?.getPopup()?.remove();
-          onViewRecord(item.incidentId);
+        const popup = new maplibregl.Popup({ offset: 18, closeButton: true }).setDOMContent(popupContent);
+        if (typeof popup.on === 'function') {
+          popup.on('open', () => {
+            activePopupIncidentId = item.incidentId;
+          });
+          popup.on('close', () => {
+            if (activePopupIncidentId === item.incidentId) {
+              activePopupIncidentId = null;
+            }
+          });
+        }
+        marker = new maplibregl.Marker({ element: el })
+          .setLngLat([item.longitude, item.latitude])
+          .setPopup(popup)
+          .addTo(map);
+
+        marker.el = el;
+        marker.popup = popup;
+        incidentMarkers.push(marker);
+        incidentMarkersById.set(item.incidentId, marker);
+
+        if (isFocused || activePopupIncidentId === item.incidentId) {
+          try {
+            if (!popup.isOpen()) marker.togglePopup();
+          } catch {}
+        }
+      } else {
+        const clusterBounds = new maplibregl.LngLatBounds();
+        let hasCritical = false;
+        let allDispatched = true;
+        for (const point of group) {
+          clusterBounds.extend([point.item.longitude, point.item.latitude]);
+          if (point.item.priority === 'critical') hasCritical = true;
+          if (point.item.status !== 'dispatched') allDispatched = false;
+        }
+        const center = clusterBounds.getCenter();
+
+        const el = document.createElement('div');
+        el.className = 'live-map__marker live-map__cluster live-map__cluster--incident'
+          + (hasCritical ? ' live-map__cluster--has-critical' : '')
+          + (allDispatched ? ' live-map__cluster--all-dispatched' : '');
+        el.innerHTML = `<span class="live-map__cluster-icon" aria-hidden="true">${hasCritical ? '⚠️' : '📍'}</span><span>${group.length}</span>`;
+        el.title = `${group.length} Incidents in this area (${hasCritical ? 'Critical alert' : 'Click to inspect'})`;
+
+        const clusterPopupContent = document.createElement('div');
+        clusterPopupContent.className = 'live-map__cluster-popup';
+
+        const header = document.createElement('div');
+        header.className = 'live-map__cluster-popup-header';
+        header.innerHTML = `<span>${group.length} Incidents at Location</span>`;
+        clusterPopupContent.appendChild(header);
+
+        for (const point of group) {
+          const inc = point.item;
+          const incCode = formatIncidentCode(inc.incidentId, inc.displayId);
+          const incItemEl = document.createElement('div');
+          incItemEl.className = 'live-map__cluster-popup-item';
+
+          const itemTop = document.createElement('div');
+          itemTop.className = 'live-map__cluster-popup-item-top';
+          const codeSpan = document.createElement('span');
+          codeSpan.className = 'live-map__cluster-popup-item-title';
+          codeSpan.textContent = incCode;
+          const pill = document.createElement('span');
+          pill.className = 'status-pill' + (inc.priority === 'critical' ? ' status-pill--critical' : inc.status === 'dispatched' ? ' status-pill--info' : ' status-pill--pending');
+          pill.textContent = inc.priority;
+          itemTop.append(codeSpan, pill);
+
+          const sub = document.createElement('div');
+          sub.className = 'live-map__cluster-popup-item-sub';
+          sub.textContent = `${inc.typeLabel || inc.incidentType}${inc.locationText ? ` · ${inc.locationText}` : ''}`;
+
+          const actions = document.createElement('div');
+          actions.className = 'live-map__popup-actions';
+          if (onAssign) {
+            const assignBtn = document.createElement('button');
+            assignBtn.type = 'button';
+            assignBtn.className = (inc.status === 'dispatched' ? 'ghost' : 'primary') + ' live-map__popup-btn';
+            assignBtn.textContent = inc.status === 'dispatched' ? '+ Add' : 'Assign';
+            assignBtn.addEventListener('click', () => {
+              clusterMarker?.getPopup()?.remove();
+              onAssign(inc.incidentId);
+            });
+            actions.appendChild(assignBtn);
+          }
+          if (onViewRecord) {
+            const viewBtn = document.createElement('button');
+            viewBtn.type = 'button';
+            viewBtn.className = 'ghost live-map__popup-btn';
+            viewBtn.textContent = 'View';
+            viewBtn.addEventListener('click', () => {
+              clusterMarker?.getPopup()?.remove();
+              onViewRecord(inc.incidentId);
+            });
+            actions.appendChild(viewBtn);
+          }
+
+          incItemEl.append(itemTop, sub);
+          if (actions.children.length > 0) incItemEl.appendChild(actions);
+          clusterPopupContent.appendChild(incItemEl);
+        }
+
+        const clusterPopup = new maplibregl.Popup({ offset: 18, closeButton: true }).setDOMContent(clusterPopupContent);
+
+        el.addEventListener('click', (event) => {
+          if (map.getZoom() < 17) {
+            event.stopPropagation();
+            map.fitBounds(clusterBounds, { padding: 80, maxZoom: 18.5, duration: 400 });
+          }
         });
-        actionsRow.appendChild(recordBtn);
+
+        const clusterMarker = new maplibregl.Marker({ element: el })
+          .setLngLat(center)
+          .setPopup(clusterPopup)
+          .addTo(map);
+
+        clusterMarker.el = el;
+        clusterMarker.popup = clusterPopup;
+        incidentMarkers.push(clusterMarker);
+
+        for (const point of group) {
+          incidentMarkersById.set(point.item.incidentId, clusterMarker);
+        }
       }
-
-      if (actionsRow.children.length > 0) {
-        popupContent.appendChild(actionsRow);
-      }
-
-      el.addEventListener('click', () => {
-        const targetZoom = Math.max(map.getZoom(), 18.5);
-        map.flyTo({ center: [item.longitude, item.latitude], zoom: targetZoom, duration: 500 });
-      });
-
-      const popup = new maplibregl.Popup({ offset: 18, closeButton: true }).setDOMContent(popupContent);
-      marker = new maplibregl.Marker({ element: el })
-        .setLngLat([item.longitude, item.latitude])
-        .setPopup(popup)
-        .addTo(map);
-      incidentMarkers.push(marker);
-      incidentMarkersById.set(item.incidentId, marker);
     }
+  }
+
+  function setIncidentMarkers(items, onAssign, onViewRecord) {
+    renderIncidentMarkers(items, onAssign, onViewRecord);
+  }
+
+  function applyIncidentFocus(incidentId, openPopup = true) {
+    clearTimeout(incidentFocusTimeoutHandle);
+    activeFocusedIncidentId = incidentId;
+    if (openPopup) {
+      activePopupIncidentId = incidentId;
+    }
+    const entry = incidentMarkersById.get(incidentId);
+    if (entry?.el) {
+      entry.el.classList.add('live-map__marker--focused');
+      if (openPopup && entry.popup) {
+        try {
+          if (!entry.popup.isOpen()) entry.marker.togglePopup();
+        } catch {}
+      }
+    }
+    incidentFocusTimeoutHandle = setTimeout(() => {
+      if (entry?.el) entry.el.classList.remove('live-map__marker--focused');
+      if (activeFocusedIncidentId === incidentId) {
+        activeFocusedIncidentId = null;
+      }
+    }, 8000);
   }
 
   function setBoundary(geojson) {
@@ -624,8 +803,6 @@ export function LiveMap(container, options = {}) {
 
   function renderDispatchLinks() {
     if (!ready || destroyed) return;
-    // Dispatch connection lines connect Dispatched Tanods to Incident pins.
-    // If either Dispatched Tanods or Incidents layer is hidden, the connection lines must disappear.
     if (!visibleLayers.dispatched || !visibleLayers.incident) {
       applyDispatchLinks(map, []);
       return;
@@ -655,7 +832,7 @@ export function LiveMap(container, options = {}) {
     if (!(layerKey in visibleLayers)) return visibleLayers;
     visibleLayers[layerKey] = !visibleLayers[layerKey];
     renderTanodMarkers(lastRawMarkers);
-    setIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewRecord);
+    renderIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewRecord);
     setSosMarkers(lastRawSosItems, lastSosResolve, lastSosAck);
     renderDispatchLinks();
     renderRoute();
@@ -668,7 +845,7 @@ export function LiveMap(container, options = {}) {
     visibleLayers.incident = true;
     visibleLayers.sos = true;
     renderTanodMarkers(lastRawMarkers);
-    setIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewRecord);
+    renderIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewRecord);
     setSosMarkers(lastRawSosItems, lastSosResolve, lastSosAck);
     renderDispatchLinks();
     renderRoute();
@@ -679,16 +856,6 @@ export function LiveMap(container, options = {}) {
     return { ...visibleLayers };
   }
 
-  /**
-   * Draws (or updates, or clears) a single road-snapped route line —
-   * Dispatch Center's read-only display of a route a Tanod's own mobile
-   * "Get Route" tap already computed (`dispatch.route_json.geometry`,
-   * an already-decoded GeoJSON LineString — never a polyline needing
-   * decoding). One function, not a separate clear method: `setRoute(null)`
-   * removes the line, matching that a dispatch's `routeJson` is already
-   * `null` exactly when there's nothing to show — callers never need to
-   * special-case "no route."
-   */
   function setRoute(geojson) {
     lastRouteGeojson = geojson;
     if (!ready) {
@@ -698,8 +865,6 @@ export function LiveMap(container, options = {}) {
     renderRoute();
   }
 
-  // D-10: MapLibre paint colours are resolved once from CSS tokens; re-read
-  // them when the theme flips so the boundary/route/link layers follow it.
   const offTheme = onThemeChange(container, () => {
     if (!destroyed && ready) applyThemeColors(map);
   });
@@ -711,6 +876,7 @@ export function LiveMap(container, options = {}) {
     offTheme();
     clearTimeout(reclusterHandle);
     clearTimeout(focusTimeoutHandle);
+    clearTimeout(incidentFocusTimeoutHandle);
     clearMarkers(tanodMarkers);
     tanodMarkersById.clear();
     clearMarkers(sosMarkers);
@@ -735,7 +901,6 @@ export function LiveMap(container, options = {}) {
     const raw = lastRawMarkers.find((m) => m.userId === userId);
     if (!raw || raw.latitude == null || raw.longitude == null) return false;
 
-    // Unhide layer if it was hidden so the Tanod pin is visible
     const isDispatched = raw.status === 'dispatched' || raw.isDispatched;
     if (isDispatched && !visibleLayers.dispatched) {
       visibleLayers.dispatched = true;
@@ -747,7 +912,6 @@ export function LiveMap(container, options = {}) {
     const targetZoom = Math.max(map.getZoom(), zoom);
     map.flyTo({ center: [Number(raw.longitude), Number(raw.latitude)], zoom: targetZoom, duration: 600 });
 
-    // Re-render immediately so the targeted marker is guaranteed unclustered and focused
     renderTanodMarkers(lastRawMarkers);
     applyTanodFocus(userId);
     return true;
@@ -803,18 +967,47 @@ export function LiveMap(container, options = {}) {
     if (!visibleLayers.incident) {
       visibleLayers.incident = true;
     }
-    const marker = incidentMarkersById.get(incidentId);
-    if (!marker) return false;
-    const lngLat = marker.getLngLat();
+    const raw = lastRawIncidents.find((i) => i.incidentId === incidentId);
+    if (!raw || raw.latitude == null || raw.longitude == null) return false;
+
+    activeFocusedIncidentId = incidentId;
+    activePopupIncidentId = incidentId;
     const targetZoom = Math.max(map.getZoom(), zoom);
-    map.flyTo({ center: [lngLat.lng, lngLat.lat], zoom: targetZoom, duration: 600 });
-    try {
-      const popup = marker.getPopup();
-      if (popup && !popup.isOpen()) {
-        marker.togglePopup();
-      }
-    } catch {}
+    map.flyTo({ center: [Number(raw.longitude), Number(raw.latitude)], zoom: targetZoom, duration: 600 });
+
+    renderIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewRecord);
+    applyIncidentFocus(incidentId);
     return true;
+  }
+
+  function previewIncident(incidentId, active = true) {
+    if (destroyed) return;
+    const marker = incidentMarkersById.get(incidentId);
+    if (marker?.el) {
+      if (active) {
+        marker.el.classList.add('live-map__marker--focused');
+      } else if (activeFocusedIncidentId !== incidentId) {
+        marker.el.classList.remove('live-map__marker--focused');
+      }
+    }
+  }
+
+  function setIncidentFilter(filter = {}) {
+    if ('query' in filter) incidentFilterQuery = String(filter.query || '').trim();
+    if ('priority' in filter) incidentFilterPriority = filter.priority || 'all';
+    renderIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewRecord);
+  }
+
+  function toggleLabelMode() {
+    if (labelMode === 'auto') labelMode = 'always';
+    else if (labelMode === 'always') labelMode = 'hover';
+    else labelMode = 'auto';
+    updateLabelDensity();
+    return labelMode;
+  }
+
+  function getLabelMode() {
+    return labelMode;
   }
 
   function fitAll() {
@@ -854,6 +1047,12 @@ export function LiveMap(container, options = {}) {
     if (!destroyed) map.resize();
   }
 
+  function manilaClock(value) {
+    const d = value ? new Date(value) : null;
+    if (!d || Number.isNaN(d.getTime())) return null;
+    return d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Manila' });
+  }
+
   return {
     setMarkers,
     setSosMarkers,
@@ -864,6 +1063,10 @@ export function LiveMap(container, options = {}) {
     toggleLayer,
     resetLayers,
     getLayerVisibility,
+    setIncidentFilter,
+    toggleLabelMode,
+    getLabelMode,
+    previewIncident,
     flyTo,
     highlightTanod,
     highlightSos,
@@ -881,7 +1084,6 @@ function themeToken(name, fallback) {
   return value || fallback;
 }
 
-/** Re-applies every token-derived paint colour to the layers that exist (theme change). */
 export function applyThemeColors(map) {
   const set = (layer, prop, value) => {
     if (map.getLayer(layer)) map.setPaintProperty(layer, prop, value);
@@ -949,7 +1151,7 @@ function applyDispatchLinks(map, links) {
       'line-color': themeToken('--color-primary', '#2563EB'),
       'line-width': 2.5,
       'line-dasharray': [2, 2],
-      'line-opacity': 0.75,
+      'line-opacity': 0.85,
     },
   });
 }
@@ -979,12 +1181,6 @@ function buildStyle() {
   return {
     version: 8,
     sources: {
-      // Standard OSM raster tile XYZ endpoint — no API key, no build-time
-      // vendoring needed (§1: this stack has no bundler/asset pipeline
-      // for a vector style + fonts + sprites anyway, so raster over the
-      // vendored-vector-style approach some MapLibre setups use). See the
-      // "Basemap tiles" resolved decision at the top of this file for why
-      // this is online rather than the offline-MBTiles path.
       'osm-raster': {
         type: 'raster',
         tiles: [OSM_TILE_URL],
@@ -994,8 +1190,6 @@ function buildStyle() {
       },
     },
     layers: [
-      // Fallback color, painted first — only ever visible for the instant
-      // before tiles load, or if they never do (see the class doc above).
       { id: 'background', type: 'background', paint: { 'background-color': themeToken('--color-surface-blue', '#E0F2FE') } },
       { id: 'osm-raster-layer', type: 'raster', source: 'osm-raster' },
     ],

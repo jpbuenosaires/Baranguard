@@ -281,6 +281,8 @@ export function buildRoutes(scenario) {
       if (query.status) rows = rows.filter((i) => i.status === query.status);
       if (query.priority) rows = rows.filter((i) => i.priority === query.priority);
       if (query.q) rows = rows.filter((i) => `${i.display_id} ${i.incident_type} ${i.status}`.toLowerCase().includes(String(query.q).toLowerCase()));
+      if (query.date_from) rows = rows.filter((i) => i.created_at >= query.date_from);
+      if (query.date_to) rows = rows.filter((i) => i.created_at <= (query.date_to.length <= 10 ? query.date_to + ' 23:59:59' : query.date_to));
       return ok(paginate(rows, query));
     } },
     { method: 'POST', path: '/incidents', handler: ({ body }) => ({ status: 201, body: { incident_id: 905, barangay_id: 1, reported_by: 1, incident_type: body.incident_type, priority: body.priority || 'normal', status: 'pending', source: 'web', report_channel: body.report_channel ?? 'walk_in', latitude: body.latitude ?? null, longitude: body.longitude ?? null, location_description: body.location_description ?? null, display_id: 'INC-2026-905', created_at: sqlAgo(0) } }) },

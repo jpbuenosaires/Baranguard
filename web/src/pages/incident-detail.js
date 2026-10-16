@@ -528,9 +528,21 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       compCard.className = 'party-card';
       const compName = incident.complainantName || missingParty;
       const compContact = incident.complainantContactNumber;
-      const compContactHtml = compContact
-        ? `${icons.phone(13)} <span>${escapeHtml(compContact)}</span>`
-        : `<span class="party-card__contact--empty">No contact phone recorded</span>`;
+      let compContactHtml = '';
+      if (compContact) {
+        compContactHtml = `
+          <div class="party-card__contact-row">
+            <a href="tel:${escapeHtml(compContact)}" class="party-card__phone-link" title="Call ${escapeHtml(compContact)}">
+              ${icons.phone(13)} <span>${escapeHtml(compContact)}</span>
+            </a>
+            <button type="button" class="ghost party-card__copy-btn" title="Copy phone number" aria-label="Copy phone number">
+              ${icons.copy(12)}
+            </button>
+          </div>
+        `;
+      } else {
+        compContactHtml = `<span class="party-card__contact--empty">No contact phone recorded</span>`;
+      }
       compCard.innerHTML = `
         <div class="party-card__role">
           <span class="party-card__tag party-card__tag--complainant">Complainant</span>
@@ -540,6 +552,22 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
           ${compContactHtml}
         </div>
       `;
+
+      if (compContact) {
+        const copyBtn = compCard.querySelector('.party-card__copy-btn');
+        if (copyBtn) {
+          copyBtn.addEventListener('click', async () => {
+            try {
+              if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(compContact);
+              }
+              showToast('Contact number copied to clipboard.', { variant: 'info' });
+            } catch {
+              showToast('Could not copy to clipboard.', { variant: 'warning' });
+            }
+          });
+        }
+      }
 
       const respCard = document.createElement('div');
       const hasRespondent = Boolean(incident.respondentName);
@@ -891,7 +919,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     if (statusLine) card.appendChild(statusLine);
 
     const list = document.createElement('ol');
-    list.className = 'timeline timeline--horizontal';
+    list.className = 'timeline timeline--vertical';
     list.setAttribute('role', 'list');
     list.setAttribute('aria-label', 'Incident response timeline');
 
@@ -1036,14 +1064,8 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       return buildResolvedStatusCard();
     }
 
-    const card = document.createElement('div');
-    card.className = 'card doc-card';
-
     const activeDispatch = incident.hasActiveDispatch;
     let blockedBecause = null;
-    // A pending or reopened incident that never needed a dispatch can be
-    // closed with a written reason (migration 0039); a dispatched one is
-    // resolved once its responders have finished.
     const noDispatchResolve = incident.status === 'pending' || incident.status === 'reopened';
     if (incident.status !== 'dispatched' && !noDispatchResolve) {
       blockedBecause = `This incident is ${statusLabel(incident.status)} and cannot be resolved from here.`;
@@ -1051,35 +1073,13 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       blockedBecause = 'A dispatch is still active. Complete or cancel it before resolving.';
     }
 
-    const header = document.createElement('div');
-    header.className = 'doc-card__header';
-
-    const titleGroup = document.createElement('div');
-    titleGroup.className = 'doc-card__title-group';
-    const iconWrap = document.createElement('span');
-    iconWrap.className = 'doc-card__icon';
-    iconWrap.innerHTML = icons.checkCircle(18);
-    const heading = document.createElement('h3');
-    heading.textContent = 'Incident resolution';
-    titleGroup.append(iconWrap, heading);
-
-    const statusPill = document.createElement('span');
-    statusPill.className = blockedBecause === null
-      ? 'status-pill status-pill--success'
-      : 'status-pill status-pill--neutral';
-    statusPill.textContent = blockedBecause === null ? 'Ready to Resolve' : 'Prerequisite Pending';
-
-    header.append(titleGroup, statusPill);
-    card.appendChild(header);
-
-    const body = document.createElement('div');
-    body.className = 'doc-card__body';
-
     const button = document.createElement('button');
-    button.className = noDispatchResolve ? 'ghost resolve-bypass-btn' : 'primary';
+    button.type = 'button';
+    button.className = noDispatchResolve ? 'ghost resolve-bypass-btn' : 'primary resolve-action-btn';
     const buttonLabel = noDispatchResolve ? 'Resolve without dispatch' : 'Mark incident resolved';
-    button.textContent = buttonLabel;
+    button.innerHTML = `${icons.checkCircle(14)} <span>${buttonLabel}</span>`;
     button.disabled = blockedBecause !== null;
+    if (blockedBecause) button.title = blockedBecause;
 
     button.addEventListener('click', async () => {
       if (noDispatchResolve) {
@@ -1114,25 +1114,12 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
         await load();
       } catch (err) {
         button.disabled = false;
-        button.textContent = buttonLabel;
+        button.innerHTML = `${icons.checkCircle(14)} <span>${buttonLabel}</span>`;
         showToast(err instanceof ApiClientError ? err.message : 'Could not resolve the incident.', { variant: 'error' });
       }
     });
 
-    body.appendChild(button);
-
-    if (blockedBecause) {
-      const callout = document.createElement('div');
-      callout.className = 'resolve-prerequisite-callout';
-      const reason = document.createElement('p');
-      reason.className = 'note';
-      reason.textContent = blockedBecause;
-      callout.appendChild(reason);
-      body.appendChild(callout);
-    }
-
-    card.appendChild(body);
-    return card;
+    return button;
   }
 
   // Mirrors IncidentsController::LIFECYCLE_TRANSITIONS exactly (H-16/M-03,

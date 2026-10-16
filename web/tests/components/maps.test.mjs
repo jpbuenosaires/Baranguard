@@ -142,6 +142,36 @@ describe('LiveMap', () => {
     assert.ok(map.getZoom() >= 18.5, `map zoom should be at least 18.5 after clicking marker, got ${map.getZoom()}`);
   });
 
+  test('multiple incidents close together cluster into an incident cluster bubble', async () => {
+    const live = LiveMap(container());
+    await settle();
+    live.setIncidentMarkers([
+      { incidentId: 101, displayId: 'INC-101', latitude: 12.9180, longitude: 123.6670, incidentType: 'theft', priority: 'normal' },
+      { incidentId: 102, displayId: 'INC-102', latitude: 12.9181, longitude: 123.6671, incidentType: 'disturbance', priority: 'critical' },
+    ]);
+    await settle();
+    const clusters = markerEls().filter((el) => el.className.includes('live-map__cluster--incident'));
+    assert.equal(clusters.length, 1);
+    assert.match(text(clusters[0]), /2/);
+    assert.ok(clusters[0].className.includes('live-map__cluster--has-critical'), 'cluster with critical incident should have critical alert class');
+
+    // Highlighting incident 101 unclusters it so it is individually visible and focused
+    const highlighted = live.highlightIncident(101);
+    assert.equal(highlighted, true);
+    await settle();
+    const focused = markerEls().filter((el) => el.className.includes('live-map__marker--focused'));
+    assert.equal(focused.length, 1);
+  });
+
+  test('toggleLabelMode cycles through auto, always, and hover modes', async () => {
+    const live = LiveMap(container());
+    await settle();
+    assert.equal(live.getLabelMode(), 'auto');
+    assert.equal(live.toggleLabelMode(), 'always');
+    assert.equal(live.toggleLabelMode(), 'hover');
+    assert.equal(live.toggleLabelMode(), 'auto');
+  });
+
   test('destroy() removes the map', async () => {
     const live = LiveMap(container());
     await settle();

@@ -399,12 +399,11 @@
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  padding: 0.4375rem 0.625rem;
+  padding: 0.5rem 0.625rem;
   margin-top: var(--spacing-xs);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-sm);
+  flex-direction: column;
+  gap: var(--spacing-xs);
   font-size: 0.8125rem;
 }
 
@@ -414,6 +413,14 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.35;
+}
+
+.queue-incident-card__actions-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
 }
 
 .queue-incident-card__locate-btn {
@@ -476,6 +483,7 @@
   padding: 4px 8px;
   border-radius: var(--radius-xs);
   flex-shrink: 0;
+  margin-left: auto;
 }
 .queue-incident-card__cancel-btn:focus-visible {
   outline: var(--focus-ring-width) var(--focus-ring-style) var(--focus-ring-color);
@@ -484,6 +492,7 @@
 
 .queue-incident-card__cancel-btn:hover {
   text-decoration: underline;
+  background: var(--tint-critical-bg);
 }
 
 .queue-incident-card__add-responder-btn {
@@ -695,20 +704,21 @@
 /* Tactical Floating Legend Card */
 .dispatch-map-legend-card {
   position: absolute;
-  bottom: 1.25rem;
-  left: 1.25rem;
+  bottom: var(--spacing-md);
+  left: var(--spacing-md);
   z-index: 10;
   background: var(--color-surface);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: 0.75rem;
+  padding: var(--spacing-sm-md);
   box-shadow: var(--shadow-elevated);
-  min-width: 12.25rem;
+  min-width: 12.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--spacing-2xs);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 [data-theme="dark"] .dispatch-map-legend-card {
@@ -717,17 +727,43 @@
   box-shadow: var(--shadow-floating);
 }
 
+.dispatch-map-legend-card.is-collapsed {
+  min-width: auto;
+  padding: var(--spacing-2xs) var(--spacing-sm);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+.dispatch-map-legend-card.is-collapsed:hover {
+  background: var(--color-surface-hover, var(--color-bg));
+  border-color: var(--color-primary);
+}
+
 .legend-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.125rem;
-  padding: 0 0.25rem;
+  gap: var(--spacing-sm);
+  padding: 0 var(--spacing-3xs);
+  user-select: none;
+}
+.legend-title-left {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+}
+.legend-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  transition: transform 0.2s ease;
+}
+.legend-chevron.is-collapsed {
+  transform: rotate(-90deg);
 }
 
 .legend-title {
-  font-size: 0.6875rem;
+  font-size: var(--type-table-th, 0.6875rem);
   font-weight: 700;
   color: var(--color-text-secondary);
   text-transform: uppercase;
@@ -737,11 +773,11 @@
 .legend-reset-btn {
   background: transparent;
   border: none;
-  min-height: 24px;
-  min-width: 24px;
-  padding: 4px 8px;
+  min-height: 1.5rem;
+  min-width: 1.5rem;
+  padding: var(--spacing-3xs) var(--spacing-2xs);
   border-radius: var(--radius-xs);
-  font-size: 0.75rem;
+  font-size: var(--type-badge-pill, 0.6875rem);
   font-weight: 700;
   color: var(--color-link);
   cursor: pointer;
@@ -759,7 +795,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-sm);
-  font-size: 0.8125rem;
+  font-size: var(--type-personnel-sub, 0.75rem);
   color: var(--color-text-primary);
   font-weight: 500;
 }
@@ -768,8 +804,8 @@
   width: 100%;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 0.25rem 0.375rem;
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-2xs) var(--spacing-xs);
   cursor: pointer;
   text-align: left;
   transition: background-color 0.15s ease, opacity 0.15s ease;
@@ -788,25 +824,25 @@
 .legend-item__left {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--spacing-sm);
 }
 
 .legend-count-pill {
-  font-size: 0.6875rem;
+  font-size: var(--type-badge-pill, 0.6875rem);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-secondary);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: 9999px;
-  padding: 0.05rem 0.425rem;
+  border-radius: var(--radius-full);
+  padding: 0.05rem var(--spacing-2xs);
   line-height: 1.25;
 }
 
 .legend-dot {
   width: 0.625rem;
   height: 0.625rem;
-  border-radius: 9999px;
+  border-radius: var(--radius-full);
   flex-shrink: 0;
 }
 
@@ -814,9 +850,31 @@
 .legend-dot--blue { background: var(--color-primary); }
 .legend-dot--amber {
   background: var(--color-warning-solid);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 .legend-dot--red { background: var(--color-critical-solid); }
+
+/* Tactical Map Search Input */
+.dispatch-map-search-input {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-2xs) var(--spacing-sm);
+  font-size: var(--font-size-label);
+  height: 2rem;
+  min-width: 9rem;
+  max-width: 13rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.dispatch-map-search-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+.dispatch-map-search-input::placeholder {
+  color: var(--color-text-tertiary);
+}
 
 /* Empty state card for queue */
 .dispatch-empty-card {
@@ -955,12 +1013,6 @@
   margin-top: 6px;
   width: 100%;
   font-weight: 700;
-}
-
-.queue-incident-card__actions-group {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2xs);
 }
 
 .dispatch-skeleton-card {

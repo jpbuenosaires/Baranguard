@@ -27,6 +27,7 @@ import { formatManilaDateTime, manilaDateKey } from '../utils/manilaTime.js';
 import { SchoolC1Card, ReferralsCard } from '../components/IncidentCaseCards.js';
 import { getSchools, updateIncidentSchoolFields } from '../services/shellWorkflowApi.js';
 import { INCIDENT_STATUS_LABELS, DISPATCH_STATUS_LABELS as SHARED_DISPATCH_STATUS_LABELS } from '../utils/statusLabels.js';
+import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
 
 /** Programmatically links a visible <label> to its control (accessibility). */
 function linkLabel(label, control, id) {
@@ -67,7 +68,9 @@ const COLUMNS = [
   { key: 'location', label: 'LOCATION' },
   { key: 'priority', label: 'PRIORITY' },
   { key: 'status', label: 'STATUS' },
-  { key: 'action', label: '', width: '2.5rem', align: 'right' },
+  { key: 'responder', label: 'RESPONDER' },
+  { key: 'channel', label: 'CHANNEL' },
+  { key: 'action', label: '', width: '6.5rem', align: 'right' },
 ];
 
 /**
@@ -151,12 +154,140 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   let statusFilter = undefined;
   let priorityFilter = undefined;
   let searchQuery = undefined;
+  let dateFromFilter = undefined;
+  let dateToFilter = undefined;
+  let activeTimeRangeKey = '';
   let currentPage = 1;
   let selectedIncidentId = null;
   let lastItems = [];
   let currentDetail = null;
   let currentOfficerContact = null;
   let activeViewMode = 'detail'; // 'detail', 'new', 'edit'
+
+  function downloadIncidentCsv(itemsToExport) {
+    const rows = itemsToExport || lastItems;
+    if (!rows || rows.length === 0) {
+      showToast({ message: 'No incidents to export.', type: 'info' });
+      return;
+    }
+    const headers = ['Incident Code', 'Type', 'Priority', 'Status', 'Location', 'Reported At', 'Channel', 'Assigned Officer'];
+    const lines = rows.map((r) => [
+      formatIncidentCode(r),
+      `"${(INCIDENT_TYPE_LABELS[r.incidentType] || r.incidentType || '').replace(/"/g, '""')}"`,
+      PRIORITY_LABELS[r.priority] || r.priority || 'Normal',
+      STATUS_DISPLAY_LABELS[r.status] || r.status,
+      `"${(r.locationDescription || barangayLabel(r.barangayId) || '').replace(/"/g, '""')}"`,
+      formatDateTime(r.createdAt),
+      `"${(reportChannelLabel(r.reportChannel) || 'Not recorded').replace(/"/g, '""')}"`,
+      `"${(r.officerName || 'Unassigned').replace(/"/g, '""')}"`,
+    ]);
+    const csvContent = [headers.join(','), ...lines.map((l) => l.join(','))].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const dateStr = manilaDateKey(new Date()) || 'export';
+    a.download = `incident-log-dao-${dateStr}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast({ message: 'Incident log exported to CSV.', type: 'success' });
+  }
+
+  function openShiftHandoverModal() {
+    const now = new Date();
+    const hours = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', hourCycle: 'h23' }).format(now));
+    const isDay = hours >= 8 && hours < 20;
+    const shiftLabel = isDay ? 'Day Duty (8:00 AM – 8:00 PM)' : 'Night Duty (8:00 PM – 8:00 AM)';
+    const dateStr = formatManilaDateTime(now);
+    const rows = lastItems || [];
+
+    const pendingCount = rows.filter((r) => r.status === 'pending' || r.status === 'reopened').length;
+    const activeCount = rows.filter((r) => r.status === 'dispatched').length;
+    const resolvedCount = rows.filter((r) => r.status === 'resolved').length;
+
+    let tableRowsHtml = '';
+    if (rows.length === 0) {
+      tableRowsHtml = '<tr><td colspan="7" style="text-align:center; padding: 16px;">No incidents recorded in current view.</td></tr>';
+    } else {
+      tableRowsHtml = rows.map((r) => `
+        <tr style="border-bottom: 1px solid #e5e7eb;">
+          <td style="padding: 6px 8px; font-weight:600; font-family:monospace;">${escapeHtml(formatIncidentCode(r))}</td>
+          <td style="padding: 6px 8px;">${escapeHtml(INCIDENT_TYPE_LABELS[r.incidentType] || r.incidentType)}</td>
+          <td style="padding: 6px 8px;">${escapeHtml(formatDateTime(r.createdAt))}</td>
+          <td style="padding: 6px 8px;">${escapeHtml(r.locationDescription || barangayLabel(r.barangayId))}</td>
+          <td style="padding: 6px 8px;"><span class="incident-priority-pill incident-priority-pill--${escapeHtml(r.priority || 'normal')}">${escapeHtml(PRIORITY_LABELS[r.priority] || r.priority || 'Normal')}</span></td>
+          <td style="padding: 6px 8px;"><span class="incident-status-indicator incident-status-indicator--${escapeHtml(r.status || 'pending')}">${escapeHtml(STATUS_DISPLAY_LABELS[r.status] || r.status)}</span></td>
+          <td style="padding: 6px 8px;">${escapeHtml(r.officerName || 'Unassigned')}</td>
+        </tr>
+      `).join('');
+    }
+
+    const sheetHtml = `
+      <div class="print-official-header" style="text-align:center; margin-bottom: 18px; border-bottom: 2px solid #000; padding-bottom: 12px;">
+        <p style="font-size: 0.75rem; margin: 0; text-transform: uppercase; letter-spacing: 0.05em;">Republic of the Philippines &bull; Province of Sorsogon &bull; Municipality of Pilar</p>
+        <h2 style="font-size: 1.25rem; margin: 4px 0; font-weight: 800; letter-spacing: 0.02em;">BARANGAY DAO OPERATIONS DESK</h2>
+        <h3 style="font-size: 0.95rem; margin: 0; font-weight: 700; color: #374151;">INCIDENT LOG & SHIFT HANDOVER SUMMARY</h3>
+      </div>
+
+      <div class="print-meta-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; font-size: 0.8125rem; background: #f9fafb; padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 6px;">
+        <div><strong>Current Shift:</strong> ${escapeHtml(shiftLabel)}</div>
+        <div><strong>Handover Date / Time:</strong> ${escapeHtml(dateStr)}</div>
+        <div><strong>Duty Desk Officer:</strong> ${escapeHtml(user.fullName)} (${escapeHtml(user.role.toUpperCase())})</div>
+        <div><strong>Current View Counts:</strong> Total: ${rows.length} (Pending: ${pendingCount}, Responding: ${activeCount}, Resolved: ${resolvedCount})</div>
+      </div>
+
+      <table class="print-records-table" style="width: 100%; border-collapse: collapse; font-size: 0.75rem; margin-bottom: 24px;">
+        <thead>
+          <tr style="background: #f3f4f6; border-bottom: 2px solid #d1d5db; text-align: left;">
+            <th style="padding: 6px 8px;">INCIDENT</th>
+            <th style="padding: 6px 8px;">TYPE</th>
+            <th style="padding: 6px 8px;">TIME</th>
+            <th style="padding: 6px 8px;">LOCATION</th>
+            <th style="padding: 6px 8px;">PRIORITY</th>
+            <th style="padding: 6px 8px;">STATUS</th>
+            <th style="padding: 6px 8px;">RESPONDER</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRowsHtml}
+        </tbody>
+      </table>
+
+      <div class="print-signatures-block" style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 32px; font-size: 0.8125rem;">
+        <div style="border-top: 1px solid #000; padding-top: 6px; text-align: center;">
+          <strong>Turned Over By (Outgoing Duty Officer)</strong><br/>
+          <span style="display:inline-block; margin-top: 4px;">Signature over Printed Name</span><br/>
+          <span style="font-size: 0.75rem; color: #6b7280;">Date & Time: ________________________</span>
+        </div>
+        <div style="border-top: 1px solid #000; padding-top: 6px; text-align: center;">
+          <strong>Received & Acknowledged By (Incoming Duty Officer)</strong><br/>
+          <span style="display:inline-block; margin-top: 4px;">Signature over Printed Name</span><br/>
+          <span style="font-size: 0.75rem; color: #6b7280;">Date & Time: ________________________</span>
+        </div>
+      </div>
+      <p style="margin-top: 24px; font-size: 0.6875rem; color: #6b7280; text-align: center; font-style: italic;">
+        This document serves as an operational shift turnover excerpt for physical barangay binder records pursuant to DILG recordkeeping standards.
+      </p>
+    `;
+
+    openPrintPreviewModal({
+      title: 'Incident Shift Handover Summary',
+      subtitle: 'Barangay Dao Emergency & Operations Blotter Desk',
+      printedBy: `${user.fullName} (${user.role.toUpperCase()})`,
+      sheetHtml,
+      orientation: 'landscape',
+      extraActions: [
+        {
+          label: 'Export CSV',
+          icon: icons.download ? icons.download(16) : '',
+          className: 'ghost',
+          onClick: () => downloadIncidentCsv(rows),
+        },
+      ],
+    });
+  }
 
   function handleKeyDown(event) {
     const tag = event.target?.tagName?.toLowerCase();
@@ -228,6 +359,17 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     icon: icons.alertTriangle,
   });
 
+  const exportBtn = document.createElement('button');
+  exportBtn.type = 'button';
+  exportBtn.className = 'btn-incident-export';
+  exportBtn.innerHTML = `${icons.printer(16)} <span>Shift Handover / Export</span>`;
+  exportBtn.title = 'Print Shift Handover Summary or Export CSV';
+  exportBtn.setAttribute('aria-label', 'Print Shift Handover Summary or Export CSV');
+  exportBtn.addEventListener('click', () => {
+    openShiftHandoverModal();
+  });
+  pageHeader.actions.appendChild(exportBtn);
+
   if (canCreate) {
     const newIncidentBtn = document.createElement('button');
     newIncidentBtn.type = 'button';
@@ -286,6 +428,130 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   leftPanel.className = 'incident-left-panel';
   layout.appendChild(leftPanel);
 
+  // --- KPI Status Counter Chips ---
+  const kpiBar = document.createElement('div');
+  kpiBar.className = 'incident-kpi-bar';
+  kpiBar.setAttribute('role', 'toolbar');
+  kpiBar.setAttribute('aria-label', 'Incident queue quick filters');
+
+  let activeKpiFilter = 'all';
+  let kpiCounts = { all: null, pending: null, dispatched: null, critical: null, resolved: null };
+
+  const KPI_CONFIGS = [
+    { key: 'all', label: 'All', hasDot: false },
+    { key: 'pending', label: 'Pending', hasDot: true, dotClass: 'incident-kpi-chip--pending' },
+    { key: 'dispatched', label: 'Responding', hasDot: true, dotClass: 'incident-kpi-chip--dispatched' },
+    { key: 'critical', label: 'High / Critical', hasDot: true, dotClass: 'incident-kpi-chip--critical' },
+    { key: 'resolved', label: 'Resolved', hasDot: true, dotClass: 'incident-kpi-chip--resolved' },
+  ];
+
+  function renderKpiChips() {
+    kpiBar.innerHTML = '';
+    for (const cfg of KPI_CONFIGS) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = `incident-kpi-chip ${cfg.dotClass || ''} ${activeKpiFilter === cfg.key ? 'is-active' : ''}`.trim();
+      chip.dataset.filter = cfg.key;
+      chip.setAttribute('aria-pressed', activeKpiFilter === cfg.key ? 'true' : 'false');
+
+      if (cfg.hasDot) {
+        const dot = document.createElement('span');
+        dot.className = 'incident-kpi-chip__dot';
+        chip.appendChild(dot);
+      }
+
+      const label = document.createElement('span');
+      label.textContent = cfg.label;
+      chip.appendChild(label);
+
+      const count = document.createElement('span');
+      count.className = 'incident-kpi-chip__count';
+      const cVal = kpiCounts[cfg.key];
+      count.textContent = cVal != null ? String(cVal) : '—';
+      chip.appendChild(count);
+
+      chip.addEventListener('click', () => {
+        handleKpiChipClick(cfg.key);
+      });
+
+      kpiBar.appendChild(chip);
+    }
+  }
+
+  function handleKpiChipClick(key) {
+    activeKpiFilter = key;
+    if (key === 'all') {
+      statusFilter = undefined;
+      priorityFilter = undefined;
+      statusSelect.value = '';
+      prioritySelect.value = '';
+    } else if (key === 'pending') {
+      statusFilter = 'pending';
+      priorityFilter = undefined;
+      statusSelect.value = 'pending';
+      prioritySelect.value = '';
+    } else if (key === 'dispatched') {
+      statusFilter = 'dispatched';
+      priorityFilter = undefined;
+      statusSelect.value = 'dispatched';
+      prioritySelect.value = '';
+    } else if (key === 'critical') {
+      statusFilter = undefined;
+      priorityFilter = 'high';
+      statusSelect.value = '';
+      prioritySelect.value = 'high';
+    } else if (key === 'resolved') {
+      statusFilter = 'resolved';
+      priorityFilter = undefined;
+      statusSelect.value = 'resolved';
+      prioritySelect.value = '';
+    }
+    currentPage = 1;
+    renderKpiChips();
+    load();
+  }
+
+  function syncActiveKpiChip() {
+    if (!statusFilter && !priorityFilter) {
+      activeKpiFilter = 'all';
+    } else if (statusFilter === 'pending' && !priorityFilter) {
+      activeKpiFilter = 'pending';
+    } else if (statusFilter === 'dispatched' && !priorityFilter) {
+      activeKpiFilter = 'dispatched';
+    } else if (statusFilter === 'resolved' && !priorityFilter) {
+      activeKpiFilter = 'resolved';
+    } else if (priorityFilter === 'high' || priorityFilter === 'critical') {
+      activeKpiFilter = 'critical';
+    } else {
+      activeKpiFilter = null;
+    }
+    renderKpiChips();
+  }
+
+  async function updateKpiCounts() {
+    try {
+      const [allRes, pendRes, dispRes, highRes, critRes, resRes] = await Promise.all([
+        getIncidents({ limit: 1 }),
+        getIncidents({ status: 'pending', limit: 1 }),
+        getIncidents({ status: 'dispatched', limit: 1 }),
+        getIncidents({ priority: 'high', limit: 1 }),
+        getIncidents({ priority: 'critical', limit: 1 }),
+        getIncidents({ status: 'resolved', limit: 1 }),
+      ]);
+      kpiCounts.all = allRes.total;
+      kpiCounts.pending = pendRes.total;
+      kpiCounts.dispatched = dispRes.total;
+      kpiCounts.critical = (highRes.total || 0) + (critRes.total || 0);
+      kpiCounts.resolved = resRes.total;
+      renderKpiChips();
+    } catch {
+      // Degrades gracefully
+    }
+  }
+
+  renderKpiChips();
+  leftPanel.appendChild(kpiBar);
+
   // Filter Bar
   const filterBar = document.createElement('div');
   filterBar.className = 'incident-filter-bar';
@@ -328,7 +594,13 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     priorityFilter = undefined;
     statusSelect.value = '';
     statusFilter = undefined;
+    timeSelect.value = '';
+    activeTimeRangeKey = '';
+    dateFromFilter = undefined;
+    dateToFilter = undefined;
+    activeKpiFilter = 'all';
     currentPage = 1;
+    renderKpiChips();
     load();
   });
   filterBar.appendChild(funnelBtn);
@@ -351,6 +623,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   }
   prioritySelect.addEventListener('change', () => {
     priorityFilter = prioritySelect.value || undefined;
+    syncActiveKpiChip();
     currentPage = 1;
     load();
   });
@@ -380,10 +653,71 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   }
   statusSelect.addEventListener('change', () => {
     statusFilter = statusSelect.value || undefined;
+    syncActiveKpiChip();
     currentPage = 1;
     load();
   });
   filterBar.appendChild(statusSelect);
+
+  // 5. Shift & Date Range Dropdown
+  const timeSelect = document.createElement('select');
+  timeSelect.className = 'incident-filter-select';
+  timeSelect.setAttribute('aria-label', 'Filter by time range');
+  const timeOptions = [
+    { value: '', label: 'All Dates' },
+    { value: 'shift', label: 'Current Shift' },
+    { value: 'today', label: 'Today' },
+    { value: '24h', label: 'Past 24 Hours' },
+  ];
+  for (const opt of timeOptions) {
+    const el = document.createElement('option');
+    el.value = opt.value;
+    el.textContent = opt.label;
+    timeSelect.appendChild(el);
+  }
+
+  function applyTimeRange(val) {
+    activeTimeRangeKey = val;
+    const now = new Date();
+    if (!val) {
+      dateFromFilter = undefined;
+      dateToFilter = undefined;
+    } else if (val === 'today') {
+      const today = manilaDateKey(now);
+      dateFromFilter = today;
+      dateToFilter = today;
+    } else if (val === '24h') {
+      const past24h = new Date(now.getTime() - 24 * 3600 * 1000);
+      dateFromFilter = past24h.toISOString();
+      dateToFilter = undefined;
+    } else if (val === 'shift') {
+      const hours = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', hourCycle: 'h23' }).format(now));
+      const todayKey = manilaDateKey(now);
+      if (hours >= 8 && hours < 20) {
+        dateFromFilter = `${todayKey} 08:00:00`;
+        dateToFilter = `${todayKey} 20:00:00`;
+      } else {
+        if (hours < 8) {
+          const yesterday = new Date(now.getTime() - 24 * 3600 * 1000);
+          const yesterdayKey = manilaDateKey(yesterday);
+          dateFromFilter = `${yesterdayKey} 20:00:00`;
+          dateToFilter = `${todayKey} 08:00:00`;
+        } else {
+          const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
+          const tomorrowKey = manilaDateKey(tomorrow);
+          dateFromFilter = `${todayKey} 20:00:00`;
+          dateToFilter = `${tomorrowKey} 08:00:00`;
+        }
+      }
+    }
+  }
+
+  timeSelect.addEventListener('change', () => {
+    applyTimeRange(timeSelect.value);
+    currentPage = 1;
+    load();
+  });
+  filterBar.appendChild(timeSelect);
 
   leftPanel.appendChild(filterBar);
 
@@ -438,6 +772,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     }
 
     load();
+    updateKpiCounts();
   }
 
   async function loadTanodRoster() {
@@ -464,9 +799,16 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         q: searchQuery,
         page: currentPage,
         limit: PAGE_SIZE,
+        dateFrom: dateFromFilter,
+        dateTo: dateToFilter,
       });
       lastItems = result.items;
       renderTable(result.items, result.total);
+
+      if (activeKpiFilter === 'all' && !searchQuery && !statusFilter && !priorityFilter && !dateFromFilter) {
+        kpiCounts.all = result.total;
+        renderKpiChips();
+      }
 
       // Only maintain detail pane if an incident is currently selected or user is adding new
       if (activeViewMode === 'detail') {
@@ -486,6 +828,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         renderNewIncidentForm();
       }
     } catch (err) {
+      if (!(err instanceof ApiClientError)) console.error('Incident list render failed', err);
       const message = err instanceof ApiClientError ? err.message : 'Could not load incidents.';
       renderError(tableContainer, message, load);
     }
@@ -553,11 +896,12 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
         const locPrimary = document.createElement('span');
         locPrimary.className = 'incident-cell-loc-primary';
-        locPrimary.innerHTML = `${icons.mapPin(13)} <span>${escapeHtml(bName)}</span>`;
+        const specificLoc = row.locationDescription || (row.latitude != null ? `${row.latitude.toFixed(4)}, ${row.longitude.toFixed(4)}` : 'General area');
+        locPrimary.innerHTML = `${icons.mapPin(13)} <span>${escapeHtml(specificLoc)}</span>`;
 
         const locSub = document.createElement('span');
         locSub.className = 'incident-cell-loc-sub';
-        locSub.textContent = row.locationDescription || (row.latitude != null ? `${row.latitude.toFixed(4)}, ${row.longitude.toFixed(4)}` : 'General area');
+        locSub.textContent = bName;
 
         stack.append(locPrimary, locSub);
         return stack;
@@ -574,7 +918,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         const stat = row.status || 'pending';
         indicator.className = `incident-status-indicator incident-status-indicator--${stat}`;
 
-        let iconSvg = icons.alertTriangle(14);
+        let iconSvg = icons.clock(14);
         let label = STATUS_DISPLAY_LABELS[stat] || stat;
         if (stat === 'dispatched') {
           iconSvg = icons.radio(14);
@@ -591,7 +935,58 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         indicator.innerHTML = `${iconSvg} <span>${escapeHtml(label)}</span>`;
         return indicator;
       }
+      case 'responder': {
+        const wrap = document.createElement('div');
+        wrap.className = 'incident-cell-responder';
+        if (row.officerName) {
+          wrap.innerHTML = `<span class="incident-responder-name">${icons.users(13)} <span>${escapeHtml(row.officerName)}</span></span>`;
+        } else if (row.status === 'resolved' || row.status === 'closed' || row.status === 'duplicate' || row.status === 'invalid' || row.status === 'cancelled') {
+          wrap.innerHTML = `<span class="incident-responder-muted">None assigned</span>`;
+        } else {
+          wrap.innerHTML = `<span class="incident-responder-unassigned">${icons.clock(12)} <span>Unassigned</span></span>`;
+        }
+        return wrap;
+      }
+      case 'channel': {
+        const wrap = document.createElement('div');
+        wrap.className = 'incident-cell-channel';
+        const ch = row.reportChannel || 'walk_in';
+        const label = reportChannelLabel(ch) || 'Walk-in';
+        let iconSvg = icons.users(12);
+        if (ch === 'sms') iconSvg = icons.mail ? icons.mail(12) : icons.messageSquare(12);
+        else if (ch === 'tanod_alerted') iconSvg = icons.shield ? icons.shield(12) : icons.users(12);
+        wrap.innerHTML = `<span class="incident-channel-badge incident-channel-badge--${escapeHtml(ch)}">${iconSvg} <span>${escapeHtml(label)}</span></span>`;
+        return wrap;
+      }
       case 'action': {
+        const actionWrap = document.createElement('div');
+        actionWrap.className = 'incident-row-actions';
+
+        if (isAdmin && (row.status === 'pending' || row.status === 'reopened')) {
+          const quickDispatch = document.createElement('button');
+          quickDispatch.type = 'button';
+          quickDispatch.className = 'incident-quick-dispatch-btn';
+          quickDispatch.title = 'Quick dispatch responder';
+          quickDispatch.setAttribute('aria-label', `Quick dispatch for incident ${formatIncidentCode(row)}`);
+          quickDispatch.innerHTML = `${icons.send(12)} <span>Dispatch</span>`;
+          quickDispatch.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            quickDispatch.disabled = true;
+            const dispatched = await promptDispatchTanod({
+              incident: row,
+              incidentTypeLabel: INCIDENT_TYPE_LABELS[row.incidentType] || row.incidentType,
+              eligibleTanods,
+            });
+            if (dispatched) {
+              await load();
+              updateKpiCounts();
+            } else {
+              quickDispatch.disabled = false;
+            }
+          });
+          actionWrap.appendChild(quickDispatch);
+        }
+
         const eyeBtn = document.createElement('button');
         eyeBtn.type = 'button';
         eyeBtn.className = 'incident-row-eye';
@@ -609,7 +1004,8 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
             btnDetails.click();
           }
         });
-        return eyeBtn;
+        actionWrap.appendChild(eyeBtn);
+        return actionWrap;
       }
       default:
         return '';

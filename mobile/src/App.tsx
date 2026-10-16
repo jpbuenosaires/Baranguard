@@ -47,6 +47,7 @@ import LoginPage from './pages/login';
 const MyReportsPage = lazy(() => import('./pages/my-reports'));
 const MyShiftsPage = lazy(() => import('./pages/my-shifts'));
 const NewIncidentPage = lazy(() => import('./pages/new-incident'));
+const PrivacyPage = lazy(() => import('./pages/privacy'));
 const ProfilePage = lazy(() => import('./pages/profile'));
 const SchoolCheckinPage = lazy(() => import('./pages/school-checkin'));
 import { getSessionRole, type AppRole } from './services/role';
@@ -554,6 +555,7 @@ const App: React.FC = () => {
         <HardwareBackHandler />
         <IonRouterOutlet>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/privacy" element={<Suspense fallback={<PageFallback />}><PrivacyPage /></Suspense>} />
           {/* M4. Reads the stored row and derives its own state — it never
               trusts a "submitted" claim handed over from the previous screen.
               Deliberately OUTSIDE the tab bar: it's a one-shot confirmation

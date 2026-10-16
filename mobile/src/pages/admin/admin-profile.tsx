@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { IonAlert, IonContent, IonIcon, IonPage } from '@ionic/react';
-import { logOutOutline, shieldCheckmarkOutline } from 'ionicons/icons';
+import { chevronForwardOutline, lockClosedOutline, logOutOutline, shieldCheckmarkOutline } from 'ionicons/icons';
 import MobileHeader from '../../components/MobileHeader';
 import { checkHealth, logout } from '../../services/apiService';
 import { getDeviceId } from '../../services/deviceIdentity';
@@ -77,6 +77,21 @@ const AdminProfilePage: React.FC = () => {
               needs a connection and nothing is queued. Reports and settings stay on the web dashboard.
             </span>
           </div>
+
+          <ul className="profile-list mt-14">
+            <li>
+              <button type="button" className="profile-row" onClick={() => navigate('/privacy')}>
+                <span className="profile-row__icon" aria-hidden="true">
+                  <IonIcon icon={lockClosedOutline} />
+                </span>
+                <span className="profile-row__text">
+                  <span className="profile-row__title">Privacy notice</span>
+                  <span className="profile-row__sub">What this app records, works offline</span>
+                </span>
+                <IonIcon icon={chevronForwardOutline} className="profile-row__chevron" aria-hidden="true" />
+              </button>
+            </li>
+          </ul>
 
           <button type="button" className="profile-signout-btn" onClick={() => setConfirming(true)}>
             <IonIcon icon={logOutOutline} className="icon-md" aria-hidden="true" />

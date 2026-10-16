@@ -18,6 +18,7 @@ import {
   copyOutline,
   documentTextOutline,
   logOutOutline,
+  lockClosedOutline,
   schoolOutline,
   notificationsOutline,
   shieldCheckmarkOutline,
@@ -278,6 +279,18 @@ const ProfilePage: React.FC = () => {
                 <span className="profile-row__text">
                   <span className="profile-row__title">School check-in</span>
                   <span className="profile-row__sub">Safer School Zones, works offline</span>
+                </span>
+                <IonIcon icon={chevronForwardOutline} className="profile-row__chevron" aria-hidden="true" />
+              </button>
+            </li>
+            <li>
+              <button type="button" className="profile-row" onClick={() => navigate('/privacy')}>
+                <span className="profile-row__icon" aria-hidden="true">
+                  <IonIcon icon={lockClosedOutline} />
+                </span>
+                <span className="profile-row__text">
+                  <span className="profile-row__title">Privacy notice</span>
+                  <span className="profile-row__sub">What this app records, works offline</span>
                 </span>
                 <IonIcon icon={chevronForwardOutline} className="profile-row__chevron" aria-hidden="true" />
               </button>
