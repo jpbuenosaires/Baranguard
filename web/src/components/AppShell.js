@@ -19,7 +19,7 @@ import { avatarInitials } from './Avatar.js';
 import { Menu, MenuItem, MenuDivider } from './Menu.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { search as apiSearch, getSystemHealth, getNavCounts, getNotifications, acknowledgeNotification, acknowledgeAllNotifications, getBarangays } from '../api/apiClient.js';
-import { playCriticalAlertTone, isAlertSoundUnlocked, onAlertSoundUnlocked } from '../utils/criticalAlertSound.js';
+import { playCriticalAlertTone } from '../utils/criticalAlertSound.js';
 import { formatManilaTimeSeconds, formatManilaTime } from '../utils/manilaTime.js';
 import { onThemeChange, startThemeWatcher } from './themeEvents.js';
 import { startModalA11y } from './modalA11y.js';
@@ -122,39 +122,7 @@ document.addEventListener('click', (event) => {
 let knownNotificationIds = null;
 function resetNotificationBaselineOnLogout() {
   knownNotificationIds = null;
-  stopSosTone();
   lastPollOkAt = null;
-}
-
-// --- Site-wide SOS alarm (audit 2026-10-09 A-08/X-01) ------------------------
-// While any SOS notification is still unacknowledged, every page shows a
-// persistent bar (rendered per AppShell below) and the alert tone repeats
-// every SOS_TONE_REPEAT_MS. The repeat loop lives at module scope so a page
-// navigation (which rebuilds the shell) neither restarts nor doubles it; the
-// tone itself is throttled in criticalAlertSound.js, so the Dispatch Center's
-// own 10 s loop and this one together still produce one chime per period.
-export const SOS_TONE_REPEAT_MS = 10000;
-let sosToneInterval = null;
-let sosToneOwner = null; // the shell element that started it; stops when detached
-function startSosTone(ownerEl) {
-  sosToneOwner = ownerEl;
-  if (sosToneInterval) return;
-  playCriticalAlertTone();
-  sosToneInterval = setInterval(() => {
-    if (!sosToneOwner || !sosToneOwner.isConnected) {
-      // The shell this alarm belongs to is gone and no newer shell has
-      // claimed it (sign-out, session expiry): stop rather than beep on
-      // the sign-in screen.
-      stopSosTone();
-      return;
-    }
-    playCriticalAlertTone();
-  }, SOS_TONE_REPEAT_MS);
-}
-function stopSosTone() {
-  if (sosToneInterval) clearInterval(sosToneInterval);
-  sosToneInterval = null;
-  sosToneOwner = null;
 }
 
 // Last successful background poll (bell or nav counts), kept across shell
@@ -1394,7 +1362,6 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
       }
       knownNotificationIds = new Set(result.items.map((item) => item.notificationId));
       renderNotifications(result);
-      updateSosBar(result.items);
       markPollOk();
     } catch {
       // A failed fetch leaves the previous bell state rather than replacing
@@ -1551,89 +1518,6 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
       : 'Cannot reach the server. Alerts and counts are not updating. Retrying.';
   }
 
-  // --- Site-wide SOS bar (audit 2026-10-09 A-08) --------------------------
-  const sosBar = document.createElement('div');
-  sosBar.className = 'sos-bar';
-  sosBar.setAttribute('role', 'alert');
-  sosBar.setAttribute('aria-live', 'assertive');
-  sosBar.setAttribute('aria-atomic', 'true');
-  sosBar.hidden = true;
-  const sosIcon = document.createElement('span');
-  sosIcon.className = 'sos-bar__icon';
-  sosIcon.setAttribute('aria-hidden', 'true');
-  sosIcon.innerHTML = icons.alertTriangle(18);
-  const sosText = document.createElement('span');
-  sosText.className = 'sos-bar__text';
-  const sosSoundHint = document.createElement('span');
-  sosSoundHint.className = 'sos-bar__sound-hint';
-  sosSoundHint.textContent = 'Click anywhere to enable alert sound';
-  sosSoundHint.hidden = true;
-  const sosActions = document.createElement('span');
-  sosActions.className = 'sos-bar__actions';
-  // Where an SOS is handled: the Dispatch Center for the Admin, the Live
-  // Map for the Punong Barangay (who has no dispatch screen), else nowhere.
-  const sosTarget = user.role === 'admin'
-    ? { page: 'dispatch', label: 'Open Dispatch Center' }
-    : (NAV_ITEMS.find((i) => i.key === 'gis')?.roles.includes(user.role) ? { page: 'gis', label: 'Open Live Map' } : null);
-  if (sosTarget) {
-    const goBtn = document.createElement('button');
-    goBtn.type = 'button';
-    goBtn.className = 'sos-bar__btn sos-bar__btn--primary';
-    goBtn.textContent = sosTarget.label;
-    goBtn.addEventListener('click', () => navigate(sosTarget.page));
-    sosActions.appendChild(goBtn);
-  }
-  const ackBtn = document.createElement('button');
-  ackBtn.type = 'button';
-  ackBtn.className = 'sos-bar__btn';
-  ackBtn.textContent = 'Mark as seen';
-  sosActions.appendChild(ackBtn);
-  sosBar.append(sosIcon, sosText, sosSoundHint, sosActions);
-  let pendingSosItems = [];
-  ackBtn.addEventListener('click', async () => {
-    const ids = pendingSosItems.map((i) => i.notificationId);
-    ackBtn.disabled = true;
-    try {
-      // Acknowledges the caller's own SOS notifications (the existing
-      // per-notification route). The SOS itself stays open on the
-      // Dispatch board until it is resolved there.
-      await Promise.all(ids.map((id) => acknowledgeNotification(id)));
-      updateSosBar([]);
-      loadNotifications();
-    } catch {
-      sosText.textContent = 'Could not mark the SOS alert as seen. Try again.';
-    } finally {
-      ackBtn.disabled = false;
-    }
-  });
-  const syncSoundHint = () => {
-    sosSoundHint.hidden = !(pendingSosItems.length > 0 && !isAlertSoundUnlocked());
-  };
-  const offUnlock = onAlertSoundUnlocked(() => {
-    if (!el.isConnected) { offUnlock(); return; }
-    syncSoundHint();
-    if (pendingSosItems.length > 0) startSosTone(el);
-  });
-  function updateSosBar(items) {
-    pendingSosItems = items.filter((i) => i.notificationType === 'sos' && i.ackStatus === 'pending');
-    const active = pendingSosItems.length > 0;
-    // The Dispatch Center draws its own SOS banner with resolve controls;
-    // a second bar there would announce the same alert twice. The tone
-    // keeps going (throttled, so still one chime per period).
-    sosBar.hidden = !active || activePage === 'dispatch';
-    if (active) {
-      const first = pendingSosItems[0];
-      const who = first.sosTanodName ? `${first.sosTanodName} needs help` : 'A tanod needs help';
-      sosText.textContent = pendingSosItems.length === 1
-        ? `SOS: ${who}.`
-        : `SOS: ${pendingSosItems.length} unacknowledged alerts. ${who}.`;
-      if (isAlertSoundUnlocked()) startSosTone(el);
-    } else {
-      stopSosTone();
-    }
-    syncSoundHint();
-  }
-
   topbarUser.append(bellMenu.el, avatarMenu.el);
   topbar.append(searchHost, staleIndicator, topbarUser);
   loadNotifications();
@@ -1659,7 +1543,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   contentContainer.className = 'page-container';
   content.appendChild(contentContainer);
 
-  mainColumn.append(topbar, sosBar, header, content);
+  mainColumn.append(topbar, header, content);
   el.append(sidebar, scrim, mainColumn);
 
   // Periodic real-time background notification poller (every 15s).

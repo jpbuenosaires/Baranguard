@@ -129,6 +129,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
   let mapSubtitleEl = null;
   let floatingActivityListEl = null;
   let legendWidgetEl = null;
+  let isLegendCollapsed = false;
 
   // Stale-data tracking (audit X-01/A-03). `navigator.onLine` is only a hint.
   let staleBannerEl = null;
@@ -468,27 +469,57 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       const vis = liveMap.getLayerVisibility();
       const anyHidden = !vis.available || !vis.dispatched || !vis.incident || !vis.sos;
       legendWidgetEl.innerHTML = '';
+      legendWidgetEl.classList.toggle('is-collapsed', isLegendCollapsed);
 
       const titleRow = document.createElement('div');
       titleRow.className = 'legend-title-row';
+      titleRow.setAttribute('role', 'button');
+      titleRow.setAttribute('tabindex', '0');
+      titleRow.setAttribute('aria-expanded', String(!isLegendCollapsed));
+      titleRow.title = isLegendCollapsed ? 'Click to expand Legend' : 'Click to collapse Legend';
 
+      const titleLeft = document.createElement('span');
+      titleLeft.className = 'legend-title-left';
+      const chevron = document.createElement('span');
+      chevron.className = `legend-chevron${isLegendCollapsed ? ' is-collapsed' : ''}`;
+      chevron.innerHTML = icons.chevronDown(12);
       const titleEl = document.createElement('span');
       titleEl.className = 'legend-title';
-      titleEl.textContent = 'Legend';
-      titleRow.appendChild(titleEl);
+      titleEl.textContent = isLegendCollapsed
+        ? `Legend (${availMapCount + dispMapCount} Tanods · ${incMapCount} Incidents)`
+        : 'Legend';
+      titleLeft.append(chevron, titleEl);
+      titleRow.appendChild(titleLeft);
 
-      if (anyHidden) {
+      titleRow.addEventListener('click', () => {
+        isLegendCollapsed = !isLegendCollapsed;
+        renderGisLegend(availMapCount, dispMapCount, incMapCount, sosMapCount);
+      });
+      titleRow.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          isLegendCollapsed = !isLegendCollapsed;
+          renderGisLegend(availMapCount, dispMapCount, incMapCount, sosMapCount);
+        }
+      });
+
+      if (!isLegendCollapsed && anyHidden) {
         const resetBtn = document.createElement('button');
         resetBtn.type = 'button';
         resetBtn.className = 'legend-reset-btn';
         resetBtn.textContent = 'Reset';
-        resetBtn.addEventListener('click', () => {
+        resetBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
           liveMap.resetLayers();
           renderGisLegend(availMapCount, dispMapCount, incMapCount, sosMapCount);
         });
         titleRow.appendChild(resetBtn);
       }
       legendWidgetEl.appendChild(titleRow);
+
+      if (isLegendCollapsed) {
+        return;
+      }
 
       const rows = [
         { key: 'available', label: 'Available Tanod', dotClass: 'legend-dot--green', count: availMapCount },

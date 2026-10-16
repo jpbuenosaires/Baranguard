@@ -192,6 +192,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   let mapViewportEl = null;
   let mapSummaryPillEl = null;
   let legendCardEl = null;
+  let isLegendCollapsed = false;
   let pollTimer = null;
   let staleBannerEl = null;
   let staleBannerTextEl = null;
@@ -557,6 +558,26 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const mapActions = document.createElement('div');
       mapActions.className = 'dispatch-map-header__actions';
 
+      const mapSearchInput = document.createElement('input');
+      mapSearchInput.type = 'search';
+      mapSearchInput.className = 'dispatch-map-search-input';
+      mapSearchInput.placeholder = 'Search pin / ID...';
+      mapSearchInput.setAttribute('aria-label', 'Search incidents and pins on map');
+      mapSearchInput.addEventListener('input', (e) => {
+        liveMap?.setIncidentFilter({ query: e.target.value });
+      });
+
+      const labelToggleBtn = document.createElement('button');
+      labelToggleBtn.type = 'button';
+      labelToggleBtn.className = 'btn-recenter';
+      labelToggleBtn.title = 'Cycle pin label density: Auto / Always / Hover-only';
+      labelToggleBtn.innerHTML = `${icons.eye(14)} <span>Labels: Auto</span>`;
+      labelToggleBtn.addEventListener('click', () => {
+        const mode = liveMap?.toggleLabelMode();
+        const labelMap = { auto: 'Auto', always: 'Always', hover: 'Hover' };
+        labelToggleBtn.innerHTML = `${mode === 'hover' ? icons.eyeOff(14) : icons.eye(14)} <span>Labels: ${labelMap[mode] || 'Auto'}</span>`;
+      });
+
       const fitAllBtn = document.createElement('button');
       fitAllBtn.type = 'button';
       fitAllBtn.className = 'btn-recenter';
@@ -585,7 +606,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         liveMap?.resize();
       });
 
-      mapActions.append(fitAllBtn, gisJumpBtn, fullscreenBtn);
+      mapActions.append(mapSearchInput, labelToggleBtn, fitAllBtn, gisJumpBtn, fullscreenBtn);
       mapHeader.append(mapTitleWrap, mapActions);
 
       mapViewportEl = document.createElement('div');
@@ -931,25 +952,57 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     const anyHidden = !vis.available || !vis.dispatched || !vis.incident || !vis.sos;
 
     legendCardEl.innerHTML = '';
+    legendCardEl.classList.toggle('is-collapsed', isLegendCollapsed);
+
     const titleRow = document.createElement('div');
     titleRow.className = 'legend-title-row';
+    titleRow.setAttribute('role', 'button');
+    titleRow.setAttribute('tabindex', '0');
+    titleRow.setAttribute('aria-expanded', String(!isLegendCollapsed));
+    titleRow.title = isLegendCollapsed ? 'Click to expand Legend' : 'Click to collapse Legend';
+
+    const titleLeft = document.createElement('span');
+    titleLeft.className = 'legend-title-left';
+    const chevron = document.createElement('span');
+    chevron.className = `legend-chevron${isLegendCollapsed ? ' is-collapsed' : ''}`;
+    chevron.innerHTML = icons.chevronDown(12);
     const titleSpan = document.createElement('span');
     titleSpan.className = 'legend-title';
-    titleSpan.textContent = 'Legend';
-    titleRow.appendChild(titleSpan);
+    titleSpan.textContent = isLegendCollapsed
+      ? `Legend (${availCount + dispCount} Tanods · ${incCount} Incidents)`
+      : 'Legend';
+    titleLeft.append(chevron, titleSpan);
+    titleRow.appendChild(titleLeft);
 
-    if (anyHidden) {
+    titleRow.addEventListener('click', () => {
+      isLegendCollapsed = !isLegendCollapsed;
+      renderInteractiveLegend(availCount, dispCount, incCount, sosCount);
+    });
+    titleRow.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        isLegendCollapsed = !isLegendCollapsed;
+        renderInteractiveLegend(availCount, dispCount, incCount, sosCount);
+      }
+    });
+
+    if (!isLegendCollapsed && anyHidden) {
       const resetBtn = document.createElement('button');
       resetBtn.type = 'button';
       resetBtn.className = 'legend-reset-btn';
       resetBtn.textContent = 'Reset';
-      resetBtn.addEventListener('click', () => {
+      resetBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
         liveMap.resetLayers();
         renderInteractiveLegend(availCount, dispCount, incCount, sosCount);
       });
       titleRow.appendChild(resetBtn);
     }
     legendCardEl.appendChild(titleRow);
+
+    if (isLegendCollapsed) {
+      return;
+    }
 
     const rows = [
       { key: 'available', label: 'Available Tanod', dotClass: 'legend-dot--green', count: availCount },
@@ -1159,6 +1212,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
           const nameSpan = document.createElement('span');
           nameSpan.className = 'queue-incident-card__dispatched-name';
           nameSpan.textContent = `${dispatch.tanodName || `Tanod #${dispatch.tanodId}`}: ${DISPATCH_STATUS_LABELS[dispatch.status] || 'Assigned'}`;
+          nameSpan.title = nameSpan.textContent;
 
           const actionsGroup = document.createElement('div');
           actionsGroup.className = 'queue-incident-card__actions-group';
@@ -1346,6 +1400,14 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         offerBlock.appendChild(cancelOfferBtn);
       }
       if (offerBlock.childElementCount > 0) timeRow.after(offerBlock);
+
+      // Card Hover: Preview Pin on Map
+      card.addEventListener('mouseenter', () => {
+        liveMap?.previewIncident(item.incidentId, true);
+      });
+      card.addEventListener('mouseleave', () => {
+        liveMap?.previewIncident(item.incidentId, false);
+      });
 
       // Card Click: Focus on Map
       card.addEventListener('click', () => {

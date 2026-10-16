@@ -258,7 +258,8 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
         style,
         center: initialPoint ? [initialPoint.longitude, initialPoint.latitude] : DEFAULT_CENTER,
         zoom: initialPoint ? POSITION_ZOOM : DEFAULT_ZOOM,
-        attributionControl: nextStatus.kind === 'online' ? undefined : false,
+        // Credit is the fixed .lm-canvas__credit pill below, for online and offline alike.
+        attributionControl: false,
       });
       map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
       map.on('click', (e) => {
@@ -496,6 +497,7 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
         className={`lm-canvas__map ${isFull ? 'lm-canvas__map--full' : ''} ${navigationMode ? 'map-container--navigating' : ''}`}
         style={isFull ? undefined : { height: mapHeight }}
       />
+      <span className="lm-canvas__credit">© OpenStreetMap contributors</span>
       {!hideRecenterFab && (position || focusTarget) && (
         <button type="button" onClick={recenter} aria-label="Recenter map" className="lm-canvas__recenter">
           <IonIcon icon={locateOutline} />

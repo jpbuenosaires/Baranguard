@@ -5,137 +5,291 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>Privacy Notice (Draft) — Baranguard</title>
-  <!-- Static, script-free page (V-06/N-03). Built from
-       docs/PRIVACY_NOTICE_WEB_DRAFT.md. No inline <script>: the CSP in
-       web/.htaccess only hashes index.html's scripts. Colours come from
-       base.css tokens; with no data-theme stamp the OS preference decides
-       light or dark through base.css's prefers-color-scheme block. -->
+  <!-- Static, script-free accessible page (V-06/N-03). Built from
+       docs/PRIVACY_NOTICE_WEB_DRAFT.md. Colours and typography bind
+       strictly to base.css tokens; dark and light modes resolve automatically
+       through base.css's prefers-color-scheme / theme contract. -->
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/privacy.css">
 </head>
 <body class="privacy-page">
   <a class="skip-link" href="#privacy-main">Skip to the notice</a>
-  <header class="privacy-header">
-    <img class="privacy-header__logo" src="assets/logo.svg" alt="" width="40" height="40">
-    <div>
-      <p class="privacy-header__brand">Baranguard</p>
-      <p class="privacy-header__sub">Barangay emergency dispatch and records, Pilar, Sorsogon</p>
+
+  <!-- Top Header with Brand & Global Navigation Affordances -->
+  <header class="privacy-header" id="privacy-top">
+    <div class="privacy-header__inner">
+      <div class="privacy-header__brand-wrap">
+        <img class="privacy-header__logo" src="assets/logo.svg" alt="Baranguard shield logo" width="40" height="40">
+        <div>
+          <p class="privacy-header__brand">Baranguard</p>
+          <p class="privacy-header__sub">Barangay emergency dispatch and records, Pilar, Sorsogon</p>
+        </div>
+      </div>
+      <div class="privacy-header__actions">
+        <a href="index.html" class="privacy-header__btn privacy-header__btn--back">
+          <svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+          <span>Return to Portal</span>
+        </a>
+        <button type="button" id="privacy-print-btn" class="privacy-header__btn privacy-header__btn--print">
+          <svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          <span>Print Notice</span>
+        </button>
+      </div>
     </div>
   </header>
 
-  <main id="privacy-main" class="privacy-main" tabindex="-1">
-    <p class="privacy-draft" role="note">
-      <strong>DRAFT - pending barangay council approval.</strong>
-      This notice has not yet been adopted by the Sangguniang Barangay or
-      reviewed by a Data Protection Officer. Items marked
-      <em>[to be confirmed by the barangay]</em> are not yet decided.
-    </p>
-
-    <h1>Privacy notice</h1>
-    <p class="privacy-lead">
-      This dashboard is used by barangay staff to dispatch Tanods, record
-      incidents and keep barangay records. It holds personal information, so
-      access is limited by role and records are kept for set periods.
-    </p>
-
-    <section aria-labelledby="p-holds">
-      <h2 id="p-holds">What this dashboard holds</h2>
-      <ul>
-        <li><strong>Incident reports:</strong> the type, place, time and status of an incident, and the names and contact numbers of complainants and respondents where recorded.</li>
-        <li><strong>Confidential narratives:</strong> the written account of an incident. Only the Barangay Secretary can read it.</li>
-        <li><strong>Tanod positions:</strong> the location of Tanods on duty, while they are on duty, so they can be dispatched and kept safe.</li>
-        <li><strong>Duty hours:</strong> shift schedules, duty status changes and accomplishment reports of Tanods.</li>
-        <li><strong>Citizen reports:</strong> reports sent in by residents, with the contact details they gave.</li>
-        <li><strong>SMS records:</strong> messages sent and received through the barangay's SMS gateway, and the list of residents who asked to receive barangay alerts.</li>
-        <li><strong>Staff accounts:</strong> names, usernames, roles, and official titles printed under signatures.</li>
-      </ul>
-    </section>
-
-    <section aria-labelledby="p-why">
-      <h2 id="p-why">Why we hold it</h2>
-      <p>
-        To respond to emergencies, to dispatch and account for Tanods on duty,
-        to keep the barangay's official incident records, and to send safety
-        alerts to residents who asked for them. The Local Government Code of
-        1991 makes the Barangay Secretary the custodian of barangay records.
-      </p>
-    </section>
-
-    <section aria-labelledby="p-who">
-      <h2 id="p-who">Who can see what</h2>
-      <div class="privacy-table-wrap">
-        <table class="privacy-table">
-          <caption class="sr-only">Access to records by role</caption>
-          <thead>
-            <tr><th scope="col">Role</th><th scope="col">Can see</th></tr>
-          </thead>
-          <tbody>
-            <tr><th scope="row">Admin (Chief Tanod)</th><td>Dispatch, Tanod positions, incidents without narratives, users, devices, audit log, system settings</td></tr>
-            <tr><th scope="row">Secretary</th><td>Everything the Admin sees, plus confidential narratives and complainant/respondent details, and incident status changes</td></tr>
-            <tr><th scope="row">Punong Barangay</th><td>Dashboard, maps, reports, approvals; individual incident pages reachable from the dashboard; no list of all cases</td></tr>
-            <tr><th scope="row">Tanod (mobile app only)</th><td>Their own incidents, dispatches, shifts and reports</td></tr>
-          </tbody>
-        </table>
+  <!-- Multi-Column Layout: Sticky Sidebar TOC + Elevated Document Article -->
+  <div class="privacy-layout">
+    <aside class="privacy-toc" aria-label="Table of contents">
+      <div class="privacy-toc__inner">
+        <p class="privacy-toc__title">On this page</p>
+        <nav class="privacy-toc__nav">
+          <a href="#privacy-intro" class="privacy-toc__link">Overview & Status</a>
+          <a href="#p-holds" class="privacy-toc__link">What We Hold</a>
+          <a href="#p-why" class="privacy-toc__link">Why We Hold It</a>
+          <a href="#p-who" class="privacy-toc__link">Who Can See What</a>
+          <a href="#p-keep" class="privacy-toc__link">Retention Schedule</a>
+          <a href="#p-rights" class="privacy-toc__link">Your Privacy Rights</a>
+          <a href="#p-contact" class="privacy-toc__link">Contact Information</a>
+          <a href="#p-staff" class="privacy-toc__link">Staff Guidance</a>
+        </nav>
+        <div class="privacy-toc__meta">
+          <p class="privacy-toc__meta-label">Statutory Compliance</p>
+          <span class="privacy-toc__meta-tag">RA 10173 • NPC 2026</span>
+        </div>
       </div>
-      <p>Access is limited to the barangay's own records. No role can see another barangay's records.</p>
-    </section>
+    </aside>
 
-    <section aria-labelledby="p-keep">
-      <h2 id="p-keep">How long we keep it</h2>
-      <ul>
-        <li><strong>Confidential narratives:</strong> deleted from the system 90 days after the incident is recorded, unless the record is under legal hold. The barangay keeps any official blotter in its own binders. <em>[to be confirmed by the barangay]</em></li>
-        <li><strong>Incident records:</strong> kept 7 years, as the barangay's official record.</li>
-        <li><strong>Tanod positions, duty status, shift schedules and notifications:</strong> kept 1 year.</li>
-        <li><strong>SMS message log and unconverted citizen reports:</strong> kept 1 year.</li>
-        <li><strong>Audit log:</strong> kept 7 years.</li>
-        <li><strong>Accomplishment reports, availability, school check-ins, referrals and Annex D term reports:</strong> <em>[to be confirmed by the barangay]</em> (no deletion is done yet).</li>
-        <li><strong>Backups:</strong> <em>[to be confirmed by the barangay]</em></li>
-      </ul>
-    </section>
+    <main id="privacy-main" class="privacy-main" tabindex="-1">
+      <div id="privacy-intro" class="privacy-header-content">
+        <!-- High-Visibility Alert Callout Card for DRAFT Notice -->
+        <aside class="privacy-alert" role="note" aria-label="Draft Notice">
+          <div class="privacy-alert__icon" aria-hidden="true">
+            <svg width="1.5rem" height="1.5rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </div>
+          <div>
+            <h2 class="privacy-alert__title">DRAFT — Pending Barangay Council Approval</h2>
+            <p>
+              This notice has not yet been adopted by the Sangguniang Barangay or reviewed by a Data Protection Officer. Items marked <em>[to be confirmed by the barangay]</em> are not yet decided.
+            </p>
+          </div>
+        </aside>
 
-    <section aria-labelledby="p-rights">
-      <h2 id="p-rights">Your rights</h2>
-      <p>Under the Data Privacy Act of 2012 (Republic Act No. 10173), you may:</p>
-      <ul>
-        <li><strong>Ask to know</strong> what personal data the barangay holds about you, and how it is used.</li>
-        <li><strong>Ask for access</strong> to a copy of your personal data.</li>
-        <li><strong>Ask for correction</strong> of inaccurate or incomplete data.</li>
-        <li><strong>Object</strong> to the processing of your data in certain cases.</li>
-        <li><strong>Withdraw consent</strong>, for example to receive SMS alerts. Ask to be removed from the list; your number is marked opted-out.</li>
-        <li><strong>Complain</strong> to the National Privacy Commission if you believe your rights were violated.</li>
-      </ul>
-      <p>
-        Some records cannot be deleted on request while the law requires the
-        barangay to keep them (for example, incident records under the 7-year
-        retention, or a record under legal hold). The barangay will tell you
-        if this applies.
+        <!-- Document Metadata Strip -->
+        <div class="privacy-meta-strip" role="region" aria-label="Document Metadata">
+          <div class="privacy-meta-item">
+            <span class="privacy-meta-pill privacy-meta-pill--draft">Draft Notice</span>
+          </div>
+          <div class="privacy-meta-item">
+            <strong>Authority:</strong> <span>Sangguniang Barangay of Pilar</span>
+          </div>
+          <div class="privacy-meta-item">
+            <strong>Governing Law:</strong> <span>RA 10173 (Data Privacy Act)</span>
+          </div>
+          <div class="privacy-meta-item">
+            <strong>Drafted:</strong> <span>October 9, 2026</span>
+          </div>
+        </div>
+
+        <h1>Privacy notice</h1>
+        <p class="privacy-lead">
+          This dashboard is used by barangay staff to dispatch Tanods, record incidents and keep barangay records. It holds personal information, so access is limited by role and records are kept for set periods.
+        </p>
+      </div>
+
+      <section aria-labelledby="p-holds">
+        <h2 id="p-holds">What this dashboard holds</h2>
+        <ul>
+          <li><strong>Incident reports:</strong> the type, place, time and status of an incident, and the names and contact numbers of complainants and respondents where recorded.</li>
+          <li><strong>Confidential narratives:</strong> the written account of an incident. Only the Barangay Secretary can read it.</li>
+          <li><strong>Tanod positions:</strong> the location of Tanods on duty, while they are on duty, so they can be dispatched and kept safe.</li>
+          <li><strong>Duty hours:</strong> shift schedules, duty status changes and accomplishment reports of Tanods.</li>
+          <li><strong>Citizen reports:</strong> reports sent in by residents, with the contact details they gave.</li>
+          <li><strong>SMS records:</strong> messages sent and received through the barangay's SMS gateway, and the list of residents who asked to receive barangay alerts.</li>
+          <li><strong>Staff accounts:</strong> names, usernames, roles, and official titles printed under signatures.</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="p-why">
+        <h2 id="p-why">Why we hold it</h2>
+        <p>
+          To respond to emergencies, to dispatch and account for Tanods on duty, to keep the barangay's official incident records, and to send safety alerts to residents who asked for them. The Local Government Code of 1991 makes the Barangay Secretary the custodian of barangay records.
+        </p>
+      </section>
+
+      <section aria-labelledby="p-who">
+        <h2 id="p-who">Who can see what</h2>
+        <div class="privacy-table-wrap">
+          <table class="privacy-table">
+            <caption class="sr-only">Access to records by role</caption>
+            <thead>
+              <tr><th scope="col">Role</th><th scope="col">Can see</th></tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row"><span class="role-badge role-badge--admin">Admin (Chief Tanod)</span></th><td>Dispatch, Tanod positions, incidents without narratives, users, devices, audit log, system settings</td></tr>
+              <tr><th scope="row"><span class="role-badge role-badge--secretary">Secretary</span></th><td>Everything the Admin sees, plus confidential narratives and complainant/respondent details, and incident status changes</td></tr>
+              <tr><th scope="row"><span class="role-badge role-badge--pb">Punong Barangay</span></th><td>Dashboard, maps, reports, approvals; individual incident pages reachable from the dashboard; no list of all cases</td></tr>
+              <tr><th scope="row"><span class="role-badge role-badge--tanod">Tanod (mobile app only)</span></th><td>Their own incidents, dispatches, shifts and reports</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="privacy-caption-note">Access is limited to the barangay's own records. No role can see another barangay's records.</p>
+      </section>
+
+      <section aria-labelledby="p-keep">
+        <h2 id="p-keep">How long we keep it</h2>
+        <div class="privacy-retention-grid">
+          <div class="privacy-retention-card">
+            <div class="privacy-retention-header">
+              <h3>Confidential narratives</h3>
+              <span class="retention-pill retention-pill--warning">90 Days</span>
+            </div>
+            <p>Deleted from the system 90 days after the incident is recorded, unless the record is under legal hold. The barangay keeps any official blotter in its own binders. <span class="privacy-badge-pending">to be confirmed by the barangay</span></p>
+          </div>
+          <div class="privacy-retention-card">
+            <div class="privacy-retention-header">
+              <h3>Incident records</h3>
+              <span class="retention-pill retention-pill--primary">7 Years</span>
+            </div>
+            <p>Kept 7 years, as the barangay's official statutory record.</p>
+          </div>
+          <div class="privacy-retention-card">
+            <div class="privacy-retention-header">
+              <h3>Tanod positions & Shifts</h3>
+              <span class="retention-pill retention-pill--info">1 Year</span>
+            </div>
+            <p>Tanod positions, duty status, shift schedules, and push notifications.</p>
+          </div>
+          <div class="privacy-retention-card">
+            <div class="privacy-retention-header">
+              <h3>SMS Logs & Reports</h3>
+              <span class="retention-pill retention-pill--info">1 Year</span>
+            </div>
+            <p>SMS message logs and unconverted citizen reports sent to the gateway.</p>
+          </div>
+          <div class="privacy-retention-card">
+            <div class="privacy-retention-header">
+              <h3>Audit log</h3>
+              <span class="retention-pill retention-pill--primary">7 Years</span>
+            </div>
+            <p>Security events, sign-in tracking, and administrative access logs.</p>
+          </div>
+          <div class="privacy-retention-card">
+            <div class="privacy-retention-header">
+              <h3>Council Reports & Backups</h3>
+              <span class="retention-pill retention-pill--neutral">Pending Adoption</span>
+            </div>
+            <p>Accomplishment reports, availability, school check-ins, referrals, Annex D term reports, and backups. <span class="privacy-badge-pending">to be confirmed by the barangay</span></p>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="p-rights">
+        <h2 id="p-rights">Your rights</h2>
+        <p class="privacy-lead-sub">Under the Data Privacy Act of 2012 (Republic Act No. 10173), you may exercise the following rights:</p>
+        <div class="privacy-rights-grid">
+          <div class="privacy-right-card">
+            <div class="privacy-right-badge">
+              <svg width="1.25rem" height="1.25rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <strong>Right to Be Informed</strong>
+            </div>
+            <p>Ask to know what personal data the barangay holds about you, and how it is used.</p>
+          </div>
+          <div class="privacy-right-card">
+            <div class="privacy-right-badge">
+              <svg width="1.25rem" height="1.25rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h9l5 5v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M15 2v5h5"/></svg>
+              <strong>Right of Access</strong>
+            </div>
+            <p>Ask for access to a formal copy of your personal records and processing log.</p>
+          </div>
+          <div class="privacy-right-card">
+            <div class="privacy-right-badge">
+              <svg width="1.25rem" height="1.25rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="8 12 11 15 16 9"/></svg>
+              <strong>Right to Rectification</strong>
+            </div>
+            <p>Ask for immediate correction of inaccurate or incomplete personal data.</p>
+          </div>
+          <div class="privacy-right-card">
+            <div class="privacy-right-badge">
+              <svg width="1.25rem" height="1.25rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6z"/></svg>
+              <strong>Right to Object</strong>
+            </div>
+            <p>Object to the processing of your data in specific discretionary barangay cases.</p>
+          </div>
+          <div class="privacy-right-card">
+            <div class="privacy-right-badge">
+              <svg width="1.25rem" height="1.25rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              <strong>Withdraw Consent</strong>
+            </div>
+            <p>Withdraw consent to receive SMS emergency alerts; your number is immediately marked opted-out.</p>
+          </div>
+          <div class="privacy-right-card">
+            <div class="privacy-right-badge">
+              <svg width="1.25rem" height="1.25rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <strong>File a Complaint</strong>
+            </div>
+            <p>Complain directly to the National Privacy Commission (NPC) if your privacy rights were infringed.</p>
+          </div>
+        </div>
+        <p class="privacy-legal-disclaimer">
+          Some records cannot be deleted on request while the law requires the barangay to keep them (for example, incident records under the 7-year statutory retention, or a record under legal hold). The barangay will notify you in writing if an exception applies.
+        </p>
+        <p class="privacy-note">This list of rights is to be checked against RA 10173 Section 16 before the notice is adopted.</p>
+      </section>
+
+      <section aria-labelledby="p-contact">
+        <h2 id="p-contact">How to contact us</h2>
+        <div class="privacy-contact-card">
+          <dl class="privacy-contact">
+            <dt>Data Protection Officer</dt>
+            <dd><span class="privacy-badge-pending">Pending Council Appointment</span></dd>
+            <dt>Position</dt>
+            <dd><span class="privacy-badge-pending">To be designated by Sangguniang Barangay</span></dd>
+            <dt>Phone</dt>
+            <dd><span class="privacy-badge-pending">(054) Contact Barangay Hall</span></dd>
+            <dt>Office Address</dt>
+            <dd>Barangay Hall, Pilar, Sorsogon</dd>
+          </dl>
+        </div>
+      </section>
+
+      <section aria-labelledby="p-staff">
+        <h2 id="p-staff">For barangay staff using the dashboard</h2>
+        <ul class="privacy-staff-list">
+          <li>
+            <div class="privacy-staff-icon">
+              <svg width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            </div>
+            <div><strong>Credential Security:</strong> Do not share your login credentials. Log out whenever you leave the workstation unattended.</div>
+          </li>
+          <li>
+            <div class="privacy-staff-icon">
+              <svg width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h9l5 5v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M15 2v5h5"/></svg>
+            </div>
+            <div><strong>Authorized Data Export:</strong> Do not print, export or transmit records unless your specific role requires it. Exported files contain sensitive citizen information.</div>
+          </li>
+          <li>
+            <div class="privacy-staff-icon">
+              <svg width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div><strong>Immediate Incident Reporting:</strong> Report any loss of an authorized mobile device or any suspected misuse to the Data Protection Officer and Punong Barangay immediately.</div>
+          </li>
+        </ul>
+      </section>
+
+      <p class="privacy-footer">
+        Drafted 2026-10-09 for the barangay council. Status: DRAFT, not reviewed by a DPO or adopted by the Sangguniang Barangay.
       </p>
-      <p class="privacy-note">This list of rights is to be checked against RA 10173 Section 16 before the notice is adopted.</p>
-    </section>
+    </main>
+  </div>
 
-    <section aria-labelledby="p-contact">
-      <h2 id="p-contact">How to contact us</h2>
-      <dl class="privacy-contact">
-        <dt>Data Protection Officer</dt><dd class="privacy-blank"><span class="sr-only">Blank, to be filled in by the barangay</span>&nbsp;</dd>
-        <dt>Position</dt><dd class="privacy-blank">&nbsp;</dd>
-        <dt>Phone</dt><dd class="privacy-blank">&nbsp;</dd>
-        <dt>Email or office address</dt><dd class="privacy-blank">&nbsp;</dd>
-      </dl>
-    </section>
+  <!-- Floating Back to Top Affordance -->
+  <a href="#privacy-top" class="privacy-back-top" aria-label="Back to top">
+    <svg width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>
+    <span>Top</span>
+  </a>
 
-    <section aria-labelledby="p-staff">
-      <h2 id="p-staff">For barangay staff using the dashboard</h2>
-      <ul>
-        <li>Do not share your login. Log out when you leave the workstation.</li>
-        <li>Do not print, export or send records unless your role requires it. Exports may contain personal data.</li>
-        <li>Report any loss of a device or any suspected misuse to the Data Protection Officer and the Punong Barangay at once.</li>
-      </ul>
-    </section>
-
-    <p class="privacy-footer">
-      Drafted 2026-10-09 for the barangay council. Status: DRAFT, not reviewed
-      by a DPO or adopted by the Sangguniang Barangay.
-    </p>
-  </main>
+  <!-- Script for Print & Interaction -->
+  <script type="module" src="src/pages/privacy.js"></script>
 </body>
 </html>

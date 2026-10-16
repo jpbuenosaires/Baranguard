@@ -916,12 +916,22 @@ button {
   gap: var(--spacing-sm);
   transition: background-color .15s ease, color .15s ease, border-color .15s ease, transform .1s ease;
 }
-button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
+button:focus-visible, a:focus-visible, [tabindex]:not([tabindex="-1"]):focus-visible {
   outline: none;
   /* The inner ring matches the SURFACE the element sits on (creates the
      "gap" between element and outer ring) — --color-surface, not literal
      white, so this reads correctly in dark mode too. */
   box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-link);
+}
+/* Programmatic focus targets (headings, page container, dialog wrappers)
+   use tabindex="-1" for screen-reader announcements on navigation without
+   drawing a visual focus ring for sighted users. */
+[tabindex="-1"]:focus,
+[tabindex="-1"]:focus-visible,
+.page-header__title:focus,
+.page-header__title:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 button svg { flex-shrink: 0; }
 button.primary {
@@ -1613,6 +1623,10 @@ svg.is-spinning {
    Contrast (forced colours) removes, leaving no visible focus at all. */
 @media (forced-colors: active) {
   :focus-visible { outline: 2px solid CanvasText !important; outline-offset: 2px; }
+  [tabindex="-1"]:focus-visible,
+  .page-header__title:focus-visible {
+    outline: none !important;
+  }
   .sos-bar { border: 2px solid CanvasText; }
 }
 
@@ -1635,3 +1649,5 @@ svg.is-spinning {
     width: 100%;
   }
 }
+
+.font-mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); }

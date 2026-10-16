@@ -104,8 +104,9 @@ export const ReasonSheet: React.FC<ReasonSheetProps> = ({
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             disabled={busy}
+            aria-describedby={`${fieldId}-hint`}
           />
-          <span className="wf-hint">
+          <span id={`${fieldId}-hint`} className="wf-hint">
             {hint} <span className="wf-counter">{trimmed.length}/{MAX_REASON}</span>
           </span>
         </div>

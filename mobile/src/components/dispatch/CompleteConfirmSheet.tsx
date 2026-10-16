@@ -1,4 +1,5 @@
 /** Safety confirmation sheet before completing a dispatch (Nielsen heuristic 5). Phase 6 split; markup unchanged. */
+import { useEffect, useRef } from 'react';
 import { IonIcon, IonSpinner } from '@ionic/react';
 import { shieldCheckmarkOutline } from 'ionicons/icons';
 import type { DispatchLocalRow } from '../../services/db/localSchema';
@@ -15,9 +16,20 @@ export default function CompleteConfirmSheet({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const sheetRef = useRef<HTMLDivElement>(null);
+  // Manual dialog: move focus in, close on Escape, and hand focus back on close.
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null;
+    sheetRef.current?.focus();
+    return () => prev?.focus?.();
+  }, []);
+
   return (
     <div
       className="dispatch-confirm-overlay"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && !updating) onCancel();
+      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-modal-title"
@@ -25,7 +37,7 @@ export default function CompleteConfirmSheet({
         if (e.target === e.currentTarget) onCancel();
       }}
     >
-      <div className="dispatch-confirm-sheet">
+      <div className="dispatch-confirm-sheet" ref={sheetRef} tabIndex={-1}>
         <div className="confirm-sheet-handle" aria-hidden="true" />
         <div className="confirm-sheet-header">
           <div className="confirm-icon-box" aria-hidden="true">

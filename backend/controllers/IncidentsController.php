@@ -249,6 +249,33 @@ final class IncidentsController
             $where[] = 'i.priority = :priority';
             $params['priority'] = $priority;
         }
+        $dateFrom = Http::query('date_from');
+        if ($dateFrom !== null && $dateFrom !== '') {
+            $dateFrom = trim($dateFrom);
+            try {
+                $manila = new \DateTimeZone('Asia/Manila');
+                $utc = new \DateTimeZone('UTC');
+                $dtFrom = new \DateTimeImmutable($dateFrom, $manila);
+                $where[] = 'i.created_at >= :date_from';
+                $params['date_from'] = $dtFrom->setTimezone($utc)->format('Y-m-d H:i:s');
+            } catch (\Exception $e) {
+                // Ignore malformed date
+            }
+        }
+        $dateTo = Http::query('date_to');
+        if ($dateTo !== null && $dateTo !== '') {
+            $dateTo = trim($dateTo);
+            try {
+                $manila = new \DateTimeZone('Asia/Manila');
+                $utc = new \DateTimeZone('UTC');
+                $timeSuffix = strlen($dateTo) <= 10 ? ' 23:59:59' : '';
+                $dtTo = new \DateTimeImmutable($dateTo . $timeSuffix, $manila);
+                $where[] = 'i.created_at <= :date_to';
+                $params['date_to'] = $dtTo->setTimezone($utc)->format('Y-m-d H:i:s');
+            } catch (\Exception $e) {
+                // Ignore malformed date
+            }
+        }
         if ($q !== null && $q !== '') {
             // Two distinct placeholders for the two LIKE matches, not one
             // named param reused twice — this connection runs with

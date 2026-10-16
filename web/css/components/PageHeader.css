@@ -31,6 +31,11 @@
   align-items: center;
   gap: var(--spacing-sm-md);
 }
+.page-header__title:focus,
+.page-header__title:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
 .page-header__icon {
   display: inline-flex;
   color: var(--color-white);

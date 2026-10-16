@@ -467,9 +467,9 @@ export async function createUser({ username, password, fullName, role, contactNu
 
 /** @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>} */
 /** `q` (2026-09-05 UX pass): real server-side search — see IncidentsController::index()'s own doc for why this isn't client-side. */
-export async function getIncidents({ status, priority, q, page, limit } = {}) {
+export async function getIncidents({ status, priority, q, page, limit, dateFrom, dateTo } = {}) {
   const json = await request('GET', '/incidents', {
-    query: { status, priority, q, page, limit },
+    query: { status, priority, q, page, limit, date_from: dateFrom, date_to: dateTo },
     auth: true,
   });
   return {

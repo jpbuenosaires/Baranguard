@@ -49,7 +49,7 @@ export function HeatmapMap(container) {
     preserveDrawingBuffer: true,
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
-  map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+  map.addControl(new maplibregl.AttributionControl({ compact: false }), 'bottom-right');
   const detachBasemapFallback = attachBasemapFallback(map, 'osm-raster');
 
   let ready = false;

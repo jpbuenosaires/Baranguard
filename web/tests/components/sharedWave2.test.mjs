@@ -40,61 +40,24 @@ function mountShell(role, activePage = 'settings') {
 }
 
 // The default /notifications fixture carries ONE pending SOS notification.
-describe('Site-wide SOS bar (A-08/X-01)', () => {
-  test('shows on a non-dispatch page as an assertive alert with a Dispatch Center link (Admin)', async () => {
-    const ctx = mountShell('admin', 'incident-management');
+describe('Site-wide SOS bar removed (all pages)', () => {
+  test('never renders on any page even when an SOS notification is pending', async () => {
+    mountShell('admin', 'incident-management');
     await settle();
-    const bar = $('.sos-bar');
-    assert.ok(bar && !bar.hidden, 'SOS bar must be visible');
-    assert.equal(bar.getAttribute('role'), 'alert');
-    assert.equal(bar.getAttribute('aria-live'), 'assertive');
-    assert.match(text($('.sos-bar__text')), /^SOS: .+ needs help\.$/);
-    click($$('.sos-bar__btn').find((b) => /Open Dispatch Center/.test(text(b))));
-    assert.deepEqual(ctx.navigations.at(-1), { page: 'dispatch', param: undefined });
+    assert.equal($('.sos-bar'), null);
     assertNoRuntimeErrors();
   });
 
-  test('the Punong Barangay is sent to the Live Map instead', async () => {
-    const ctx = mountShell('punong_barangay', 'approvals');
+  test('never renders for Punong Barangay either', async () => {
+    mountShell('punong_barangay', 'approvals');
     await settle();
-    click($$('.sos-bar__btn').find((b) => /Open Live Map/.test(text(b))));
-    assert.deepEqual(ctx.navigations.at(-1), { page: 'gis', param: undefined });
+    assert.equal($('.sos-bar'), null);
   });
 
-  test('hidden on the Dispatch Center, which has its own banner', async () => {
-    mountShell('admin', 'dispatch');
-    await settle();
-    assert.equal($('.sos-bar').hidden, true);
-  });
-
-  test('stays hidden when no SOS is unacknowledged', async () => {
-    api.on('GET', '/notifications', () => ({ status: 200, body: { items: [], unread_count: 0 } }));
-    mountShell('admin', 'dashboard');
-    await settle();
-    assert.equal($('.sos-bar').hidden, true);
-  });
-
-  test('"Mark as seen" acknowledges the SOS notification through the existing route', async () => {
+  test('stays absent on settings and dashboard', async () => {
     mountShell('admin', 'settings');
     await settle();
-    api.on('GET', '/notifications', () => ({ status: 200, body: { items: [], unread_count: 0 } }));
-    click($$('.sos-bar__btn').find((b) => /Mark as seen/.test(text(b))));
-    await settle();
-    assert.equal(api.callsTo('POST', '/notifications/:id/ack').length, 1);
-    assert.equal($('.sos-bar').hidden, true);
-  });
-
-  test('says "Click anywhere to enable alert sound" until the page has had a gesture', async () => {
-    __resetAlertSoundForTests({ unlocked: false });
-    mountShell('admin', 'settings');
-    await settle();
-    const hint = $('.sos-bar__sound-hint');
-    assert.equal(hint.hidden, false);
-    assert.match(text(hint), /Click anywhere to enable alert sound/);
-    document.body.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
-    await settle();
-    assert.equal(isAlertSoundUnlocked(), true);
-    assert.equal(hint.hidden, true);
+    assert.equal($('.sos-bar'), null);
   });
 });
 
