@@ -46,7 +46,7 @@ same setup and need no data of their own.
 * 2 active SOS (one for the web tester, one for the phone console), 1 acknowledged, 11 resolved (4 by SMS fallback).
 * 4 pending swap requests (not reyes) on published future shifts; 19 draft future shifts awaiting publish.
 * Accomplishment reports: 6 prepared (one with a flagged duration), 1 returned, 3 open.
-* 6 unconverted legacy citizen reports; 3 schools; 1 prepared Annex D term report; 38 referrals; 4 related links.
+* 6 unconverted legacy citizen reports (not shown on any screen since the inbox was retired 2026-10-17); 3 schools; 1 prepared Annex D term report; 38 referrals; 4 related links.
 * System settings: SOS backup contact `09170000099` and gateway `09170000001` (fictitious), so T-08 has a number to text.
 * No dispatch offer is pre-opened (a pre-opened one would block the facilitator's "Broadcast to on-duty tanods").
 

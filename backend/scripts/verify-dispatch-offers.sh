@@ -336,7 +336,7 @@ api GET /dispatch-offers "$T1_T" ""
 expect_code "Recipient tanod lists offers" 200
 expect_eq "  t1 sees offer #$OFFER1" "$(offer_listed "$BODY" $OFFER1)" "1"
 TKEYS=$(printf '%s' "$BODY" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); $k=array_keys($d["items"][0]); sort($k); echo implode(",",$k);')
-expect_eq "  tanod item has exactly the contract keys" "$TKEYS" "barangay_name,created_at,expires_at,incident_id,incident_type,offer_id,priority,status"
+expect_eq "  tanod item has exactly the contract keys" "$TKEYS" "barangay_name,created_at,expires_at,incident_display_id,incident_id,incident_type,offer_id,priority,status"
 case "$BODY" in *"$SECRET"*|*"Secret"*|*"13.01"*) fail "tanod list leaks case content";; *) pass "  tanod list carries no narrative/names/coordinates";; esac
 api GET /dispatch-offers "$T3_T" ""
 expect_eq "Off-duty tanod t3 (not a recipient) sees nothing" "$(offer_listed "$BODY" $OFFER1)" "0"

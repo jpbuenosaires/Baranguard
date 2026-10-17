@@ -90,6 +90,15 @@ function formatDateTime(value) {
   return formatManilaDateTime(d);
 }
 
+function formatPhoneNumber(raw) {
+  if (!raw) return '';
+  const digits = String(raw).replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('09')) {
+    return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
+  }
+  return String(raw);
+}
+
 const STATUS_PILL_CLASS = {
   pending: 'status-pill--pending',
   dispatched: 'status-pill--info',
@@ -200,37 +209,137 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     content.innerHTML = '';
     content.append(body);
     body.innerHTML = '';
+    body.className = 'incident-detail-body';
 
     const incidentDisplayId = formatIncidentCode(incident?.incidentId || incidentId, incident?.displayId);
     const titleBlock = pageHeader.el.querySelector('.page-header__title');
     if (titleBlock) {
-      // The ID is already in the breadcrumb and the card heading, so the bar shows only the page name. The dash and
-      // the ID stay in the DOM (screen readers and the document title still read "Incident Record — INC-...").
-      titleBlock.innerHTML = `<span class="page-header__icon" aria-hidden="true">${icons.fileText(22)}</span> Incident Record<span class="sr-only"> — </span><span class="page-header__id-pill">${escapeHtml(incidentDisplayId)}</span>`;
+      titleBlock.innerHTML = `<span class="page-header__icon" aria-hidden="true">${icons.fileText(22)}</span> Incident Record<span class="sr-only"> — ${escapeHtml(incidentDisplayId)}</span>`;
     }
 
     const currentCrumb = shell.el.querySelector('.topbar__crumb--current');
     if (currentCrumb) {
       currentCrumb.textContent = incidentDisplayId;
     }
-    // main.js sets document.title once per navigation, before the incident
-    // has loaded; refresh it now that the real display code is known.
     document.title = `Incident Record — ${incidentDisplayId} — Baranguard`;
 
-    // Exactly 1 Master Console Card on the entire screen
-    const consoleCard = document.createElement('div');
-    consoleCard.className = 'card incident-console-card case-dossier';
+    // 1. Unified Command Hero Bar
+    const heroHeader = buildCommandHero(incidentDisplayId);
+    body.appendChild(heroHeader);
 
-    // 1. Persistent Console Header: Hero & Quick Action
+    // 2. Responsive Tabs (< 1024px)
+    const tabList = document.createElement('div');
+    tabList.className = 'console-tabs';
+    tabList.setAttribute('role', 'tablist');
+    tabList.setAttribute('aria-label', 'Incident record sections');
+
+    const tabDossier = document.createElement('button');
+    tabDossier.type = 'button';
+    tabDossier.className = 'console-tab console-tab--active';
+    tabDossier.setAttribute('role', 'tab');
+    tabDossier.id = 'tab-dossier';
+    tabDossier.setAttribute('aria-selected', 'true');
+    tabDossier.setAttribute('aria-controls', 'panel-dossier');
+    tabDossier.setAttribute('tabindex', '0');
+    tabDossier.innerHTML = `<span class="console-tab__icon" aria-hidden="true">${icons.fileText(15)}</span><span>Details</span>`;
+    tabDossier.title = 'Incident dossier and School C-1';
+
+    const tabOperations = document.createElement('button');
+    tabOperations.type = 'button';
+    tabOperations.className = 'console-tab';
+    tabOperations.setAttribute('role', 'tab');
+    tabOperations.id = 'tab-operations';
+    tabOperations.setAttribute('aria-selected', 'false');
+    tabOperations.setAttribute('aria-controls', 'panel-operations');
+    tabOperations.setAttribute('tabindex', '-1');
+    tabOperations.innerHTML = `<span class="console-tab__icon" aria-hidden="true">${icons.clock(15)}</span><span>Timeline & links</span>`;
+    tabOperations.title = 'Response timeline, responders and case links';
+
+    tabList.append(tabDossier, tabOperations);
+    body.appendChild(tabList);
+
+    // 3. Asymmetric 2-Column Panels Container
+    const panelsWrap = document.createElement('div');
+    panelsWrap.className = 'console-panels';
+
+    // Panel 1: Dossier Body (Left Column)
+    const panelDossier = document.createElement('div');
+    panelDossier.className = 'tab-panel tab-panel--active';
+    panelDossier.id = 'panel-dossier';
+    panelDossier.setAttribute('role', 'tabpanel');
+    panelDossier.setAttribute('aria-labelledby', 'tab-dossier');
+    panelDossier.setAttribute('tabindex', '0');
+    panelDossier.appendChild(buildDossierBody());
+    panelsWrap.appendChild(panelDossier);
+
+    // Panel 2: Operations Body (Right Column)
+    const panelOperations = document.createElement('div');
+    panelOperations.className = 'tab-panel';
+    panelOperations.id = 'panel-operations';
+    panelOperations.setAttribute('role', 'tabpanel');
+    panelOperations.setAttribute('aria-labelledby', 'tab-operations');
+    panelOperations.setAttribute('tabindex', '0');
+    panelOperations.appendChild(buildOperationsBody());
+    panelsWrap.appendChild(panelOperations);
+
+    body.appendChild(panelsWrap);
+
+    // Tab Switching Logic
+    const tabs = [tabDossier, tabOperations];
+    const panels = [panelDossier, panelOperations];
+
+    function activateTab(index) {
+      tabs.forEach((t, i) => {
+        const isActive = i === index;
+        t.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        t.setAttribute('tabindex', isActive ? '0' : '-1');
+        t.classList.toggle('console-tab--active', isActive);
+      });
+      panels.forEach((p, i) => {
+        p.classList.toggle('tab-panel--active', i === index);
+      });
+    }
+
+    tabDossier.addEventListener('click', () => activateTab(0));
+    tabOperations.addEventListener('click', () => activateTab(1));
+
+    tabList.addEventListener('keydown', (e) => {
+      let currentIndex = tabs.findIndex((t) => t.getAttribute('aria-selected') === 'true');
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const next = (currentIndex + 1) % tabs.length;
+        activateTab(next);
+        tabs[next].focus();
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const prev = (currentIndex - 1 + tabs.length) % tabs.length;
+        activateTab(prev);
+        tabs[prev].focus();
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        activateTab(0);
+        tabs[0].focus();
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        activateTab(tabs.length - 1);
+        tabs[tabs.length - 1].focus();
+      }
+    });
+  }
+
+  /**
+   * Top Command Hero Bar: Reference ID, Type, Status & Priority Pills, and Quick Operations.
+   */
+  function buildCommandHero(incidentDisplayId) {
     const heroHeader = document.createElement('div');
-    heroHeader.className = 'console-hero-header';
+    heroHeader.className = 'card console-hero-header';
 
     const leftGroup = document.createElement('div');
     leftGroup.className = 'console-hero-header__left';
 
     const iconWrap = document.createElement('div');
     iconWrap.className = 'case-hero__icon';
-    iconWrap.innerHTML = icons.fileText(22);
+    iconWrap.innerHTML = icons.fileText(20);
 
     const titleGroup = document.createElement('div');
     titleGroup.className = 'console-hero-header__titles';
@@ -279,7 +388,6 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       window.print();
     });
 
-    // Working actions first (the Admin's next step is the filled button), the print action last behind a divider.
     if (canDispatchFromHere()) {
       const dispatchBtn = document.createElement('button');
       dispatchBtn.type = 'button';
@@ -302,11 +410,55 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     rightActions.appendChild(printBtn);
 
     heroHeader.append(leftGroup, rightActions);
-    consoleCard.appendChild(heroHeader);
+    return heroHeader;
+  }
 
-    // 2. Persistent Borderless Metadata Strip
+  /**
+   * Column 1: Incident Dossier & Safer School Zone (Annex C-1) Body.
+   */
+  function buildDossierBody() {
+    const dossierBody = document.createElement('div');
+    dossierBody.className = 'dossier-body';
+
+    // 1. Incident Particulars Card (Location, Filed, Channel, Officer)
+    dossierBody.appendChild(buildParticularsCard());
+
+    // 2. Involved Parties Card
+    dossierBody.appendChild(buildPartiesSection());
+
+    // 3. Official Narrative Statement
+    if (canReadConfidential) {
+      dossierBody.appendChild(buildNarrativeSection());
+    }
+
+    // 4. Digital Evidence Section
+    dossierBody.appendChild(buildEvidenceSection());
+
+    // 5. Safer School Zone (Annex C-1) Subsection
+    dossierBody.appendChild(SchoolC1Card({ incidentId, canEdit: user.role === 'admin' || isSecretary, rawNarrative: incident.rawNarrative }));
+
+    return dossierBody;
+  }
+
+  /**
+   * Card 1: Incident Particulars & Location
+   */
+  function buildParticularsCard() {
+    const card = document.createElement('div');
+    card.className = 'card dossier-card dossier-card--particulars';
+
+    const header = document.createElement('div');
+    header.className = 'dossier-card__header';
+    header.innerHTML = `
+      <div class="dossier-card__title">
+        <span class="dossier-card__icon" aria-hidden="true">${icons.mapPin(16)}</span>
+        <h3 class="dossier-card__heading">Incident Particulars & Location</h3>
+      </div>
+    `;
+    card.appendChild(header);
+
     const metaStrip = document.createElement('div');
-    metaStrip.className = 'meta-strip';
+    metaStrip.className = 'meta-strip meta-grid';
 
     // Location
     const locTile = document.createElement('div');
@@ -330,8 +482,12 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     locTile.innerHTML = `
       <div class="meta-tile__icon">${icons.mapPin(15)}</div>
       <div class="meta-tile__content">
-        <span class="meta-tile__label-row"><span class="meta-tile__label">Location</span>${mapActionHtml}</span>
+        <div class="meta-tile__label-row">
+          <span class="meta-tile__label">Location</span>
+          ${mapActionHtml}
+        </div>
         <span class="meta-tile__value" title="${escapeHtml(fullLocTitle)}">${escapeHtml(locDesc)}</span>
+        ${locCoords && incident.locationDescription ? `<span class="meta-tile__coords">${escapeHtml(locCoords)}</span>` : ''}
       </div>
     `;
 
@@ -390,127 +546,36 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     `;
 
     metaStrip.append(locTile, dateTile, channelTile, officerTile);
-    consoleCard.appendChild(metaStrip);
-
-    // 3. WAI-ARIA Tab Navigation Strip
-    const tabList = document.createElement('div');
-    tabList.className = 'console-tabs';
-    tabList.setAttribute('role', 'tablist');
-    tabList.setAttribute('aria-label', 'Incident record sections');
-
-    const tabDossier = document.createElement('button');
-    tabDossier.type = 'button';
-    tabDossier.className = 'console-tab console-tab--active';
-    tabDossier.setAttribute('role', 'tab');
-    tabDossier.id = 'tab-dossier';
-    tabDossier.setAttribute('aria-selected', 'true');
-    tabDossier.setAttribute('aria-controls', 'panel-dossier');
-    tabDossier.setAttribute('tabindex', '0');
-    tabDossier.innerHTML = `<span class="console-tab__icon" aria-hidden="true">${icons.fileText(15)}</span><span>Details</span>`;
-    tabDossier.title = 'Incident dossier and School C-1';
-
-    const tabOperations = document.createElement('button');
-    tabOperations.type = 'button';
-    tabOperations.className = 'console-tab';
-    tabOperations.setAttribute('role', 'tab');
-    tabOperations.id = 'tab-operations';
-    tabOperations.setAttribute('aria-selected', 'false');
-    tabOperations.setAttribute('aria-controls', 'panel-operations');
-    tabOperations.setAttribute('tabindex', '-1');
-    tabOperations.innerHTML = `<span class="console-tab__icon" aria-hidden="true">${icons.clock(15)}</span><span>Timeline & links</span>`;
-    tabOperations.title = 'Response timeline, responders and case links';
-
-    tabList.append(tabDossier, tabOperations);
-    consoleCard.appendChild(tabList);
-
-    // 4. Tab Panels Container
-    const panelsWrap = document.createElement('div');
-    panelsWrap.className = 'console-panels';
-
-    // Panel 1: Dossier Body
-    const panelDossier = document.createElement('div');
-    panelDossier.className = 'tab-panel tab-panel--active';
-    panelDossier.id = 'panel-dossier';
-    panelDossier.setAttribute('role', 'tabpanel');
-    panelDossier.setAttribute('aria-labelledby', 'tab-dossier');
-    panelDossier.setAttribute('tabindex', '0');
-    panelDossier.appendChild(buildDossierBody());
-    panelsWrap.appendChild(panelDossier);
-
-    // Panel 2: Operations Body
-    const panelOperations = document.createElement('div');
-    panelOperations.className = 'tab-panel';
-    panelOperations.id = 'panel-operations';
-    panelOperations.setAttribute('role', 'tabpanel');
-    panelOperations.setAttribute('aria-labelledby', 'tab-operations');
-    panelOperations.setAttribute('tabindex', '0');
-    panelOperations.appendChild(buildOperationsBody());
-    panelsWrap.appendChild(panelOperations);
-
-    consoleCard.appendChild(panelsWrap);
-    body.appendChild(consoleCard);
-
-    // Tab Switching Logic
-    const tabs = [tabDossier, tabOperations];
-    const panels = [panelDossier, panelOperations];
-
-    function activateTab(index) {
-      tabs.forEach((t, i) => {
-        const isActive = i === index;
-        t.setAttribute('aria-selected', isActive ? 'true' : 'false');
-        t.setAttribute('tabindex', isActive ? '0' : '-1');
-        t.classList.toggle('console-tab--active', isActive);
-      });
-      panels.forEach((p, i) => {
-        p.classList.toggle('tab-panel--active', i === index);
-      });
-    }
-
-    tabDossier.addEventListener('click', () => activateTab(0));
-    tabOperations.addEventListener('click', () => activateTab(1));
-
-    tabList.addEventListener('keydown', (e) => {
-      let currentIndex = tabs.findIndex((t) => t.getAttribute('aria-selected') === 'true');
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        const next = (currentIndex + 1) % tabs.length;
-        activateTab(next);
-        tabs[next].focus();
-      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        const prev = (currentIndex - 1 + tabs.length) % tabs.length;
-        activateTab(prev);
-        tabs[prev].focus();
-      } else if (e.key === 'Home') {
-        e.preventDefault();
-        activateTab(0);
-        tabs[0].focus();
-      } else if (e.key === 'End') {
-        e.preventDefault();
-        activateTab(tabs.length - 1);
-        tabs[tabs.length - 1].focus();
-      }
-    });
+    card.appendChild(metaStrip);
+    return card;
   }
 
   /**
-   * Tab 1: Incident Dossier & Safer School Zone (Annex C-1) Body.
+   * Card 2: Involved Parties Section
    */
-  function buildDossierBody() {
-    const dossierBody = document.createElement('div');
-    dossierBody.className = 'dossier-body';
+  function buildPartiesSection() {
+    const card = document.createElement('div');
+    card.className = 'card dossier-card dossier-card--parties';
 
-    // 1. Involved Parties & Privacy Section
-    const partiesSection = document.createElement('div');
-    partiesSection.className = 'dossier-section dossier-section--parties';
+    const header = document.createElement('div');
+    header.className = 'dossier-card__header';
+    header.innerHTML = `
+      <div class="dossier-card__title">
+        <span class="dossier-card__icon" aria-hidden="true">${icons.users(16)}</span>
+        <h3 class="dossier-card__heading">Involved Parties</h3>
+      </div>
+    `;
+    card.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'dossier-card__body';
 
     const missingParty = canReadConfidential ? 'Not recorded' : RESTRICTED_TO_SECRETARY;
 
     if (!canReadConfidential) {
       const shield = document.createElement('div');
-      shield.className = 'dossier-privacy-shield';
+      shield.className = 'dossier-privacy-shield dossier-privacy-shield--compact';
       shield.setAttribute('role', 'note');
-      shield.classList.add('dossier-privacy-shield--compact');
       shield.title = 'Confidential records protection: RA 10173 and RA 7160 §394. The Barangay Secretary is the designated records custodian.';
       shield.innerHTML = `
         <div class="dossier-privacy-shield__icon" aria-hidden="true">${icons.lock(15)}</div>
@@ -519,21 +584,22 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
           Complainant, respondent and narrative details are <strong>${RESTRICTED_TO_SECRETARY}</strong>.
         </p>
       `;
-      partiesSection.appendChild(shield);
+      body.appendChild(shield);
     } else {
       const partiesGrid = document.createElement('div');
       partiesGrid.className = 'parties-grid';
 
       const compCard = document.createElement('div');
-      compCard.className = 'party-card';
+      compCard.className = 'party-card party-card--complainant';
       const compName = incident.complainantName || missingParty;
       const compContact = incident.complainantContactNumber;
       let compContactHtml = '';
       if (compContact) {
+        const formattedContact = formatPhoneNumber(compContact);
         compContactHtml = `
           <div class="party-card__contact-row">
-            <a href="tel:${escapeHtml(compContact)}" class="party-card__phone-link" title="Call ${escapeHtml(compContact)}">
-              ${icons.phone(13)} <span>${escapeHtml(compContact)}</span>
+            <a href="tel:${escapeHtml(compContact)}" class="party-card__phone-link" title="Call ${escapeHtml(formattedContact)}">
+              ${icons.phone(12)} <span>${escapeHtml(formattedContact)}</span>
             </a>
             <button type="button" class="ghost party-card__copy-btn" title="Copy phone number" aria-label="Copy phone number">
               ${icons.copy(12)}
@@ -571,49 +637,64 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
       const respCard = document.createElement('div');
       const hasRespondent = Boolean(incident.respondentName);
-      respCard.className = `party-card${hasRespondent ? '' : ' party-card--empty'}`;
+      respCard.className = `party-card party-card--respondent${hasRespondent ? '' : ' party-card--empty'}`;
       const respName = incident.respondentName || missingParty;
       respCard.innerHTML = `
         <div class="party-card__role">
           <span class="party-card__tag party-card__tag--respondent">Respondent</span>
         </div>
         <div class="party-card__name${hasRespondent ? '' : ' party-card__name--empty'}">${escapeHtml(respName)}</div>
+        <div class="party-card__contact">
+          <span class="party-card__contact--empty">${hasRespondent ? 'Party mentioned in report' : 'No respondent named'}</span>
+        </div>
       `;
 
       partiesGrid.append(compCard, respCard);
-      partiesSection.appendChild(partiesGrid);
+      body.appendChild(partiesGrid);
     }
 
-    dossierBody.appendChild(partiesSection);
+    card.appendChild(body);
+    return card;
+  }
 
-    // 2. Narrative Section (Secretary and Chief Tanod)
-    if (canReadConfidential) {
-      const narrativeSection = document.createElement('div');
-      narrativeSection.className = 'dossier-section dossier-section--narrative';
+  /**
+   * Card 3: Official Narrative Statement
+   */
+  function buildNarrativeSection() {
+    const card = document.createElement('div');
+    card.className = 'card dossier-card dossier-card--narrative';
 
-      const narrativeHeader = document.createElement('div');
-      narrativeHeader.className = 'dossier-subheading';
-      narrativeHeader.innerHTML = `<span>Incident Narrative</span>`;
-      narrativeSection.appendChild(narrativeHeader);
+    const header = document.createElement('div');
+    header.className = 'dossier-card__header';
+    header.innerHTML = `
+      <div class="dossier-card__title">
+        <span class="dossier-card__icon" aria-hidden="true">${icons.fileText(16)}</span>
+        <h3 class="dossier-card__heading">Official Incident Narrative</h3>
+      </div>
+    `;
+    card.appendChild(header);
 
-      const narrativeText = incident.rawNarrative || missingNarrativeText();
-      const narrativeBody = document.createElement('div');
-      narrativeBody.className = 'doc-blockquote';
-      narrativeBody.textContent = narrativeText;
-      narrativeSection.appendChild(narrativeBody);
-      dossierBody.appendChild(narrativeSection);
-    }
+    const body = document.createElement('div');
+    body.className = 'dossier-card__body';
 
-    // 3. Digital Evidence Section
-    const evidenceSection = document.createElement('div');
-    evidenceSection.className = 'dossier-section dossier-section--evidence';
-    evidenceSection.appendChild(buildEvidence());
-    dossierBody.appendChild(evidenceSection);
+    const narrativeText = incident.rawNarrative || missingNarrativeText();
+    const narrativeBody = document.createElement('div');
+    narrativeBody.className = 'doc-blockquote';
+    narrativeBody.textContent = narrativeText;
+    body.appendChild(narrativeBody);
 
-    // 4. Safer School Zone (Annex C-1) Subsection
-    dossierBody.appendChild(SchoolC1Card({ incidentId, canEdit: user.role === 'admin' || isSecretary, rawNarrative: incident.rawNarrative }));
+    card.appendChild(body);
+    return card;
+  }
 
-    return dossierBody;
+  /**
+   * Card 4: Digital Evidence Section Wrap
+   */
+  function buildEvidenceSection() {
+    const section = document.createElement('div');
+    section.className = 'dossier-section dossier-section--evidence';
+    section.appendChild(buildEvidence());
+    return section;
   }
 
   /**
@@ -817,18 +898,29 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
   /** Every responder ever dispatched to this incident (A-13). Names are shown to the Admin only. */
   function buildResponders() {
     const card = document.createElement('div');
-    card.className = 'card';
-    const heading = document.createElement('h3');
-    heading.className = 'incident-card-heading';
-    heading.textContent = 'Responders';
-    card.appendChild(heading);
+    card.className = 'card dossier-card dossier-card--responders';
+
+    const header = document.createElement('div');
+    header.className = 'dossier-card__header';
+    header.innerHTML = `
+      <div class="dossier-card__title">
+        <span class="dossier-card__icon" aria-hidden="true">${icons.users(16)}</span>
+        <h3 class="dossier-card__heading">Responders</h3>
+      </div>
+    `;
+    card.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'dossier-card__body';
+
     const list = Array.isArray(incident.dispatches) ? incident.dispatches : [];
     if (list.length === 0) {
       card.classList.add('card--quiet');
       const none = document.createElement('p');
       none.className = 'note';
       none.textContent = 'No tanod has been dispatched to this incident.';
-      card.appendChild(none);
+      body.appendChild(none);
+      card.appendChild(body);
       return card;
     }
     const wrap = document.createElement('div');
@@ -868,26 +960,27 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     });
     table.appendChild(tbody);
     wrap.appendChild(table);
-    card.appendChild(wrap);
+    body.appendChild(wrap);
+    card.appendChild(body);
     return card;
   }
 
   function buildTimeline() {
     const card = document.createElement('div');
-    card.className = 'card case-card--timeline';
+    card.className = 'card case-card case-card--timeline';
 
     const headerRow = document.createElement('div');
-    headerRow.className = 'incident-card-heading';
-
-    const iconWrap = document.createElement('span');
-    iconWrap.className = 'incident-card-heading__icon';
-    iconWrap.innerHTML = icons.clock(18);
-
-    const heading = document.createElement('h3');
-    heading.textContent = 'Incident Timeline';
-
-    headerRow.append(iconWrap, heading);
+    headerRow.className = 'dossier-card__header';
+    headerRow.innerHTML = `
+      <div class="dossier-card__title">
+        <span class="dossier-card__icon" aria-hidden="true">${icons.clock(16)}</span>
+        <h3 class="dossier-card__heading">Incident Timeline</h3>
+      </div>
+    `;
     card.appendChild(headerRow);
+
+    const body = document.createElement('div');
+    body.className = 'dossier-card__body';
 
     const isResolved = incident.status === 'resolved';
     const firstDispatch = Array.isArray(incident.dispatches) ? incident.dispatches[0] : null;
@@ -916,7 +1009,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     const AWAITING = ['', 'Awaiting dispatch', 'Awaiting arrival', 'Awaiting resolution'];
 
     const statusLine = buildTimelineStatusLine(filedAt, resolvedTs, isResolved);
-    if (statusLine) card.appendChild(statusLine);
+    if (statusLine) body.appendChild(statusLine);
 
     const list = document.createElement('ol');
     list.className = 'timeline timeline--vertical';
@@ -945,10 +1038,10 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
           node.innerHTML = '<span class="timeline__node-dot" aria-hidden="true"></span>';
         } else if (isResolved && i === visibleStages.length - 1) {
           nodeClass += ' timeline__node--resolved';
-          node.innerHTML = icons.check(11);
+          node.innerHTML = icons.check(12);
         } else {
           nodeClass += ' timeline__node--done';
-          node.innerHTML = icons.check(11);
+          node.innerHTML = icons.check(12);
         }
       } else {
         nodeClass += ' timeline__node--pending';
@@ -964,8 +1057,8 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
         rail.appendChild(connector);
       }
 
-      const body = document.createElement('div');
-      body.className = 'timeline__body';
+      const stepBody = document.createElement('div');
+      stepBody.className = 'timeline__body';
 
       const row = document.createElement('div');
       row.className = 'timeline__row';
@@ -983,21 +1076,31 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       if (!reached && pendingText !== 'Pending') value.classList.add(closedOtherwise ? 'timeline__value--muted' : 'timeline__value--next');
 
       row.append(name, value);
-      body.appendChild(row);
+      stepBody.appendChild(row);
+
+      // Responder milestone integration
+      if (label === 'Dispatched' && reached && firstDispatch?.tanodName) {
+        const responderChip = document.createElement('div');
+        responderChip.className = 'timeline__responder-badge';
+        responderChip.innerHTML = `${icons.users(11)} <span>${escapeHtml(firstDispatch.tanodName)}</span>`;
+        stepBody.appendChild(responderChip);
+      }
+
       if (reached && i > 0 && filedAt) {
         const at = parseApiDate(timestamp);
         if (at && at.getTime() >= filedAt.getTime()) {
           const delta = document.createElement('span');
           delta.className = 'timeline__delta';
           delta.textContent = `+${formatElapsed(at.getTime() - filedAt.getTime())} after filing`;
-          body.appendChild(delta);
+          stepBody.appendChild(delta);
         }
       }
-      item.append(rail, body);
+      item.append(rail, stepBody);
       list.appendChild(item);
     });
 
-    card.appendChild(list);
+    body.appendChild(list);
+    card.appendChild(body);
     return card;
   }
 

@@ -23,7 +23,7 @@ access is limited by role and records are kept for set periods.
   so they can be dispatched and kept safe.
 - **Duty hours**: shift schedules, duty status changes and accomplishment
   reports of Tanods.
-- **Citizen reports**: reports sent in by residents, with the contact details
+- **Earlier citizen reports** (the inbox was retired in October 2026; no new ones are added): reports sent in by residents, with the contact details
   they gave.
 - **SMS records**: messages sent and received through the barangay's SMS
   gateway, and the list of residents who asked to receive barangay alerts.

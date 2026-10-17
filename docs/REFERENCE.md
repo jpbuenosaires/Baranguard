@@ -91,8 +91,8 @@ of a rotating one (§2 Rule 7 still holds for anything meant to stay
 non-public). **If this gets picked up: scope any Access policy to the
 web dashboard host (`baranguardph.win`) only, never the API** —
 confirmed 2026-09-26 (29, continued) that several API endpoints are
-intentionally public (citizen report submission, the transparency
-report, `GET /barangays`) and that Access's browser-redirect email-OTP
+intentionally public (the transparency report, `GET /barangays`;
+citizen report submission was public until it was removed 2026-10-07) and that Access's browser-redirect email-OTP
 flow doesn't work for the mobile app's programmatic API calls; gating
 `api.baranguardph.win` would break real functionality, not just add
 security. This was explicitly deferred by the user after the scoping
@@ -383,7 +383,7 @@ elsewhere means whichever list context makes clear.
 | Role | Reach |
 |---|---|
 | **Admin** | Full operations / Chief Tanod's seat: dispatch, GPS, scheduler (drafts rosters, reviews availability), users (incl. editing official title and approval authorities), devices, audit log, service health, exports, Annex D preparation. Reads `raw_narrative` and the party fields on the web only (amended 2026-10-13, see Rule 1) but cannot edit them or run the Secretary lifecycle actions. May NOT change their OWN `approve_*` authorities (403; another Admin must). |
-| **Secretary** | **Records & Reports Officer** (redefined 2026-10-01): records custodian: reads `raw_narrative` and the incident party fields (the web Admin may read them too, amended 2026-10-13) and is the only one who edits the complainant name; only role that may change an incident's lifecycle (duplicate/invalid/cancelled/reopened); also owns citizen reports, the school inventory (Annex B), the referral log, C-1 fields and preparing/filing annexes. A Kagawad has NO role of their own: they use a `secretary` account carrying approval authorities (open decision, see HANDOFF). |
+| **Secretary** | **Records & Reports Officer** (redefined 2026-10-01): records custodian: reads `raw_narrative` and the incident party fields (the web Admin may read them too, amended 2026-10-13) and is the only one who edits the complainant name; only role that may change an incident's lifecycle (duplicate/invalid/cancelled/reopened); also owns the school inventory (Annex B), the referral log, C-1 fields and preparing/filing annexes. A Kagawad has NO role of their own: they use a `secretary` account carrying approval authorities (open decision, see HANDOFF). |
 | **Punong Barangay** | Oversight **plus approval** when granted authority: dashboard, map, heatmap, analytics, Approvals inbox, accomplishment reports, referral log, school zones (read). Still no evidence files and no list of cases (individual incidents still reachable from dashboard). |
 | **Tanod** | Mobile only. Own incidents/dispatches/**published** shifts, availability, accomplishment entries, referrals, school check-ins. Web login succeeds but lands on an honest "no screen" page. |
 | **Lupon** | **No system account at all** (DB-enum-only, never a login role). Baranguard no longer generates anything for them. |
@@ -725,8 +725,7 @@ Analytics (tabbed Reports/Heatmap, Admin+PB) · Personnel
 (tabbed Users/Scheduler/Swap requests — Admin sees all three, Secretary
 and PB the Scheduler only; the **Fatigue flags tab, page, endpoints and table
 were removed 2026-10-13**, migration 0042) · W14 SMS Monitor (Activity Log + Conversations tabs) · W15
-settings (+General/SMS Gateway, Admin-only) · W16 citizen inbox
-(+Convert to Incident) · W17 audit log · W18 map package management ·
+settings (+General/SMS Gateway, Admin-only) · ~~W16 citizen inbox~~ (RETIRED 2026-10-17) · W17 audit log · W18 map package management ·
 W19 public report (REMOVED 2026-10-07) · W20 service health · Incident Management (search,
 Resolve action, multi-responder support).
 **Added 2026-10-01 (code-complete, jsdom-verified only; not browser- or

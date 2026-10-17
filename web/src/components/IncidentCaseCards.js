@@ -150,8 +150,19 @@ export function SchoolC1Card({ incidentId, canEdit, rawNarrative }) {
     const linked = data.schoolId != null;
     const hasC1 = C1_FIELDS.some((f) => data[f.key]);
     if (!linked && !hasC1) {
-      card.appendChild(el('p', 'note', 'This incident is not linked to a school and has no C-1 details.'));
-      if (canEdit) card.appendChild(el('p', 'note', SCHOOL_SCOPE_NOTE));
+      const unlinkedBox = el('div', 'case-card__unlinked-box');
+      const badge = el('span', 'status-pill status-pill--neutral', 'Not linked to a school');
+      const desc = el('span', 'case-card__unlinked-note', 'No school zone (Annex C-1) details.');
+      unlinkedBox.append(badge, desc);
+      card.appendChild(unlinkedBox);
+
+      if (canEdit) {
+        const details = el('details', 'case-card__scope-details');
+        const summary = el('summary', 'case-card__scope-summary', 'When should an incident be linked to a school?');
+        const note = el('p', 'note case-card__scope-note', SCHOOL_SCOPE_NOTE);
+        details.append(summary, note);
+        card.appendChild(details);
+      }
     } else {
       const schoolRow = fieldRow('School', linked ? schoolName(data.schoolId) : 'Not linked');
       schoolRow.classList.add('case-card__field--school');
