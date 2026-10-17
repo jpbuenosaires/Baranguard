@@ -673,12 +673,15 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     });
   }
 
+  const gaveAvailability = (userId) => availability.items.some((a) => a.userId === userId);
+
   async function addPresetShift(userId, date) {
     if (busy) return;
     const range = presetRange(date, activePreset);
     const preset = SHIFT_PRESETS.find((p) => p.type === activePreset);
     const intervals = availabilityIntervals(availability.items, userId);
-    if (availability.status === 'ready' && !isWithinAvailability(range.startMs, range.endMs, intervals)) {
+    // Availability is optional (2026-10-17): only a tanod who gave some is held to it.
+    if (availability.status === 'ready' && gaveAvailability(userId) && !isWithinAvailability(range.startMs, range.endMs, intervals)) {
       const candidates = suggestAvailableTanods(shifts, availability.items, date, activePreset, tanods);
       const suggestions = candidates.slice(0, 3).map((c) => c.fullName).join(', ');
       const suggestionText = suggestions ? ` Available on this day: ${suggestions}.` : '';
@@ -712,7 +715,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     if (shift.approvalStatus === 'published') {
       notes.push('This shift is published. Moving it puts it back to draft, so it needs to be published again.');
     }
-    if (userId !== null && availability.status === 'ready'
+    if (userId !== null && availability.status === 'ready' && gaveAvailability(userId)
       && !isWithinAvailability(target.startMs, target.endMs, availabilityIntervals(availability.items, userId))) {
       showToast(`${who} is not available at that time. Shifts must fit inside the availability the tanod gave.`, { variant: 'warning' });
       return;

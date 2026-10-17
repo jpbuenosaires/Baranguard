@@ -132,7 +132,7 @@ final class IncidentsController
      * SMS-ingested incidents to `sms`, a converted citizen report to
      * `walk_in` -- the client never picks the channel on those paths.
      */
-    public const REPORT_CHANNELS = ['tanod_alerted', 'walk_in', 'sms', 'other'];
+    public const REPORT_CHANNELS = ['tanod_alerted', 'walk_in', 'sms', 'phone_call', 'facebook', 'other'];
     private const INCIDENT_TYPES = [
         'theft', 'physical_injury', 'disturbance', 'domestic_dispute',
         'vandalism', 'traffic_incident', 'fire', 'medical_emergency',

@@ -394,12 +394,13 @@ api PATCH "/shift-swap-requests/$SW1" "$PB_T" '{"status":"approved","version":1}
 expect_code "Punong Barangay cannot approve a swap" 403
 
 # availability is the tanod's fixed statement: a swap can't put T4 outside it
-mysql_exec "$VALDB" -e "CREATE TABLE wa_avail_hold AS SELECT * FROM tanod_availability WHERE user_id=$T4; DELETE FROM tanod_availability WHERE user_id=$T4;"
+# (availability is optional since 2026-10-17: with NO submission a swap is allowed; with a submission that lists no time it is refused)
+mysql_exec "$VALDB" -e "CREATE TABLE wa_avail_hold AS SELECT * FROM tanod_availability WHERE user_id=$T4; UPDATE tanod_availability SET windows_json='[]' WHERE user_id=$T4;"
 api PATCH "/shift-swap-requests/$SW1" "$SEC_T" '{"status":"approved","version":1}'
-expect_code "Swap to a tanod with no availability for the shift is refused" 422
+expect_code "Swap to a tanod whose submitted availability lists no time for the shift is refused" 422
 expect_eq "  OUTSIDE_AVAILABILITY" "$(jget "$BODY" error.code)" "OUTSIDE_AVAILABILITY"
 expect_eq "  request still pending, shift still T1's" "$(db_one "SELECT CONCAT(r.status,'|',s.user_id) FROM shift_swap_request r JOIN shift_schedule s ON s.shift_id=r.shift_id WHERE r.request_id=$SW1;")" "pending|$T1"
-mysql_exec "$VALDB" -e "INSERT INTO tanod_availability SELECT * FROM wa_avail_hold; DROP TABLE wa_avail_hold;"
+mysql_exec "$VALDB" -e "DELETE FROM tanod_availability WHERE user_id=$T4; INSERT INTO tanod_availability SELECT * FROM wa_avail_hold; DROP TABLE wa_avail_hold;"
 
 api PATCH "/shift-swap-requests/$SW1" "$SEC_T" '{"status":"approved","version":1}'
 expect_code "SECRETARY approves the swap" 200

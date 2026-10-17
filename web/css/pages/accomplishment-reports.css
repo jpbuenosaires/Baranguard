@@ -364,6 +364,25 @@
   break-after: page;
 }
 
+.acc-batch-sheet-break:last-child {
+  page-break-after: auto;
+  break-after: auto;
+}
+
+.acc-batch-sheet-break:not(:last-child) {
+  margin-bottom: var(--spacing-xl);
+  padding-bottom: var(--spacing-xl);
+  border-bottom: 2px dashed #cbd5e1;
+}
+
+@media print {
+  .acc-batch-sheet-break:not(:last-child) {
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+    border-bottom: none !important;
+  }
+}
+
 /* ==========================================================================
    Single Unified Card & Detail Layout
    ========================================================================== */

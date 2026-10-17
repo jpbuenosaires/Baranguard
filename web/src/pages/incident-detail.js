@@ -223,6 +223,10 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     }
     document.title = `Incident Record — ${incidentDisplayId} — Baranguard`;
 
+    // 0. Official Document Letterhead for Print (A4)
+    const printHeader = buildPrintHeader(incidentDisplayId);
+    body.appendChild(printHeader);
+
     // 1. Unified Command Hero Bar
     const heroHeader = buildCommandHero(incidentDisplayId);
     body.appendChild(heroHeader);
@@ -284,6 +288,10 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
     body.appendChild(panelsWrap);
 
+    // 4. Official Signatures and Document Stamp for Print (A4)
+    const printFooter = buildPrintFooter();
+    body.appendChild(printFooter);
+
     // Tab Switching Logic
     const tabs = [tabDossier, tabOperations];
     const panels = [panelDossier, panelOperations];
@@ -328,11 +336,75 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
   }
 
   /**
+   * Official Barangay Government Letterhead for Printed Dossier (A4).
+   * Hidden on screen via CSS; displayed at top of printed case records.
+   */
+  function buildPrintHeader(incidentDisplayId) {
+    const BARANGAY_NAMES = {
+      1: 'Dao',
+      2: 'Binanuahan',
+      3: 'Marifosque',
+      4: 'Banuyo',
+    };
+    const brgyName = BARANGAY_NAMES[user.barangayId] || 'Dao';
+
+    const header = document.createElement('div');
+    header.className = 'incident-print-header';
+    header.setAttribute('aria-hidden', 'true');
+    header.innerHTML = `
+      <div class="incident-print-header__letterhead">
+        <p class="incident-print-header__republic">Republic of the Philippines</p>
+        <p class="incident-print-header__jurisdiction">Province of Sorsogon &bull; Municipality of Pilar</p>
+        <h2 class="incident-print-header__barangay">BARANGAY ${escapeHtml(brgyName.toUpperCase())}</h2>
+        <p class="incident-print-header__office">OFFICE OF THE BARANGAY PUBLIC SAFETY &amp; PEACE AND ORDER</p>
+        <h1 class="incident-print-header__title">OFFICIAL INCIDENT CASE DOSSIER</h1>
+      </div>
+      <div class="incident-print-header__meta-row">
+        <div><strong>Incident Reference:</strong> <span>${escapeHtml(incidentDisplayId)}</span></div>
+        <div><strong>Date Printed:</strong> <span>${escapeHtml(formatManilaDateTime(new Date()))} (PST)</span></div>
+        <div><strong>Officer in Charge:</strong> <span>${escapeHtml(user.fullName)} (${user.role.toUpperCase()})</span></div>
+      </div>
+    `;
+    return header;
+  }
+
+  /**
+   * Official Attestation Signatures and Legal Disposition Stamp for Printed Dossier (A4).
+   * Hidden on screen via CSS; printed at the bottom of the case file.
+   */
+  function buildPrintFooter() {
+    const footer = document.createElement('div');
+    footer.className = 'incident-print-footer';
+    footer.setAttribute('aria-hidden', 'true');
+    footer.innerHTML = `
+      <div class="incident-print-footer__line">
+        <div>Baranguard Intelligence &amp; Emergency Dispatch Management System &bull; Official Working Record</div>
+        <div>Pursuant to RA 7160 (Local Government Code) &amp; RA 10173 (Data Privacy Act of 2012)</div>
+      </div>
+      <div class="incident-print-footer__signatures">
+        <div class="incident-print-footer__sign-box">
+          <div class="incident-print-footer__sign-line"></div>
+          <div class="incident-print-footer__sign-label">Prepared / Recorded by</div>
+          <div class="incident-print-footer__sign-name">${escapeHtml(user.fullName)}</div>
+          <div class="incident-print-footer__sign-role">${user.role === 'secretary' ? 'Barangay Secretary' : user.role === 'admin' ? 'Chief Tanod / Admin' : 'Authorized Officer'}</div>
+        </div>
+        <div class="incident-print-footer__sign-box">
+          <div class="incident-print-footer__sign-line"></div>
+          <div class="incident-print-footer__sign-label">Attested / Received by</div>
+          <div class="incident-print-footer__sign-name">&nbsp;</div>
+          <div class="incident-print-footer__sign-role">Punong Barangay / Records Custodian</div>
+        </div>
+      </div>
+    `;
+    return footer;
+  }
+
+  /**
    * Top Command Hero Bar: Reference ID, Type, Status & Priority Pills, and Quick Operations.
    */
   function buildCommandHero(incidentDisplayId) {
     const heroHeader = document.createElement('div');
-    heroHeader.className = 'card console-hero-header';
+    heroHeader.className = 'console-hero-header';
 
     const leftGroup = document.createElement('div');
     leftGroup.className = 'console-hero-header__left';
@@ -688,13 +760,153 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
   }
 
   /**
-   * Card 4: Digital Evidence Section Wrap
+   * Card 4: Digital Evidence Section
    */
   function buildEvidenceSection() {
-    const section = document.createElement('div');
-    section.className = 'dossier-section dossier-section--evidence';
-    section.appendChild(buildEvidence());
-    return section;
+    const card = document.createElement('div');
+    card.className = 'card dossier-card dossier-card--evidence';
+
+    const header = document.createElement('div');
+    header.className = 'dossier-card__header';
+
+    const titleGroup = document.createElement('div');
+    titleGroup.className = 'dossier-card__title';
+    const iconWrap = document.createElement('span');
+    iconWrap.className = 'dossier-card__icon';
+    iconWrap.innerHTML = icons.fileText(16);
+    const heading = document.createElement('h3');
+    heading.className = 'dossier-card__heading';
+    heading.textContent = evidence.length > 0 ? `Digital Evidence (${evidence.length})` : 'Digital Evidence';
+    titleGroup.append(iconWrap, heading);
+
+    header.appendChild(titleGroup);
+
+    if (evidence.length > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'status-pill status-pill--info';
+      badge.textContent = 'Chain of Custody Logged';
+      header.appendChild(badge);
+    }
+    card.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'dossier-card__body';
+
+    if (evidence.length === 0) {
+      const bar = document.createElement('div');
+      bar.className = 'evidence-bar--empty';
+      const message = evidenceDenied
+        ? `Digital evidence: ${NOT_AVAILABLE_FOR_ROLE}.`
+        : 'No digital evidence attachments recorded for this incident.';
+      bar.innerHTML = `
+        <div class="evidence-bar--empty__left">
+          <span style="color:var(--color-text-secondary);display:flex;align-items:center;">${icons.fileText(15)}</span>
+          <span>${escapeHtml(message)}</span>
+        </div>
+      `;
+      body.appendChild(bar);
+    } else {
+      const list = document.createElement('div');
+      list.className = 'evidence-list';
+      for (const item of evidence) {
+        const itemWrap = document.createElement('div');
+        itemWrap.className = 'evidence-item-wrap';
+
+        const row = document.createElement('div');
+        row.className = 'evidence-item';
+
+        const left = document.createElement('div');
+        left.className = 'evidence-item__left';
+        const icon = document.createElement('div');
+        icon.className = 'evidence-item__icon';
+        icon.innerHTML = item.type === 'voice' ? icons.radio(18) : icons.fileText(18);
+
+        const details = document.createElement('div');
+        details.className = 'evidence-item__details';
+
+        const title = document.createElement('span');
+        title.className = 'evidence-item__title';
+        title.textContent = `${item.type === 'voice' ? 'Voice note' : 'Photo'} — ${item.originalFilename}`;
+
+        const meta = document.createElement('span');
+        meta.className = 'evidence-item__meta';
+        const kb = Math.max(1, Math.round(item.byteSize / 1024));
+        meta.textContent = `${kb} KB · ${formatDateTime(item.uploadedAt) || 'time not recorded'}`;
+
+        details.append(title, meta);
+        left.append(icon, details);
+
+        const right = document.createElement('div');
+        right.className = 'evidence-item__right';
+
+        const typeBadge = document.createElement('span');
+        typeBadge.className = 'evidence-type-badge';
+        typeBadge.textContent = item.type === 'voice' ? 'Voice Audio' : 'Photo Attachment';
+        right.appendChild(typeBadge);
+
+        if (item.sha256) {
+          const hashBadge = document.createElement('span');
+          hashBadge.className = 'evidence-hash-badge';
+          hashBadge.textContent = `SHA-256: ${String(item.sha256).slice(0, 10)}…`;
+          right.appendChild(hashBadge);
+        }
+
+        const previewSlot = document.createElement('div');
+        previewSlot.className = 'evidence-item__preview';
+        let objectUrl = null;
+
+        const viewButton = document.createElement('button');
+        viewButton.type = 'button';
+        viewButton.className = 'ghost evidence-item__view-btn';
+        viewButton.textContent = item.type === 'voice' ? 'Play' : 'View';
+
+        viewButton.addEventListener('click', async () => {
+          if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+            objectUrl = null;
+            previewSlot.replaceChildren();
+            viewButton.textContent = item.type === 'voice' ? 'Play' : 'View';
+            return;
+          }
+          viewButton.disabled = true;
+          const originalLabel = viewButton.textContent;
+          viewButton.textContent = 'Loading…';
+          try {
+            const blob = await downloadEvidenceFile(item.incidentId, item.attachmentId);
+            objectUrl = URL.createObjectURL(blob);
+            previewSlot.replaceChildren();
+            if (item.type === 'voice') {
+              const audio = document.createElement('audio');
+              audio.controls = true;
+              audio.src = objectUrl;
+              audio.className = 'evidence-item__audio';
+              previewSlot.appendChild(audio);
+            } else {
+              const img = document.createElement('img');
+              img.src = objectUrl;
+              img.alt = item.originalFilename || 'Incident photo evidence';
+              img.className = 'evidence-item__image';
+              previewSlot.appendChild(img);
+            }
+            viewButton.textContent = 'Hide';
+          } catch (err) {
+            viewButton.textContent = originalLabel;
+            showToast(err instanceof ApiClientError ? err.message : 'Could not load this evidence file.', { variant: 'error' });
+          } finally {
+            viewButton.disabled = false;
+          }
+        });
+        right.appendChild(viewButton);
+
+        row.append(left, right);
+        itemWrap.append(row, previewSlot);
+        list.appendChild(itemWrap);
+      }
+      body.appendChild(list);
+    }
+
+    card.appendChild(body);
+    return card;
   }
 
   /**
@@ -748,151 +960,6 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
       return `The confidential narrative was removed after the ${NARRATIVE_RETENTION_DAYS}-day retention period.`;
     }
     return 'No narrative recorded.';
-  }
-
-  function buildEvidence() {
-    if (evidence.length === 0) {
-      const bar = document.createElement('div');
-      bar.className = 'evidence-bar--empty';
-      const message = evidenceDenied
-        ? `Digital evidence: ${NOT_AVAILABLE_FOR_ROLE}.`
-        : 'No digital evidence attachments recorded for this incident.';
-      bar.innerHTML = `
-        <div class="evidence-bar--empty__left">
-          <span style="color:var(--color-text-secondary);display:flex;align-items:center;">${icons.fileText(15)}</span>
-          <span>${escapeHtml(message)}</span>
-        </div>
-      `;
-      return bar;
-    }
-
-    const card = document.createElement('div');
-    card.className = 'card doc-card';
-
-    const header = document.createElement('div');
-    header.className = 'doc-card__header';
-
-    const titleGroup = document.createElement('div');
-    titleGroup.className = 'doc-card__title-group';
-    const iconWrap = document.createElement('span');
-    iconWrap.className = 'doc-card__icon';
-    iconWrap.innerHTML = icons.fileText(18);
-    const heading = document.createElement('h3');
-    heading.textContent = `Digital Evidence (${evidence.length})`;
-    titleGroup.append(iconWrap, heading);
-
-    const badge = document.createElement('span');
-    badge.className = 'status-pill status-pill--info';
-    badge.textContent = 'Chain of Custody Logged';
-
-    header.append(titleGroup, badge);
-    card.appendChild(header);
-
-    const body = document.createElement('div');
-    body.className = 'doc-card__body';
-
-    const list = document.createElement('div');
-    list.className = 'evidence-list';
-    for (const item of evidence) {
-      const itemWrap = document.createElement('div');
-      itemWrap.className = 'evidence-item-wrap';
-
-      const row = document.createElement('div');
-      row.className = 'evidence-item';
-
-      const left = document.createElement('div');
-      left.className = 'evidence-item__left';
-      const icon = document.createElement('div');
-      icon.className = 'evidence-item__icon';
-      icon.innerHTML = item.type === 'voice' ? icons.radio(18) : icons.fileText(18);
-
-      const details = document.createElement('div');
-      details.className = 'evidence-item__details';
-
-      const title = document.createElement('span');
-      title.className = 'evidence-item__title';
-      title.textContent = `${item.type === 'voice' ? 'Voice note' : 'Photo'} — ${item.originalFilename}`;
-
-      const meta = document.createElement('span');
-      meta.className = 'evidence-item__meta';
-      const kb = Math.max(1, Math.round(item.byteSize / 1024));
-      meta.textContent = `${kb} KB · ${formatDateTime(item.uploadedAt) || 'time not recorded'}`;
-
-      details.append(title, meta);
-      left.append(icon, details);
-
-      const right = document.createElement('div');
-      right.className = 'evidence-item__right';
-
-      const typeBadge = document.createElement('span');
-      typeBadge.className = 'evidence-type-badge';
-      typeBadge.textContent = item.type === 'voice' ? 'Voice Audio' : 'Photo Attachment';
-      right.appendChild(typeBadge);
-
-      if (item.sha256) {
-        const hashBadge = document.createElement('span');
-        hashBadge.className = 'evidence-hash-badge';
-        hashBadge.textContent = `SHA-256: ${String(item.sha256).slice(0, 10)}…`;
-        right.appendChild(hashBadge);
-      }
-
-      const previewSlot = document.createElement('div');
-      previewSlot.className = 'evidence-item__preview';
-      let objectUrl = null;
-
-      const viewButton = document.createElement('button');
-      viewButton.type = 'button';
-      viewButton.className = 'ghost evidence-item__view-btn';
-      viewButton.textContent = item.type === 'voice' ? 'Play' : 'View';
-
-      viewButton.addEventListener('click', async () => {
-        // Toggle off — collapse the preview and free the blob rather than
-        // leaving it (and, for audio, playback) running in the background.
-        if (objectUrl) {
-          URL.revokeObjectURL(objectUrl);
-          objectUrl = null;
-          previewSlot.replaceChildren();
-          viewButton.textContent = item.type === 'voice' ? 'Play' : 'View';
-          return;
-        }
-        viewButton.disabled = true;
-        const originalLabel = viewButton.textContent;
-        viewButton.textContent = 'Loading…';
-        try {
-          const blob = await downloadEvidenceFile(item.incidentId, item.attachmentId);
-          objectUrl = URL.createObjectURL(blob);
-          previewSlot.replaceChildren();
-          if (item.type === 'voice') {
-            const audio = document.createElement('audio');
-            audio.controls = true;
-            audio.src = objectUrl;
-            audio.className = 'evidence-item__audio';
-            previewSlot.appendChild(audio);
-          } else {
-            const img = document.createElement('img');
-            img.src = objectUrl;
-            img.alt = item.originalFilename || 'Incident photo evidence';
-            img.className = 'evidence-item__image';
-            previewSlot.appendChild(img);
-          }
-          viewButton.textContent = 'Hide';
-        } catch (err) {
-          viewButton.textContent = originalLabel;
-          showToast(err instanceof ApiClientError ? err.message : 'Could not load this evidence file.', { variant: 'error' });
-        } finally {
-          viewButton.disabled = false;
-        }
-      });
-      right.appendChild(viewButton);
-
-      row.append(left, right);
-      itemWrap.append(row, previewSlot);
-      list.appendChild(itemWrap);
-    }
-    body.appendChild(list);
-    card.appendChild(body);
-
-    return card;
   }
 
   /** Every responder ever dispatched to this incident (A-13). Names are shown to the Admin only. */
@@ -1414,15 +1481,15 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
 
   function buildResolvedStatusCard() {
     const card = document.createElement('div');
-    card.className = 'card resolution-badge-card';
+    card.className = 'resolution-badge-card';
     const resolvedTime = incident.resolvedAt
       ? formatDateTime(incident.resolvedAt)
       : (incident.dispatches?.find((d) => d.completedAt)?.completedAt ? formatDateTime(incident.dispatches.find((d) => d.completedAt).completedAt) : null);
     card.innerHTML = `
-      <div class="resolution-badge-card__icon">${icons.checkCircle(20)}</div>
-      <div style="flex:1;min-width:0;">
-        <h4 class="resolution-badge-card__title">Case Closed & Resolved</h4>
-        <p class="resolution-badge-card__desc">This incident has been marked resolved.${resolvedTime ? ` (${escapeHtml(resolvedTime)})` : ''}</p>
+      <div class="resolution-badge-card__icon" aria-hidden="true">${icons.checkCircle(16)}</div>
+      <div class="resolution-badge-card__content">
+        <span class="resolution-badge-card__title">Case Closed & Resolved</span>
+        ${resolvedTime ? `<span class="resolution-badge-card__desc">(${escapeHtml(resolvedTime)})</span>` : ''}
       </div>
     `;
     return card;

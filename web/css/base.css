@@ -1622,25 +1622,500 @@ svg.is-spinning {
   .sos-bar { border: 2px solid CanvasText; }
 }
 
-/* Every printed page is A4 portrait (wide annexes opt into the named
-   A4-landscape page in tanod-workflow.css). Lives here, not in a page
-   stylesheet, so no screen can print on the browser's default Letter. */
-@media print {
-  @page {
-    size: A4 portrait;
-    margin: 12mm;
+/* Every printed page is A4 (portrait default, landscape via named pages).
+   Lives here in base.css so every screen and print preview modal formats
+   identically on standard international A4 paper. */
+@page {
+  size: A4 portrait;
+  margin: 12mm 15mm 15mm 15mm;
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-size: 8pt;
+    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    color: #64748b;
   }
 }
 
-/* PrintPreviewModal adds this to <body> for wide sheets (e.g. batch/landscape
-   forms). @page size cannot be switched by a class, so wide sheets simply stop
-   being constrained to the portrait column width when printed. */
+@page a4-portrait {
+  size: A4 portrait;
+  margin: 12mm 15mm 15mm 15mm;
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-size: 8pt;
+    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    color: #64748b;
+  }
+}
+
+@page a4-landscape {
+  size: A4 landscape;
+  margin: 12mm 15mm 15mm 15mm;
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-size: 8pt;
+    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    color: #64748b;
+  }
+}
+
+@page tw-landscape {
+  size: A4 landscape;
+  margin: 12mm 15mm 15mm 15mm;
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-size: 8pt;
+    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    color: #64748b;
+  }
+}
+
+/* ==========================================================================
+   PrintPreviewModal & Universal Official Document (.print-sheet) System
+   ========================================================================== */
+
+/* Screen preview: renders an authentic, dark-mode-safe physical sheet of paper */
+.print-sheet {
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #64748b;
+  --color-border: #cbd5e1;
+  --color-divider: #e2e8f0;
+  --sheet-ink: #0f172a;
+  --sheet-paper: #ffffff;
+  --sheet-muted: #64748b;
+  box-sizing: border-box;
+  background: #ffffff !important;
+  color: #0f172a !important;
+  font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  font-size: 9pt;
+  line-height: 1.4;
+  margin: 0 auto var(--spacing-lg) auto;
+  padding: 15mm 18mm;
+  width: 210mm;
+  max-width: 100%;
+  min-height: 297mm;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);
+  border-radius: 4px;
+}
+
+.print-sheet--landscape,
+.tw-print-sheet--landscape {
+  width: 297mm;
+  max-width: 100%;
+  min-height: 210mm;
+  padding: 12mm 16mm;
+  page: a4-landscape;
+}
+
+.print-sheet:not(.print-sheet--landscape):not(.tw-print-sheet--landscape) {
+  page: a4-portrait;
+}
+
+.print-sheet__header,
+.print-sheet__masthead {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  border-bottom: 2px solid #0f172a;
+  padding-bottom: 3mm;
+  margin-bottom: 4mm;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.print-sheet__header-logo {
+  margin-bottom: 1.5mm;
+  object-fit: contain;
+}
+
+.print-sheet__republic {
+  font-size: 7.5pt;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #475569;
+  margin: 0 0 1mm 0;
+}
+
+.print-sheet__office,
+.print-sheet__doc-title,
+.print-sheet__title {
+  font-size: 11pt;
+  font-weight: 800;
+  color: #0f172a;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 1.5mm 0;
+}
+
+.print-sheet__doc-subtitle,
+.print-sheet__doctype,
+.print-sheet__subtitle {
+  font-size: 8.5pt;
+  font-weight: 600;
+  color: #334155;
+  margin: 0;
+}
+
+.print-sheet__meta-bar,
+.print-sheet__meta-strip,
+.print-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 2.5mm;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+  padding: 2mm 3mm;
+  margin-bottom: 3.5mm;
+  font-size: 8pt;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.print-sheet__meta-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5mm;
+}
+
+.print-sheet__meta-label,
+.print-sheet__label {
+  font-size: 7pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #475569;
+}
+
+.print-sheet__meta-val,
+.print-sheet__field-val {
+  font-size: 8.5pt;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.print-sheet__meta-val--mono,
+.print-sheet__mono {
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+}
+
+.print-sheet__kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2.5mm;
+  margin-bottom: 3.5mm;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.print-sheet__kpi-card {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  border-radius: 3px;
+  padding: 2mm 2.5mm;
+  text-align: left;
+}
+
+.print-sheet__kpi-val {
+  font-size: 13pt;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 1mm 0 0.5mm 0;
+  line-height: 1.1;
+}
+
+.print-sheet__kpi-val--success { color: #166534; }
+.print-sheet__kpi-val--info { color: #1e40af; }
+.print-sheet__kpi-val--warning { color: #92400e; }
+
+.print-sheet__kpi-sub,
+.print-sheet__kpi-lbl {
+  font-size: 7pt;
+  color: #64748b;
+  margin: 0;
+}
+
+.print-sheet__grid-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.5mm;
+  margin-bottom: 3mm;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.print-sheet__field-box {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  border-radius: 3px;
+  padding: 2mm 3mm;
+}
+
+.print-sheet__table,
+.print-records-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8pt;
+  margin-bottom: 3.5mm;
+  table-layout: auto;
+}
+
+.print-sheet__table th,
+.print-records-table th {
+  background: #f1f5f9 !important;
+  color: #1e293b !important;
+  font-weight: 700;
+  border: 1px solid #cbd5e1 !important;
+  padding: 1.5mm 2.5mm;
+  text-align: left;
+  font-size: 7.5pt;
+}
+
+.print-sheet__table td,
+.print-records-table td {
+  border: 1px solid #cbd5e1 !important;
+  padding: 1.5mm 2.5mm;
+  color: #0f172a !important;
+  vertical-align: middle;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.print-sheet__table--right,
+.print-sheet__table-num,
+.print-sheet__table-cell--num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.print-sheet__table tr,
+.print-records-table tr {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.print-sheet__table thead,
+.print-records-table thead {
+  display: table-header-group;
+}
+
+.week-print__shift {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 2px;
+  padding: 1px 3px;
+  margin: 1px 0;
+  font-size: 7.5pt;
+  line-height: 1.2;
+}
+
+.week-print__shift small {
+  display: block;
+  font-size: 6.5pt;
+  color: #64748b;
+}
+
+.week-print__empty {
+  color: #94a3b8;
+  display: block;
+  text-align: center;
+}
+
+.week-print__coverage {
+  font-weight: 700;
+  background: #f8fafc;
+}
+
+.week-print__note {
+  font-size: 7pt;
+  color: #64748b;
+  margin: 1.5mm 0 0 0;
+  font-style: italic;
+}
+
+.print-sheet__section {
+  margin-bottom: 3.5mm;
+}
+
+.print-sheet__section-title {
+  font-size: 8.5pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #1e293b;
+  border-bottom: 1px solid #cbd5e1;
+  padding-bottom: 1mm;
+  margin: 0 0 2mm 0;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.print-sheet__narrative {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-left: 3px solid #1e3a8a;
+  border-radius: 3px;
+  padding: 2.5mm 3.5mm;
+  font-size: 8pt;
+  line-height: 1.45;
+  color: #334155;
+  margin-bottom: 3mm;
+}
+
+.print-sheet__signatures,
+.print-signatures-block {
+  display: flex;
+  justify-content: space-between;
+  gap: 15mm;
+  margin-top: 5mm;
+  padding: 0 5mm;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.print-sheet__sig-col,
+.print-sheet__sig-box {
+  flex: 1;
+  text-align: center;
+}
+
+.print-sheet__sig-line {
+  border-bottom: 1px solid #0f172a;
+  min-height: 10mm;
+  margin-bottom: 1.5mm;
+}
+
+.print-sheet__sig-label {
+  font-size: 7pt;
+  text-transform: uppercase;
+  color: #64748b;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.5mm;
+}
+
+.print-sheet__sig-name {
+  font-size: 8.5pt;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.print-sheet__sig-role {
+  font-size: 7.5pt;
+  color: #475569;
+  margin: 0;
+}
+
+.print-sheet__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 7pt;
+  color: #64748b;
+  margin-top: 4mm;
+  padding-top: 2mm;
+  border-top: 1px solid #e2e8f0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.acc-batch-sheet-break {
+  page-break-after: always;
+  break-after: page;
+}
+
+.acc-batch-sheet-break:last-child {
+  page-break-after: auto;
+  break-after: auto;
+}
+
+/* Print execution unlocks for PrintPreviewModal */
 @media print {
-  body.print-orientation-landscape .print-sheet {
-    max-width: none;
-    width: 100%;
+  html,
+  body {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body.has-print-modal #app,
+  body:has(.print-modal-backdrop) #app,
+  body.has-print-modal > *:not(.print-modal-backdrop),
+  body:has(.print-modal-backdrop) > *:not(.print-modal-backdrop),
+  .print-modal__header,
+  .print-modal__footer {
+    display: none !important;
+  }
+
+  .modal-backdrop.print-modal-backdrop,
+  .print-modal-backdrop {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  .modal-card.print-modal,
+  .print-modal,
+  .print-modal__viewport {
+    position: static !important;
+    max-width: none !important;
+    max-height: none !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    display: block !important;
+  }
+
+  .print-sheet {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border-radius: 0 !important;
+  }
+
+  body.print-orientation-landscape .print-sheet,
+  .print-sheet--landscape,
+  .tw-print-sheet--landscape {
+    max-width: none !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    page: a4-landscape;
   }
 }
 
 /* Browsers default kbd/samp/code/pre to monospace; keep one typeface (the code spots set --font-mono themselves). */
 kbd, samp, code, pre { font-family: inherit; }
+

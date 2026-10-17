@@ -224,10 +224,13 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       `).join('');
     }
 
+    const BARANGAY_NAMES = { 1: 'Dao', 2: 'Binanuahan', 3: 'Marifosque', 4: 'Banuyo' };
+    const brgyName = BARANGAY_NAMES[user.barangayId] || 'Dao';
+
     const sheetHtml = `
       <div class="print-official-header" style="text-align:center; margin-bottom: 18px; border-bottom: 2px solid #000; padding-bottom: 12px;">
         <p style="font-size: 0.75rem; margin: 0; text-transform: uppercase; letter-spacing: 0.05em;">Republic of the Philippines &bull; Province of Sorsogon &bull; Municipality of Pilar</p>
-        <h2 style="font-size: 1.25rem; margin: 4px 0; font-weight:700; letter-spacing: 0.02em;">BARANGAY DAO OPERATIONS DESK</h2>
+        <h2 style="font-size: 1.25rem; margin: 4px 0; font-weight:700; letter-spacing: 0.02em;">BARANGAY ${escapeHtml(brgyName.toUpperCase())} OPERATIONS DESK</h2>
         <h3 style="font-size: 1rem; margin: 0; font-weight: 700; color: #374151;">INCIDENT LOG & SHIFT HANDOVER SUMMARY</h3>
       </div>
 
@@ -274,7 +277,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
     openPrintPreviewModal({
       title: 'Incident Shift Handover Summary',
-      subtitle: 'Barangay Dao Emergency & Operations Blotter Desk',
+      subtitle: `Barangay ${brgyName} Emergency & Operations Blotter Desk`,
       printedBy: `${user.fullName} (${user.role.toUpperCase()})`,
       sheetHtml,
       orientation: 'landscape',
@@ -953,7 +956,8 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         const ch = row.reportChannel || 'walk_in';
         const label = reportChannelLabel(ch) || 'Walk-in';
         let iconSvg = icons.users(12);
-        if (ch === 'sms') iconSvg = icons.mail ? icons.mail(12) : icons.messageSquare(12);
+        if (ch === 'sms' || ch === 'facebook') iconSvg = icons.messageSquare(12);
+        else if (ch === 'phone_call') iconSvg = icons.phone(12);
         else if (ch === 'tanod_alerted') iconSvg = icons.shield ? icons.shield(12) : icons.users(12);
         wrap.innerHTML = `<span class="incident-channel-badge incident-channel-badge--${escapeHtml(ch)}">${iconSvg} <span>${escapeHtml(label)}</span></span>`;
         return wrap;

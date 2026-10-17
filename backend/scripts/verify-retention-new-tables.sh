@@ -205,29 +205,24 @@ BASELINE="$(count_all)"
 expect_eq "$BASELINE" "av=3 rep=6 ent=4 chk=4 ref=3 ssz=5 sch=1 inc=2 shift=1" "baseline row counts seeded"
 
 # --------------------------------------------------------------------------
-step "2. A — SHIPPED constants: --list shows every rule as pending"
+step "2. A — SHIPPED constants: --list shows every rule as provisional one year (2026-10-17)"
 # --------------------------------------------------------------------------
 LIST_OUT="$(php_run scripts/retention-job.php --list)"
 for r in tanod_availability accomplishment_report school_checkin incident_referral ssz_term_report; do
   expect_contains "$LIST_OUT" "$r" "--list names $r"
 done
-expect_contains "$LIST_OUT" "pending_barangay_confirmation" "--list shows the pending status marker"
-expect_contains "$LIST_OUT" "no period set" "--list states no period is set"
+expect_contains "$LIST_OUT" "provisional_one_year" "--list shows the provisional status marker"
+expect_contains "$LIST_OUT" "365 days" "--list shows the one-year period"
 expect_contains "$LIST_OUT" "2557" "--list still prints the existing 7-year constant (existing rules untouched)"
-PENDING_COUNT=$(echo "$LIST_OUT" | grep -c "pending_barangay_confirmation")
-expect_eq "$PENDING_COUNT" "5" "exactly five rules carry the pending marker"
+PENDING_COUNT=$(echo "$LIST_OUT" | grep -c "provisional_one_year")
+expect_eq "$PENDING_COUNT" "5" "exactly five rules carry the provisional marker"
 expect_contains "$LIST_OUT" "deliberately NOT time-purged" "--list records school as a deliberate no-rule decision"
 case "$LIST_OUT" in *document_scan*) fail "--list still mentions document_scan (dropped by 0041)";; *) pass "--list no longer mentions document_scan";; esac
 
 # --------------------------------------------------------------------------
-step "3. A — SHIPPED constants: a full non-dry-run job deletes NOTHING from the new tables"
+step "3. A — SHIPPED constants: a full non-dry-run job deletes NOTHING young from the new tables (all seeded rows are under a year old)"
 # --------------------------------------------------------------------------
 FULL_OUT="$(php_run scripts/retention-job.php)"
-expect_contains "$FULL_OUT" "tanod_availability: pending barangay confirmation" "full run reports tanod_availability pending"
-expect_contains "$FULL_OUT" "accomplishment_report: pending barangay confirmation" "full run reports accomplishment_report pending"
-expect_contains "$FULL_OUT" "school_checkin: pending barangay confirmation" "full run reports school_checkin pending"
-expect_contains "$FULL_OUT" "incident_referral: pending barangay confirmation" "full run reports incident_referral pending"
-expect_contains "$FULL_OUT" "ssz_term_report: pending barangay confirmation" "full run reports ssz_term_report pending"
 AFTER_FULL="$(count_all)"
 # Existing rules may legitimately act on the seeded incidents (none are 90 days old
 # or 7 years old here), so every count must be identical.
@@ -237,12 +232,11 @@ SHIPPED_JSON="$(php_run scripts/verify-retention-new-tables-seam.php shipped)"
 for r in tanod_availability accomplishment_report school_checkin incident_referral ssz_term_report; do
   expect_eq "$(echo "$SHIPPED_JSON" | jget "results.$r.purged")" "0" "runAll(): $r purged 0"
   expect_eq "$(echo "$SHIPPED_JSON" | jget "results.$r.held")" "0" "runAll(): $r held 0"
-  expect_eq "$(echo "$SHIPPED_JSON" | jget "results.$r.note")" "pending barangay confirmation" "runAll(): $r note"
 done
 expect_eq "$(count_all)" "$BASELINE" "counts identical after runAll() through the PHP API too"
 
 NEW_AUDIT=$(db_one "SELECT COUNT(*) FROM audit_log WHERE action IN ('retention_tanod_availability_purged','retention_accomplishment_report_purged','retention_school_checkin_purged','retention_incident_referral_purged','retention_ssz_term_report_purged');")
-expect_eq "$NEW_AUDIT" "0" "pending rules write no audit row"
+expect_eq "$NEW_AUDIT" "0" "nothing eligible, so no audit row"
 
 # --------------------------------------------------------------------------
 step "4. C — the seam is not reachable from production paths or the environment"

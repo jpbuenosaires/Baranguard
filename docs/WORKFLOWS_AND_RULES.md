@@ -396,7 +396,7 @@ stateDiagram-v2
 ### III. Data Privacy, Redaction & Statutory Compliance
 17. Raw incident narratives are stored encrypted and never transmitted via push notifications, SMS alerts, server logs, or audit metadata.
 18. Only a Secretary can view an incident's confidential raw narrative and party contact details; Admins and Punong Barangays receive only non-identifying operational summaries.
-19. All raw narratives are permanently purged after a mandatory 90-day retention ceiling.
+19. All raw narratives are permanently purged after a mandatory one-year (365-day) retention ceiling (was 90 days until 2026-10-17, Rule 82).
 20. Audit log entries are strictly append-only and record allow-listed entity identifiers and statuses without personal identifiers, narratives, or coordinates.
 21. Baranguard strictly functions as an operational dispatch tool and may never be presented as replacing DILG's mandated BIMSS/KPIS case registry.
 
@@ -489,6 +489,16 @@ stateDiagram-v2
 ### XVI. Print-Only (2026-10-12, migration 0041)
 80. All reports, rosters and Annex D are printed and signed on paper outside the app; the app does not track signatures. Accomplishment report statuses are `open`, `prepared` (submitted, entries locked, ready to print) and `returned`; Annex D is `draft`, `prepared`, `submitted`. The note, approve, paper-signature and record-paper-approval endpoints and the `document_scan` scans are removed, `POST /shifts/publish` needs no signed-paper record, and the older paper columns and scans are dropped by migration 0041. The authority flags remain. This replaces Rules 62, 63, 73, 75 and 78.
 
+
+### XVII. Owner decisions 2026-10-17
+81. A report's channel records how it reached the barangay: tanod-alerted, walk-in, SMS, **phone call**, **Facebook message** or other (migration 0044). Staff log phone and Facebook reports as incidents; the Citizen Reports inbox no longer exists (Rule 56).
+82. Retention is **one year** for every raw narrative (ceiling from creation, was 90 days) and, provisionally, for availability, accomplishment reports, school check-ins, referrals and submitted Annex D reports (`provisional_one_year`, to be confirmed by the barangay and COA). Legal hold still stops any purge, and the `school` inventory is still never purged.
+83. Tanod availability is **optional**: the Chief Tanod builds the roster. A tanod who submitted nothing covering the days is not restricted; a tanod who did submit is held to those windows (422 `OUTSIDE_AVAILABILITY`; a submitted period that lists no time for a day counts as a "no"). The scheduler shows no availability bar or warning for a tanod who gave none.
+84. A tanod with no mobile data cannot accept a night dispatch offer. The Chief Tanod reaches them by SMS or phone call and **assigns them directly** (direct dispatch needs a reason if there is no published shift). This is a stated limit of the system, not a defect to hide.
+85. Approval authority is a **setting on a user**, not a role. The barangay names who holds `note_report`, `approve_report`, `approve_roster`, `prepare_annex_d` and `approve_annex_d` (Punong Barangay, or the Kagawad for peace and order on a Secretary account). No new role is added.
+86. The Chief Tanod **directs and dispatches**, on the web and on the phone console, and answers SOS. The Chief Tanod is not a responder: not dispatchable, no offers, no accomplishment entries (assumption A2).
+87. The app **does not claim attendance**. A tanod's monthly accomplishment report, printed and signed on paper, is the record; whether the treasurer and COA accept it for honoraria is for the barangay to confirm. No daily check-in is built unless COA requires one.
+88. Safer School Zones annexes (B, C-1, D) are a **draft layout** built from the barangay's own forms. The page and every printout say so until the layouts, deadlines and filing frequency of DILG MC 2026-037 are checked against the circular.
 ---
 
 # Part 4: Scenario Walk-Throughs (for checking)
@@ -598,7 +608,7 @@ Each scenario is one realistic story you can follow step by step and compare wit
 2. The Admin opens the same incident: no narrative and no party contacts.
 3. The Punong Barangay opens it from the dashboard: operational summary only, read-only.
 4. A user from another barangay requests the same incident id: the answer is `404`, never `403` (Rule 5).
-5. The narrative never appears in push notifications, SMS, logs or audit metadata (Rule 17), and is purged at 90 days (Rule 19).
+5. The narrative never appears in push notifications, SMS, logs or audit metadata (Rule 17), and is purged at one year (Rules 19, 82).
 - **Evidence:** `verify-sprint7-pentest-incidents.sh`, `verify-b2-pentest-remaining-resources.sh`, `verify-sprint7-audit.sh`. **UAT:** S-03.
 
 ### Scenario 12. Login lockout, revocation and the Chief Tanod phone
@@ -648,7 +658,7 @@ Reviewed 2026-10-08 by reading the rules against each other and against the code
 - **Authority is layered and non-overlapping:** the Admin owns dispatch and resolution, the Secretary owns the record lifecycle and narrative, approvals follow a separate authority attribute, and the Punong Barangay is oversight plus approval (Rules 7, 12, 18, 26, 35).
 - **Time rules agree:** UTC storage, fixed +08:00 days, the night window, the 12-hour cap and school check-in limits all use the same Manila day (Rules 27, 54, 60).
 - **Every offline write has a duplicate guard** (`client_event_id` or `Idempotency-Key`), and the things that must not be queued (duty toggle, month submit, offer accept) are the ones that need a live server answer (Rules 16, 34, 49, 58).
-- **Privacy rules do not conflict:** the narrative is Secretary-only, never leaves the system, is purged at 90 days, while the incident row keeps for its own period (Rules 17 to 20).
+- **Privacy rules do not conflict:** the narrative is Secretary-only, never leaves the system, is purged at one year, while the incident row keeps for its own period (Rules 17 to 20).
 
 ### Fixed or decided
 | # | Finding | Outcome |
@@ -661,7 +671,7 @@ Reviewed 2026-10-08 by reading the rules against each other and against the code
 | 6 | A tanod cannot go off duty while offline | **Fixed 2026-10-12.** Offline off duty (Rule 49); A4 narrowed. |
 | 7 | Legal hold stops all backup pruning, so backups grow | **Assumption A5.** |
 | 8 | 1-year purge of shifts and duty data may delete evidence before a COA-facing report period is decided | **Assumption A6** (blocks Rule 51 sign-off). |
-| 9 | 90-day narrative purge not policy-confirmed | **Assumption A7.** |
+| 9 | Narrative purge period not policy-confirmed | One year set 2026-10-17 (Rule 82); still **Assumption A7**. |
 | 10 | A reopened incident keeps closing history only in the audit log and timeline | **Assumption A8.** |
 
 ### Stated assumptions (each needs an owner to confirm; none changes behaviour)
@@ -671,7 +681,7 @@ Reviewed 2026-10-08 by reading the rules against each other and against the code
 - **A4 (owner: developer, tested on a device).** Off duty works offline since 2026-10-12 (Rule 49) and is recorded at the phone's tap time. The remaining assumption is that the phone clock is right to within 5 minutes; a clock further ahead is rejected. Not device-verified.
 - **A5 (owner: barangay, storage).** While any legal hold is active no backup is pruned (Rule 53), so backups grow without limit. Give every hold a review date and watch the backup disk.
 - **A6 (owner: barangay, treasurer, COA).** Retention for accomplishment reports and Annex D is undecided (Rule 65), while shifts and duty status purge at 1 year (Rule 51). Decide the report periods first, then check Rule 51 against them.
-- **A7 (owner: barangay council).** Every raw narrative expires at 90 days because no approved-redaction path exists (Rule 19). Consistent with the barangay keeping its own binder, but it needs written confirmation.
+- **A7 (owner: barangay council).** Every raw narrative expires at one year (was 90 days until 2026-10-17) because no approved-redaction path exists (Rule 19). Consistent with the barangay keeping its own binder, but it needs written confirmation.
 - **A8 (owner: developer).** After `resolved`, `reopened` and `dispatched`, only the audit log shows the earlier closure. Point readers of an incident at its timeline.
 
 ### Still open (not logic, but found while doing this)

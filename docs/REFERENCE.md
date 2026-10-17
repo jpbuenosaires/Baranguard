@@ -130,8 +130,9 @@ raw_narrative` and the party fields, and the unused columns `redacted_
 narrative`/`redaction_approved_*` (nothing writes them any more). **Do
 not rebuild any of this without an explicit new decision.** Consequence
 to know about: with no approved redaction, `RetentionService`'s
-raw_narrative rule reduces to its existing 90-day ceiling for every
-incident (Rule 10: changing that number needs architecture review).
+raw_narrative rule reduces to its existing ceiling for every
+incident (changed from 90 days to ONE YEAR by the owner 2026-10-17;
+Rule 10 architecture review still applies to any further change).
 
 **Tanod-workflow build added 2026-10-01 (migrations 0030-0033; plan in
 `docs/FEATURE_PLAN_2026-10.md`, binding contract in
@@ -237,6 +238,7 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   weekly "Hours" total as a plain number, and historical `audit_log` rows
   `fatigue_flag_acknowledged` (write-once). Routes 117 -> 105 (the rest of that
   drop is 0041's removals). **Do not rebuild without an explicit new decision.**
+- **0044** (2026-10-17, NOT applied to any real DB) `incident.report_channel` gains `phone_call` and `facebook` (additive enum widening; down folds them into `other`). Same day, no migration: raw narrative ceiling 90 -> 365 days, the five new-table retention rules set to a provisional 365 days, tanod availability made optional (Rule 83), Safer School Zones annexes marked draft layout (Rule 88). See `WORKFLOWS_AND_RULES.md` rules 81-88.
 - **0040** (2026-10-12, NOT applied to any real DB) report and roster
   notifications: `notification.notification_type` gains `report_update` and
   `roster_published`; `notification.accomplishment_report_id` (FK, SET NULL).
@@ -443,7 +445,7 @@ carries a focal person + contact) · `school_checkin` (no coordinates) ·
 `shift_schedule.approval_status` (draft/published)/`source_availability_id`/
 `approved_by`/`approved_at`; `incident.school_id`/`c1_summary`/
 `c1_action_taken`/`c1_status_notes` (short, non-identifying Annex C-1 text,
-separate from `raw_narrative`, which stays on the 90-day purge);
+separate from `raw_narrative`, which stays on the one-year purge);
 `offline_queue.payload_type` gained `referral`, `availability`,
 `accomplishment_entry`, `school_checkin`.
 

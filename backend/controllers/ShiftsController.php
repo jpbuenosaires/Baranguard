@@ -492,7 +492,8 @@ final class ShiftsController
     }
 
     /**
-     * Owner decision 2026-10-12: availability is the tanod's own fixed
+     * Owner decision 2026-10-12 (amended 2026-10-17: availability is OPTIONAL, a tanod with
+     * no submitted windows for the days is not restricted): availability is the tanod's own fixed
      * statement, so a tanod may only be scheduled inside it. Refuses
      * (422 `OUTSIDE_AVAILABILITY`) a shift for a `tanod` account unless every
      * minute of [$startAt, $endAt) falls inside the union of the windows the
@@ -526,7 +527,14 @@ final class ShiftsController
 
         $manila = new \DateTimeZone(RosterSupport::MANILA_OFFSET);
         $windows = [];   // "date start-end" => [startTs, endTs], de-duplicated
-        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $json) {
+        $submitted = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        // Availability is optional (2026-10-17): the Chief Tanod builds the roster, and a tanod
+        // who submitted nothing covering these days has no stated limits to respect. Once a
+        // submission DOES cover them, its windows are enforced (a day it leaves out is a "no").
+        if ($submitted === []) {
+            return;
+        }
+        foreach ($submitted as $json) {
             $decoded = json_decode((string) $json, true);
             foreach (is_array($decoded) ? $decoded : [] as $w) {
                 if (!is_array($w) || !isset($w['date'], $w['start'], $w['end'])) {
@@ -562,7 +570,7 @@ final class ShiftsController
         $name = (string) $user['full_name'];
         $days = $firstDay === $lastDay ? $firstDay : "{$firstDay} to {$lastDay}";
         if ($windows === []) {
-            $message = "{$name} has not submitted availability for {$days}, so they cannot be scheduled then.";
+            $message = "{$name} listed no available time for {$days}, so they cannot be scheduled then.";
         } else {
             $labels = array_keys($windows);
             sort($labels);

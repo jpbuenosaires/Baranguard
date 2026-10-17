@@ -51,7 +51,7 @@ barangay's records.
 
 ## How long we keep it
 
-- **Confidential narratives**: deleted from the system 90 days after the
+- **Confidential narratives**: deleted from the system one year after the
   incident is recorded, unless the record is under legal hold. The barangay
   keeps any official blotter in its own binders. **[to be confirmed by the
   barangay]**
