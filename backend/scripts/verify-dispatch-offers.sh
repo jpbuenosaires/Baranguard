@@ -462,7 +462,7 @@ expect_code "Cancel replay" 200
 api PATCH "/dispatch-offers/$OFFER4/cancel" "$ADMIN_T" ""
 expect_code "Cancel without Idempotency-Key" 400
 api PATCH "/dispatch-offers/$OFFER4/cancel" "$SEC_T" "" -H "Idempotency-Key: $(uuid)"
-expect_code "Secretary cannot cancel" 403
+expect_code "Secretary (back-up dispatcher) may cancel; a repeat on a cancelled offer is the same 200" 200
 api PATCH "/dispatch-offers/$OFFER4/cancel" "$ADMIN2_T" "" -H "Idempotency-Key: $(uuid)"
 expect_code "Cross-tenant admin cancel" 404
 api PATCH "/dispatch-offers/$OFFER1/cancel" "$ADMIN_T" "" -H "Idempotency-Key: $(uuid)"

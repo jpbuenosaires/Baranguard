@@ -25,7 +25,7 @@
  */
 
 import {
-  getIncidents, getDispatches, getDutyStatus, getUsers, getGpsLive, getTanodSos,
+  getIncidents, getDispatches, getDutyStatus, getUsers, getTanodDirectory, getGpsLive, getTanodSos,
   cancelDispatch, acknowledgeTanodSos, resolveTanodSos, logout, ApiClientError,
 } from '../api/apiClient.js';
 import { getDispatchOffers, openDispatchOffer, cancelDispatchOffer } from '../services/shellWorkflowApi.js';
@@ -213,7 +213,8 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   let latestData = null;
   // incidentId -> newest dispatch offer (GET /dispatch-offers is newest-first).
   let offerByIncident = new Map();
-  const isAdmin = user.role === 'admin';
+  // The Secretary is the back-up dispatcher (2026-10-17): same board, same dispatch and resolve rights.
+  const isAdmin = user.role === 'admin' || user.role === 'secretary';
 
   const POLL_INTERVAL_MS = 15000;
 
@@ -319,7 +320,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         getIncidents({ status: 'dispatched', limit: 100 }),
         getDispatches({ limit: 100 }),
         getDutyStatus(user.barangayId),
-        getUsers({ role: 'tanod', limit: 100 }),
+        user.role === 'admin' ? getUsers({ role: 'tanod', limit: 100 }) : getTanodDirectory(),
         getTanodSos({}).catch(() => []),
         getGpsLive(user.barangayId).catch(() => []),
         // Offer state is additive: if it cannot be read the board still works.

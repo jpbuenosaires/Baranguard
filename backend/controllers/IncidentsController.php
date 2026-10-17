@@ -1444,7 +1444,7 @@ final class IncidentsController
      */
     public static function updateStatus(PDO $pdo, array $identity, string $incidentIdParam): void
     {
-        AuthMiddleware::requireRole($identity, ['admin']);
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
         if (!ctype_digit($incidentIdParam)) {
             throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
         }

@@ -1162,7 +1162,7 @@ function buildSosFallbackCard(settings) {
 
 const LANDING_OPTIONS = [
   { key: 'dashboard', label: 'Dashboard', roles: ['admin', 'punong_barangay'] },
-  { key: 'dispatch', label: 'Dispatch Center', roles: ['admin'] },
+  { key: 'dispatch', label: 'Dispatch Center', roles: ['admin', 'secretary'] },
   { key: 'incident-management', label: 'Incident Management', roles: ['admin', 'secretary'] },
   { key: 'gis', label: 'Live Map', roles: ['admin', 'punong_barangay'] },
   { key: 'analytics', label: 'Analytics', roles: ['admin', 'punong_barangay'] },

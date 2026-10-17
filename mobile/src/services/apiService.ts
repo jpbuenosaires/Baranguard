@@ -1616,6 +1616,37 @@ async function adminWriteHeaders(method: string, routePath: string, idempotencyK
   return headers;
 }
 
+/**
+ * POST /incidents — the Chief Tanod logs a phone report. Signed write with the
+ * row's idempotency key, so a resend after a dropped reply returns the same
+ * incident. The reply carries no narrative (Rule 1).
+ */
+export async function createAdminIncident(
+  payload: {
+    incidentType: string;
+    priority: string;
+    reportChannel: string;
+    locationDescription: string;
+    complainantName: string;
+    narrative: string;
+  },
+  idempotencyKey: string
+): Promise<{ incidentId: number; displayId: string | null }> {
+  const json = await request<{ incident_id: number; display_id?: string | null }>('/incidents', {
+    method: 'POST',
+    headers: await adminWriteHeaders('POST', '/incidents', idempotencyKey),
+    body: {
+      incident_type: payload.incidentType,
+      priority: payload.priority,
+      report_channel: payload.reportChannel,
+      raw_narrative: payload.narrative,
+      ...(payload.locationDescription.trim() ? { location_description: payload.locationDescription.trim() } : {}),
+      ...(payload.complainantName.trim() ? { complainant_name: payload.complainantName.trim() } : {}),
+    },
+  });
+  return { incidentId: json.incident_id, displayId: json.display_id ?? null };
+}
+
 /** Honest, user-facing wording for the failures an admin action can hit. */
 export function adminErrorMessage(error: unknown, fallback = 'Something went wrong.'): string {
   if (error instanceof ApiError) {

@@ -276,8 +276,6 @@ api PATCH "/dispatch/$D_T1/cancel" "$ADMIN2_T" ""
 expect_code "Cross-tenant cancel (even with NO reason) is 404, never 400/403" 404
 api PATCH "/dispatch/$D_T1/cancel" "$T1_T" '{"reason":"nope"}'
 expect_code "Tanod cannot cancel" 403
-api PATCH "/dispatch/$D_T1/cancel" "$SEC_T" '{"reason":"nope"}'
-expect_code "Secretary cannot cancel" 403
 api PATCH "/dispatch/$D_T1/cancel" "$PB_T" '{"reason":"nope"}'
 expect_code "Punong Barangay cannot cancel" 403
 

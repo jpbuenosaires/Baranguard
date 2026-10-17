@@ -46,7 +46,7 @@ use PDO;
  *                             other_agencies, ambulance_ems->other_agencies by
  *                             default or doh when system_settings
  *                             `annex_d.ambulance_ems_maps_to` = 'doh'.
- *                             barangay_official and vaw_desk are barangay-level.
+ *                             barangay_official, vaw_desk and lupon_kp are barangay-level.
  *   - incidents_barangay_only school incidents with NO external referral
  *   - other_institutions      distinct referral other_text (+ 'Ambulance/EMS'
  *                             when mapped to other), '; '-joined, <= 500 chars
@@ -474,7 +474,7 @@ final class SszTermReportsController
                 'dpwh' => 'dpwh',
                 'other' => 'other_agencies',
                 'ambulance_ems' => $ambulanceTo === 'doh' ? 'doh' : 'other_agencies',
-                default => null, // barangay_official, vaw_desk: barangay-level
+                default => null, // barangay_official, vaw_desk, lupon_kp: barangay-level
             };
             if ($column !== null) {
                 $perColumn[$column][$incidentId] = true;

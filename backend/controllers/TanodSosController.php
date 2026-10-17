@@ -51,7 +51,7 @@ final class TanodSosController
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function index(PDO $pdo, array $identity): void
     {
-        AuthMiddleware::requireRole($identity, ['admin', 'punong_barangay']);
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary', 'punong_barangay']);
 
         $status = Http::query('status');
         if ($status !== null && !in_array($status, self::SOS_STATUSES, true)) {
@@ -386,7 +386,7 @@ final class TanodSosController
     /** Shared, row-locked state change for acknowledge/resolve. */
     private static function transition(PDO $pdo, array $identity, string $sosIdParam, string $target): void
     {
-        AuthMiddleware::requireRole($identity, ['admin']);
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
         if (!ctype_digit($sosIdParam)) {
             throw new ApiError(404, 'NOT_FOUND', 'SOS record not found.');
         }

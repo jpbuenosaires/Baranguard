@@ -50,7 +50,7 @@
  * unsynced field captures, which Rule 2 ("offline capture is durable
  * until reconciliation") forbids.
  */
-export const LOCAL_SCHEMA_VERSION = 9;
+export const LOCAL_SCHEMA_VERSION = 10;
 
 /** Statements for schema version 1 (Sprint 2 baseline cut). */
 const MIGRATION_001_BASELINE: readonly string[] = [
@@ -463,6 +463,22 @@ const MIGRATION_009_INCIDENT_DRAFT: readonly string[] = [
 ];
 
 /**
+ * Statements for schema version 10: the Chief Tanod console's incident outbox
+ * (2026-10-17). A report the Chief Tanod logs from the phone is written here FIRST
+ * (Rule 7), sent with its own idempotency key, and deleted once the server confirms.
+ * The narrative sits in this table only until then. CREATE only.
+ */
+const MIGRATION_010_ADMIN_INCIDENT_OUTBOX: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS admin_incident_outbox (
+    idempotency_key TEXT PRIMARY KEY NOT NULL,
+    payload_json    TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    last_error      TEXT NULL
+  )`,
+];
+
+/**
  * Ordered migrations. Index 0 takes the DB from user_version 0 -> 1,
  * index 1 takes it 1 -> 2, and so on. Append only — never edit a
  * released entry (same rule as the backend's completed migration files).
@@ -477,6 +493,7 @@ export const LOCAL_MIGRATIONS: readonly (readonly string[])[] = [
   MIGRATION_007_INCIDENT_DISPLAY_ID,
   MIGRATION_008_SERVER_HISTORY,
   MIGRATION_009_INCIDENT_DRAFT,
+  MIGRATION_010_ADMIN_INCIDENT_OUTBOX,
 ];
 
 /** Every table this cut is responsible for, for assertions/diagnostics. */
@@ -494,6 +511,7 @@ export const LOCAL_TABLES = [
   'school_checkin_local',
   'school_local',
   'incident_draft',
+  'admin_incident_outbox',
 ] as const;
 
 export type LocalTableName = (typeof LOCAL_TABLES)[number];
@@ -720,6 +738,7 @@ export type ReferralTarget =
   | 'ambulance_ems'
   | 'barangay_official'
   | 'vaw_desk'
+  | 'lupon_kp'
   | 'social_welfare'
   | 'higher_lgu'
   | 'doh'

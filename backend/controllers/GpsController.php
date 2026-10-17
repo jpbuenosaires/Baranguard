@@ -83,7 +83,7 @@ final class GpsController
      */
     public static function live(PDO $pdo, array $identity): void
     {
-        AuthMiddleware::requireRole($identity, ['admin', 'punong_barangay', 'tanod']);
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary', 'punong_barangay', 'tanod']);
 
         $barangayIdParam = Http::query('barangay_id');
         if ($barangayIdParam === null || !ctype_digit($barangayIdParam)) {

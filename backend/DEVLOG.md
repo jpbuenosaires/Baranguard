@@ -19274,3 +19274,12 @@ Audit of `tanod.reyes` (primary phone tester) and every screen against the UAT s
 - New figures: `fig4-1-asis-process`, `fig4-2-architecture`, `fig4-6-main-flow` (make_diagrams2.py), ERD regenerated in Crow's Foot notation from the live schema (18 of 34 tables; referral table dropped to avoid a crossing line). Retook `m01-new-incident.png` with a completed form.
 - Test levels: unit/component 993/0 (web 734 + mobile 259), integration 1,795/0 (38 backend suites); system and UAT rows pending. Defect table lists the 9 defects found in the verification pass (8 resolved, 1 deferred = 30 stylesheet findings).
 - Real bug found while shooting the form: the Log an Incident select still offered only four channels although migration 0044 and the badge code had phone_call and facebook. `web/src/utils/reportChannel.js` now lists them; incident-management test updated (29/0).
+
+
+## 2026-10-17 (night) - Owner workflow review: back-up dispatcher, phone incident log, Lupon referral
+
+Decisions taken on the ten workflow risks (WORKFLOWS_AND_RULES Part 7, rules 89-95):
+- Secretary is the back-up dispatcher: role gates widened in `DispatchController` (create, cancel, index, cancel reason visible), `DispatchOffersController::cancel`, `IncidentsController::updateStatus`, `TanodSosController` (index, acknowledge, resolve), `GpsController::live`; web nav and `main.js` allow the Dispatch Center for the Secretary, who still lands on Incident Management; the Secretary loads tanods from `GET /users/directory?purpose=tanod` (no contact numbers). Tests rewritten to the new rule (web 734/0).
+- Chief Tanod phone: `POST /incidents` added to `ADMIN_DEVICE_ALLOWLIST` (signed), mobile schema v10 `admin_incident_outbox`, `adminIncidentOutbox.ts` (save first, send, keep refused rows), `admin-log-incident.tsx`, route `tabs/incidents/new`. Not device-verified. Mobile schema check 266/0, vitest 185/0.
+- Migration 0045 adds `lupon_kp` to the referral destinations (barangay-level in Annex D); applied to `baranguard_uiseed`.
+- New `docs/POWER_CUT_PROCEDURE.md`. Kept as is: night offers online-only, published-shift check, no resident reporting, no low-data mode, no Kagawad account.

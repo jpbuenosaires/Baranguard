@@ -97,6 +97,9 @@ final class SessionPolicy
         ['PATCH', '#^/dispatch/\d+/cancel$#', true],
         ['GET', '#^/dispatch/\d+/route$#', false],
         ['GET', '#^/incidents$#', false],
+        // 2026-10-17: the Chief Tanod logs a phone report from the console. Signed write; the
+        // response never carries the narrative (Rule 1).
+        ['POST', '#^/incidents$#', true],
         ['GET', '#^/incidents/\d+$#', false],
         ['GET', '#^/gps/live$#', false],
         ['GET', '#^/notifications$#', false],

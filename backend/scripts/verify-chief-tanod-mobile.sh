@@ -319,7 +319,7 @@ expect_scope PATCH "/incidents/$INC1/status" "$A1D" '{"status":"resolved"}'
 expect_scope PATCH "/incidents/$INC1/lifecycle" "$A1D" '{"lifecycle":"cancelled"}'
 expect_scope PATCH "/incidents/$INC1/related" "$A1D" '{"related_incident_id":null}'
 expect_scope PATCH "/incidents/$INC1" "$A1D" '{"priority":"high"}'
-expect_scope POST /incidents "$A1D" '{}'
+expect_reached POST /incidents "$A1D" '{}'
 expect_scope GET  "/incidents/nearby?latitude=12.9&longitude=123.6" "$A1D"
 expect_scope GET  "/incidents/$INC1/evidence" "$A1D"
 expect_scope POST /tanod-sos "$A1D" '{}'

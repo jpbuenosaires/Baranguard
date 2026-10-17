@@ -415,6 +415,21 @@ export async function getUsers({ role, page, limit } = {}) {
 }
 
 /**
+ * GET /users/directory?purpose=tanod (admin|secretary): the active tanods of the
+ * caller's barangay with no contact numbers. The Secretary, as back-up
+ * dispatcher, uses this because GET /users is Admin-only.
+ */
+export async function getTanodDirectory() {
+  const json = await request('GET', '/users/directory', { query: { purpose: 'tanod' }, auth: true });
+  return {
+    items: json.items.map((row) => ({
+      userId: row.user_id, fullName: row.full_name, username: null, role: 'tanod',
+      contactNumber: null, isActive: true, isSuspended: false,
+    })),
+  };
+}
+
+/**
  * PATCH /users/:id — W10's admin-editing-another-user path. Cross-tenant
  * or the last-active-Admin case surface as the server's real ApiClientError
  * (404 / 409 respectively) — the caller should show that message as-is,

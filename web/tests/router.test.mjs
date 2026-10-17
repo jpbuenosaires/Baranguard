@@ -58,11 +58,11 @@ describe('router: landing page per role', () => {
   });
 
   test('a stored default landing page the role may NOT open is ignored', async () => {
-    window.localStorage.setItem('baranguard.defaultPage', 'dispatch');
+    window.localStorage.setItem('baranguard.defaultPage', 'gis');
     signIn('secretary');
     const root = await boot();
     assert.ok(heading(root).startsWith('Incident Management'));
-    assert.equal(api.callsTo('GET', '/dispatch').length, 0, 'the Admin-only screen must not even start loading');
+    assert.equal(api.callsTo('GET', '/gps/live').length, 0, 'the Admin-only screen must not even start loading');
   });
 
   test('a detail page is never chosen as a default landing page (it needs an id)', async () => {

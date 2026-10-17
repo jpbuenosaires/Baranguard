@@ -239,6 +239,14 @@ EXPECTED.incident_draft = {
   updated_at:      ['TEXT', 1, null, 0],
 };
 
+EXPECTED.admin_incident_outbox = {
+  idempotency_key: ['TEXT', 1, null, 1],
+  payload_json:    ['TEXT', 1, null, 0],
+  created_at:      ['TEXT', 1, null, 0],
+  attempts:        ['INTEGER', 1, '0', 0],
+  last_error:      ['TEXT', 0, null, 0],
+};
+
 /** Applies LOCAL_MIGRATIONS exactly the way localDatabase.ts does. */
 function migrate(db) {
   const current = Number(db.prepare('PRAGMA user_version').get().user_version ?? 0);
@@ -606,9 +614,10 @@ check(db.prepare('SELECT incident_display_id FROM dispatch_local WHERE local_id 
   ).run();
   check(Number(v8Db.prepare('PRAGMA user_version').get().user_version) === 8, 'Simulated device is on schema v8 before the draft upgrade');
   migrate(v8Db);
-  check(Number(v8Db.prepare('PRAGMA user_version').get().user_version) === 9, 'A device on schema v8 upgrades to v9');
+  check(Number(v8Db.prepare('PRAGMA user_version').get().user_version) === LOCAL_SCHEMA_VERSION, 'A device on schema v8 upgrades to the current schema');
   check(v8Db.prepare('SELECT COUNT(*) AS n FROM incident_local').get().n === 1, 'v8 -> v9: queued offline incident survives (Rule 7)');
   check(v8Db.prepare('SELECT COUNT(*) AS n FROM incident_draft').get().n === 0, 'v8 -> v9: incident_draft is created empty');
+  check(v8Db.prepare('SELECT COUNT(*) AS n FROM admin_incident_outbox').get().n === 0, 'v9 -> v10: admin_incident_outbox is created empty');
   v8Db.prepare(`INSERT INTO incident_draft (draft_id, incident_type, updated_at) VALUES ('user-1', 'theft', 't1')`).run();
   let dupRejected = false;
   try {

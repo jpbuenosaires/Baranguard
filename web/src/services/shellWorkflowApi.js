@@ -101,6 +101,7 @@ export const REFERRED_TO_OPTIONS = [
   { value: 'ambulance_ems', label: 'Ambulance / EMS' },
   { value: 'barangay_official', label: 'Barangay official' },
   { value: 'vaw_desk', label: 'VAW Desk' },
+  { value: 'lupon_kp', label: 'Lupon / Katarungang Pambarangay' },
   { value: 'social_welfare', label: 'Social Welfare (MSWDO)' },
   { value: 'higher_lgu', label: 'Higher LGU' },
   { value: 'doh', label: 'DOH' },

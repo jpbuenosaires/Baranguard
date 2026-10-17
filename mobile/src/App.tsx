@@ -39,6 +39,7 @@ const AvailabilityPage = lazy(() => import('./pages/availability'));
 const AdminDispatchPage = lazy(() => import('./pages/admin/admin-dispatch'));
 const AdminIncidentsPage = lazy(() => import('./pages/admin/admin-incidents'));
 const AdminProfilePage = lazy(() => import('./pages/admin/admin-profile'));
+const AdminLogIncidentPage = lazy(() => import('./pages/admin/admin-log-incident'));
 import AdminSosPage from './pages/admin/admin-sos';
 import HomePage from './pages/home';
 const IncidentSubmittedPage = lazy(() => import('./pages/incident-submitted'));
@@ -375,6 +376,7 @@ const AdminShell: React.FC = () => {
         <Route path="sos" element={<AdminSosPage />} />
         <Route path="dispatch" element={<Suspense fallback={<PageFallback />}><AdminDispatchPage /></Suspense>} />
         <Route path="incidents" element={<Suspense fallback={<PageFallback />}><AdminIncidentsPage /></Suspense>} />
+        <Route path="incidents/new" element={<Suspense fallback={<PageFallback />}><AdminLogIncidentPage /></Suspense>} />
         <Route path="profile" element={<Suspense fallback={<PageFallback />}><AdminProfilePage /></Suspense>} />
         <Route path="home" element={<Navigate to="/tabs/sos" replace />} />
         <Route index element={<Navigate to="/tabs/sos" replace />} />

@@ -152,7 +152,7 @@ const SYSTEM_TOOLS_MENU = 'System Tools';
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', roles: ['admin', 'punong_barangay'], icon: icons.layoutDashboard, group: null },
 
-  { key: 'dispatch', label: 'Dispatch Center', roles: ['admin'], icon: icons.radio, countKey: 'pendingIncidents', group: 'Operations' },
+  { key: 'dispatch', label: 'Dispatch Center', roles: ['admin', 'secretary'], icon: icons.radio, countKey: 'pendingIncidents', group: 'Operations' },
   { key: 'incident-management', label: 'Incident Management', roles: ['admin', 'secretary'], icon: icons.alertTriangle, group: 'Operations' },
   { key: 'gis', label: 'Live Map', roles: ['admin', 'punong_barangay'], icon: icons.map, group: 'Operations' },
 
