@@ -17,7 +17,7 @@ const navLabels = () => $$('.sidebar__nav-item').map((b) => b.title);
 
 // REFERENCE.md §3/§7 + main.js PAGE_ROLES.
 const EXPECTED_NAV = {
-  admin: ['Dashboard', 'Dispatch Center', 'Incident Management', 'Live Map', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Analytics', 'Personnel', 'SMS Monitor', 'Audit Log', 'Service Health', 'Settings'],
+  admin: ['Dashboard', 'Dispatch Center', 'Incident Management', 'Live Map', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Analytics', 'Personnel', 'SMS Monitor', 'Audit Log', 'Service Health', 'Map Packages', 'Settings'],
   secretary: ['Dispatch Center', 'Incident Management', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Personnel', 'Settings'],
   punong_barangay: ['Dashboard', 'Live Map', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Analytics', 'Personnel', 'Settings'],
 };
@@ -49,15 +49,14 @@ describe('AppShell navigation', () => {
 });
 
 describe('AppShell system screens (2026-10-17)', () => {
-  const TOOLS = ['SMS Monitor', 'Audit Log', 'Service Health'];
+  const TOOLS = ['SMS Monitor', 'Audit Log', 'Service Health', 'Map Packages'];
 
-  test('Admin sees SMS Monitor, Audit Log and Service Health as top-level rows; there is no System Tools menu and no Map Packages row', async () => {
+  test('Admin sees SMS Monitor, Audit Log, Service Health and Map Packages as top-level rows; there is no System Tools menu', async () => {
     mountShell('admin', 'dashboard');
     await settle();
     assert.equal($$('.sidebar__nav-toggle').length, 0);
     assert.equal($('.sidebar__submenu'), null);
     for (const label of TOOLS) assert.ok(navLabels().includes(label), `${label} must be a sidebar row`);
-    assert.ok(!navLabels().includes('Map Packages'), 'Map Packages is reached from Settings');
     assertNoRuntimeErrors();
   });
 
@@ -72,20 +71,20 @@ describe('AppShell system screens (2026-10-17)', () => {
   test('every system screen navigates to its own page', async () => {
     const ctx = mountShell('admin', 'dashboard');
     await settle();
-    const pages = { 'SMS Monitor': 'sms-log', 'Audit Log': 'audit-log', 'Service Health': 'service-health' };
+    const pages = { 'SMS Monitor': 'sms-log', 'Audit Log': 'audit-log', 'Service Health': 'service-health', 'Map Packages': 'map-packages' };
     for (const [label, page] of Object.entries(pages)) {
       click($$('.sidebar__nav-item').find((b) => b.title === label));
       assert.deepEqual(ctx.navigations.at(-1), { page, param: undefined });
     }
   });
 
-  test('Map Packages still has a breadcrumb under Settings and is not in Quick Jump', async () => {
+  test('Map Packages has its breadcrumb under System and is in Quick Jump', async () => {
     mountShell('admin', 'map-packages');
     await settle();
-    assert.match(text($('.topbar__breadcrumbs')), /Settings\s*\/\s*Map Packages/);
+    assert.match(text($('.topbar__breadcrumbs')), /System\s*\/\s*Map Packages/);
     type($('#topbar-search'), 'map pack');
     await wait(500);
-    assert.equal($$('.topbar__search-jump-item').find((b) => /Map Packages/i.test(text(b))), undefined);
+    assert.ok($$('.topbar__search-jump-item').find((b) => /Map Packages/i.test(text(b))));
   });
 
   test('Quick Jump still reaches the Audit Log', async () => {
@@ -395,6 +394,94 @@ describe('AppShell avatar / account menu', () => {
     await settle();
     assert.equal(panel.hidden, true);
   });
+
+  test('account menu includes Edit Profile link and Keyboard shortcuts cheat sheet modal', async () => {
+    const ctx = mountShell('admin');
+    await settle();
+
+    const avatarBtn = $('.topbar__avatar-button');
+    click(avatarBtn);
+    await settle();
+
+    const panel = $('.menu__panel--account');
+    const profileLink = $('.menu__account-profile-link', panel);
+    assert.ok(profileLink, 'Edit Profile link missing in header');
+    click(profileLink);
+    assert.deepEqual(ctx.navigations.at(-1), { page: 'settings', param: undefined });
+
+    // Re-open and open Keyboard shortcuts modal
+    click(avatarBtn);
+    await settle();
+    const shortcutsItem = $$('.menu__item', panel).find((i) => /Keyboard shortcuts/i.test(text(i)));
+    assert.ok(shortcutsItem, 'Keyboard shortcuts item missing');
+    click(shortcutsItem);
+    await settle();
+
+    const modal = $('.keyboard-shortcuts-modal');
+    assert.ok(modal, 'Keyboard shortcuts modal should be open');
+    assert.match(text(modal), /Search & Navigation/);
+
+    const closeBtn = $('.keyboard-shortcuts-close', modal);
+    assert.ok(closeBtn);
+    click(closeBtn);
+    await settle();
+    assert.equal($('.keyboard-shortcuts-modal'), null, 'Modal should be dismissed');
+  });
 });
+
+describe('AppShell Topbar and Notification suite enhancements', () => {
+  test('search clear button clears input and reveals quick jump palette', async () => {
+    mountShell('admin');
+    await settle();
+
+    const input = $('#topbar-search');
+    const clearBtn = $('.topbar__search-clear');
+    assert.ok(clearBtn);
+    assert.equal(clearBtn.hidden, true);
+
+    type(input, 'fire');
+    assert.equal(clearBtn.hidden, false);
+
+    click(clearBtn);
+    assert.equal(input.value, '');
+    assert.equal(clearBtn.hidden, true);
+    assert.equal($('.topbar__search-results').hidden, false);
+  });
+
+  test('notification mute toggle flips sound preference and inline ack acknowledges card', async () => {
+    mountShell('admin');
+    await settle();
+
+    const bell = $$('button').find((b) => /^Notifications/.test(b.getAttribute('aria-label') || ''));
+    click(bell);
+    await settle();
+
+    const panel = $('.menu__panel--notifications');
+    const muteBtn = $('.notification-panel__mute-btn', panel);
+    assert.ok(muteBtn, 'mute button missing in header');
+
+    click(muteBtn);
+    assert.equal(window.localStorage.getItem('baranguard_alerts_muted'), 'true');
+    assert.ok(muteBtn.classList.contains('is-muted'));
+
+    click(muteBtn);
+    assert.equal(window.localStorage.getItem('baranguard_alerts_muted'), 'false');
+    assert.equal(muteBtn.classList.contains('is-muted'), false);
+
+    // Test inline Acknowledge button
+    const unreadCard = $('.notification-card--unread', panel);
+    assert.ok(unreadCard);
+    const ackBtn = $('.notification-card__action-btn--ack', unreadCard);
+    assert.ok(ackBtn, 'inline acknowledge button missing on unread card');
+
+    click(ackBtn);
+    await settle();
+
+    assert.ok(api.callsTo('POST', '/notifications/1/ack').length >= 1);
+    assert.equal(unreadCard.classList.contains('notification-card--unread'), false);
+    assert.equal(panel.hidden, false, 'panel should remain open after inline acknowledge');
+  });
+});
+
 
 
