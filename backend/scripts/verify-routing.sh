@@ -240,6 +240,14 @@ else
   expect_eq "$([ "$STEPCOUNT" -ge 1 ] && echo yes || echo no)" "yes" "At least one turn-by-turn step present ($STEPCOUNT)"
   expect_eq "$(route_status_in_db)" "available" "DB row itself shows route_status='available'"
 
+  step "8a2. The same request again reuses the stored route instead of spending ORS quota"
+  AT1=$("$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); echo $d["route_json"]["computed_at"] ?? "none";' <<< "$RESP")
+  sleep 1
+  RESP_AGAIN=$(body_of GET "/dispatch/$DISPATCH1/route?latitude=$ON_ROAD_ORIGIN_LAT&longitude=$ON_ROAD_ORIGIN_LNG&mode=car" "$OWNER_TOKEN")
+  AT2=$("$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); echo $d["route_json"]["computed_at"] ?? "none2";' <<< "$RESP_AGAIN")
+  expect_eq "$AT2" "$AT1" "second identical request returns the stored route (computed_at unchanged: no new ORS call)"
+  expect_eq "$(echo "$RESP_AGAIN" | jget route_status)" "available" "reused route is still route_status='available'"
+
   step "8b. A rejected request KEEPS the prior good route, marked stale — never discards it"
   RESP2=$(body_of GET "/dispatch/$DISPATCH1/route?latitude=$UNROUTABLE_LAT&longitude=$UNROUTABLE_LNG&mode=car" "$OWNER_TOKEN")
   expect_eq "$(echo "$RESP2" | jget route_status)" "stale" "route_status='stale' after a request ORS rejects (no route from an unroutable origin)"

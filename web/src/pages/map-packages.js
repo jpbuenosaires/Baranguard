@@ -125,6 +125,7 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
   mainGrid.className = 'map-pkg-main-grid';
 
   const statusCardHost = document.createElement('div');
+  statusCardHost.className = 'map-pkg-status-host';
   const publisherCard = buildPublisherCard();
 
   mainGrid.append(statusCardHost, publisherCard.el);
@@ -182,6 +183,11 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
     }
   }
 
+  function formatVersion(ver) {
+    if (!ver) return '';
+    return /^v/i.test(ver) ? ver : `v${ver}`;
+  }
+
   function renderStatStrip(pkg) {
     statStripHost.innerHTML = '';
 
@@ -190,37 +196,41 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
     const statItems = [
       {
         label: 'Published map version',
-        value: isPublished ? `v${pkg.version}` : 'None published',
+        value: isPublished ? formatVersion(pkg.version) : 'None published',
         tone: isPublished ? 'success' : 'neutral',
-        icon: icons.map(16),
+        icon: icons.map(18),
+        isText: true,
       },
       {
         label: 'File check code',
         value: isPublished ? 'Recorded' : 'Awaiting map file',
         tone: isPublished ? 'primary' : 'neutral',
-        icon: icons.shield(16),
+        icon: icons.shield(18),
+        isText: true,
       },
       {
         label: 'Tanod phones',
         value: isPublished ? 'Download at sign-in' : 'No offline map yet',
         tone: isPublished ? 'info' : 'neutral',
-        icon: icons.send(16),
+        icon: icons.send(18),
+        isText: true,
       },
       {
         label: 'Largest file allowed',
         value: '500 MB',
         tone: 'neutral',
-        icon: icons.layers(16),
+        icon: icons.layers(18),
+        isText: false,
       },
     ];
 
     statItems.forEach((item) => {
       const card = document.createElement('div');
-      card.className = 'stat-card';
+      card.className = 'stat-card map-pkg-stat-card';
 
       const val = document.createElement('span');
-      val.className = `stat-card__value stat-card__value--${item.tone}`;
-      val.innerHTML = `${item.icon}<span>${escapeHtml(item.value)}</span>`;
+      val.className = `stat-card__value stat-card__value--${item.tone}${item.isText ? ' stat-card__value--text' : ''}`;
+      val.innerHTML = `<span class="stat-card__icon" aria-hidden="true">${item.icon}</span><span>${escapeHtml(item.value)}</span>`;
 
       const lbl = document.createElement('span');
       lbl.className = 'stat-card__label';
@@ -299,7 +309,7 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
       versionItem.className = 'map-pkg-detail-item';
       versionItem.innerHTML = `
         <span class="map-pkg-detail-label">Current Published Version</span>
-        <span class="map-pkg-detail-val map-pkg-detail-val--version">v${escapeHtml(pkg.version)}</span>
+        <span class="map-pkg-detail-val map-pkg-detail-val--version">${escapeHtml(formatVersion(pkg.version))}</span>
       `;
 
       // Item 3: Device Sync Status

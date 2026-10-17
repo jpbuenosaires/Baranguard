@@ -279,7 +279,8 @@
   position: relative;
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  display: block !important;
+  display: flex !important;
+  flex-direction: column !important;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--color-text-tertiary) 30%, transparent) transparent;
 }
@@ -287,6 +288,7 @@
 .incident-table-wrap .data-table-wrap .data-table {
   width: 100%;
   height: auto;
+  flex-shrink: 0;
 }
 
 .incident-table-wrap .data-table-wrap::-webkit-scrollbar {
@@ -316,12 +318,15 @@
   box-shadow: 0 1px 0 var(--color-border), 0 2px 4px rgba(0, 0, 0, 0.04);
 }
 
-/* Sticky Pagination Footer */
+/* Sticky Pagination Footer — Always pinned to the bottom */
 .incident-table-wrap .data-table__pagination {
   position: sticky;
   bottom: 0;
+  left: 0;
+  right: 0;
   z-index: 20;
-  margin-top: auto;
+  margin-top: auto !important;
+  flex-shrink: 0;
   background: var(--color-surface) !important;
   border-top: 1px solid var(--color-border);
   box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.04);

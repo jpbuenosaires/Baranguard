@@ -731,10 +731,22 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
       const changed = previous === null
         ? []
         : DEPENDENCIES.filter(([key]) => row[key] !== previous[key]);
-      return { row, changed, isFirst: previous === null };
+      return { row, changed, isFirst: previous === null, previous };
     });
 
-    for (const { row, changed, isFirst } of entries.reverse()) {
+    // The change log lists only genuine status transitions (and the initial check).
+    // Heartbeat rows with zero status changes must never render as blank rows.
+    const entriesToDisplay = entries.filter((e) => e.isFirst || e.changed.length > 0);
+
+    if (entriesToDisplay.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'health-history__empty';
+      empty.textContent = 'No status changes recorded yet. The first check writes one entry; after that, only changes appear.';
+      section.appendChild(empty);
+      return;
+    }
+
+    for (const { row, changed, isFirst, previous } of entriesToDisplay.reverse()) {
       const item = document.createElement('li');
       item.className = 'health-history__item';
 
@@ -755,9 +767,11 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
       item.appendChild(what);
 
       // A transition INTO a non-healthy state is the one worth spotting
-      // in a scan; recoveries are good news and do not need to shout.
+      // in a scan; recoveries are good news and highlighted in success tone.
       if (changed.some(([key]) => row[key] === 'unhealthy')) {
         item.classList.add('health-history__item--degraded');
+      } else if (changed.some(([key]) => row[key] === 'healthy' && previous && previous[key] === 'unhealthy')) {
+        item.classList.add('health-history__item--recovered');
       }
       list.appendChild(item);
     }

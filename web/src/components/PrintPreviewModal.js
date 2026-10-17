@@ -25,6 +25,83 @@ import { formatManilaDateTime } from '../utils/manilaTime.js';
  * @param {string} [options.printedBy] Role or name printed in the page footer ("Printed <Manila time> by <printedBy>").
  * @returns {{ close: () => void, overlay: HTMLElement, sheet: HTMLElement }}
  */
+/**
+ * Detects page break markers (such as .tw-print__page-break, .print-page-break,
+ * or .acc-batch-sheet-break) and splits a multi-page document into discrete
+ * page HTML strings so each page renders as a distinct physical A4 sheet.
+ *
+ * @param {string} sheetHtml
+ * @returns {string[]} Array of page HTML strings
+ */
+function splitIntoPages(sheetHtml) {
+  if (!sheetHtml || typeof sheetHtml !== 'string') return [sheetHtml || ''];
+
+  if (!sheetHtml.includes('tw-print__page-break') &&
+      !sheetHtml.includes('acc-batch-sheet-break') &&
+      !sheetHtml.includes('print-page-break')) {
+    return [sheetHtml];
+  }
+
+  const container = document.createElement('div');
+  container.innerHTML = sheetHtml.trim();
+
+  // Case 1: Batch accomplishment report sheets (.acc-batch-sheet-break)
+  const batchSheets = container.querySelectorAll('.acc-batch-sheet-break');
+  if (batchSheets.length > 0) {
+    return Array.from(batchSheets).map((el) => el.innerHTML || el.outerHTML);
+  }
+
+  // Case 2: Multi-page forms separated by .tw-print__page-break or .print-page-break
+  const breakMarkers = container.querySelectorAll('.tw-print__page-break, .print-page-break');
+  if (breakMarkers.length > 0) {
+    const pages = [];
+    if (container.children.length === 1 && (container.firstElementChild.classList.contains('tw-print') || container.firstElementChild.classList.contains('tw-print--wide'))) {
+      const wrapper = container.firstElementChild;
+      const wrapperClass = wrapper.className;
+      let currentPageNodes = [];
+
+      for (const child of Array.from(wrapper.childNodes)) {
+        if (child.nodeType === 1 && (child.classList.contains('tw-print__page-break') || child.classList.contains('print-page-break'))) {
+          const pageDiv = document.createElement('div');
+          pageDiv.className = wrapperClass;
+          currentPageNodes.forEach((node) => pageDiv.appendChild(node.cloneNode(true)));
+          pages.push(pageDiv.outerHTML);
+          currentPageNodes = [];
+        } else {
+          currentPageNodes.push(child);
+        }
+      }
+      if (currentPageNodes.length > 0) {
+        const pageDiv = document.createElement('div');
+        pageDiv.className = wrapperClass;
+        currentPageNodes.forEach((node) => pageDiv.appendChild(node.cloneNode(true)));
+        pages.push(pageDiv.outerHTML);
+      }
+      return pages.length > 0 ? pages : [sheetHtml];
+    } else {
+      let currentPageNodes = [];
+      for (const child of Array.from(container.childNodes)) {
+        if (child.nodeType === 1 && (child.classList.contains('tw-print__page-break') || child.classList.contains('print-page-break'))) {
+          const pageDiv = document.createElement('div');
+          currentPageNodes.forEach((node) => pageDiv.appendChild(node.cloneNode(true)));
+          pages.push(pageDiv.innerHTML);
+          currentPageNodes = [];
+        } else {
+          currentPageNodes.push(child);
+        }
+      }
+      if (currentPageNodes.length > 0) {
+        const pageDiv = document.createElement('div');
+        currentPageNodes.forEach((node) => pageDiv.appendChild(node.cloneNode(true)));
+        pages.push(pageDiv.innerHTML);
+      }
+      return pages.length > 0 ? pages : [sheetHtml];
+    }
+  }
+
+  return [sheetHtml];
+}
+
 export function openPrintPreviewModal({
   title = 'Printable Official Excerpt',
   subtitle = 'Formatted A4 working sheet',
@@ -42,13 +119,44 @@ export function openPrintPreviewModal({
   const overlay = document.createElement('div');
   overlay.className = 'modal-backdrop print-modal-backdrop';
 
+  const isLandscape = orientation === 'landscape';
+  const sheetLandscapeClasses = isLandscape ? 'print-sheet--landscape tw-print-sheet--landscape' : '';
+  const pages = splitIntoPages(sheetHtml);
+  const stampDateStr = formatManilaDateTime(new Date());
+
+  let viewportHtml = '';
+  if (pages.length <= 1) {
+    const stamp = `Printed ${escapeHtml(stampDateStr)} (Philippine time)${printedBy ? ` by ${escapeHtml(printedBy)}` : ''}`;
+    viewportHtml = `
+      <div id="${escapeHtml(sheetId)}" class="print-sheet ${sheetLandscapeClasses}">
+        ${pages[0] || ''}
+        <p class="print-sheet__stamp">${stamp}</p>
+      </div>
+    `;
+  } else {
+    const sheets = pages.map((pageHtml, idx) => {
+      const pageNum = idx + 1;
+      const stamp = `Printed ${escapeHtml(stampDateStr)} (Philippine time)${printedBy ? ` by ${escapeHtml(printedBy)}` : ''}`;
+      return `
+        <div id="${escapeHtml(sheetId)}-page-${pageNum}" class="print-sheet ${sheetLandscapeClasses}">
+          ${pageHtml}
+          <p class="print-sheet__stamp">${stamp}</p>
+        </div>
+      `;
+    }).join('');
+
+    viewportHtml = `
+      <div id="${escapeHtml(sheetId)}" class="print-sheet-group">
+        ${sheets}
+      </div>
+    `;
+  }
+
   const modal = document.createElement('div');
-  modal.className = 'modal-card print-modal';
+  modal.className = `modal-card print-modal ${isLandscape ? 'print-modal--landscape' : ''}`.trim();
   modal.setAttribute('role', 'dialog');
   modal.setAttribute('aria-modal', 'true');
   modal.setAttribute('aria-label', title);
-
-  const isLandscape = orientation === 'landscape';
 
   modal.innerHTML = `
     <div class="print-modal__header">
@@ -63,10 +171,7 @@ export function openPrintPreviewModal({
     </div>
 
     <div class="print-modal__viewport">
-      <div id="${escapeHtml(sheetId)}" class="print-sheet ${isLandscape ? 'print-sheet--landscape' : ''}">
-        ${sheetHtml}
-        <p class="print-sheet__stamp">Printed ${escapeHtml(formatManilaDateTime(new Date()))} (Philippine time)${printedBy ? ` by ${escapeHtml(printedBy)}` : ''}</p>
-      </div>
+      ${viewportHtml}
     </div>
 
     <div class="print-modal__footer">
@@ -104,14 +209,15 @@ export function openPrintPreviewModal({
     orientationStyle.id = 'print-page-orientation-override';
     document.head.appendChild(orientationStyle);
   }
+  const marginBoxes = '@bottom-left { content: var(--print-stamp, ""); font-size: 8pt; font-family: var(--font-base, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif); color: #64748b; } @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; font-family: var(--font-base, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif); color: #64748b; }';
   orientationStyle.textContent = isLandscape
-    ? '@page { size: A4 landscape; margin: 12mm 15mm 15mm 15mm; }'
-    : '@page { size: A4 portrait; margin: 12mm 15mm 15mm 15mm; }';
+    ? `@page { size: A4 landscape; margin: 12mm 15mm 15mm 15mm; ${marginBoxes} }`
+    : `@page { size: A4 portrait; margin: 12mm 15mm 15mm 15mm; ${marginBoxes} }`;
 
-  // The stamp is also fed to the @page bottom-left margin box so it repeats on
-  // every A4 page without overlapping table rows (see tanod-workflow.css).
-  const stampText = modal.querySelector('.print-sheet__stamp')?.textContent || '';
-  document.documentElement.style.setProperty('--print-stamp', JSON.stringify(stampText));
+  // The stamp is fed to the @page bottom-left margin box so it repeats on
+  // every A4 page as the single, authoritative footer without in-body duplication.
+  const baseStampText = modal.querySelector('.print-sheet__stamp')?.textContent || `Printed ${stampDateStr} (Philippine time)${printedBy ? ` by ${printedBy}` : ''}`;
+  document.documentElement.style.setProperty('--print-stamp', JSON.stringify(baseStampText));
 
   const onKeyDown = (event) => {
     if (event.key === 'Escape') {
@@ -153,6 +259,19 @@ export function openPrintPreviewModal({
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();
   });
+
+  // Direct printing: let the printer handle the preview without the redundant in-app modal.
+  // When the native print dialog closes (printed or cancelled), clean up automatically.
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('afterprint', close, { once: true });
+  }
+
+  // Trigger the native print dialog directly
+  if (typeof window !== 'undefined' && typeof window.print === 'function') {
+    try {
+      window.print();
+    } catch (_) {}
+  }
 
   return {
     close,

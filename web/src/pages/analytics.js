@@ -118,8 +118,10 @@ export function renderAnalyticsPage(root, user, onLoggedOut, navigate) {
     pageHeader.actions.innerHTML = '';
     body.innerHTML = '';
     if (activeTab === 'reports') {
+      body.classList.remove('analytics-body--heatmap');
       renderReportsTab(body, pageHeader, user, navigate);
     } else if (activeTab === 'heatmap') {
+      body.classList.add('analytics-body--heatmap');
       renderHeatmapTab(body, pageHeader, user);
     }
   }

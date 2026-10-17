@@ -1476,9 +1476,46 @@
    Advisory List tab (migration 0018)
    ========================================================================== */
 
+.sms-subscribers-page-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  width: 100%;
+  padding: var(--spacing-md) var(--spacing-lg) var(--spacing-2xl);
+  box-sizing: border-box;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.sms-subscribers-intro-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, var(--color-border));
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.sms-subscribers-intro-icon {
+  color: var(--color-link);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.sms-subscribers-intro-text strong {
+  color: var(--color-text-primary);
+}
+
 .sms-subscriber-form {
-  padding: var(--pad-panel);
-  margin-bottom: var(--spacing-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: var(--spacing-md);
 }
 
 .sms-subscriber-form__row {
@@ -1486,14 +1523,124 @@
   flex-wrap: wrap;
   gap: var(--spacing-sm);
   align-items: center;
+  width: 100%;
 }
-.sms-subscriber-form__row input[type="tel"] { flex: 0 1 12rem; }
-.sms-subscriber-form__row input[type="text"] { flex: 1 1 16rem; min-width: 0; }
-.sms-subscriber-form__row select { flex: 0 1 16rem; }
+
+.sms-subscriber-form__row .sms-subscriber-input,
+.sms-subscriber-form__row .sms-subscriber-select {
+  height: var(--control-height, 38px);
+  padding: 0 var(--spacing-sm);
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sms-subscriber-form__row .sms-subscriber-input:focus,
+.sms-subscriber-form__row .sms-subscriber-select:focus {
+  border-color: var(--color-primary);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.sms-subscriber-form__row input[type="tel"] {
+  flex: 0 1 13rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sms-subscriber-form__row .sms-subscriber-select {
+  flex: 0 1 16rem;
+  padding-right: 2.25rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem 1rem;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+[data-theme="dark"] .sms-subscriber-form__row .sms-subscriber-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+}
+
+.sms-subscriber-form__row input[type="text"] {
+  flex: 1 1 16rem;
+  min-width: 140px;
+}
+
+.sms-subscriber-add-btn {
+  flex-shrink: 0;
+  height: var(--control-height, 38px);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs, 4px);
+  padding: 0 var(--spacing-md);
+  font-weight: 600;
+}
+
+.sms-subscribers-list-host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  width: 100%;
+}
+
+.sms-subscribers-stat-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  max-width: 32rem;
+}
+
+.sms-subscribers-table-card {
+  width: 100%;
+  margin: 0;
+}
+
+.sms-subscriber-number {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sms-subscriber-consent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sms-subscriber-status-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
 
 .sms-subscriber-note {
   color: var(--color-text-tertiary);
   font-size: var(--font-size-xs);
+  line-height: 1.3;
+}
+
+.sms-subscriber-optout-btn {
+  padding: 4px 10px;
+  font-size: var(--font-size-label);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.sms-subscriber-optout-btn:hover {
+  background: var(--tint-critical-bg, #fee2e2);
+  color: var(--color-critical-text, #b91c1c);
+  border-color: var(--color-critical, #ef4444);
 }
 
 /* An opted-out row stays visible on purpose — it is the record that the
@@ -1586,4 +1733,55 @@
 
 .sms-segment-counter {
   margin-top: var(--spacing-xs);
+}
+
+/* ==========================================================================
+   12. Activity Log Table Fit & Proportions
+   ========================================================================== */
+
+.sms-log-page-container .split-panel {
+  grid-template-columns: minmax(0, 1fr) 18.5rem;
+  gap: var(--spacing-md);
+}
+
+.sms-table-card .data-table {
+  width: 100%;
+  min-width: 680px;
+}
+
+.sms-table-card .data-table thead th,
+.sms-table-card .data-table tbody td {
+  padding-left: var(--spacing-xs, 6px) !important;
+  padding-right: var(--spacing-xs, 6px) !important;
+}
+
+.sms-code-cell {
+  white-space: nowrap !important;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  display: inline-block;
+}
+
+.sms-log-direction-cell,
+.sms-log-time-cell {
+  white-space: nowrap !important;
+}
+
+.sms-log-status-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  gap: 2px;
+  max-width: 100%;
+}
+
+.sms-log-failure-sub {
+  font-size: 0.6875rem;
+  letter-spacing: -0.01em;
+  color: var(--color-critical-text, var(--color-critical));
+  word-break: break-all;
+  max-width: 100%;
+  line-height: 1.25;
 }

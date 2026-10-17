@@ -414,7 +414,7 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
     </div>
 
     <p class="print-sheet__footer">
-      System-generated statistical summary (${escapeHtml(dayLabel(range.from))} to ${escapeHtml(dayLabel(range.to))}) · Generated ${escapeHtml(nowStr)} from the Baranguard Operations Console.
+      System-generated statistical summary (${escapeHtml(dayLabel(range.from))} to ${escapeHtml(dayLabel(range.to))})
     </p>
   `;
 

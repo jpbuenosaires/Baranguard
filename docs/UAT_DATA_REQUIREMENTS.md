@@ -46,7 +46,7 @@ same setup and need no data of their own.
 * 2 active SOS (one for the web tester, one for the phone console), 1 acknowledged, 11 resolved (4 by SMS fallback).
 * 4 pending swap requests (not reyes) on published future shifts; 19 draft future shifts awaiting publish.
 * Accomplishment reports: 6 prepared (one with a flagged duration), 1 returned, 3 open.
-* 6 unconverted legacy citizen reports (not shown on any screen since the inbox was retired 2026-10-17); 3 schools; 1 prepared Annex D term report; 38 referrals; 4 related links.
+* 3 schools; 1 prepared Annex D term report; 38 referrals; 4 related links.
 * System settings: SOS backup contact `09170000099` and gateway `09170000001` (fictitious), so T-08 has a number to text.
 * No dispatch offer is pre-opened (a pre-opened one would block the facilitator's "Broadcast to on-duty tanods").
 
@@ -127,7 +127,6 @@ Legend. **Data**: provided by the seed. **Facilitator**: needs a facilitator act
 | S-06 | An incident with its dispatch closed, plus a target | Data: 130 resolved / completed ones. |
 | S-07 | An incident with an open dispatch | Data. |
 | S-08 | An incident without an open dispatch, then reopen | Data: pending ones; invalid ones exist. |
-| S-09 | Unconverted legacy citizen reports | Data: 6. |
 | S-10 | none | none. |
 | S-11 | School-linked incidents with C-1 text | Data: 13. |
 | S-12 | none; dates must not clash | Data: the seeded term is -45/+45 days; the API has no overlap rule. |
@@ -198,7 +197,7 @@ Build ran clean on a fresh `baranguard_uiseed` (42 migrations, seed loaded). Che
 tanod's duty state, active dispatch count and published-shift cover (as in the account table); 12 pending
 incidents with no dispatch or offer; 2 active dispatches, none created before its incident; 2 active SOS;
 4 pending swaps on published future shifts; 3 open accomplishment reports and reyes' latest entry before
-the last 3 days; 6 unconverted citizen reports; the SOS settings; no pre-opened offer. Over HTTP (Apache :8081)
+the last 3 days; the SOS settings; no pre-opened offer. Over HTTP (Apache :8081)
 Admin, Secretary and Punong Barangay logins succeed and the main lists answer 200; dispatching `tanod.dichoso`
 is refused with 422 `NO_PUBLISHED_SHIFT` and dispatching `tanod.espinosa` is refused as unavailable. Not run:
 any scenario in a browser or on a phone.

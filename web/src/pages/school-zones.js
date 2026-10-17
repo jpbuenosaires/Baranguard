@@ -114,10 +114,6 @@ function warnIfLetterheadMissing(lh) {
  * @param {(page:string, param?:any) => void} navigate
  * @param {{tab?:string, reportId?:number}} [param]
  */
-/** Shown on the page and on every printout until the circular's own annex formats are checked (owner decision 2026-10-17). */
-const DRAFT_LAYOUT_TEXT = "Draft layout: built from the barangay's own forms. The official annex formats and deadlines of DILG MC 2026-037 have not been checked against the circular, so confirm them before filing.";
-const DRAFT_LAYOUT_PRINT_HTML = `<p class="draft-layout-note" style="margin:0 0 10px;padding:6px 10px;border:1px solid #b45309;font-size:0.75rem;font-weight:600;">${DRAFT_LAYOUT_TEXT}</p>`;
-
 export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) {
   const initial = normalizeParam(param);
   const canEdit = user.role === 'admin' || user.role === 'secretary';
@@ -131,9 +127,6 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     icon: icons.shield,
   });
 
-  const draftNote = h('div', 'tw-draft-layout-note', DRAFT_LAYOUT_TEXT);
-  draftNote.setAttribute('role', 'note');
-  container.appendChild(draftNote);
   const body = h('div', 'tw-ssz');
   container.appendChild(body);
 
@@ -267,7 +260,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
         title: 'Annex B — Safer School Zones Inventory',
         subtitle: `${active.length} active school${active.length === 1 ? '' : 's'}`,
         sheetId: 'printable-annex-b',
-        sheetHtml: DRAFT_LAYOUT_PRINT_HTML + buildAnnexBHtml(active, lh),
+        sheetHtml: buildAnnexBHtml(active, lh),
         printedBy: printedByLabel(user),
         orientation: 'landscape',
       });
@@ -911,7 +904,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
           title: 'Annex C-1 — Incident Report, Safer School Zones',
           subtitle: `${toPrint.length} incident${toPrint.length === 1 ? '' : 's'}`,
           sheetId: 'printable-annex-c1',
-          sheetHtml: DRAFT_LAYOUT_PRINT_HTML + buildAnnexC1Html(toPrint.map(toC1Row), lh, {
+          sheetHtml: buildAnnexC1Html(toPrint.map(toC1Row), lh, {
             count: toPrint.length,
             total: rows.length,
             from: state.from,
@@ -1605,7 +1598,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
                         title: 'Annex D — Safer School Zones Term-Based Report',
                         subtitle: `${fullReport.termLabel} · ${TERM_STATUS_LABELS[fullReport.status] || fullReport.status}`,
                         sheetId: 'printable-annex-d',
-                        sheetHtml: DRAFT_LAYOUT_PRINT_HTML + buildAnnexDHtml(fullReport, lh),
+                        sheetHtml: buildAnnexDHtml(fullReport, lh),
                         printedBy: printedByLabel(user),
                         orientation: 'landscape',
                       });

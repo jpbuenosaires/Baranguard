@@ -164,20 +164,20 @@ function formatSmartTime(isoOrTime) {
 }
 
 const COLUMNS = [
-  { key: 'id', label: 'ID', width: '4.5rem', csvValue: (row) => row.logId },
-  { key: 'direction', label: 'Direction', width: '7rem', csvValue: (row) => row.direction },
-  { key: 'type', label: 'Type', width: '9rem', csvValue: (row) => row.messageType },
-  { key: 'transport', label: 'Sent through', width: '8rem', csvValue: (row) => row.transport },
+  { key: 'id', label: 'ID', width: '9%', csvValue: (row) => row.logId },
+  { key: 'direction', label: 'Direction', width: '11%', csvValue: (row) => row.direction },
+  { key: 'type', label: 'Type', width: '13%', csvValue: (row) => row.messageType },
+  { key: 'transport', label: 'Sent through', width: '15%', csvValue: (row) => row.transport },
   {
-    key: 'linked', label: 'Linked to',
+    key: 'linked', label: 'Linked to', width: '17%',
     csvValue: (row) => [
       row.incidentId ? `incident:${row.incidentId}` : null,
       row.dispatchId ? `dispatch:${row.dispatchId}` : null,
       row.reportId ? `report:${row.reportId}` : null,
     ].filter(Boolean).join(' '),
   },
-  { key: 'when', label: 'Sent / received (Manila time)', csvValue: (row) => row.sentAt || row.receivedAt || row.createdAt || '' },
-  { key: 'status', label: 'Status', align: 'right', csvValue: (row) => row.status },
+  { key: 'when', label: 'Sent / Received', width: '17%', csvValue: (row) => row.sentAt || row.receivedAt || row.createdAt || '' },
+  { key: 'status', label: 'Status', align: 'right', width: '18%', csvValue: (row) => row.status },
 ];
 
 /**
@@ -366,28 +366,42 @@ const CONSENT_SOURCE_LABELS = {
  *
  * All four states (§8): loading, error-with-retry, empty, populated.
  */
+const SUBSCRIBER_COLUMNS = [
+  { key: 'number', label: 'Number', width: '20%' },
+  { key: 'consent', label: 'Consent', width: '38%' },
+  { key: 'recorded', label: 'Recorded', width: '16%' },
+  { key: 'status', label: 'Status', width: '14%' },
+  { key: 'action', label: 'Action', align: 'right', width: '12%' },
+];
+
 function renderSubscribersTab(container) {
+  container.className = 'sms-subscribers-page-container';
   container.innerHTML = '';
 
-  const intro = document.createElement('p');
-  intro.className = 'note';
-  intro.textContent = 'Residents who have agreed to receive barangay-wide advisories (flood, curfew, suspension of classes). '
-    + 'Numbers collected for incident reports are deliberately NOT reusable here — consent for one purpose is not consent for another '
-    + 'under the Data Privacy Act, so every entry records how agreement was obtained.';
+  const intro = document.createElement('div');
+  intro.className = 'sms-subscribers-intro-banner';
+  intro.innerHTML = `
+    <span class="sms-subscribers-intro-icon" aria-hidden="true">${icons.info(18)}</span>
+    <div class="sms-subscribers-intro-text">
+      <strong>Consent-based advisory roster:</strong> Residents who have agreed to receive barangay-wide advisories (flood, curfew, suspension of classes). Numbers collected for incident reports are deliberately NOT reusable here — consent for one purpose is not consent for another under the Data Privacy Act, so every entry records how agreement was obtained.
+    </div>
+  `;
   container.appendChild(intro);
 
   const formCard = document.createElement('div');
-  formCard.className = 'card sms-subscriber-form';
+  formCard.className = 'sms-subscriber-form';
   const form = document.createElement('form');
   form.className = 'sms-subscriber-form__row';
 
   const numberInput = document.createElement('input');
   numberInput.type = 'tel';
+  numberInput.className = 'sms-subscriber-input';
   numberInput.placeholder = 'Mobile number';
   numberInput.setAttribute('aria-label', 'Subscriber mobile number');
   numberInput.required = true;
 
   const sourceSelect = document.createElement('select');
+  sourceSelect.className = 'sms-subscriber-select';
   sourceSelect.setAttribute('aria-label', 'How consent was obtained');
   // No blank option and no pre-selected "default" that could be accepted
   // without a decision — the first entry is a prompt that fails
@@ -405,20 +419,22 @@ function renderSubscribersTab(container) {
 
   const noteInput = document.createElement('input');
   noteInput.type = 'text';
+  noteInput.className = 'sms-subscriber-input';
   noteInput.placeholder = 'Note (optional) — e.g. barangay assembly list';
   noteInput.setAttribute('aria-label', 'Consent note');
   noteInput.maxLength = 255;
 
   const addBtn = document.createElement('button');
   addBtn.type = 'submit';
-  addBtn.className = 'primary';
-  addBtn.textContent = 'Add subscriber';
+  addBtn.className = 'primary sms-subscriber-add-btn';
+  addBtn.innerHTML = `<span aria-hidden="true">${icons.plus(16)}</span><span>Add subscriber</span>`;
 
   form.append(numberInput, sourceSelect, noteInput, addBtn);
   formCard.appendChild(form);
   container.appendChild(formCard);
 
   const listHost = document.createElement('div');
+  listHost.className = 'sms-subscribers-list-host';
   container.appendChild(listHost);
 
   form.addEventListener('submit', async (event) => {
@@ -477,12 +493,15 @@ function renderSubscribersTab(container) {
     listHost.innerHTML = '';
 
     const strip = document.createElement('div');
-    strip.className = 'stat-card-grid';
-    for (const [label, value] of [['Active subscribers', data.activeCount], ['Total on record', data.totalCount]]) {
+    strip.className = 'stat-card-grid stat-card-grid--2 sms-subscribers-stat-grid';
+    for (const [label, value, tone] of [
+      ['Active subscribers', data.activeCount, 'success'],
+      ['Total on record', data.totalCount, 'primary'],
+    ]) {
       const cell = document.createElement('div');
       cell.className = 'stat-card';
       const v = document.createElement('span');
-      v.className = 'stat-card__value';
+      v.className = `stat-card__value${tone ? ' stat-card__value--' + tone : ''}`;
       v.textContent = String(value);
       const l = document.createElement('span');
       l.className = 'stat-card__label';
@@ -492,85 +511,96 @@ function renderSubscribersTab(container) {
     }
     listHost.appendChild(strip);
 
-    if (data.items.length === 0) {
-      const empty = document.createElement('p');
-      empty.className = 'note';
-      empty.textContent = 'No one has subscribed yet. A barangay-wide advisory will reach nobody until residents opt in.';
-      listHost.appendChild(empty);
-      return;
-    }
+    const tableCard = document.createElement('div');
+    tableCard.className = 'sms-subscribers-table-card unified-table-card';
 
-    const table = document.createElement('table');
-    table.className = 'data-table';
-    table.innerHTML = '<caption class="sr-only">Advisory subscribers</caption><thead><tr><th scope="col">Number</th><th scope="col">Consent</th><th scope="col">Recorded</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>';
-    const tbody = document.createElement('tbody');
+    tableCard.appendChild(DataTable({
+      columns: SUBSCRIBER_COLUMNS,
+      rows: data.items,
+      rowKey: (row) => row.subscriberId,
+      rowClass: (row) => row.optedOutAt ? 'is-opted-out' : '',
+      caption: 'Advisory subscribers',
+      emptyIcon: icons.users,
+      emptyMessage: 'No one has subscribed yet. A barangay-wide advisory will reach nobody until residents opt in.',
+      renderCell: (item, key) => renderSubscriberCell(item, key, load),
+    }));
 
-    for (const item of data.items) {
-      const tr = document.createElement('tr');
-      if (item.optedOutAt) tr.className = 'is-opted-out';
-
-      const num = document.createElement('td');
-      num.textContent = item.contactNumber;
-
-      const consent = document.createElement('td');
-      consent.textContent = CONSENT_SOURCE_LABELS[item.consentSource] || 'Not stated';
-      if (item.consentNote) {
-        const note = document.createElement('small');
-        note.className = 'sms-subscriber-note';
-        note.textContent = item.consentNote;
-        consent.appendChild(document.createElement('br'));
-        consent.appendChild(note);
-      }
-
-      const when = document.createElement('td');
-      when.textContent = item.consentAt ? formatManilaDate(item.consentAt) : '—';
-
-      const status = document.createElement('td');
-      const pill = document.createElement('span');
-      pill.className = `status-pill ${item.optedOutAt ? 'status-pill--neutral' : 'status-pill--success'}`;
-      pill.textContent = item.optedOutAt ? 'Opted out' : 'Subscribed';
-      status.appendChild(pill);
-      if (item.optedOutAt) {
-        const date = document.createElement('small');
-        date.className = 'sms-subscriber-note';
-        date.textContent = `on ${formatManilaDate(item.optedOutAt)}`;
-        status.appendChild(document.createElement('br'));
-        status.appendChild(date);
-      }
-
-      const action = document.createElement('td');
-      if (!item.optedOutAt) {
-        const out = document.createElement('button');
-        out.type = 'button';
-        out.className = 'ghost';
-        out.textContent = 'Opt out';
-        out.setAttribute('aria-label', `Record opt-out for ${item.contactNumber}`);
-        out.addEventListener('click', async () => {
-          const ok = await confirmDialog({
-            title: 'Record opt-out?',
-            message: `${item.contactNumber} will stop receiving barangay advisories. The record is kept, not deleted, so the withdrawal can be shown to have been honoured.`,
-            confirmLabel: 'Record opt-out',
-          });
-          if (!ok) return;
-          try {
-            await optOutSmsSubscriber(item.subscriberId);
-            showToast('Opt-out recorded.', { variant: 'success' });
-            await load();
-          } catch (err) {
-            showToast(err instanceof ApiClientError ? err.message : 'Could not record the opt-out.', { variant: 'error' });
-          }
-        });
-        action.appendChild(out);
-      }
-
-      tr.append(num, consent, when, status, action);
-      tbody.appendChild(tr);
-    }
-    table.appendChild(tbody);
-    listHost.appendChild(table);
+    listHost.appendChild(tableCard);
   }
 
   load();
+}
+
+function renderSubscriberCell(item, key, reload) {
+  switch (key) {
+    case 'number': {
+      const span = document.createElement('span');
+      span.className = 'sms-subscriber-number';
+      span.textContent = item.contactNumber;
+      return span;
+    }
+    case 'consent': {
+      const wrap = document.createElement('div');
+      wrap.className = 'sms-subscriber-consent';
+      const main = document.createElement('div');
+      main.textContent = CONSENT_SOURCE_LABELS[item.consentSource] || 'Not stated';
+      wrap.appendChild(main);
+      if (item.consentNote) {
+        const note = document.createElement('div');
+        note.className = 'sms-subscriber-note';
+        note.textContent = item.consentNote;
+        wrap.appendChild(note);
+      }
+      return wrap;
+    }
+    case 'recorded': {
+      const span = document.createElement('span');
+      span.className = 'text-secondary';
+      span.textContent = item.consentAt ? formatManilaDate(item.consentAt) : '—';
+      return span;
+    }
+    case 'status': {
+      const wrap = document.createElement('div');
+      wrap.className = 'sms-subscriber-status-wrap';
+      const pill = document.createElement('span');
+      pill.className = `status-pill ${item.optedOutAt ? 'status-pill--neutral' : 'status-pill--success'}`;
+      pill.textContent = item.optedOutAt ? 'Opted out' : 'Subscribed';
+      wrap.appendChild(pill);
+      if (item.optedOutAt) {
+        const date = document.createElement('div');
+        date.className = 'sms-subscriber-note';
+        date.textContent = `on ${formatManilaDate(item.optedOutAt)}`;
+        wrap.appendChild(date);
+      }
+      return wrap;
+    }
+    case 'action': {
+      if (item.optedOutAt) return '';
+      const out = document.createElement('button');
+      out.type = 'button';
+      out.className = 'sms-subscriber-optout-btn';
+      out.textContent = 'Opt out';
+      out.setAttribute('aria-label', `Record opt-out for ${item.contactNumber}`);
+      out.addEventListener('click', async () => {
+        const ok = await confirmDialog({
+          title: 'Record opt-out?',
+          message: `${item.contactNumber} will stop receiving barangay advisories. The record is kept, not deleted, so the withdrawal can be shown to have been honoured.`,
+          confirmLabel: 'Record opt-out',
+        });
+        if (!ok) return;
+        try {
+          await optOutSmsSubscriber(item.subscriberId);
+          showToast('Opt-out recorded.', { variant: 'success' });
+          await reload();
+        } catch (err) {
+          showToast(err instanceof ApiClientError ? err.message : 'Could not record the opt-out.', { variant: 'error' });
+        }
+      });
+      return out;
+    }
+    default:
+      return '';
+  }
 }
 
 // ============================================================
@@ -2255,11 +2285,15 @@ function buildFilterSelect(id, srLabel, allLabel, options) {
 
 function renderSmsLogCell(row, key, navigate) {
   switch (key) {
-    case 'id':
-      return formatSmsCode(row.logId);
+    case 'id': {
+      const span = document.createElement('span');
+      span.className = 'sms-code-cell';
+      span.textContent = formatSmsCode(row.logId);
+      return span;
+    }
     case 'direction': {
       const span = document.createElement('span');
-      span.className = 'data-table__sub';
+      span.className = 'data-table__sub sms-log-direction-cell';
       span.innerHTML = `<span aria-hidden="true">${row.direction === 'inbound' ? icons.arrowDownLeft(14) : icons.arrowUpRight(14)}</span>`;
       span.append(' ' + (row.direction === 'inbound' ? 'Incoming' : 'Outgoing'));
       return span;
@@ -2300,11 +2334,14 @@ function renderSmsLogCell(row, key, navigate) {
     }
     case 'when': {
       const at = row.sentAt || row.receivedAt || row.createdAt;
-      return at ? formatManilaDateTime(at) : '—';
+      const span = document.createElement('span');
+      span.className = 'sms-log-time-cell';
+      span.textContent = at ? formatManilaDateTime(at) : '—';
+      return span;
     }
     case 'status': {
       const wrap = document.createElement('span');
-      wrap.className = 'data-table__stacked';
+      wrap.className = 'data-table__stacked sms-log-status-wrap';
       const pill = document.createElement('span');
       const cls = STATUS_PILL_CLASS[row.status] || 'status-pill--neutral';
       pill.className = `status-pill ${cls}`;
@@ -2312,7 +2349,7 @@ function renderSmsLogCell(row, key, navigate) {
       wrap.appendChild(pill);
       if (row.failureReason) {
         const reason = document.createElement('span');
-        reason.className = 'data-table__sub';
+        reason.className = 'data-table__sub sms-log-failure-sub';
         reason.textContent = row.failureReason;
         wrap.appendChild(reason);
       }
