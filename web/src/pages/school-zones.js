@@ -250,7 +250,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     // Print & Add School in pageHeader.actions
     const printBtn = h('button', 'ghost');
     printBtn.type = 'button';
-    printBtn.innerHTML = `${icons.printer(16)}<span>Preview &amp; print Annex B</span>`;
+    printBtn.innerHTML = `${icons.printer(16)}<span>Print preview: Annex B</span>`;
     printBtn.addEventListener('click', async () => {
       const active = schools.filter((s) => s.isActive !== false && s.isActive !== 0);
       if (active.length === 0) { showToast('There are no active schools to print.', { variant: 'info' }); return; }
@@ -880,7 +880,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
 
     const printBtn = h('button', 'ghost');
     printBtn.type = 'button';
-    printBtn.innerHTML = `${icons.printer(16)}<span>Preview &amp; print Annex C-1</span>`;
+    printBtn.innerHTML = `${icons.printer(16)}<span>Print preview: Annex C-1</span>`;
     pageHeader.actions.appendChild(printBtn);
     printBtn.addEventListener('click', async () => {
       const rows = filtered();
@@ -1584,7 +1584,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
                   // Quick Print preview shortcut
                   const printBtn = h('button', 'ghost d-row-action-btn');
                   printBtn.type = 'button';
-                  printBtn.title = 'Preview & print Annex D';
+                  printBtn.title = 'Print preview of Annex D';
                   printBtn.setAttribute('aria-label', `Preview and print Annex D for ${r.termLabel}`);
                   printBtn.innerHTML = `<span aria-hidden="true">${icons.printer ? icons.printer(14) : '🖨️'}</span><span>Print</span>`;
                   printBtn.addEventListener('click', async (e) => {
@@ -1672,7 +1672,7 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
 
       const printBtn = h('button', 'ghost');
       printBtn.type = 'button';
-      printBtn.innerHTML = `${icons.printer(16)}<span>Preview &amp; print Annex D</span>`;
+      printBtn.innerHTML = `${icons.printer(16)}<span>Print preview: Annex D</span>`;
       printBtn.addEventListener('click', async () => {
         printBtn.disabled = true;
         try {

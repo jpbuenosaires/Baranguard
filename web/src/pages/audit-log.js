@@ -443,7 +443,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   previewPrintBtn.id = 'preview-audit-print-btn';
   previewPrintBtn.className = 'ghost';
   previewPrintBtn.classList.add('audit-header-btn');
-  previewPrintBtn.innerHTML = `${icons.printer(16)}<span>Preview &amp; Print Excerpt</span>`;
+  previewPrintBtn.innerHTML = `${icons.printer(16)}<span>Print preview</span>`;
   previewPrintBtn.addEventListener('click', () => {
     const filtered = filterItemsBySearch(currentItems);
     const categoryLabel = activeFilterCategory && CATEGORIES[activeFilterCategory]

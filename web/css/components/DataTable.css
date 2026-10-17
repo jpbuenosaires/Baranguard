@@ -191,7 +191,7 @@
   overflow: hidden !important;
   display: flex;
   flex-direction: column;
-  padding: var(--spacing-lg) !important;
+  padding: var(--page-padding) !important;
   height: 100% !important;
   box-sizing: border-box;
 }

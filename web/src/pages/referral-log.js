@@ -77,7 +77,7 @@ export function renderReferralLogPage(root, user, onLoggedOut, navigate) {
     root, user, onLoggedOut, navigate,
     activeKey: 'referrals',
     title: 'Referral Log',
-    subtitle: 'Inter-agency delegations — incidents referred to PNP, BFP, EMS, and government offices',
+    subtitle: 'Incidents referred to PNP, BFP, EMS, the Lupon and other offices',
     icon: icons.send,
   });
 

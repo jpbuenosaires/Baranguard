@@ -367,7 +367,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   const exportBtn = document.createElement('button');
   exportBtn.type = 'button';
   exportBtn.className = 'btn-incident-export';
-  exportBtn.innerHTML = `${icons.printer(16)} <span>Shift Handover / Export</span>`;
+  exportBtn.innerHTML = `${icons.printer(16)} <span>Shift handover</span>`;
   exportBtn.title = 'Print Shift Handover Summary or Export CSV';
   exportBtn.setAttribute('aria-label', 'Print Shift Handover Summary or Export CSV');
   exportBtn.addEventListener('click', () => {
@@ -589,7 +589,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   const funnelBtn = document.createElement('button');
   funnelBtn.type = 'button';
   funnelBtn.className = 'incident-filter-funnel';
-  funnelBtn.setAttribute('aria-label', 'Reset filters');
+  funnelBtn.setAttribute('aria-label', 'Clear filters');
   funnelBtn.title = 'Reset all filters';
   funnelBtn.innerHTML = icons.filter(16);
   funnelBtn.addEventListener('click', () => {
@@ -997,7 +997,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         eyeBtn.type = 'button';
         eyeBtn.className = 'incident-row-eye';
         eyeBtn.setAttribute('aria-label', 'View incident');
-        eyeBtn.innerHTML = icons.eye(16);
+        eyeBtn.innerHTML = `${icons.eye(14)}<span>View</span>`;
         eyeBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           if (selectedIncidentId === row.incidentId && activeViewMode === 'detail' && layout.classList.contains('has-detail')) {

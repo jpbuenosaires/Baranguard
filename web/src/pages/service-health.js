@@ -534,9 +534,22 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
         servicesGrid.appendChild(card);
       });
 
-      groupEl.appendChild(servicesGrid);
-      domainsContainer.appendChild(groupEl);
-    });
+      if (matchingDomainsCount === 0) {
+        const emptyState = document.createElement('div');
+        emptyState.className = 'health-services-empty';
+        emptyState.innerHTML = `
+          <p>No services match the active search or filters.</p>
+          <button type="button" class="ghost">Clear filters</button>
+        `;
+        emptyState.querySelector('button').addEventListener('click', () => {
+          activeFilter = 'all';
+          activeSubsystem = 'all';
+          searchQuery = '';
+          renderHealth(cachedHealth);
+        });
+        domainsContainer.appendChild(emptyState);
+      }
+    }
 
     pageContainer.appendChild(domainsContainer);
 

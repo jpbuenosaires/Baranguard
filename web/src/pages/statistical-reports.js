@@ -501,7 +501,7 @@ export function renderReportsTab(container, pageHeader, user, navigate) {
   previewPrintButton.type = 'button';
   previewPrintButton.className = 'ghost';
   previewPrintButton.id = 'preview-report-print-btn';
-  previewPrintButton.innerHTML = `<span aria-hidden="true">${icons.printer(16)}</span><span>Preview &amp; Print</span>`;
+  previewPrintButton.innerHTML = `<span aria-hidden="true">${icons.printer(16)}</span><span>Print preview</span>`;
   previewPrintButton.addEventListener('click', () => {
     if (!latestSummary) {
       showToast('Report data is still loading. Please wait a moment.', { variant: 'info' });

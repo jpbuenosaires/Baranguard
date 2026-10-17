@@ -66,7 +66,7 @@ describe('Annex D workflow (draft -> prepared -> submitted)', () => {
     const submit = buttonByText(/^Mark as submitted$/);
     assert.ok(submit, 'submit is available once prepared');
     assert.equal(submit.disabled, false);
-    assert.ok(buttonByText(/Preview & print Annex D/), 'Print stays');
+    assert.ok(buttonByText(/Print preview: Annex D/), 'Print stays');
   });
 
   test('a SUBMITTED report has no further actions', async () => {
@@ -85,7 +85,7 @@ describe('Annex D workflow (draft -> prepared -> submitted)', () => {
 
   test('the Annex D print keeps its signature captions with blank lines', async () => {
     await openTerm('admin', termReport());
-    click(buttonByText(/Preview & print Annex D/));
+    click(buttonByText(/Print preview: Annex D/));
     await settle();
     const sheet = document.querySelector('#printable-annex-d');
     assert.ok(sheet, 'print sheet mounted');

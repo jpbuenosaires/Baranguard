@@ -1,0 +1,203 @@
+/**
+ * consistency.css — one look for the controls every screen shares (2026-10-17).
+ * Loaded LAST, so it wins over the page stylesheets without editing each of them.
+ * Source: docs/UI_CONSISTENCY_AUDIT.md. When a page stylesheet is tidied, move its rule
+ * here or delete the override; do not add page-specific button colours or radii.
+ *
+ *   buttons  40 px, 8 px radius, ONE flat primary blue, secondary = white with a border
+ *   toolbar buttons (map toolbars)  36 px, same radius, secondary unless a mode is on
+ *   chips    32 px, pill, selected = filled primary
+ *   badges   sentence case
+ */
+
+:root {
+  --radius-button: 8px;
+  --radius-chip: 9999px;
+  --control-height-toolbar: 2.25rem;
+  --chip-height: 2rem;
+}
+
+/* ---- Primary button: flat blue, no gradient or glow -------------------------------- */
+button.primary,
+.btn-new-incident,
+.incident-form-submit,
+.btn-tanod-assign,
+.user-action-btn--primary,
+.appr-open-all-btn,
+.sms-header-btn.primary {
+  background: var(--color-primary);
+  color: var(--color-white);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-button);
+  min-height: var(--control-height);
+  font-weight: 600;
+  box-shadow: none;
+}
+button.primary:hover,
+.btn-new-incident:hover,
+.incident-form-submit:hover,
+.btn-tanod-assign:hover,
+.user-action-btn--primary:hover,
+.appr-open-all-btn:hover,
+.sms-header-btn.primary:hover {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  filter: none;
+  transform: none;
+  box-shadow: none;
+}
+button.primary:disabled {
+  background: var(--color-disabled-bg);
+  border-color: transparent;
+  color: var(--color-disabled-text);
+}
+
+/* ---- Secondary header buttons share the same radius and height --------------------- */
+.page-header__actions button:not(.primary),
+.page-header-host button:not(.primary):not(.page-tab) {
+  border-radius: var(--radius-button);
+  min-height: var(--control-height);
+}
+
+/* ---- Map toolbars: the same buttons in the same style on both map screens ------------- */
+.btn-recenter,
+.btn-fullscreen,
+.gis-map-primary-btn,
+.gis-map-tool-btn,
+.gis-map-fullscreen-btn {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-button);
+  height: var(--control-height-toolbar);
+  min-height: var(--control-height-toolbar);
+  font-size: var(--font-size-label);
+  font-weight: 600;
+  box-shadow: none;
+}
+.btn-recenter:hover,
+.btn-fullscreen:hover,
+.gis-map-primary-btn:hover,
+.gis-map-tool-btn:hover,
+.gis-map-fullscreen-btn:hover {
+  background: var(--color-bg);
+  border-color: var(--color-primary);
+  color: var(--color-link);
+}
+
+/* ---- Filter chips: one height, one shape, one selected state ------------------------- */
+.filter-chip,
+.incident-kpi-chip,
+.dispatch-map-filter-chip,
+.heatmap-chip,
+.c1-facet-chip,
+.personnel-stat-chip,
+.sms-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: var(--chip-height);
+  min-height: var(--chip-height);
+  padding: 0 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-chip);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-label);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.filter-chip.is-active,
+.incident-kpi-chip.is-active,
+.dispatch-map-filter-chip.is-active,
+.heatmap-chip.heatmap-chip--active,
+.heatmap-chip.is-active,
+.c1-facet-chip.is-active,
+.personnel-stat-chip.is-active,
+.sms-filter-chip.is-active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-white);
+}
+.filter-chip.is-active [class*="count"],
+.incident-kpi-chip.is-active [class*="count"],
+.dispatch-map-filter-chip.is-active [class*="count"],
+.heatmap-chip.heatmap-chip--active [class*="count"],
+.c1-facet-chip.is-active [class*="count"],
+.personnel-stat-chip.is-active [class*="count"],
+.sms-filter-chip.is-active [class*="count"] {
+  background: rgba(255, 255, 255, 0.22);
+  color: var(--color-white);
+}
+
+/* ---- Badges: sentence case everywhere ------------------------------------------------ */
+.status-pill,
+.role-badge {
+  text-transform: capitalize;
+  letter-spacing: 0;
+}
+
+/* ---- Top bar: the clock keeps its width, only the search flexes ---------------------- */
+.topbar__clock { min-width: max-content; }
+.topbar__clock-digits,
+.topbar__clock-shift { white-space: nowrap; }
+.topbar__context { min-width: 0; flex: 0 1 auto; }
+.topbar__search { flex: 1 1 14rem; min-width: 12rem; max-width: 28rem; }
+
+/* ---- Floating help button must not cover the pagination row -------------------------- */
+.incident-floating-help { bottom: 5.5rem; }
+
+/* ---- Info banners: one shape --------------------------------------------------------- */
+.sms-subscribers-intro-banner,
+.heatmap-compliance-banner,
+.map-pkg-banner,
+.d-snapshot-notice,
+.tw-notice,
+.tw-callout {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-primary);
+  padding: var(--spacing-sm-md) var(--spacing-md);
+}
+
+/* ---- Fixes found after the first pass ---------------------------------------------------- */
+/* Page stylesheets colour the active label blue; on the filled chip it must be white. */
+.dispatch-map-filter-chip.is-active[data-filter] { color: var(--color-white); }
+.dispatch-map-filter-chip__label { color: inherit; }
+/* Map toolbar labels stay on one line. */
+.btn-recenter,
+.btn-fullscreen,
+.gis-map-primary-btn,
+.gis-map-tool-btn,
+.gis-map-fullscreen-btn { white-space: nowrap; padding: 0 0.75rem; }
+/* SMS conversation filter: natural-width chips, not stretched pills. */
+.sms-filter-chips-row { gap: var(--spacing-sm); }
+.sms-filter-chips-row .sms-filter-chip { flex: 0 0 auto; }
+
+/* ---- Top bar: breadcrumbs keep their room; search gives way first ------------------------ */
+.topbar__search { flex: 1 1 10rem; min-width: 9rem; }
+.topbar__context { flex-shrink: 0; }
+
+/* ---- Native date and month inputs match the other controls --------------------------------- */
+input[type="date"],
+input[type="month"],
+input[type="datetime-local"] {
+  min-height: var(--control-height);
+  border-radius: var(--radius-button);
+}
+
+/* ---- Row actions: a labelled "View" like the other tables, not a bare icon ------------------ */
+.incident-row-eye {
+  width: auto;
+  height: 2rem;
+  min-height: 2rem;
+  padding: 0 0.75rem;
+  gap: 0.375rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-button);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-label);
+  font-weight: 600;
+}
