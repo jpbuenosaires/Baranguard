@@ -36,6 +36,18 @@ describe('Settings behaviour', () => {
     });
   }
 
+  test('SOS Fallback and Map Packages sections render without the load-error state', async () => {
+    mountPage(renderSettingsPage, { role: 'admin' });
+    await settle();
+    await openSection('SOS Fallback')();
+    await settle();
+    assert.doesNotMatch(text($('.page-content')), /Could not load system settings/);
+    assert.match(text($('.page-content')), /SOS Fallback Contact/);
+    await openSection('Map Packages')();
+    await settle();
+    assert.ok(buttonByText(/Open Map Packages/), 'Map Packages section has its button');
+  });
+
   test('General card is read-only and says "Not yet used" (no Save, nothing sent)', async () => {
     mountPage(renderSettingsPage, { role: 'admin' });
     await settle();
