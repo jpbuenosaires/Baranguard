@@ -399,8 +399,7 @@ admin / secretary / punong_barangay accounts may hold any
 (`backend/lib/ApprovalAuthority.php`, `ELIGIBLE_ROLES`). Backfill: every
 Punong Barangay -> title "Punong Barangay" + `note_report, approve_report,
 approve_roster, approve_annex_d`; every Admin -> title "Chief Tanod" +
-`note_report, prepare_annex_d`. Segregation of duties: a preparer can never
-note/approve their own report (`assertNotPreparer`), and an Admin cannot
+`note_report, prepare_annex_d`. Segregation of duties between preparer and approver was dropped 2026-10-17 (Rule 96); an Admin cannot
 add/remove their own `approve_*` authorities. `PATCH /users/:id` (Admin)
 edits title/authorities; audit `user_approval_authority_changed`.
 
