@@ -29,8 +29,8 @@ import { renderReportsTab } from './statistical-reports.js';
 import { renderHeatmapTab } from './historical-heatmap.js';
 
 const TABS = [
-  { key: 'reports', label: 'Reports' },
-  { key: 'heatmap', label: 'Heatmap' },
+  { key: 'reports', label: 'Reports', icon: 'fileText' },
+  { key: 'heatmap', label: 'Heatmap', icon: 'map' },
 ];
 
 /**
@@ -72,7 +72,7 @@ export function renderAnalyticsPage(root, user, onLoggedOut, navigate) {
     btn.id = `analytics-tab-${tab.key}`;
     btn.setAttribute('role', 'tab');
     btn.setAttribute('aria-controls', 'analytics-tabpanel');
-    btn.textContent = tab.label;
+    btn.innerHTML = `<span class="page-tab__icon" aria-hidden="true">${icons[tab.icon](16)}</span><span>${tab.label}</span>`;
     btn.addEventListener('click', () => setActiveTab(tab.key));
     // Arrow keys move between tabs (WAI-ARIA tabs pattern).
     btn.addEventListener('keydown', (event) => {

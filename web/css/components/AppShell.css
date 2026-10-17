@@ -777,7 +777,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: var(--spacing-lg);
+  padding: var(--page-padding);
   /* Cross-fade on every page navigation. main.js's boot() calls
      root.innerHTML='' and rebuilds from scratch on each navigate(), so
      AppShell() runs fresh and this element is a genuinely new DOM node
@@ -787,7 +787,7 @@
 }
 
 /* Ensure the first element inside page content has 0 top margin so the
-   effective top spacing is exactly the 24px (var(--spacing-lg)) container
+   effective top spacing is exactly the --page-padding gutter
    padding, identical to left, right, and bottom padding. */
 .page-content > :first-child,
 .page-content > * > :first-child,

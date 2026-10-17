@@ -94,31 +94,124 @@
 }
 
 /* ==========================================================================
-   3. Main 3-Column Layout
+   3. Main 3-Column Layout (Zero-Outer-Scroll & Minimized Margins)
    ========================================================================== */
+
+/* Zero-scroll containment on desktop for SMS Monitor */
+@media (min-width: 1024px) {
+  html:has(.sms-layout),
+  html:has(.sms-subscribers-page-container),
+  body:has(.sms-layout),
+  body:has(.sms-subscribers-page-container),
+  .app-shell:has(.sms-layout),
+  .app-shell:has(.sms-subscribers-page-container),
+  .app-shell:has(.sms-layout) .main-column,
+  .app-shell:has(.sms-subscribers-page-container) .main-column {
+    height: 100vh !important;
+    max-height: 100vh !important;
+    overflow: hidden !important;
+  }
+
+  /* Minimized header & tabs bar padding on all sides */
+  .app-shell:has(.sms-layout) .page-header,
+  .app-shell:has(.sms-subscribers-page-container) .page-header {
+    padding: 0.5rem 0.875rem !important;
+    gap: 0.5rem !important;
+  }
+
+  .app-shell:has(.sms-layout) .page-header__title,
+  .app-shell:has(.sms-subscribers-page-container) .page-header__title {
+    font-size: 1.25rem !important;
+  }
+
+  .app-shell:has(.sms-layout) .page-header__subtitle,
+  .app-shell:has(.sms-subscribers-page-container) .page-header__subtitle {
+    font-size: 0.75rem !important;
+    margin-top: 1px !important;
+  }
+
+  .app-shell:has(.sms-layout) .page-tabs-bar,
+  .app-shell:has(.sms-subscribers-page-container) .page-tabs-bar {
+    padding: 0.25rem 0.875rem !important;
+  }
+
+  .app-shell:has(.sms-layout) .sms-kpi-col,
+  .app-shell:has(.sms-subscribers-page-container) .sms-kpi-col {
+    padding: 0.25rem 0.75rem !important;
+  }
+
+  .app-shell:has(.sms-layout) .sms-kpi-val,
+  .app-shell:has(.sms-subscribers-page-container) .sms-kpi-val {
+    font-size: 1.125rem !important;
+  }
+
+  /* Full-bleed page content with minimal padding & zero container margins */
+  .page-content:has(.sms-layout),
+  .page-content:has(.sms-subscribers-page-container) {
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    padding: var(--page-padding) !important;
+    box-sizing: border-box !important;
+  }
+
+  .page-content:has(.sms-layout) .page-container,
+  .page-content:has(.sms-subscribers-page-container) .page-container,
+  .page-content:has(.sms-layout) #sms-tabpanel,
+  .page-content:has(.sms-subscribers-page-container) #sms-tabpanel {
+    max-width: 100% !important;
+    width: 100% !important;
+    height: 100% !important;
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .sms-layout {
+    display: grid;
+    grid-template-columns: 21rem minmax(0, 1fr) 18rem;
+    gap: 0.5rem;
+    align-items: stretch;
+    height: 100% !important;
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+  }
+}
 
 .sms-layout {
   display: grid;
-  grid-template-columns: 21.5rem minmax(0, 1fr) 18.5rem;
-  gap: var(--spacing-md);
+  grid-template-columns: 21rem minmax(0, 1fr) 18rem;
+  gap: 0.5rem;
   align-items: stretch;
-  height: calc(100vh - 14.5rem);
-  min-height: 38rem;
+  height: 100%;
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
 }
 
-@media (max-width: 1240px) {
+@media (max-width: 1023px) and (min-width: 768px) {
   .sms-layout {
-    grid-template-columns: 20rem minmax(0, 1fr);
+    grid-template-columns: 19rem minmax(0, 1fr);
     height: auto;
     min-height: calc(100vh - 14.5rem);
+    gap: var(--spacing-sm);
   }
   .sms-feed-pane {
     grid-column: 1 / -1;
-    height: 24rem;
+    height: 20rem;
   }
 }
 
-@media (max-width: 840px) {
+@media (max-width: 767px) {
   .sms-layout {
     grid-template-columns: 1fr;
     height: auto;
@@ -179,10 +272,10 @@
 }
 
 .sms-contact-pane__header {
-  padding: 0.875rem var(--spacing-md) 0.625rem var(--spacing-md);
+  padding: 0.5rem 0.75rem 0.375rem 0.75rem;
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: 0.375rem;
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
@@ -485,11 +578,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--pad-panel-lg);
+  padding: 0.5rem 0.875rem;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   flex-shrink: 0;
-  min-height: 4.25rem;
+  min-height: 3.25rem;
 }
 
 .sms-thread-header__contact {
@@ -569,10 +662,10 @@
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
-  padding: 1.25rem var(--spacing-lg);
+  padding: 0.75rem 0.875rem;
   display: flex;
   flex-direction: column;
-  gap: 1.125rem;
+  gap: 0.75rem;
   background: var(--color-surface);
 }
 
@@ -676,8 +769,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding: 0.625rem 1.25rem;
+  gap: 0.375rem;
+  padding: 0.375rem 0.875rem;
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
   flex-shrink: 0;
@@ -759,7 +852,7 @@
    ========================================================================== */
 
 .sms-compose-section {
-  padding: 0.625rem 1.25rem 0.875rem 1.25rem;
+  padding: 0.375rem 0.875rem 0.5rem 0.875rem;
   background: var(--color-surface);
   flex-shrink: 0;
 }
@@ -768,7 +861,7 @@
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background: var(--color-surface);
-  padding: var(--spacing-sm-md) 0.875rem;
+  padding: 0.375rem 0.75rem;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2xs);
@@ -880,7 +973,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.875rem 1.125rem;
+  padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
@@ -923,10 +1016,10 @@
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
-  padding: 0.875rem var(--spacing-md);
+  padding: 0.5rem 0.75rem;
   display: flex;
   flex-direction: column;
-  gap: 0.875rem;
+  gap: 0.5rem;
 }
 
 .sms-feed-item {
@@ -981,7 +1074,7 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: var(--pad-panel);
+  padding: 0.375rem 0.75rem;
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
   flex-shrink: 0;
@@ -1479,31 +1572,34 @@
 .sms-subscribers-page-container {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  gap: 0.5rem;
   width: 100%;
-  padding: var(--spacing-md) var(--spacing-lg) var(--spacing-2xl);
+  padding: 0 !important;
   box-sizing: border-box;
-  overflow-y: auto;
-  height: 100%;
+  overflow: hidden !important;
+  height: 100% !important;
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .sms-subscribers-intro-banner {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: 0.375rem 0.75rem;
   background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
   border: 1px solid color-mix(in srgb, var(--color-primary) 25%, var(--color-border));
   border-radius: var(--radius-md);
   color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-  line-height: 1.5;
+  font-size: var(--font-size-xs, 0.75rem);
+  line-height: 1.4;
+  flex-shrink: 0;
 }
 
 .sms-subscribers-intro-icon {
   color: var(--color-link);
   flex-shrink: 0;
-  margin-top: 2px;
+  display: inline-flex;
 }
 
 .sms-subscribers-intro-text strong {
@@ -1513,28 +1609,29 @@
 .sms-subscriber-form {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card);
-  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  padding: 0.375rem 0.625rem;
+  flex-shrink: 0;
 }
 
 .sms-subscriber-form__row {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-xs, 6px);
   align-items: center;
   width: 100%;
 }
 
 .sms-subscriber-form__row .sms-subscriber-input,
 .sms-subscriber-form__row .sms-subscriber-select {
-  height: var(--control-height, 38px);
+  height: 32px;
   padding: 0 var(--spacing-sm);
   border-radius: var(--radius-sm, 6px);
   border: 1px solid var(--color-border);
   background: var(--color-bg);
   color: var(--color-text-primary);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-xs, 0.75rem);
   box-sizing: border-box;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -1547,56 +1644,143 @@
 }
 
 .sms-subscriber-form__row input[type="tel"] {
-  flex: 0 1 13rem;
+  flex: 0 1 12rem;
   font-variant-numeric: tabular-nums;
 }
 
 .sms-subscriber-form__row .sms-subscriber-select {
-  flex: 0 1 16rem;
-  padding-right: 2.25rem;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  flex: 0 1 15rem;
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 0.75rem center;
-  background-size: 1rem 1rem;
+  background-position: right 0.625rem center;
+  background-size: 0.875rem 0.875rem;
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
 }
 
 [data-theme="dark"] .sms-subscriber-form__row .sms-subscriber-select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
 }
 
 .sms-subscriber-form__row input[type="text"] {
-  flex: 1 1 16rem;
-  min-width: 140px;
+  flex: 1 1 14rem;
+  min-width: 120px;
 }
 
 .sms-subscriber-add-btn {
   flex-shrink: 0;
-  height: var(--control-height, 38px);
+  height: 32px;
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-2xs, 4px);
-  padding: 0 var(--spacing-md);
+  gap: 4px;
+  padding: 0 0.75rem;
   font-weight: 600;
+  font-size: var(--font-size-xs, 0.75rem);
+  border-radius: var(--radius-sm, 6px);
 }
 
 .sms-subscribers-list-host {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  gap: 0.375rem;
   width: 100%;
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
+/* Small, compact horizontal KPI chip row */
 .sms-subscribers-stat-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  max-width: 32rem;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: var(--spacing-xs, 6px) !important;
+  width: auto !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  flex-shrink: 0 !important;
+}
+
+.sms-subscribers-stat-grid .stat-card {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: baseline !important;
+  gap: 0.375rem !important;
+  padding: 0.25rem 0.625rem !important;
+  min-height: 0 !important;
+  height: auto !important;
+  border-radius: var(--radius-sm, 6px) !important;
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-border) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  cursor: default !important;
+  transform: none !important;
+  transition: none !important;
+}
+
+.sms-subscribers-stat-grid .stat-card:hover {
+  transform: none !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+}
+
+.sms-subscribers-stat-grid .stat-card__value {
+  font-size: 1.125rem !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+}
+
+.sms-subscribers-stat-grid .stat-card__label {
+  font-size: var(--font-size-xs, 0.75rem) !important;
+  font-weight: 600 !important;
+  color: var(--color-text-secondary) !important;
+  margin-top: 0 !important;
+  white-space: nowrap !important;
 }
 
 .sms-subscribers-table-card {
   width: 100%;
+  margin: 0 !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.sms-subscribers-table-card .data-table-wrap {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-text-tertiary) 30%, transparent) transparent;
+}
+
+.sms-subscribers-table-card .data-table {
+  width: 100%;
   margin: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.sms-subscribers-table-card thead th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 2 !important;
+  background: var(--color-bg) !important;
+  box-shadow: 0 1px 0 var(--color-border);
 }
 
 .sms-subscriber-number {
@@ -1625,10 +1809,10 @@
 }
 
 .sms-subscriber-optout-btn {
-  padding: 4px 10px;
-  font-size: var(--font-size-label);
+  padding: 3px 8px;
+  font-size: var(--font-size-xs, 0.75rem);
   font-weight: 600;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-sm, 6px);
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-secondary);

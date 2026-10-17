@@ -138,7 +138,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     printBtn.type = 'button';
     printBtn.id = 'preview-schedule-print-btn';
     printBtn.className = 'ghost';
-    printBtn.innerHTML = `${icons.printer(15)} <span>Preview & Print Schedule</span>`;
+    printBtn.innerHTML = `${icons.printer(15)} <span>Print preview</span>`;
     printBtn.addEventListener('click', () => {
       if (viewMode === 'week') {
         openWeekPrintModal({

@@ -86,7 +86,7 @@ export function renderAccomplishmentReportsPage(root, user, onLoggedOut, navigat
     root, user, onLoggedOut, navigate,
     activeKey: 'accomplishment-reports',
     title: 'Accomplishment Reports',
-    subtitle: 'Monthly reports by Barangay Tanods — review, print for signing on paper or return',
+    subtitle: 'Monthly reports from each Barangay Tanod. Review, print for signing on paper, or return',
     icon: icons.fileText,
   });
 

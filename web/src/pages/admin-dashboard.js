@@ -32,7 +32,7 @@
  */
 
 import { getOwnApprovalAuthority, getPendingApprovalCounts } from '../services/shellWorkflowApi.js';
-import { getReportsSummary, getIncidents, getDutyStatus, getUsers, getTanodSos, getBarangays, getReportsDigest, downloadReportsDigest, logout, ApiClientError } from '../api/apiClient.js';
+import { getReportsSummary, getIncidents, getDutyStatus, getUsers, getTanodSos, getReportsDigest, downloadReportsDigest, logout, ApiClientError } from '../api/apiClient.js';
 import { showToast } from '../components/Toast.js';
 import { KpiCard, KpiHeroCard } from '../components/KpiCard.js';
 import { DateRangePicker } from '../components/DateRangePicker.js';
@@ -159,21 +159,6 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
 
   const pageHeader = PageHeader({ title: 'Dashboard', subtitle: 'Barangay-wide incident summary and activity', icon: icons.layoutDashboard });
   header.appendChild(pageHeader.el);
-
-  // 2026-09-05 UX pass: the topbar never showed which of the 4 barangays
-  // a session is scoped to. GET /barangays is public/unauthenticated
-  // (apiClient.js's own doc) and tiny (4 rows, fixed) — best-effort, own
-  // catch, never blocks the dashboard's real data.
-  getBarangays().then((rows) => {
-    const match = rows.find((b) => b.barangayId === user.barangayId);
-    if (!match) return;
-    const badge = document.createElement('span');
-    badge.className = 'dashboard-barangay-badge';
-    badge.textContent = `Brgy. ${match.name}`;
-    pageHeader.el.querySelector('.page-header__title')?.appendChild(badge);
-  }).catch(() => {
-    // Cosmetic only — the dashboard works fine without the badge.
-  });
 
   // Date range control. 2026-09-06 UI/UX audit: this screen used to build
   // its own ~120-line picker; four other screens had copy-pasted the same

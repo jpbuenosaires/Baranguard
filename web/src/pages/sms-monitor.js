@@ -199,6 +199,7 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
   const pageHeader = PageHeader({
     title: 'SMS Monitor',
     subtitle: 'Community reports and dispatch communications',
+    icon: icons.messageSquare,
   });
   header.appendChild(pageHeader.el);
 
