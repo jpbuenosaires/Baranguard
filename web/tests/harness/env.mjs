@@ -142,6 +142,7 @@ class FakeMarker {
     this.popup = null;
   }
   setLngLat(ll) { this.lngLat = ll; return this; }
+  getLngLat() { const [lng, lat] = Array.isArray(this.lngLat) ? this.lngLat : [this.lngLat?.lng, this.lngLat?.lat]; return { lng, lat }; }
   setPopup(popup) { this.popup = popup; return this; }
   getPopup() { return this.popup; }
   togglePopup() { return this; }

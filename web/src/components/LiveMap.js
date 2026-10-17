@@ -921,8 +921,15 @@ export function LiveMap(container, options = {}) {
     }
   }
 
+  // The map opens on the barangay centre, which can leave most incident pins off screen
+  // (the legend counts them all); frame them once, on the first data, then leave the view to the user.
+  let didInitialFit = false;
   function setIncidentMarkers(items, onAssign, onViewRecord) {
     renderIncidentMarkers(items, onAssign, onViewRecord);
+    if (!didInitialFit && incidentMarkers.length > 0 && activeFocusedIncidentId == null) {
+      didInitialFit = true;
+      fitAll();
+    }
   }
 
   function applyIncidentFocus(incidentId, openPopup = true) {
