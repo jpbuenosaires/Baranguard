@@ -51,15 +51,15 @@
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
 }
 .donut-chart__total {
-  font-size: 1.75rem;
-  font-weight: 800;
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
   color: var(--color-text-primary);
   line-height: 1;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
 .donut-chart__total-label {
-  font-size: 0.625rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   color: var(--color-text-tertiary);
   text-transform: uppercase;
@@ -148,7 +148,7 @@
   color: var(--color-text-primary);
 }
 .donut-chart__legend-pct {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   color: var(--color-text-secondary);
   background: color-mix(in srgb, var(--color-text-secondary) 10%, transparent);
@@ -186,7 +186,7 @@
 }
 
 .category-summary-tile__val {
-  font-size: 0.875rem;
+  font-size: var(--font-size-sm);
   font-weight: 700;
   color: var(--color-text-primary);
   line-height: 1.25;
@@ -199,7 +199,7 @@
 }
 
 .category-summary-tile__sub {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-secondary);
   line-height: 1.2;
 }

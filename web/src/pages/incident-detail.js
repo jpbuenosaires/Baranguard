@@ -206,7 +206,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     if (titleBlock) {
       // The ID is already in the breadcrumb and the card heading, so the bar shows only the page name. The dash and
       // the ID stay in the DOM (screen readers and the document title still read "Incident Record — INC-...").
-      titleBlock.innerHTML = `<span class="page-header__icon" aria-hidden="true">${icons.fileText(22)}</span> Incident Record<span class="sr-only"> — </span><span class="page-header__id-pill font-mono">${escapeHtml(incidentDisplayId)}</span>`;
+      titleBlock.innerHTML = `<span class="page-header__icon" aria-hidden="true">${icons.fileText(22)}</span> Incident Record<span class="sr-only"> — </span><span class="page-header__id-pill">${escapeHtml(incidentDisplayId)}</span>`;
     }
 
     const currentCrumb = shell.el.querySelector('.topbar__crumb--current');
@@ -239,7 +239,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     titleRow.className = 'case-hero__title-row';
 
     const title = document.createElement('h3');
-    title.className = 'case-hero__title font-mono incident-id-badge';
+    title.className = 'case-hero__title incident-id-badge';
     title.textContent = incidentDisplayId;
     title.title = `Incident Reference ID ${escapeHtml(incidentDisplayId)}`;
 

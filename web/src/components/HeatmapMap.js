@@ -13,8 +13,9 @@
 
 import { onThemeChange, readThemeToken } from './themeEvents.js';
 import { attachBasemapFallback, OSM_TILE_URL } from '../utils/mapFallback.js';
+import { centerFor } from '../data/barangayBoundaries.js';
 
-const DEFAULT_CENTER = [123.6667, 12.9186]; // Pilar, Sorsogon [lng, lat]
+const DEFAULT_CENTER = centerFor(1); // Dao boundary centre [lng, lat]
 const DEFAULT_ZOOM = 12;
 const SOURCE_ID = 'incident-heat';
 

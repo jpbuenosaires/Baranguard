@@ -97,7 +97,7 @@
 }
 
 .acc-filter-label {
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   color: var(--color-text-secondary);
   text-transform: uppercase;
@@ -185,7 +185,7 @@
 
 .tw-reports-list .data-table thead th {
   padding: 0.5rem var(--spacing-sm);
-  font-size: 0.725rem;
+  font-size: var(--font-size-label);
   letter-spacing: 0.05em;
   white-space: nowrap;
 }
@@ -236,7 +236,7 @@
 }
 
 .acc-tanod-pos {
-  font-size: 0.725rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -263,7 +263,7 @@
   gap: var(--spacing-2xs);
   padding: 0.15rem var(--spacing-xs);
   border-radius: var(--radius-sm);
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   background: color-mix(in srgb, #D97706 15%, transparent);
   color: #B45309;
@@ -281,7 +281,7 @@
   align-items: center;
   gap: var(--spacing-2xs);
   padding: 0.2rem var(--spacing-xs);
-  font-size: 0.775rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   border-radius: var(--radius-sm);
   color: var(--color-text-secondary);
@@ -423,14 +423,14 @@
 
 .acc-officer-name {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: var(--font-size-xl);
   font-weight: 700;
   color: var(--color-text-primary);
   line-height: 1.2;
 }
 
 .acc-officer-tag {
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   padding: 0.15rem var(--spacing-xs);
   border-radius: var(--radius-sm);
@@ -535,7 +535,7 @@
 }
 
 .acc-kpi-label {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--color-text-secondary);
   text-transform: uppercase;
@@ -554,8 +554,8 @@
 .acc-kpi-icon.accent-green { background: var(--color-success-solid); }
 
 .acc-kpi-value {
-  font-size: 1.625rem;
-  font-weight: 800;
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
   color: var(--color-text-primary);
@@ -565,7 +565,7 @@
 .acc-kpi-value.tone-success { color: var(--color-success-text); }
 
 .acc-kpi-subtext {
-  font-size: 0.775rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-tertiary);
 }
 
@@ -606,13 +606,13 @@
 
 .acc-section-title {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: var(--font-size-lg);
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .acc-section-badge {
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   padding: 0.15rem var(--spacing-xs);
   border-radius: var(--radius-sm);
@@ -623,7 +623,7 @@
 
 .acc-section-hint {
   margin: 0.25rem 0 0 0;
-  font-size: 0.8rem;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   display: flex;
   align-items: center;
@@ -706,7 +706,7 @@
   align-items: center;
   padding: 0.15rem 0.4rem;
   border-radius: var(--radius-sm);
-  font-size: 0.725rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   background: color-mix(in srgb, #D97706 18%, transparent);
   color: #B45309;
@@ -718,7 +718,7 @@
   align-items: center;
   padding: 0.15rem 0.45rem;
   border-radius: var(--radius-sm);
-  font-size: 0.725rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   background: color-mix(in srgb, #16A34A 12%, transparent);
   color: #15803D;
@@ -759,7 +759,7 @@
   align-items: center;
   padding: 0.15rem var(--spacing-xs);
   border-radius: var(--radius-sm);
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   background: color-mix(in srgb, #16A34A 14%, transparent);
   color: #15803D;

@@ -162,12 +162,12 @@
 }
 
 .user-identity-username {
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-tertiary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Role Badges */
@@ -183,7 +183,7 @@
 
 .user-action-btn {
   padding: 3px 8px;
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
@@ -285,7 +285,7 @@
   background: transparent;
   border: none;
   color: var(--color-text-secondary);
-  font-size: 1.25rem;
+  font-size: var(--font-size-xl);
   padding: var(--spacing-xs) var(--spacing-sm);
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -349,7 +349,7 @@
 }
 
 .personnel-form-hint {
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-tertiary);
 }
 
@@ -375,7 +375,7 @@
   gap: var(--spacing-2xs);
   padding: var(--spacing-xs) 0.55rem;
   border-radius: var(--radius-sm);
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -417,7 +417,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--color-text-primary);
   background: var(--color-bg);
@@ -439,7 +439,7 @@
 }
 
 .shift-time-duration {
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-secondary);
 }
 
@@ -466,7 +466,7 @@
 
 .shift-preset-btn {
   padding: var(--spacing-2xs) var(--spacing-sm);
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
@@ -486,7 +486,7 @@
 
 .shift-preset-btn small {
   display: block;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-tertiary);
   font-weight: 400;
 }
@@ -548,7 +548,7 @@
 .swap-role-tag {
   display: inline-flex;
   align-items: center;
-  font-size: 0.625rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -572,7 +572,7 @@
 .swap-role-badge {
   display: inline-block;
   align-self: flex-start;
-  font-size: 0.625rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -603,14 +603,14 @@
   background: var(--tint-warning-bg);
   padding: var(--spacing-3xs) var(--spacing-sm);
   border-radius: var(--radius-sm);
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   white-space: nowrap;
 }
 
 .swap-reason-box {
   margin-top: 0.25rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-secondary);
   font-style: italic;
   background: color-mix(in srgb, var(--color-bg) 65%, var(--color-surface));
@@ -695,7 +695,7 @@
   align-items: center;
   padding: var(--spacing-xs) 0.55rem;
   border-radius: var(--radius-sm);
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -729,7 +729,7 @@
 
 .scheduler-publish-bar__hint {
   color: var(--color-text-primary);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   font-weight: 500;
   display: inline-flex;
   align-items: center;
@@ -888,8 +888,8 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  font-family: var(--font-mono);
   font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 .week-grid__cell {
@@ -1017,8 +1017,8 @@ button.shift-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-weight: 800;
-  font-size: 0.6875rem;
+  font-weight: 700;
+  font-size: var(--font-size-label);
   width: 0.875rem;
   height: 0.875rem;
   border-radius: 9999px;
@@ -1143,7 +1143,7 @@ button.shift-chip {
 .week-print th,
 .week-print td {
   vertical-align: top;
-  font-size: 0.68rem;
+  font-size: var(--font-size-label);
   padding: 4px 5px;
 }
 
@@ -1169,7 +1169,7 @@ button.shift-chip {
 
 .week-print__note {
   margin: 6px 0 0;
-  font-size: 0.68rem;
+  font-size: var(--font-size-label);
   color: var(--sheet-muted);
 }
 

@@ -207,6 +207,43 @@ if (unknownByFile.size === 0) {
 }
 
 // ---------------------------------------------------------------------------
+// 2b. Typography guard (2026-10-17 font cleanup): one typeface (Inter), four
+// weights (400/500/600/700), sizes only from the token scale. Monospace is
+// allowed ONLY for true code: the audit JSON viewer, the Service Health
+// runbook box and the evidence hash.
+// ---------------------------------------------------------------------------
+{
+  const MONO_ALLOWED = ['pages/audit-log.css', 'pages/service-health.css', 'pages/incident-detail.css'];
+  const SIZE_OK = new Set(['0.75rem', '0.8125rem', '0.875rem', '1rem', '1.125rem', '1.25rem', '1.5rem', '1.875rem']);
+  const cssFiles = [];
+  (function walkCss(dir) {
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name);
+      statSync(p).isDirectory() ? walkCss(p) : name.endsWith('.css') && cssFiles.push(p);
+    }
+  })(join(WEB_ROOT, 'css'));
+  const problems = [];
+  for (const file of cssFiles) {
+    const rel = relative(join(WEB_ROOT, 'css'), file).replaceAll(String.fromCharCode(92), '/');
+    readFileSync(file, 'utf8').split(/\r?\n/).forEach((line, i) => {
+      const at = `${rel}:${i + 1}`;
+      if (/font-family:/.test(line) && !/var\(--font-base\)|inherit|"Inter"|var\(--font-mono/.test(line)) problems.push(`${at} uses a font family other than Inter`);
+      if (/font-family:.*(var\(--font-mono|monospace)/.test(line) && !MONO_ALLOWED.includes(rel)) problems.push(`${at} uses monospace outside the code spots`);
+      const w = line.match(/font-weight:\s*(\d+)/);
+      if (w && !['400', '500', '600', '700'].includes(w[1])) problems.push(`${at} uses font-weight ${w[1]}`);
+      const sz = line.match(/^\s*font-size:\s*([0-9.]+rem)\s*;/);
+      if (sz && !SIZE_OK.has(sz[1]) && !/sort-icon/.test(line)) problems.push(`${at} uses off-scale font-size ${sz[1]} (use a --font-size-* token)`);
+    });
+  }
+  if (problems.length === 0) {
+    ok('typography: Inter only, 4 weights, token sizes, monospace limited to code');
+    console.log('[PASS] typography guard');
+  } else {
+    for (const p of problems.slice(0, 25)) bad(p);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 3. Scripts referenced by index.html exist
 // ---------------------------------------------------------------------------
 

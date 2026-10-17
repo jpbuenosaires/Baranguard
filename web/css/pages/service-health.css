@@ -155,7 +155,7 @@
   display: inline-flex;
   align-items: center;
   padding: var(--spacing-3xs) var(--spacing-sm);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -322,7 +322,7 @@
 }
 
 .health-service-card__domain {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   color: var(--color-text-tertiary);
   text-transform: uppercase;
@@ -344,7 +344,7 @@
   gap: var(--spacing-sm);
   padding-top: 0.625rem;
   border-top: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
 }
 
 .health-service-card__probe {
@@ -352,7 +352,7 @@
   align-items: center;
   gap: var(--spacing-xs);
   color: var(--color-text-tertiary);
-  font-family: var(--font-mono, monospace);
+  font-variant-numeric: tabular-nums;
 }
 
 .health-service-card__action-hint {
@@ -407,7 +407,7 @@
 
 .health-dr-card__badge {
   padding: var(--spacing-3xs) var(--spacing-sm);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   border-radius: var(--radius-sm, 0.25rem);
   text-transform: uppercase;
@@ -466,9 +466,9 @@
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md, 0.5rem);
-  font-family: var(--font-mono, monospace);
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 .health-terminal-code {
@@ -482,7 +482,7 @@
   align-items: center;
   gap: var(--spacing-xs);
   padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -616,8 +616,7 @@
 }
 
 .health-modal-code {
-  font-family: var(--font-mono, monospace);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   background: var(--color-bg);
   padding: var(--spacing-xs) var(--spacing-2xs);
   border-radius: var(--radius-sm, 0.25rem);
@@ -625,6 +624,7 @@
   color: var(--color-link);
   display: inline-block;
   width: fit-content;
+  font-variant-numeric: tabular-nums;
 }
 
 .health-modal-section {
@@ -656,7 +656,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md, 0.5rem);
   font-family: var(--font-mono, monospace);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   line-height: 1.45;
   color: var(--color-text-primary);
   white-space: pre-wrap;

@@ -333,7 +333,7 @@
 
 .login-hero__wordmark {
   font-size: var(--font-size-xl);
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--color-white);
 }
@@ -362,7 +362,7 @@
 
 .login-hero h1 {
   font-size: var(--font-size-2xl);
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.25;
   letter-spacing: -0.02em;
   color: var(--color-white);

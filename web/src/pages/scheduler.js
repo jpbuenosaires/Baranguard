@@ -1706,7 +1706,7 @@ function openSchedulePrintModal({ shifts, allShifts, tanods, selectedStatus, sea
     <div class="print-sheet__header">
       <img src="assets/logo.svg" alt="" width="44" height="44" class="print-sheet__header-logo" aria-hidden="true" />
       <div class="print-sheet__header-text">
-        <p style="margin:0;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#475569;">Republic of the Philippines · Province of Sorsogon · Municipality of Pilar</p>
+        <p style="margin:0;font-size: 0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:#475569;">Republic of the Philippines · Province of Sorsogon · Municipality of Pilar</p>
         <h1 class="print-sheet__doc-title">BARANGAY TANOD DUTY ROSTER &amp; PATROL SCHEDULE</h1>
         <p class="print-sheet__doc-subtitle">${escapeHtml(barangayName)} · Official Bulletin-Board Peacekeeping Schedule</p>
       </div>
@@ -1851,7 +1851,7 @@ function openWeekPrintModal({ weekStart, rows, shifts, user, barangayName }) {
     <div class="print-sheet__header">
       <img src="assets/logo.svg" alt="" width="44" height="44" class="print-sheet__header-logo" aria-hidden="true" />
       <div class="print-sheet__header-text">
-        <p style="margin:0;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#475569;">Republic of the Philippines · Province of Sorsogon · Municipality of Pilar</p>
+        <p style="margin:0;font-size: 0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:#475569;">Republic of the Philippines · Province of Sorsogon · Municipality of Pilar</p>
         <h1 class="print-sheet__doc-title">BARANGAY TANOD WEEKLY DUTY ROSTER</h1>
         <p class="print-sheet__doc-subtitle">${escapeHtml(barangayName)} · Week of ${escapeHtml(weekRangeLabel(weekStart))}</p>
       </div>

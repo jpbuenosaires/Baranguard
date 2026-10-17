@@ -213,7 +213,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     } else {
       tableRowsHtml = rows.map((r) => `
         <tr style="border-bottom: 1px solid #e5e7eb;">
-          <td style="padding: 6px 8px; font-weight:600; font-family:monospace;">${escapeHtml(formatIncidentCode(r))}</td>
+          <td style="padding: 6px 8px; font-weight:600; ">${escapeHtml(formatIncidentCode(r))}</td>
           <td style="padding: 6px 8px;">${escapeHtml(INCIDENT_TYPE_LABELS[r.incidentType] || r.incidentType)}</td>
           <td style="padding: 6px 8px;">${escapeHtml(formatDateTime(r.createdAt))}</td>
           <td style="padding: 6px 8px;">${escapeHtml(r.locationDescription || barangayLabel(r.barangayId))}</td>
@@ -227,8 +227,8 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     const sheetHtml = `
       <div class="print-official-header" style="text-align:center; margin-bottom: 18px; border-bottom: 2px solid #000; padding-bottom: 12px;">
         <p style="font-size: 0.75rem; margin: 0; text-transform: uppercase; letter-spacing: 0.05em;">Republic of the Philippines &bull; Province of Sorsogon &bull; Municipality of Pilar</p>
-        <h2 style="font-size: 1.25rem; margin: 4px 0; font-weight: 800; letter-spacing: 0.02em;">BARANGAY DAO OPERATIONS DESK</h2>
-        <h3 style="font-size: 0.95rem; margin: 0; font-weight: 700; color: #374151;">INCIDENT LOG & SHIFT HANDOVER SUMMARY</h3>
+        <h2 style="font-size: 1.25rem; margin: 4px 0; font-weight:700; letter-spacing: 0.02em;">BARANGAY DAO OPERATIONS DESK</h2>
+        <h3 style="font-size: 1rem; margin: 0; font-weight: 700; color: #374151;">INCIDENT LOG & SHIFT HANDOVER SUMMARY</h3>
       </div>
 
       <div class="print-meta-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; font-size: 0.8125rem; background: #f9fafb; padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 6px;">
@@ -267,7 +267,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
           <span style="font-size: 0.75rem; color: #6b7280;">Date & Time: ________________________</span>
         </div>
       </div>
-      <p style="margin-top: 24px; font-size: 0.6875rem; color: #6b7280; text-align: center; font-style: italic;">
+      <p style="margin-top: 24px; font-size: 0.75rem; color: #6b7280; text-align: center; font-style: italic;">
         This document serves as an operational shift turnover excerpt for physical barangay binder records pursuant to DILG recordkeeping standards.
       </p>
     `;
@@ -2033,7 +2033,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--color-bg); border-radius: 10px; border: 1px solid var(--color-border);">
           <div class="incident-tanod-avatar" style="width: 40px; height: 40px;">${icons.users(20)}</div>
           <div>
-            <div style="font-weight: 600; font-size: 0.9375rem; color: var(--color-text-primary);">${escapeHtml(officerName)}</div>
+            <div style="font-weight: 600; font-size: 0.875rem; color: var(--color-text-primary);">${escapeHtml(officerName)}</div>
             <div style="font-size: 0.8125rem; color: var(--color-text-secondary);">${hasContact ? `Phone: ${escapeHtml(phoneStr)}` : 'No contact number on file'}</div>
           </div>
         </div>

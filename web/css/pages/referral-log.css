@@ -105,7 +105,7 @@
 }
 
 .ref-kpi-card__label {
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   color: var(--color-text-primary);
   white-space: nowrap;
@@ -114,8 +114,8 @@
 }
 
 .ref-kpi-card__value {
-  font-size: 1.15rem;
-  font-weight: 800;
+  font-size: var(--font-size-lg);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
   color: var(--color-text-primary);
@@ -126,7 +126,7 @@
 }
 
 .ref-kpi-card__sub {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -518,21 +518,21 @@
 }
 
 .ref-incident-id {
-  font-family: var(--font-mono, monospace);
   font-weight: 700;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   color: var(--color-text-primary);
   background: var(--color-bg);
   padding: 0.15rem var(--spacing-xs);
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
+  font-variant-numeric: tabular-nums;
 }
 
 .ref-log-sub {
-  font-family: var(--font-mono, monospace);
-  font-size: 0.72rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 .ref-type-text {
@@ -557,14 +557,14 @@
 }
 
 .ref-code-badge {
-  font-family: var(--font-mono, monospace);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   font-weight: 700;
   background: var(--color-bg);
   padding: 0.15rem 0.4rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 .ref-no-empty-pill {
@@ -572,7 +572,7 @@
   align-items: center;
   padding: 0.1rem 0.45rem;
   border-radius: var(--radius-sm);
-  font-size: 0.72rem;
+  font-size: var(--font-size-label);
   font-weight: 500;
   color: var(--color-text-tertiary);
   background: color-mix(in srgb, var(--color-bg) 75%, transparent);
