@@ -198,6 +198,49 @@ describe('HeatmapMap', () => {
     heat.setPoints([]);
     assert.equal(maps[0].getSource('incident-heat').data.features.length, 0);
   });
+
+  test('boundary source and layers are added and can be updated', async () => {
+    const heat = HeatmapMap(container(), { barangayId: 1 });
+    await settle();
+    const map = maps[0];
+    assert.ok(map.getSource('barangay-boundary'), 'barangay-boundary source should exist');
+    assert.ok(map.getLayer('barangay-boundary-line'), 'boundary line layer should exist');
+    assert.ok(map.getLayer('barangay-boundary-fill'), 'boundary fill layer should exist');
+
+    heat.setBoundary({ type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[[123.66, 12.91], [123.67, 12.91], [123.67, 12.92], [123.66, 12.91]]] } }] });
+    assert.equal(map.getSource('barangay-boundary').data.features.length, 1);
+  });
+
+  test('floating controls render recenter, zoom, and fullscreen buttons and respond to clicks', async () => {
+    const el = container();
+    const heat = HeatmapMap(el);
+    await settle();
+
+    const controls = el.querySelector('.heatmap-map-controls');
+    assert.ok(controls, 'map controls overlay should be mounted');
+    const recenterBtn = el.querySelector('#heatmap-recenter-btn');
+    const zoomInBtn = el.querySelector('#heatmap-zoom-in-btn');
+    const zoomOutBtn = el.querySelector('#heatmap-zoom-out-btn');
+    const fsBtn = el.querySelector('#heatmap-fullscreen-btn');
+
+    assert.ok(recenterBtn, 'recenter button exists');
+    assert.ok(zoomInBtn, 'zoom in button exists');
+    assert.ok(zoomOutBtn, 'zoom out button exists');
+    assert.ok(fsBtn, 'fullscreen button exists');
+
+    const initialZoom = maps[0].getZoom();
+    zoomInBtn.click();
+    assert.equal(maps[0].getZoom(), initialZoom + 1);
+
+    zoomOutBtn.click();
+    assert.equal(maps[0].getZoom(), initialZoom);
+
+    recenterBtn.click();
+    assert.ok(maps[0].lastFit || maps[0].lastFly, 'recenter should trigger fitBounds or flyTo');
+
+    heat.toggleFullscreen();
+    assert.ok(el.classList.contains('is-fullscreen') || el.parentElement.classList.contains('is-fullscreen'));
+  });
 });
 
 describe('Basemap offline fallback', () => {

@@ -211,7 +211,13 @@ export function ShiftWeekGrid({
     const isSelected = Boolean(selectedShiftIds && selectedShiftIds.has(shift.shiftId));
     const chip = document.createElement(canEdit ? 'button' : 'span');
     if (canEdit) chip.type = 'button';
-    chip.className = `shift-chip shift-chip--${draft ? 'draft' : 'published'}${isSelected ? ' is-selected' : ''}`;
+
+    const sTime = manilaParts(shift.startAt).time;
+    const eTime = manilaParts(shift.endAt).time;
+    const matchedPreset = SHIFT_PRESETS.find((p) => p.start === sTime && p.end === eTime);
+    const presetClass = matchedPreset ? `shift-chip--preset-${matchedPreset.type}` : 'shift-chip--preset-custom';
+
+    chip.className = `shift-chip shift-chip--${draft ? 'draft' : 'published'} ${presetClass}${isSelected ? ' is-selected' : ''}`;
     chip.dataset.shiftId = String(shift.shiftId);
     if (isSelected) chip.setAttribute('aria-selected', 'true');
 

@@ -1040,3 +1040,22 @@
 .topbar__stale[hidden] { display: none; }
 .topbar__stale-text { line-height: 1.2; }
 
+/* Print unconstrain: allows full multi-page flow and removes viewport lock */
+@media print {
+  .app-shell,
+  .main-column,
+  .page-content,
+  .page-container {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    overflow-x: visible !important;
+    overflow-y: visible !important;
+    display: block !important;
+    position: static !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+}
+

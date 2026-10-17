@@ -1,0 +1,31 @@
+▶ DataTable
+  ✔ a real <table> with scope="col" headers, caption and right-aligned numbers (95.77ms)
+  ✔ announces how many rows are showing (25.9242ms)
+  ✔ sorting toggles asc/desc, sets aria-sort on the header cell, and never mutates the caller's array (53.5399ms)
+  ✔ sorting is suppressed while server-paginated (sorting one page would be a lie) (19.8715ms)
+  ✔ pagination shows the real range and disables the ends (20.6171ms)
+  ✔ last page end-range is clamped, and zero results say so (49.3848ms)
+  ✔ empty rows show the opt-in empty message in a full-width cell (25.3578ms)
+  ✔ clickable rows get a real button activator (keyboard/AT) and fire once per click (28.5448ms)
+✔ DataTable (326.7346ms)
+▶ CSV export
+  ✔ quotes commas, quotes and newlines per RFC 4180 and uses CRLF (24.5531ms)
+  ✔ nothing is written for zero rows (3.9373ms)
+  ✔ cells that Excel would run as formulas are neutralised (CSV injection) (5.4314ms)
+  ✔ the export button says when it will write only part of the data (4.6367ms)
+✔ CSV export (43.8446ms)
+▶ Map Packages (W18) page
+  ▶ as admin
+    ✔ renders real data with no runtime errors, broken values or stuck loading (1253.6873ms)
+    ✔ shows a loading state while data is in flight (561.3113ms)
+    ✔ empty data renders an empty state, never an error (275.6361ms)
+    ✔ a server failure shows an error state, and Retry recovers (321.874ms)
+    ✔ untrusted text from the server is never rendered as markup (238.9313ms)
+    ✔ controls are labelled and named for assistive technology (243.6904ms)
+  ✔ as admin (2898.6902ms)
+✔ Map Packages (W18) page (2899.8393ms)
+▶ Map Packages behaviour
+  ✔ the published checksum is shown so Tanods can verify their download (252.987ms)
+  ✔ no published package (404) is an empty state, not an error (367.494ms)
+  ✔ publishing without a file is refused before any upload (678.3536ms)
+✔ Map Packages behaviour (1308.6177ms)

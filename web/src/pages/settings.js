@@ -128,6 +128,17 @@ export function renderSettingsPage(root, user, onLoggedOut, navigate) {
     appendRailSection('System Configuration', SYSTEM_SECTIONS);
   }
 
+  const railFooter = document.createElement('div');
+  railFooter.className = 'settings-rail__footer';
+  railFooter.innerHTML = `
+    <div class="settings-rail__footer-title">
+      <span class="settings-rail__footer-icon" aria-hidden="true">${icons.shield(14)}</span>
+      <span>Baranguard Security</span>
+    </div>
+    <div class="settings-rail__footer-desc">Protected operator session • Scoped tenancy</div>
+  `;
+  rail.appendChild(railFooter);
+
   function syncRail() {
     for (const [key, button] of Object.entries(railButtons)) {
       const active = key === activeSection;
@@ -250,9 +261,28 @@ function buildProfileCard(user, onFullNameSaved) {
 
   const idChip = document.createElement('span');
   idChip.className = 'settings-user-id-chip';
-  idChip.textContent = formatUserCode(user.userId);
+  idChip.innerHTML = `<span>${formatUserCode(user.userId)}</span>`;
 
-  badgesRow.append(rolePill, idChip);
+  const copyIdBtn = document.createElement('button');
+  copyIdBtn.type = 'button';
+  copyIdBtn.className = 'settings-id-copy-btn';
+  copyIdBtn.setAttribute('aria-label', 'Copy User Code');
+  copyIdBtn.innerHTML = icons.copy(12);
+  copyIdBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(formatUserCode(user.userId));
+      copyIdBtn.innerHTML = icons.check(12);
+      setTimeout(() => { copyIdBtn.innerHTML = icons.copy(12); }, 2000);
+      showToast('User code copied to clipboard', { variant: 'info' });
+    } catch { /* clipboard unavailable */ }
+  });
+  idChip.appendChild(copyIdBtn);
+
+  const statusPill = document.createElement('span');
+  statusPill.className = 'status-pill status-pill--success';
+  statusPill.innerHTML = '<span class="status-badge__dot" aria-hidden="true"></span> Active Session';
+
+  badgesRow.append(rolePill, idChip, statusPill);
   identityBlock.append(nameEl, badgesRow);
   hero.append(avatarWrap, identityBlock);
 
@@ -260,7 +290,7 @@ function buildProfileCard(user, onFullNameSaved) {
 
   // Form
   const form = document.createElement('form');
-  form.className = 'settings-form';
+  form.className = 'settings-form settings-form--profile';
   form.noValidate = true;
 
   // Full Name Field
@@ -319,10 +349,47 @@ function buildProfileCard(user, onFullNameSaved) {
   submitButton.type = 'submit';
   submitButton.className = 'primary';
   submitButton.classList.add('settings-submit');
-  submitButton.textContent = 'Save Changes';
+  submitButton.innerHTML = `${icons.check(16)} <span>Save Changes</span>`;
 
   form.append(nameField, contactField, submitButton);
   bodyEl.appendChild(form);
+
+  // Operational Scope & System Authority Box
+  const scopeCard = document.createElement('div');
+  scopeCard.className = 'settings-scope-card';
+  const roleDesc = user.role === 'admin'
+    ? 'Full administrative control, operator accounts, and system configuration'
+    : user.role === 'secretary'
+      ? 'Blotter records management, citizen triage, and roster maintenance'
+      : user.role === 'punong_barangay'
+        ? 'Executive supervision, incident approvals, and statistical reporting'
+        : 'Field patrol dispatch and incident response telemetry';
+
+  scopeCard.innerHTML = `
+    <div class="settings-scope-card__header">
+      <span class="settings-scope-card__icon" aria-hidden="true">${icons.shield(16)}</span>
+      <h4 class="settings-scope-card__title">Operational Scope & Jurisdiction</h4>
+    </div>
+    <div class="settings-scope-grid">
+      <div class="settings-scope-item">
+        <span class="settings-scope-label">Tenant Jurisdiction</span>
+        <span class="settings-scope-val">Brgy. Dao, Pilar, Sorsogon</span>
+        <span class="settings-scope-sub">Isolated municipal tenant</span>
+      </div>
+      <div class="settings-scope-item">
+        <span class="settings-scope-label">System Role</span>
+        <span class="settings-scope-val">${ROLE_LABELS[user.role] || user.role}</span>
+        <span class="settings-scope-sub">${roleDesc}</span>
+      </div>
+      <div class="settings-scope-item">
+        <span class="settings-scope-label">Security Protocol</span>
+        <span class="settings-scope-val">Role-Based Access Control</span>
+        <span class="settings-scope-sub">BCrypt encrypted credentials</span>
+      </div>
+    </div>
+  `;
+  bodyEl.appendChild(scopeCard);
+
   card.appendChild(bodyEl);
 
   form.addEventListener('submit', async (e) => {
@@ -353,7 +420,7 @@ function buildProfileCard(user, onFullNameSaved) {
       showToast(message, { variant: 'error' });
     } finally {
       submitButton.disabled = false;
-      submitButton.textContent = 'Save Changes';
+      submitButton.innerHTML = `${icons.check(16)} <span>Save Changes</span>`;
     }
   });
 
@@ -476,25 +543,118 @@ function buildPasswordCard() {
     return { rule, li, mark };
   });
 
-  rulesBox.append(rulesTitle, rulesList);
+  // Live Password Strength Meter
+  const strengthWrap = document.createElement('div');
+  strengthWrap.className = 'settings-strength-wrap';
+  strengthWrap.hidden = true;
+  strengthWrap.innerHTML = `
+    <div class="settings-strength-header">
+      <span class="settings-strength-label">Password Strength: <strong class="settings-strength-text">None</strong></span>
+    </div>
+    <div class="settings-strength-track">
+      <div class="settings-strength-bar"></div>
+    </div>
+  `;
+  const strengthText = strengthWrap.querySelector('.settings-strength-text');
+  const strengthBar = strengthWrap.querySelector('.settings-strength-bar');
+
+  // Real-time password match hint
+  const matchHint = document.createElement('div');
+  matchHint.className = 'settings-match-hint';
+  matchHint.hidden = true;
+  confirmField.field.appendChild(matchHint);
+
+  function syncMatchHint() {
+    const val = confirmField.input.value;
+    const target = newField.input.value;
+    if (!val) {
+      matchHint.hidden = true;
+      return;
+    }
+    matchHint.hidden = false;
+    const isMatched = val === target;
+    matchHint.className = `settings-match-hint ${isMatched ? 'is-matched' : 'is-unmatched'}`;
+    matchHint.innerHTML = isMatched
+      ? `<span aria-hidden="true">${icons.checkCircle(14)}</span> <span>Passwords match</span>`
+      : `<span aria-hidden="true">${icons.alertCircle(14)}</span> <span>Passwords do not match</span>`;
+  }
+
+  confirmField.input.addEventListener('input', syncMatchHint);
 
   newField.input.addEventListener('input', () => {
     const val = newField.input.value;
+    let metCount = 0;
     ruleElements.forEach(({ rule, li, mark }) => {
       const isMet = rule.test(val);
+      if (isMet) metCount++;
       li.classList.toggle('is-met', isMet);
       mark.innerHTML = isMet ? icons.checkCircle(14) : icons.alertCircle(14);
     });
+
+    if (!val) {
+      strengthWrap.hidden = true;
+    } else {
+      strengthWrap.hidden = false;
+      const pct = (metCount / RULES.length) * 100;
+      strengthBar.style.width = `${pct}%`;
+      if (metCount <= 1) {
+        strengthBar.className = 'settings-strength-bar is-weak';
+        strengthText.textContent = 'Weak';
+        strengthText.className = 'settings-strength-text is-weak';
+      } else if (metCount <= 2) {
+        strengthBar.className = 'settings-strength-bar is-fair';
+        strengthText.textContent = 'Fair';
+        strengthText.className = 'settings-strength-text is-fair';
+      } else if (metCount === 3) {
+        strengthBar.className = 'settings-strength-bar is-good';
+        strengthText.textContent = 'Good';
+        strengthText.className = 'settings-strength-text is-good';
+      } else {
+        strengthBar.className = 'settings-strength-bar is-strong';
+        strengthText.textContent = 'Strong';
+        strengthText.className = 'settings-strength-text is-strong';
+      }
+    }
+    syncMatchHint();
   });
 
   const submitButton = document.createElement('button');
   submitButton.type = 'submit';
   submitButton.className = 'primary';
   submitButton.classList.add('settings-submit', 'settings-submit--wide');
-  submitButton.textContent = 'Update Password';
+  submitButton.innerHTML = `${icons.lock(16)} <span>Update Password</span>`;
 
-  form.append(currentField.field, newField.field, rulesBox, confirmField.field, submitButton);
-  bodyEl.appendChild(form);
+  form.append(currentField.field, newField.field, strengthWrap, confirmField.field, submitButton);
+
+  // Best Practices Advice Box
+  const adviceBox = document.createElement('div');
+  adviceBox.className = 'settings-advice-box';
+  adviceBox.innerHTML = `
+    <div class="settings-advice-title">
+      <span aria-hidden="true">${icons.shield(14)}</span>
+      <span>Workstation Security Hygiene</span>
+    </div>
+    <ul class="settings-advice-list">
+      <li>Never share your operator credentials with other barangay personnel.</li>
+      <li>Sign out or lock your terminal whenever leaving the dispatch desk unattended.</li>
+      <li>Password changes revoke active sessions on roaming patrol devices.</li>
+    </ul>
+  `;
+
+  const pwdLayout = document.createElement('div');
+  pwdLayout.className = 'settings-password-layout';
+
+  const pwdMain = document.createElement('div');
+  pwdMain.className = 'settings-password-main';
+  pwdMain.appendChild(form);
+
+  const pwdSide = document.createElement('div');
+  pwdSide.className = 'settings-password-side';
+  pwdSide.append(rulesBox, adviceBox);
+
+  pwdLayout.append(pwdMain, pwdSide);
+  bodyEl.appendChild(pwdLayout);
+
   card.appendChild(bodyEl);
 
   form.addEventListener('submit', async (e) => {
@@ -598,6 +758,19 @@ function buildAppearanceCard(role) {
   lightCard.setAttribute('aria-label', 'Light mode');
   lightCard.setAttribute('tabindex', '0');
   lightCard.innerHTML = `
+    <div class="settings-theme-preview settings-theme-preview--light" aria-hidden="true">
+      <div class="settings-theme-preview__topbar">
+        <span class="settings-theme-preview__pill"></span>
+        <span class="settings-theme-preview__circle"></span>
+      </div>
+      <div class="settings-theme-preview__canvas">
+        <div class="settings-theme-preview__rail"></div>
+        <div class="settings-theme-preview__main">
+          <div class="settings-theme-preview__kpi"></div>
+          <div class="settings-theme-preview__card"></div>
+        </div>
+      </div>
+    </div>
     <div class="settings-theme-card__top">
       <div class="settings-theme-card__icon">${icons.sun(20)}</div>
       <span class="settings-theme-card__indicator" aria-hidden="true">${icons.checkCircle(12)}</span>
@@ -613,6 +786,19 @@ function buildAppearanceCard(role) {
   darkCard.setAttribute('aria-label', 'Dark mode');
   darkCard.setAttribute('tabindex', '0');
   darkCard.innerHTML = `
+    <div class="settings-theme-preview settings-theme-preview--dark" aria-hidden="true">
+      <div class="settings-theme-preview__topbar">
+        <span class="settings-theme-preview__pill"></span>
+        <span class="settings-theme-preview__circle"></span>
+      </div>
+      <div class="settings-theme-preview__canvas">
+        <div class="settings-theme-preview__rail"></div>
+        <div class="settings-theme-preview__main">
+          <div class="settings-theme-preview__kpi"></div>
+          <div class="settings-theme-preview__card"></div>
+        </div>
+      </div>
+    </div>
     <div class="settings-theme-card__top">
       <div class="settings-theme-card__icon">${icons.moon(20)}</div>
       <span class="settings-theme-card__indicator" aria-hidden="true">${icons.checkCircle(12)}</span>
@@ -742,7 +928,7 @@ function buildGeneralCard(settings) {
   bodyEl.appendChild(brandHero);
 
   const form = document.createElement('form');
-  form.className = 'settings-form';
+  form.className = 'settings-form settings-form--general';
   form.noValidate = true;
 
   function buildInputGroup(id, labelText, value, iconFn) {
@@ -787,6 +973,29 @@ function buildGeneralCard(settings) {
 
   form.append(nameField.field, munField.field, regField.field, notUsed);
   bodyEl.appendChild(form);
+
+  const tenancyBox = document.createElement('div');
+  tenancyBox.className = 'settings-scope-card';
+  tenancyBox.innerHTML = `
+    <div class="settings-scope-card__header">
+      <span class="settings-scope-card__icon" aria-hidden="true">${icons.layers(16)}</span>
+      <h4 class="settings-scope-card__title">Multi-Tenant Isolation Architecture</h4>
+    </div>
+    <div class="settings-scope-grid">
+      <div class="settings-scope-item">
+        <span class="settings-scope-label">Tenant Isolation</span>
+        <span class="settings-scope-val">Strict Database Separation</span>
+        <span class="settings-scope-sub">Isolated storage per barangay tenant (§2 Rule 8)</span>
+      </div>
+      <div class="settings-scope-item">
+        <span class="settings-scope-label">Cross-Tenant Reads</span>
+        <span class="settings-scope-val">Blocked by Middleware</span>
+        <span class="settings-scope-sub">Session permanently bound to tenant ID</span>
+      </div>
+    </div>
+  `;
+  bodyEl.appendChild(tenancyBox);
+
   card.appendChild(bodyEl);
 
   return card;
@@ -820,6 +1029,38 @@ function buildSosFallbackCard(settings) {
 
   const bodyEl = document.createElement('div');
   bodyEl.className = 'settings-card__body';
+
+  const pipelineBox = document.createElement('div');
+  pipelineBox.className = 'settings-sos-pipeline';
+  pipelineBox.innerHTML = `
+    <div class="settings-sos-tier">
+      <div class="settings-sos-tier__header">
+        <span class="settings-sos-tier__badge">Tier 1</span>
+        <span class="settings-sos-tier__tag">Primary</span>
+      </div>
+      <div class="settings-sos-tier__title">HTTPS Direct POST</div>
+      <div class="settings-sos-tier__desc">App connects over internet/Wi-Fi to Baranguard</div>
+    </div>
+    <div class="settings-sos-pipeline__arrow" aria-hidden="true">${icons.chevronRight(16)}</div>
+    <div class="settings-sos-tier">
+      <div class="settings-sos-tier__header">
+        <span class="settings-sos-tier__badge">Tier 2</span>
+        <span class="settings-sos-tier__tag">Gateway</span>
+      </div>
+      <div class="settings-sos-tier__title">Station GSM Modem</div>
+      <div class="settings-sos-tier__desc">Automated SMS dispatched to station USB modem</div>
+    </div>
+    <div class="settings-sos-pipeline__arrow" aria-hidden="true">${icons.chevronRight(16)}</div>
+    <div class="settings-sos-tier is-fallback">
+      <div class="settings-sos-tier__header">
+        <span class="settings-sos-tier__badge">Tier 3</span>
+        <span class="settings-sos-tier__tag settings-sos-tier__tag--warn">Total Outage</span>
+      </div>
+      <div class="settings-sos-tier__title">Direct Phone SMS</div>
+      <div class="settings-sos-tier__desc">Tanod phone texts this backup contact directly</div>
+    </div>
+  `;
+  bodyEl.appendChild(pipelineBox);
 
   const statusBox = document.createElement('div');
   statusBox.className = 'settings-gateway-status-box';

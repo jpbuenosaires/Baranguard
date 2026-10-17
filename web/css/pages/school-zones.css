@@ -1899,15 +1899,3 @@
     grid-template-columns: 1fr;
   }
 }
-
-/* Draft-layout notice (MC 2026-037 annex formats not yet checked against the circular). */
-.tw-draft-layout-note {
-  margin: 0 0 var(--spacing-sm-md);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border: 1px solid var(--color-warning);
-  border-radius: var(--radius-sm);
-  background: var(--tint-warning-bg);
-  color: var(--color-warning-text);
-  font-size: var(--font-size-label);
-  font-weight: 600;
-}

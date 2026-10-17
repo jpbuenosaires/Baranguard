@@ -1293,7 +1293,11 @@
    ========================================================================== */
 
 .print-modal-backdrop {
-  z-index: var(--z-fullscreen);
+  position: fixed;
+  inset: 0;
+  z-index: -9999;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .print-modal {
@@ -1308,6 +1312,11 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
+}
+
+.print-modal--landscape {
+  width: min(325mm, 96vw) !important;
+  max-width: min(325mm, 96vw) !important;
 }
 
 .print-modal__header {
@@ -1353,9 +1362,13 @@
 
 .print-modal__viewport {
   flex: 1;
+  overflow-x: auto;
   overflow-y: auto;
   padding: var(--spacing-lg);
   background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .print-modal__footer {
@@ -1423,6 +1436,9 @@
     margin: 0 !important;
     display: block !important;
     overflow: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    z-index: auto !important;
   }
 
   .modal-card.print-modal,
@@ -1463,8 +1479,10 @@
 
   #app,
   .app-shell,
+  .main-column,
   .main-content,
   .page-content,
+  .page-container,
   .incident-detail-body {
     height: auto !important;
     min-height: 0 !important;
@@ -1681,12 +1699,17 @@
 
   .dossier-body,
   .operations-body {
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 3.5mm !important;
+    display: block !important;
     width: 100% !important;
     height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
     overflow: visible !important;
+  }
+
+  .dossier-body > *,
+  .operations-body > * {
+    margin-bottom: 3.5mm !important;
   }
 
   /* Section Command Header between Panels */
@@ -1712,7 +1735,6 @@
     text-transform: uppercase !important;
   }
 
-  /* Dossier Cards Styling */
   .card,
   .dossier-card,
   .case-card {
@@ -1722,6 +1744,16 @@
     box-shadow: none !important;
     margin: 0 0 3.5mm 0 !important;
     padding: 3mm 4mm !important;
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+
+  .meta-tile,
+  .party-card,
+  .evidence-item-wrap,
+  .timeline__item,
+  .dossier-card__header,
+  .case-card__header {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
   }

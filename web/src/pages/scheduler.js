@@ -320,7 +320,6 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     thisWeek.disabled = weekStart === weekStartOf(manilaToday());
     thisWeek.addEventListener('click', () => { weekStart = weekStartOf(manilaToday()); renderMain(); });
     nav.append(prev, label, next, thisWeek);
-    toolbar.append(nav, buildViewToggle());
 
     if (canManageShifts) {
       const tools = document.createElement('div');
@@ -331,13 +330,13 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       presetLabel.className = 'scheduler-publish-bar__hint';
       presetLabel.textContent = '+ adds:';
       const presets = document.createElement('div');
-      presets.className = 'filter-chips';
+      presets.className = 'filter-chips scheduler-preset-chips';
       presets.setAttribute('role', 'group');
       presets.setAttribute('aria-label', 'Shift added by +');
       for (const p of SHIFT_PRESETS) {
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = `filter-chip${activePreset === p.type ? ' is-active' : ''}`;
+        b.className = `filter-chip filter-chip--preset-${p.type}${activePreset === p.type ? ' is-active' : ''}`;
         b.textContent = `${p.label} ${p.start}–${p.end}`;
         b.setAttribute('aria-pressed', activePreset === p.type ? 'true' : 'false');
         b.addEventListener('click', () => { activePreset = p.type; renderMain(); });
@@ -367,8 +366,10 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       customShift.title = 'Create a custom shift in a dialog';
       customShift.addEventListener('click', () => openNewShiftModal(tanods, load, shifts));
 
-      tools.append(presetsWrap, copy, smartFill, customShift);
-      toolbar.appendChild(tools);
+      tools.append(presetsWrap, copy, smartFill, customShift, buildViewToggle());
+      toolbar.append(nav, tools);
+    } else {
+      toolbar.append(nav, buildViewToggle());
     }
     listPane.appendChild(toolbar);
 
@@ -1804,7 +1805,6 @@ function openSchedulePrintModal({ shifts, allShifts, tanods, selectedStatus, sea
 
     <div class="print-sheet__footer">
       <span>BARANGUARD Peacekeeping Operations · Official Bulletin Copy</span>
-      <span>Printed ${escapeHtml(generatedStamp)}</span>
     </div>
   `;
 
@@ -1915,7 +1915,6 @@ function openWeekPrintModal({ weekStart, rows, shifts, user, barangayName }) {
 
     <div class="print-sheet__footer">
       <span>BARANGUARD · Weekly Duty Roster</span>
-      <span>Printed ${escapeHtml(generatedStamp)}</span>
     </div>
   `;
 

@@ -891,6 +891,20 @@ final class DispatchController
         return ['dispatch_id' => $dispatchId, 'status' => $newStatus, 'updated_at' => $updatedAt];
     }
 
+    private const ROUTE_REUSE_SECONDS = 90;
+    private const ROUTE_REUSE_METERS = 40;
+    private const ROUTE_BACKOFF_SECONDS = 120;
+
+    /** Haversine distance in metres between two lat/lng points. */
+    private static function distanceMeters(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $r = 6371000.0;
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+        $h = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+        return 2 * $r * asin(min(1.0, sqrt($h)));
+    }
+
     /**
      * `GET /dispatch/:id/route?latitude=&longitude=&mode=car|foot`
      * (2026-09-13, turn-by-turn build, docs/REMAINING.md §C4). Computes
@@ -989,17 +1003,46 @@ final class DispatchController
 
         $priorRouteJson = $dispatch['route_json'];
 
+        // Every ORS call spends free-tier quota (a daily cap), so spend it only when it buys something:
+        //  1. reuse the stored route when it is for the same mode, under ROUTE_REUSE_SECONDS old and the
+        //     caller has moved under ROUTE_REUSE_METERS (repeated taps / reopened screens);
+        //  2. after a failed call, stay off ORS for ROUTE_BACKOFF_SECONDS instead of hammering a service
+        //     that is down or over quota (the caller still gets the stale route or the straight line).
+        $prior = $priorRouteJson !== null ? json_decode((string) $priorRouteJson, true) : null;
+        $reusable = is_array($prior) && ($prior['mode'] ?? null) === $mode
+            && isset($prior['computed_at'], $prior['origin'][0], $prior['origin'][1])
+            && time() - (int) $prior['computed_at'] < self::ROUTE_REUSE_SECONDS
+            && self::distanceMeters($originLat, $originLng, (float) $prior['origin'][0], (float) $prior['origin'][1]) < self::ROUTE_REUSE_METERS;
+        $backoffFile = dirname(__DIR__) . '/storage/ors-backoff.json';
+        $backedOff = is_file($backoffFile) && time() < (int) (json_decode((string) @file_get_contents($backoffFile), true)['until'] ?? 0);
+
         try {
-            $result = (new OrsClient())->route($originLat, $originLng, $destLat, $destLng, $mode);
-            $routeJson = json_encode([
-                'mode' => $mode,
-                'geometry' => $result['geometry'],
-                'distance_m' => $result['distance_m'],
-                'duration_s' => $result['duration_s'],
-                'steps' => $result['steps'],
-            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            $routeStatus = 'available';
-        } catch (OrsUnavailableException | OrsException) {
+            if ($reusable) {
+                $routeJson = $priorRouteJson;
+                $routeStatus = 'available';
+            } elseif ($backedOff) {
+                throw new OrsUnavailableException('ORS is backing off after a failed request.');
+            } else {
+                $result = (new OrsClient())->route($originLat, $originLng, $destLat, $destLng, $mode);
+                $routeJson = json_encode([
+                    'mode' => $mode,
+                    'geometry' => $result['geometry'],
+                    'distance_m' => $result['distance_m'],
+                    'duration_s' => $result['duration_s'],
+                    'steps' => $result['steps'],
+                    'origin' => [$originLat, $originLng],
+                    'computed_at' => time(),
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                $routeStatus = 'available';
+            }
+        } catch (OrsUnavailableException | OrsException $e) {
+            // Only an outage or an exhausted quota justifies backing off; a rejected single route (for example
+            // an unroutable point) says nothing about the next dispatch.
+            $outage = (new OrsClient())->isConfigured()
+                && ($e instanceof OrsUnavailableException || stripos($e->getMessage(), 'quota') !== false);
+            if ($outage && !$backedOff) {
+                @file_put_contents($backoffFile, json_encode(['until' => time() + self::ROUTE_BACKOFF_SECONDS]), LOCK_EX);
+            }
             // Both failure modes get the same fallback here — see this
             // method's own doc block for why "genuinely rejected" isn't
             // treated as more destructive than "transiently unreachable":

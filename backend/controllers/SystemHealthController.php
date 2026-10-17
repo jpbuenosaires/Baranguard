@@ -305,8 +305,24 @@ final class SystemHealthController
         if (!$client->isConfigured()) {
             return 'not_configured';
         }
-        return $client->ping() ? 'healthy' : 'unhealthy';
+        // Every probe is a real ORS request and the free tier is a daily quota, while this runs on every
+        // admin page load plus the Service Health page. Reuse a result for a few minutes (per key, so
+        // changing the key re-probes at once); otherwise normal use alone exhausts the quota and the
+        // badge turns red for a reason the probe itself caused.
+        $cacheFile = dirname(__DIR__) . '/storage/ors-health.json';
+        $keyId = sha1((string) baranguard_env('ORS_API_KEY'));
+        $cached = is_file($cacheFile) ? json_decode((string) @file_get_contents($cacheFile), true) : null;
+        if (is_array($cached) && ($cached['key'] ?? null) === $keyId && time() - (int) ($cached['at'] ?? 0) < self::ORS_PROBE_CACHE_SECONDS
+            && in_array($cached['status'] ?? null, ['healthy', 'unhealthy'], true)) {
+            return $cached['status'];
+        }
+        $status = $client->ping() ? 'healthy' : 'unhealthy';
+        @file_put_contents($cacheFile, json_encode(['key' => $keyId, 'at' => time(), 'status' => $status]), LOCK_EX);
+        return $status;
     }
+
+    /** How long an ORS probe result is reused (about 96 probes a day at most). */
+    private const ORS_PROBE_CACHE_SECONDS = 900;
 
     /**
      * Reads the real filesystem timestamp of the most recent encrypted

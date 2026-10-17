@@ -393,8 +393,8 @@ function openAuditPrintModal({ items, totalItems, dateFrom, dateTo, categoryLabe
     </div>
 
     <div class="print-sheet__footer">
-      <span>Generated via Baranguard Audit Compliance Console · ${escapeHtml(printedAt)}</span>
-      <span>Audit trail excerpt</span>
+      <span>Baranguard Audit Compliance Console</span>
+      <span>Official audit trail excerpt</span>
     </div>
   `;
 

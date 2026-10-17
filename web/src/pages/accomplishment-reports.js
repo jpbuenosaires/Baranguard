@@ -873,6 +873,6 @@ function buildPrintHtml({ report, entries, person, totalMinutes, lh }) {
         ${sign('Noted By:', '', '')}
         ${sign('Approved By:', '', '')}
       </div>
-      <p class="tw-print__footnote">Report status: ${escapeHtml(REPORT_STATUS_LABELS[report.status] || report.status || '')} · Printed ${escapeHtml(formatManilaDate(new Date().toISOString()))}</p>
+      <p class="tw-print__footnote">Report status: ${escapeHtml(REPORT_STATUS_LABELS[report.status] || report.status || '')}</p>
     </div>`;
 }

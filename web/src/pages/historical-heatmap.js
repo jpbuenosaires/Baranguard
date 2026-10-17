@@ -75,7 +75,7 @@ export function renderHeatmapTab(container, pageHeader, user) {
   }
 
   const wrapper = document.createElement('div');
-  wrapper.className = 'flex-col grow';
+  wrapper.className = 'flex-col grow analytics-heatmap-wrapper';
   container.appendChild(wrapper);
 
   const banner = document.createElement('div');
@@ -91,7 +91,7 @@ export function renderHeatmapTab(container, pageHeader, user) {
   wrapper.appendChild(banner);
 
   const body = document.createElement('div');
-  body.className = 'grow';
+  body.className = 'grow flex-col analytics-heatmap-body';
   wrapper.appendChild(body);
 
   let heatmap = null;
@@ -313,7 +313,7 @@ export function renderHeatmapTab(container, pageHeader, user) {
     workspace.append(mapPanel, breakdownCard);
     target.appendChild(workspace);
 
-    heatmap = HeatmapMap(mapWrapper);
+    heatmap = HeatmapMap(mapWrapper, { barangayId: user?.barangayId || 1 });
     heatmap.setPoints(points);
 
     function applyCategoryFilter(catKey) {

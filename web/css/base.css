@@ -1628,6 +1628,12 @@ svg.is-spinning {
 @page {
   size: A4 portrait;
   margin: 12mm 15mm 15mm 15mm;
+  @bottom-left {
+    content: var(--print-stamp, '');
+    font-size: 8pt;
+    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    color: #64748b;
+  }
   @bottom-right {
     content: "Page " counter(page) " of " counter(pages);
     font-size: 8pt;
@@ -1639,6 +1645,12 @@ svg.is-spinning {
 @page a4-portrait {
   size: A4 portrait;
   margin: 12mm 15mm 15mm 15mm;
+  @bottom-left {
+    content: var(--print-stamp, '');
+    font-size: 8pt;
+    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    color: #64748b;
+  }
   @bottom-right {
     content: "Page " counter(page) " of " counter(pages);
     font-size: 8pt;
@@ -1650,6 +1662,12 @@ svg.is-spinning {
 @page a4-landscape {
   size: A4 landscape;
   margin: 12mm 15mm 15mm 15mm;
+  @bottom-left {
+    content: var(--print-stamp, '');
+    font-size: 8pt;
+    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    color: #64748b;
+  }
   @bottom-right {
     content: "Page " counter(page) " of " counter(pages);
     font-size: 8pt;
@@ -1661,6 +1679,12 @@ svg.is-spinning {
 @page tw-landscape {
   size: A4 landscape;
   margin: 12mm 15mm 15mm 15mm;
+  @bottom-left {
+    content: var(--print-stamp, '');
+    font-size: 8pt;
+    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    color: #64748b;
+  }
   @bottom-right {
     content: "Page " counter(page) " of " counter(pages);
     font-size: 8pt;
@@ -1700,10 +1724,34 @@ svg.is-spinning {
   border-radius: 4px;
 }
 
+/* Direct printing: let the printer handle the preview without the redundant in-app modal */
+.modal-backdrop.print-modal-backdrop,
+.print-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -9999;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.print-sheet-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-lg);
+  width: 100%;
+}
+
+.print-modal--landscape {
+  width: min(325mm, 96vw) !important;
+  max-width: min(325mm, 96vw) !important;
+}
+
 .print-sheet--landscape,
 .tw-print-sheet--landscape {
   width: 297mm;
-  max-width: 100%;
+  min-width: 297mm;
+  max-width: none;
   min-height: 210mm;
   padding: 12mm 16mm;
   page: a4-landscape;
@@ -2033,19 +2081,64 @@ svg.is-spinning {
   break-after: auto;
 }
 
-/* Print execution unlocks for PrintPreviewModal */
+/* Print execution unlocks: universal A4 paper dimensions and overflow-to-next-page guarantee */
 @media print {
+  /* 1. Global root reset: unconstrain height and viewport scrolling */
   html,
   body {
     height: auto !important;
     min-height: 0 !important;
+    max-height: none !important;
     overflow: visible !important;
+    overflow-x: visible !important;
+    overflow-y: visible !important;
+    position: static !important;
     background: #ffffff !important;
     color: #0f172a !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
+  /* 2. Universal SPA shell unconstrain: prevents "Page 1 of 1" truncation on direct prints */
+  #app,
+  .app-shell,
+  .main-column,
+  .page-content,
+  .page-container,
+  .main-content {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    overflow-x: visible !important;
+    overflow-y: visible !important;
+    display: block !important;
+    position: static !important;
+    float: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    transform: none !important;
+    animation: none !important;
+  }
+
+  /* 3. Hide interactive screen UI chrome during direct page printing */
+  body:not(.has-print-modal):not(:has(.print-modal-backdrop)) .sidebar,
+  body:not(.has-print-modal):not(:has(.print-modal-backdrop)) .sidebar__scrim,
+  body:not(.has-print-modal):not(:has(.print-modal-backdrop)) .topbar,
+  body:not(.has-print-modal):not(:has(.print-modal-backdrop)) .page-header-host,
+  body:not(.has-print-modal):not(:has(.print-modal-backdrop)) .page-header,
+  body:not(.has-print-modal):not(:has(.print-modal-backdrop)) .toast-container,
+  body:not(.has-print-modal):not(:has(.print-modal-backdrop)) .skip-link,
+  body:not(.has-print-modal):not(:has(.print-modal-backdrop)) .print-action-btn,
+  body:not(.has-print-modal):not(:has(.print-modal-backdrop)) button,
+  body:not(.has-print-modal):not(:has(.print-modal-backdrop)) a.btn {
+    display: none !important;
+  }
+
+  /* 4. When PrintPreviewModal is open: isolate the modal document */
   body.has-print-modal #app,
   body:has(.print-modal-backdrop) #app,
   body.has-print-modal > *:not(.print-modal-backdrop),
@@ -2056,7 +2149,10 @@ svg.is-spinning {
   }
 
   .modal-backdrop.print-modal-backdrop,
-  .print-modal-backdrop {
+  .print-modal-backdrop,
+  .modal-card.print-modal,
+  .print-modal,
+  .print-modal__viewport {
     position: static !important;
     inset: auto !important;
     width: 100% !important;
@@ -2068,35 +2164,33 @@ svg.is-spinning {
     -webkit-backdrop-filter: none !important;
     padding: 0 !important;
     margin: 0 !important;
-    display: block !important;
-    overflow: visible !important;
-  }
-
-  .modal-card.print-modal,
-  .print-modal,
-  .print-modal__viewport {
-    position: static !important;
-    max-width: none !important;
-    max-height: none !important;
-    width: 100% !important;
-    height: auto !important;
-    min-height: 0 !important;
-    padding: 0 !important;
-    margin: 0 !important;
     border: 0 !important;
     border-radius: 0 !important;
     box-shadow: none !important;
     overflow: visible !important;
-    background: transparent !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
+    overflow-x: visible !important;
+    overflow-y: visible !important;
     display: block !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    z-index: auto !important;
+  }
+
+  /* 5. Clean multi-page flow for .print-sheet & .print-sheet-group */
+  .print-sheet-group {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
   }
 
   .print-sheet {
     width: 100% !important;
     max-width: none !important;
+    height: auto !important;
     min-height: 0 !important;
+    max-height: none !important;
     margin: 0 !important;
     padding: 0 !important;
     box-shadow: none !important;
@@ -2104,6 +2198,15 @@ svg.is-spinning {
     background: #ffffff !important;
     color: #0f172a !important;
     border-radius: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+
+  .print-sheet:last-child {
+    break-after: auto !important;
+    page-break-after: auto !important;
   }
 
   body.print-orientation-landscape .print-sheet,
@@ -2111,8 +2214,75 @@ svg.is-spinning {
   .tw-print-sheet--landscape {
     max-width: none !important;
     width: 100% !important;
+    height: auto !important;
     min-height: 0 !important;
     page: a4-landscape;
+  }
+
+  /* 6. Multi-page overflow protection: tables, rows, cards, signatures */
+  .print-sheet__table,
+  .print-records-table,
+  .tw-print__table {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+  }
+
+  .print-sheet__table thead,
+  .print-records-table thead,
+  .tw-print__table thead {
+    display: table-header-group !important;
+  }
+
+  .print-sheet__table tbody,
+  .print-records-table tbody,
+  .tw-print__table tbody {
+    display: table-row-group !important;
+  }
+
+  .print-sheet__table tr,
+  .print-records-table tr,
+  .tw-print__table tr,
+  .print-sheet__kpi-card,
+  .print-sheet__field-box,
+  .print-sheet__signatures,
+  .print-signatures-block,
+  .tw-sign,
+  .print-sheet__stamp {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .print-sheet__section {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .print-sheet__header,
+  .print-sheet__masthead,
+  .print-sheet__section-title {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  /* Explicit page-break helpers */
+  .page-break,
+  .print-page-break,
+  .tw-print__page-break,
+  .acc-batch-sheet-break {
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+
+  .acc-batch-sheet-break:last-child,
+  .tw-print__page-break:last-child {
+    break-after: auto !important;
+    page-break-after: auto !important;
+  }
+
+  /* The margin box @bottom-left prints the single authoritative stamp;
+     hide the in-body .print-sheet__stamp in print to eliminate redundant footers and lines */
+  .print-sheet__stamp {
+    display: none !important;
   }
 }
 
