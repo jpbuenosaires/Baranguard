@@ -52,8 +52,8 @@
 }
 
 .sms-kpi-val {
-  font-size: 1.25rem;
-  font-weight: 800;
+  font-size: var(--font-size-xl);
+  font-weight: 700;
   line-height: 1.1;
 }
 
@@ -74,7 +74,7 @@
 }
 
 .sms-kpi-label {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   color: var(--color-text-secondary);
   margin-top: var(--spacing-3xs);
@@ -213,7 +213,7 @@
   border-radius: 8px;
   background: var(--color-bg);
   color: var(--color-text-primary);
-  font-size: 0.84375rem;
+  font-size: var(--font-size-13);
   font-family: inherit;
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -255,7 +255,7 @@
   flex: 1;
   height: var(--control-height);
   padding: 0 0.875rem;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   font-weight: 500;
   border-radius: 9999px;
   border: none;
@@ -345,7 +345,7 @@
 }
 
 .sms-contact-card__name {
-  font-size: 0.9375rem;
+  font-size: var(--font-size-sm);
   font-weight: 700;
   color: var(--color-text-primary);
   white-space: nowrap;
@@ -355,7 +355,7 @@
 }
 
 .sms-contact-card__time {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   color: var(--color-text-tertiary);
   white-space: nowrap;
   flex-shrink: 0;
@@ -363,7 +363,7 @@
 }
 
 .sms-contact-card__preview {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   line-height: 1.4;
   display: -webkit-box;
@@ -390,7 +390,7 @@
   align-items: center;
   padding: var(--spacing-3xs) 0.625rem;
   border-radius: 9999px;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   letter-spacing: 0.01em;
   white-space: nowrap;
@@ -508,7 +508,7 @@
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: var(--font-size-lg);
   flex-shrink: 0;
 }
 
@@ -520,7 +520,7 @@
 
 .sms-thread-header__name {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--font-size-md);
   font-weight: 700;
   color: var(--color-text-primary);
 }
@@ -529,7 +529,7 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-2xs);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
 }
 
@@ -548,7 +548,7 @@
   border-radius: 8px;
   background: var(--color-surface);
   color: var(--color-text-primary);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -595,7 +595,7 @@
   max-width: 72%;
   padding: 0.8125rem 1.125rem;
   border-radius: 1rem;
-  font-size: 0.875rem;
+  font-size: var(--font-size-sm);
   line-height: 1.5;
   position: relative;
   word-break: break-word;
@@ -626,7 +626,7 @@
   align-items: center;
   gap: var(--spacing-sm);
   margin-top: var(--spacing-2xs);
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-tertiary);
 }
 
@@ -649,7 +649,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   padding: var(--spacing-3xs) var(--spacing-sm);
   border-radius: var(--radius-sm);
@@ -684,7 +684,7 @@
 }
 
 .sms-quick-replies-title {
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 500;
   color: var(--color-text-tertiary);
   text-align: center;
@@ -717,7 +717,7 @@
   border: 1px solid var(--tint-info-bg);
   cursor: pointer;
   transition: all 0.15s ease;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   font-weight: 500;
   text-align: left;
 }
@@ -789,7 +789,7 @@
   background: transparent;
   color: var(--color-text-primary);
   font-family: inherit;
-  font-size: 0.875rem;
+  font-size: var(--font-size-sm);
   line-height: 1.45;
   min-height: 2.75rem;
   max-height: 6.5rem;
@@ -808,7 +808,7 @@
 }
 
 .sms-compose-to {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   color: var(--color-text-tertiary);
 }
 
@@ -819,7 +819,7 @@
 }
 
 .sms-compose-counter {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   color: var(--color-text-tertiary);
   font-weight: 500;
 }
@@ -887,7 +887,7 @@
 
 .sms-feed-title {
   margin: 0;
-  font-size: 0.9375rem;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-text-primary);
 }
@@ -896,7 +896,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-2xs);
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   color: var(--color-success-text);
 }
@@ -966,14 +966,14 @@
 }
 
 .sms-feed-text {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   font-weight: 500;
   color: var(--color-text-primary);
   line-height: 1.35;
 }
 
 .sms-feed-time {
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-tertiary);
 }
 
@@ -998,7 +998,7 @@
   border-radius: 8px;
   background: var(--color-surface);
   color: var(--color-text-primary);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -1016,7 +1016,7 @@
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-secondary);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   font-weight: 600;
   cursor: pointer;
   display: flex;
@@ -1101,7 +1101,7 @@
   background: transparent;
   border: none;
   color: var(--color-text-secondary);
-  font-size: 1.25rem;
+  font-size: var(--font-size-xl);
   padding: var(--spacing-xs) var(--spacing-sm);
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -1157,7 +1157,7 @@
   border-radius: 1rem;
   border-bottom-left-radius: 0.25rem;
   padding: 0.65rem 0.85rem;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   color: var(--color-text-primary);
   max-width: 90%;
   box-shadow: var(--shadow-card);
@@ -1237,7 +1237,7 @@
   appearance: none;
   -webkit-appearance: none;
   color: var(--color-text-primary);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
@@ -1301,14 +1301,14 @@
 
 .sms-detail-empty-title {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--font-size-md);
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .sms-detail-empty-desc {
   margin: 0;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   line-height: 1.5;
   max-width: 17rem;
@@ -1332,7 +1332,7 @@
 
 .sms-detail-title {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--font-size-md);
   font-weight: 700;
   color: var(--color-text-primary);
 }
@@ -1341,7 +1341,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   padding: var(--spacing-3xs) var(--spacing-sm);
   border-radius: 9999px;
@@ -1367,7 +1367,7 @@
   border-radius: 8px;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   line-height: 1.5;
   color: var(--color-text-primary);
   white-space: pre-wrap;
@@ -1388,7 +1388,7 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-2xs);
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   color: var(--color-critical);
   text-transform: uppercase;
@@ -1396,7 +1396,7 @@
 }
 
 .sms-detail-failure-text {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   color: var(--color-critical);
   font-weight: 500;
   line-height: 1.4;
@@ -1419,7 +1419,7 @@
 }
 
 .sms-detail-dt {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1428,21 +1428,21 @@
 }
 
 .sms-detail-val {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   font-weight: 500;
   color: var(--color-text-primary);
   word-break: break-all;
 }
 
 .sms-detail-code {
-  font-size: 0.75rem;
-  font-family: var(--font-mono, monospace);
+  font-size: var(--font-size-label);
   color: var(--color-text-primary);
   background: var(--color-bg);
   padding: var(--spacing-3xs) var(--spacing-2xs);
   border-radius: 4px;
   border: 1px solid var(--color-border);
   word-break: break-all;
+  font-variant-numeric: tabular-nums;
 }
 
 .sms-detail-copy-btn {
@@ -1469,7 +1469,7 @@
   margin-top: var(--spacing-sm);
   justify-content: center;
   height: var(--control-height);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
 }
 
 /* ==========================================================================

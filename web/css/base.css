@@ -76,13 +76,6 @@
   font-display: swap;
   src: url("../assets/fonts/inter-latin-700.woff2") format("woff2");
 }
-@font-face {
-  font-family: "Inter";
-  font-style: normal;
-  font-weight: 800;
-  font-display: swap;
-  src: url("../assets/fonts/inter-latin-800.woff2") format("woff2");
-}
 
 /* UI scale knob: `html { font-size: 100% }` operates as the single root scale knob.
    All sizing tokens across the system are declared in `rem`, so altering this
@@ -280,7 +273,7 @@ html { font-size: 100%; }
   --font-base: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   /* text-xs(12) / sm(14) / base(16) / lg(18, card titles) /
      xl(20, panel headings) / 2xl(24, page titles) / 3xl(30, KPI values) */
-  --font-size-label: 0.75rem; --font-size-sm: 0.875rem; --font-size-md: 1rem;
+  --font-size-label: 0.75rem; --font-size-13: 0.8125rem; --font-size-sm: 0.875rem; --font-size-md: 1rem;
   --font-size-lg: 1.125rem;   --font-size-xl: 1.25rem;  --font-size-2xl: 1.5rem;
   --font-size-3xl: 1.875rem;
   /* Alias of --font-size-label. 2026-09-06 UI/UX audit: 50 declarations
@@ -291,9 +284,8 @@ html { font-size: 100%; }
      name the rest of the scale implies, and --font-size-label predates it. */
   --font-size-xs: var(--font-size-label);
 
-  /* Monospace stack for IDs, hashes, coordinates and JSON payloads —
-     referenced by audit-log, incident-detail/list, map-packages and
-     service-health, none of which had a definition to resolve against. */
+  /* Monospace stack: ONLY for true code (audit JSON viewer, runbook box,
+     evidence hash). IDs, codes, clock and coordinates use --font-base. */
   --font-mono: "SFMono-Regular", "JetBrains Mono", "Cascadia Mono", Consolas,
                "Liberation Mono", Menlo, monospace;
 
@@ -378,11 +370,11 @@ html { font-size: 100%; }
 
   --type-card-title: 1rem;
   --type-card-subtitle: 0.8125rem;
-  --type-table-th: 0.6875rem;
+  --type-table-th: 0.75rem;
   --type-mono-id: 0.8125rem;
   --type-personnel-name: 0.875rem;
   --type-personnel-sub: 0.75rem;
-  --type-badge-pill: 0.6875rem;
+  --type-badge-pill: 0.75rem;
 
   --status-pending-text: var(--color-warning-text);
   --status-pending-bg: var(--tint-warning-bg);
@@ -1432,7 +1424,7 @@ html, body, .status-pill,
   gap: 0.35rem;
   padding: 0.22rem 0.625rem;
   border-radius: 9999px;
-  font-size: var(--type-badge-pill, 0.6875rem);
+  font-size: var(--type-badge-pill, 0.75rem);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1650,4 +1642,5 @@ svg.is-spinning {
   }
 }
 
-.font-mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); }
+/* Browsers default kbd/samp/code/pre to monospace; keep one typeface (the code spots set --font-mono themselves). */
+kbd, samp, code, pre { font-family: inherit; }

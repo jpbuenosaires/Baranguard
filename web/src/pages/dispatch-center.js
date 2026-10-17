@@ -29,7 +29,7 @@ import {
   cancelDispatch, acknowledgeTanodSos, resolveTanodSos, logout, ApiClientError,
 } from '../api/apiClient.js';
 import { getDispatchOffers, openDispatchOffer, cancelDispatchOffer } from '../services/shellWorkflowApi.js';
-import { LiveMap } from '../components/LiveMap.js';
+import { LiveMap, calculateDistanceMeters, formatDistanceAndEta, PILAR_COMMUNITY_POIS } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
@@ -192,6 +192,8 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   let mapViewportEl = null;
   let mapSummaryPillEl = null;
   let legendCardEl = null;
+  let drawerEl = null;
+  let activeDrawerIncidentId = null;
   let isLegendCollapsed = false;
   let pollTimer = null;
   let staleBannerEl = null;
@@ -297,6 +299,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     liveElapsedTimer = null;
     if (liveMap) liveMap.destroy();
     liveMap = null;
+    closeIncidentDrawer();
   }
 
   async function load(showLoadingState) {
@@ -332,6 +335,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         [...incidentsRes.items, ...reopenedIncidentsRes.items, ...dispatchedIncidentsRes.items].map((i) => [i.incidentId, i])
       );
       const onDutyUserIds = new Set(dutyStatuses.filter((d) => d.status === 'on_duty').map((d) => d.userId));
+      const respondingUserIds = new Set(dutyStatuses.filter((d) => d.status === 'responding').map((d) => d.userId));
       const eligibleTanods = usersRes.items.filter((u) => u.isActive && onDutyUserIds.has(u.userId));
       const activeDispatches = dispatchesRes.items.filter((d) => ACTIVE_DISPATCH_STATUSES.includes(d.status));
 
@@ -366,7 +370,8 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         activeDispatches: groupedActiveDispatches,
         eligibleTanods,
         openSos: openSos.map((s) => ({ ...s, fullName: tanodNames.get(s.userId), contactNumber: tanodContacts.get(s.userId) })),
-        gpsItems,
+        // Map pins match the header counts: Online (on duty) + Dispatched (responding); off-duty tanods are not shown.
+        gpsItems: gpsItems.filter((g) => onDutyUserIds.has(g.userId) || respondingUserIds.has(g.userId)),
         tanodNames,
       };
 
@@ -616,13 +621,29 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       legendCardEl.className = 'dispatch-map-legend-card';
       mapViewportEl.appendChild(legendCardEl);
 
+      drawerEl = document.createElement('div');
+      drawerEl.className = 'dispatch-map-drawer';
+      drawerEl.setAttribute('role', 'region');
+      drawerEl.setAttribute('aria-label', 'Incident inspection drawer');
+      mapViewportEl.appendChild(drawerEl);
+
+      mapViewportEl.addEventListener('click', (e) => {
+        if (!e.target.closest('.dispatch-map-drawer') && !e.target.closest('.live-map__marker') && !e.target.closest('.maplibregl-popup')) {
+          closeIncidentDrawer();
+        }
+      });
+
       mapCardEl.append(mapHeader, mapViewportEl);
       mapCol.appendChild(mapCardEl);
 
       layoutEl.append(queueCol, mapCol);
       container.appendChild(layoutEl);
 
-      liveMap = LiveMap(mapViewportEl);
+      liveMap = LiveMap(mapViewportEl, {
+        barangayId: user.barangayId,
+        showPois: true,
+        onSelectIncident: (id) => openIncidentDrawer(id),
+      });
     }
 
     const handleResolveSingleSos = async (sosId) => {
@@ -873,6 +894,10 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
 
     renderInteractiveLegend(availMapCount, dispMapCount, incMapCount, sosMapCount);
 
+    if (activeDrawerIncidentId != null) {
+      openIncidentDrawer(activeDrawerIncidentId);
+    }
+
     // Update Queue Cards view
     updateQueueView();
   }
@@ -946,10 +971,261 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     }
   }
 
+  function closeIncidentDrawer() {
+    if (!drawerEl) return;
+    drawerEl.classList.remove('is-open');
+    activeDrawerIncidentId = null;
+  }
+
+  function openIncidentDrawer(incidentId) {
+    if (!drawerEl || !latestData) return;
+    const { pendingIncidents, activeDispatches, eligibleTanods, gpsItems } = latestData;
+    const incident = pendingIncidents.find((i) => i.incidentId === incidentId)
+      || activeDispatches.find((i) => i.incidentId === incidentId);
+    if (!incident) {
+      closeIncidentDrawer();
+      return;
+    }
+
+    activeDrawerIncidentId = incidentId;
+    drawerEl.innerHTML = '';
+
+    const isDispatched = incident.status === 'dispatched' || Array.isArray(incident.dispatches);
+    const incCode = formatIncidentCode(incident);
+    const typeLabel = INCIDENT_TYPE_LABELS[incident.incidentType] || 'Incident';
+    const isCritical = incident.priority === 'critical';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'dispatch-map-drawer__header';
+
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'dispatch-map-drawer__title-wrap';
+
+    const codeSpan = document.createElement('div');
+    codeSpan.className = 'dispatch-map-drawer__code';
+    codeSpan.textContent = incCode;
+
+    const typeSpan = document.createElement('div');
+    typeSpan.className = 'dispatch-map-drawer__type';
+    typeSpan.innerHTML = `${getIncidentIcon(incident.incidentType, incident.priority)} <span>${escapeHtml(typeLabel)}</span>`;
+
+    titleWrap.append(codeSpan, typeSpan);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'dispatch-map-drawer__close-btn';
+    closeBtn.title = 'Close drawer';
+    closeBtn.setAttribute('aria-label', 'Close incident inspection drawer');
+    closeBtn.innerHTML = icons.x(16);
+    closeBtn.addEventListener('click', closeIncidentDrawer);
+
+    header.append(titleWrap, closeBtn);
+
+    // Body
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'dispatch-map-drawer__body';
+
+    // Section 1: Overview
+    const secOverview = document.createElement('div');
+    secOverview.className = 'dispatch-map-drawer__section';
+    const secOverviewTitle = document.createElement('div');
+    secOverviewTitle.className = 'dispatch-map-drawer__section-title';
+    secOverviewTitle.textContent = 'Incident Overview';
+
+    const metaCard = document.createElement('div');
+    metaCard.className = 'dispatch-map-drawer__meta-card';
+
+    const locText = incident.locationDescription || incident.location_description || (incident.latitude && incident.longitude ? `${Number(incident.latitude).toFixed(4)}, ${Number(incident.longitude).toFixed(4)}` : 'Location not recorded');
+    const elapsed = formatElapsed(incident.createdAt || incident.dispatchedAt);
+
+    metaCard.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span class="status-pill ${isCritical ? 'status-pill--critical' : isDispatched ? 'status-pill--info' : 'status-pill--pending'}">${escapeHtml((incident.priority || 'NORMAL').toUpperCase())}</span>
+        <span style="font-size:var(--font-size-label);color:var(--color-text-secondary);">${escapeHtml(elapsed)}</span>
+      </div>
+      <div style="display:flex;align-items:flex-start;gap:var(--spacing-xs);margin-top:var(--spacing-3xs);">
+        <span aria-hidden="true">${icons.mapPin(14)}</span>
+        <span style="color:var(--color-text-primary);font-weight:600;">${escapeHtml(locText)}</span>
+      </div>
+      ${incident.description ? `<div style="font-size:var(--font-size-label);color:var(--color-text-secondary);margin-top:var(--spacing-3xs);line-height:1.4;">${escapeHtml(incident.description)}</div>` : ''}
+    `;
+    secOverview.append(secOverviewTitle, metaCard);
+    bodyEl.appendChild(secOverview);
+
+    // Section 2: Responders / Recommendation
+    const secResponders = document.createElement('div');
+    secResponders.className = 'dispatch-map-drawer__section';
+
+    if (!isDispatched) {
+      const secRespTitle = document.createElement('div');
+      secRespTitle.className = 'dispatch-map-drawer__section-title';
+      secRespTitle.textContent = 'Closest Responder Recommendation';
+      secResponders.appendChild(secRespTitle);
+
+      // Rank available on-duty tanods by distance
+      const tanodsWithDistance = [];
+      const hasCoords = incident.latitude != null && incident.longitude != null;
+
+      for (const tanod of eligibleTanods) {
+        const gps = gpsItems.find((g) => g.userId === tanod.userId);
+        if (hasCoords && gps && gps.latitude != null && gps.longitude != null) {
+          const dist = calculateDistanceMeters(
+            Number(incident.latitude), Number(incident.longitude),
+            Number(gps.latitude), Number(gps.longitude)
+          );
+          tanodsWithDistance.push({ tanod, gps, dist });
+        } else {
+          tanodsWithDistance.push({ tanod, gps, dist: Infinity });
+        }
+      }
+
+      tanodsWithDistance.sort((a, b) => a.dist - b.dist);
+
+      if (tanodsWithDistance.length > 0) {
+        const closest = tanodsWithDistance[0];
+        const quickCard = document.createElement('div');
+        quickCard.className = 'dispatch-map-drawer__quick-tanod-card';
+
+        const distEtaText = Number.isFinite(closest.dist)
+          ? formatDistanceAndEta(closest.dist)
+          : 'GPS fix pending';
+
+        quickCard.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span class="dispatch-map-drawer__quick-tanod-name">${escapeHtml(closest.tanod.fullName)}</span>
+            <span class="status-pill status-pill--available">Available</span>
+          </div>
+          <div class="dispatch-map-drawer__quick-tanod-eta">${distEtaText}</div>
+        `;
+
+        const quickDispatchBtn = document.createElement('button');
+        quickDispatchBtn.type = 'button';
+        quickDispatchBtn.className = 'primary dispatch-map-drawer__btn';
+        quickDispatchBtn.innerHTML = `${icons.check(14)} Quick Dispatch (${escapeHtml(closest.tanod.fullName.split(' ')[0])})`;
+        quickDispatchBtn.addEventListener('click', async () => {
+          quickDispatchBtn.disabled = true;
+          const dispatched = await promptDispatchTanod({
+            incident,
+            incidentTypeLabel: typeLabel,
+            eligibleTanods: [closest.tanod, ...eligibleTanods.filter(t => t.userId !== closest.tanod.userId)],
+            tanodPositions: gpsItems,
+          });
+          if (dispatched) {
+            closeIncidentDrawer();
+            onQueueChanged();
+          } else {
+            quickDispatchBtn.disabled = false;
+          }
+        });
+        quickCard.appendChild(quickDispatchBtn);
+        secResponders.appendChild(quickCard);
+      } else {
+        const noTanod = document.createElement('div');
+        noTanod.style.fontSize = 'var(--font-size-sm)';
+        noTanod.style.color = 'var(--color-text-secondary)';
+        noTanod.textContent = 'No on-duty Tanods currently available.';
+        secResponders.appendChild(noTanod);
+      }
+    } else {
+      // Dispatched: show assigned responders
+      const dispatches = incident.dispatches || [];
+      const secRespTitle = document.createElement('div');
+      secRespTitle.className = 'dispatch-map-drawer__section-title';
+      secRespTitle.textContent = `Assigned Responders (${dispatches.length})`;
+      secResponders.appendChild(secRespTitle);
+
+      for (const d of dispatches) {
+        const dCard = document.createElement('div');
+        dCard.className = 'dispatch-map-drawer__meta-card';
+        const tanodGps = gpsItems.find((g) => g.userId === d.tanodId);
+        let distStr = '';
+        if (incident.latitude != null && incident.longitude != null && tanodGps?.latitude != null && tanodGps?.longitude != null) {
+          const dist = calculateDistanceMeters(Number(incident.latitude), Number(incident.longitude), Number(tanodGps.latitude), Number(tanodGps.longitude));
+          distStr = ` · ${formatDistanceAndEta(dist)}`;
+        }
+        dCard.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-weight:700;color:var(--color-text-primary);">${escapeHtml(d.tanodName || `Tanod #${d.tanodId}`)}</span>
+            <span class="status-pill status-pill--info">${escapeHtml(DISPATCH_STATUS_LABELS[d.status] || 'Assigned')}</span>
+          </div>
+          <div style="font-size:var(--font-size-label);color:var(--color-link);font-weight:600;">${distStr ? distStr.replace(/^ · /, '') : 'Live GPS fix'}</div>
+        `;
+        secResponders.appendChild(dCard);
+      }
+    }
+    bodyEl.appendChild(secResponders);
+
+    // Section 3: Actions
+    const actionsSec = document.createElement('div');
+    actionsSec.className = 'dispatch-map-drawer__actions';
+
+    const viewDossierBtn = document.createElement('button');
+    viewDossierBtn.type = 'button';
+    viewDossierBtn.className = 'ghost dispatch-map-drawer__btn';
+    viewDossierBtn.innerHTML = `${icons.fileText(14)} View Full Incident Record`;
+    viewDossierBtn.addEventListener('click', () => {
+      navigate('incident-detail', incident.incidentId);
+    });
+    actionsSec.appendChild(viewDossierBtn);
+
+    if (!isDispatched) {
+      const fullDispatchBtn = document.createElement('button');
+      fullDispatchBtn.type = 'button';
+      fullDispatchBtn.className = 'primary dispatch-map-drawer__btn';
+      fullDispatchBtn.innerHTML = `${icons.userPlus(14)} Select Responder to Dispatch`;
+      fullDispatchBtn.addEventListener('click', async () => {
+        fullDispatchBtn.disabled = true;
+        const dispatched = await promptDispatchTanod({
+          incident,
+          incidentTypeLabel: typeLabel,
+          eligibleTanods,
+          tanodPositions: gpsItems,
+        });
+        if (dispatched) {
+          closeIncidentDrawer();
+          onQueueChanged();
+        } else {
+          fullDispatchBtn.disabled = false;
+        }
+      });
+      actionsSec.appendChild(fullDispatchBtn);
+    } else {
+      const assignedIds = new Set((incident.dispatches || []).map((d) => d.tanodId));
+      const unassignedEligible = eligibleTanods.filter((t) => !assignedIds.has(t.userId));
+      const backupBtn = document.createElement('button');
+      backupBtn.type = 'button';
+      backupBtn.className = 'primary dispatch-map-drawer__btn';
+      backupBtn.innerHTML = `${icons.plus(14)} Dispatch Backup Responder`;
+      backupBtn.disabled = unassignedEligible.length === 0;
+      backupBtn.addEventListener('click', async () => {
+        backupBtn.disabled = true;
+        const dispatched = await promptDispatchTanod({
+          incident,
+          incidentTypeLabel: typeLabel,
+          eligibleTanods: unassignedEligible,
+          tanodPositions: gpsItems,
+        });
+        if (dispatched) {
+          closeIncidentDrawer();
+          onQueueChanged();
+        } else {
+          backupBtn.disabled = unassignedEligible.length === 0;
+        }
+      });
+      actionsSec.appendChild(backupBtn);
+    }
+
+    bodyEl.appendChild(actionsSec);
+
+    drawerEl.append(header, bodyEl);
+    drawerEl.classList.add('is-open');
+  }
+
   function renderInteractiveLegend(availCount, dispCount, incCount, sosCount) {
     if (!legendCardEl || !liveMap) return;
     const vis = liveMap.getLayerVisibility();
-    const anyHidden = !vis.available || !vis.dispatched || !vis.incident || !vis.sos;
+    const anyHidden = !vis.available || !vis.dispatched || !vis.incident || !vis.sos || !vis.poi;
 
     legendCardEl.innerHTML = '';
     legendCardEl.classList.toggle('is-collapsed', isLegendCollapsed);
@@ -1009,6 +1285,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       { key: 'dispatched', label: 'Dispatched', dotClass: 'legend-dot--blue', count: dispCount },
       { key: 'incident', label: 'Incident Pin', dotClass: 'legend-dot--amber', count: incCount },
       { key: 'sos', label: 'Emergency SOS', dotClass: 'legend-dot--red', count: sosCount },
+      { key: 'poi', label: 'Landmarks / POIs', dotClass: 'legend-dot--purple', count: PILAR_COMMUNITY_POIS.length },
     ];
 
     for (const row of rows) {
@@ -1409,8 +1686,9 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         liveMap?.previewIncident(item.incidentId, false);
       });
 
-      // Card Click: Focus on Map
+      // Card Click: Focus on Map and open inspection drawer
       card.addEventListener('click', () => {
+        openIncidentDrawer(item.incidentId);
         if (item.latitude != null && item.longitude != null) {
           const found = liveMap?.highlightIncident(item.incidentId, 18.5);
           if (!found) {

@@ -141,7 +141,7 @@
   justify-content: center;
   pointer-events: none;
   color: var(--color-text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
 }
 
 /* ==========================================================================
@@ -318,14 +318,14 @@
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm, 0.25rem);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   line-height: 1.2;
   color: var(--color-text-secondary);
-  font-family: var(--font-mono, monospace);
   white-space: nowrap;
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
 }
 
 .audit-meta-tag__key {
@@ -459,7 +459,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md, 0.5rem);
   font-family: var(--font-mono, monospace);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   line-height: 1.45;
   color: var(--color-text-primary);
   white-space: pre-wrap;

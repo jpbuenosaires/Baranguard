@@ -200,12 +200,12 @@ body.privacy-page {
 .privacy-toc__meta-tag {
   display: inline-block;
   font-size: var(--font-size-xs);
-  font-family: var(--font-mono);
   color: var(--color-primary);
   background: var(--tint-info-bg);
   border: 1px solid var(--tint-info-border);
   border-radius: var(--radius-xs);
   padding: var(--spacing-3xs) var(--spacing-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 /* --- Elevated Article Surface --- */
@@ -228,7 +228,7 @@ body.privacy-page {
 
 .privacy-main h1 {
   font-size: var(--font-size-2xl);
-  font-weight: 800;
+  font-weight: 700;
   color: var(--color-text-primary);
   letter-spacing: -0.02em;
   margin: 0 0 var(--spacing-xs);
@@ -264,11 +264,11 @@ body.privacy-page {
 
 .privacy-meta-pill {
   font-weight: 700;
-  font-family: var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: var(--spacing-3xs) var(--spacing-sm);
   border-radius: var(--radius-full);
+  font-variant-numeric: tabular-nums;
 }
 
 .privacy-meta-pill--draft {
@@ -475,12 +475,12 @@ body.privacy-page {
 .retention-pill {
   display: inline-block;
   font-size: var(--font-size-xs);
-  font-family: var(--font-mono);
   font-weight: 700;
   border-radius: var(--radius-full);
   padding: var(--spacing-3xs) var(--spacing-sm);
   white-space: nowrap;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .retention-pill--primary {

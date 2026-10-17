@@ -60,14 +60,14 @@
 
 .attention-banner__title {
   font-weight: 700;
-  font-size: 0.875rem;
+  font-size: var(--font-size-sm);
   line-height: 1.25;
   white-space: nowrap;
 }
 
 .attention-banner__detail {
   font-weight: 500;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   line-height: 1.25;
   opacity: 0.88;
 }
@@ -89,7 +89,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   padding: 0.1875rem 0.5rem;
   border-radius: 9999px;
@@ -104,7 +104,7 @@
   gap: 0.375rem;
   border-radius: 9999px;
   padding: 0.3125rem 0.875rem;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
@@ -380,7 +380,7 @@
 }
 
 .quick-action-tile__title {
-  font-size: var(--type-action-title, 0.9375rem);
+  font-size: var(--type-action-title, 0.875rem);
   font-weight: 700;
   color: var(--color-text-primary);
   line-height: 1.25;
@@ -721,7 +721,7 @@
 }
 
 .breakdown-row__pct {
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   color: var(--color-text-secondary);
   background: color-mix(in srgb, var(--color-text-secondary) 10%, transparent);
@@ -790,7 +790,7 @@
 }
 
 .breakdown-summary-tile__val {
-  font-size: 0.875rem;
+  font-size: var(--font-size-sm);
   font-weight: 700;
   color: var(--color-text-primary);
   line-height: 1.25;
@@ -800,7 +800,7 @@
 }
 
 .breakdown-summary-tile__sub {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-secondary);
   line-height: 1.2;
 }
@@ -842,7 +842,6 @@
   align-items: center;
   justify-content: center;
   white-space: nowrap;
-  font-family: var(--font-mono);
   font-size: var(--type-mono-id, 0.75rem);
   font-weight: 600;
   color: var(--color-link);
@@ -853,6 +852,7 @@
   letter-spacing: -0.01em;
   line-height: 1.2;
   transition: all 0.15s ease;
+  font-variant-numeric: tabular-nums;
 }
 .data-table tbody tr.is-clickable:hover .incident-id-badge {
   background: var(--color-primary);
@@ -873,7 +873,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   color: var(--color-text-secondary);
   background: color-mix(in srgb, var(--color-text-secondary) 10%, transparent);
@@ -951,7 +951,7 @@
 }
 
 .conversion-hero-banner__title {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   font-weight: 700;
   color: var(--color-text-primary);
   white-space: nowrap;
@@ -960,7 +960,7 @@
 }
 
 .conversion-hero-banner__caption {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-secondary);
   line-height: 1.2;
 }
@@ -973,15 +973,15 @@
 }
 
 .conversion-hero-banner__val {
-  font-size: 1.25rem;
-  font-weight: 800;
+  font-size: var(--font-size-xl);
+  font-weight: 700;
   color: var(--color-text-primary);
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 
 .conversion-hero-banner__rate-label {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   color: var(--color-text-secondary);
   text-transform: uppercase;
@@ -1056,7 +1056,7 @@
   padding: 0 0.5rem;
   border-radius: 999px;
   font-size: var(--font-size-sm);
-  font-weight: 800;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1;
   flex-shrink: 0;

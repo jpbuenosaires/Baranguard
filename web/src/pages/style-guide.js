@@ -182,7 +182,7 @@ export function renderStyleGuidePage(root, user, onLoggedOut, navigate) {
     renderCell: (row, colKey) => {
       switch (colKey) {
         case 'id':
-          return `<strong style="font-family:var(--font-mono);">${row.id}</strong>`;
+          return `<strong>${row.id}</strong>`;
         case 'subject':
           return row.subject;
         case 'status': {

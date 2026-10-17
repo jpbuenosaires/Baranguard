@@ -115,7 +115,7 @@
 
 .kpi-card__value {
   font-size: var(--font-size-3xl);
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
@@ -138,7 +138,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3125rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   padding: 0.2rem 0.625rem;
   border-radius: 9999px;
@@ -195,7 +195,7 @@
 /* Footer note */
 .kpi-card__footer-note {
   margin-top: var(--spacing-sm);
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-secondary);
   display: flex;
   align-items: center;
@@ -253,7 +253,7 @@
 }
 
 .kpi-hero__res-count {
-  font-size: 0.9375rem;
+  font-size: var(--font-size-sm);
   font-weight: 700;
   color: var(--color-success-text);
   display: flex;
@@ -262,7 +262,7 @@
 }
 
 .kpi-hero__res-rate {
-  font-size: 0.8125rem;
+  font-size: var(--font-size-13);
   font-weight: 700;
   color: var(--color-success-text);
   background: color-mix(in srgb, var(--color-success) 12%, transparent);
@@ -271,7 +271,7 @@
 }
 
 .kpi-hero__res-delta {
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   color: var(--color-success);
   background: color-mix(in srgb, var(--color-success) 12%, transparent);
@@ -298,7 +298,7 @@
 }
 
 .kpi-hero__res-sub {
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-secondary);
 }
 

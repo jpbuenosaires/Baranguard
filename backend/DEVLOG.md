@@ -19206,3 +19206,10 @@ Audit of `tanod.reyes` (primary phone tester) and every screen against the UAT s
   5. *Vertical Operational Milestone Stepper*: Refactored the horizontal stepper to a clean vertical milestone timeline (`timeline--vertical`) with status lines, arrival milestones, and elapsed time badges (`+X min after filing`).
   6. *Case Connections & References*: Consolidated related incident linking, referrals, and Secretary lifecycle management into the right operational rail.
 - **Verification**: All 18 automated test suites pass cleanly (`node --test`). Zero token drifts (`base.css` untouched).
+
+## 2026-10-17 — Map boundary, centre, POIs and demo coordinates corrected
+
+- **Boundary:** OpenStreetMap has no polygon for the four barangays (only point markers; Overpass and Nominatim checked). Used the PSA/PSGC 2023 barangay polygons (github.com/faeldon/philippines-json-maps, municipality 506213000) instead, stored in `web/src/data/barangayBoundaries.js` (Dao=1, Binanuahan=2, Marifosque=3, Banuyo=4, rounded to 5 decimals). `LiveMap` takes `barangayId` and uses that polygon and its bounding-box centre; default zoom 15. The old invented "Poblacion" polygon and `DEFAULT_PILAR_BOUNDARY` are gone. `HeatmapMap` centres on Dao.
+- **POIs:** the seven landmark coordinates in `LiveMap.js` are now the OSM positions (Overpass, 2026-10-17). Per the PSA polygons the market and the Binanuahan evacuation centre lie in Binanuahan, the port outside all four barangays; the barangay hall and Pilar I Central School are in Dao.
+- **`baranguard_uiseed` only (not the real DB):** every coordinate in `incident`, `gps_track`, `tanod_sos`, `citizen_report` and `school` was snapped to the nearest real OSM road inside the Dao polygon (median shift 32 m, max 205 m); `dispatch.route_json` cleared and `route_status='unavailable'` (routes are recomputed on demand). Backup of the six tables taken first. `location_description` text was not edited and may not match the new spot.
+- Not changed: `seed-dao-demo.php` / `seed-demo-data.php` still hold the old coordinates and would reintroduce them.

@@ -224,7 +224,7 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
             const metaRow = document.createElement('div');
             metaRow.className = 'swap-cell-meta';
             const codePill = document.createElement('span');
-            codePill.className = 'c1-inc-code-pill font-mono';
+            codePill.className = 'c1-inc-code-pill';
             codePill.textContent = swapCode;
             metaRow.appendChild(codePill);
             cell.appendChild(metaRow);

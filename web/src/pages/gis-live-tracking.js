@@ -44,7 +44,7 @@
 import {
   getGpsLive, getTanodSos, getDutyStatus, getDispatches, getUsers, getIncidents, logout, ApiClientError,
 } from '../api/apiClient.js';
-import { LiveMap, formatAge } from '../components/LiveMap.js';
+import { LiveMap, formatAge, PILAR_COMMUNITY_POIS } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
 import { PageHeader } from '../components/PageHeader.js';
 import { icons } from '../components/icons.js';
@@ -387,7 +387,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       layoutEl.append(sidebar, mapCard);
       container.appendChild(layoutEl);
 
-      liveMap = LiveMap(mapViewport, { showNavControl: false });
+      liveMap = LiveMap(mapViewport, { showNavControl: false, showPois: true, barangayId: user.barangayId });
     }
 
     // ── Update 3 Mini Status Cards ──
@@ -467,7 +467,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     function renderGisLegend(availMapCount, dispMapCount, incMapCount, sosMapCount) {
       if (!legendWidgetEl || !liveMap) return;
       const vis = liveMap.getLayerVisibility();
-      const anyHidden = !vis.available || !vis.dispatched || !vis.incident || !vis.sos;
+      const anyHidden = !vis.available || !vis.dispatched || !vis.incident || !vis.sos || !vis.poi;
       legendWidgetEl.innerHTML = '';
       legendWidgetEl.classList.toggle('is-collapsed', isLegendCollapsed);
 
@@ -526,6 +526,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
         { key: 'dispatched', label: 'Dispatched', dotClass: 'legend-dot--blue', count: dispMapCount },
         { key: 'incident', label: 'Incident Pin', dotClass: 'legend-dot--amber', count: incMapCount },
         { key: 'sos', label: 'Emergency SOS', dotClass: 'legend-dot--red', count: sosMapCount },
+        { key: 'poi', label: 'Landmarks / POIs', dotClass: 'legend-dot--purple', count: PILAR_COMMUNITY_POIS.length },
       ];
 
       for (const row of rows) {

@@ -23,7 +23,7 @@
   border-radius: 50%;
   background: var(--tint-neutral-bg);
   color: var(--color-text-tertiary);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   font-style: italic;
   font-family: var(--font-base); /* D-21: was a Georgia serif stack */

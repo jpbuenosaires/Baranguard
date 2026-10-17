@@ -21,7 +21,7 @@ describe('LiveMap', () => {
     LiveMap(container());
     await settle();
     const [map] = maps;
-    assert.deepEqual(map.options.center, [123.6667, 12.9186]);
+    assert.deepEqual(map.options.center, [123.66916, 12.92094]);
     assert.equal(map.controls.length, 2, 'OSM tile policy requires the attribution control');
   });
 

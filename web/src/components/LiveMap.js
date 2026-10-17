@@ -7,25 +7,74 @@
  *
  * PascalCase filename per §4 (component convention).
  *
- * Features & UI Enhancements:
+ * Tactical CAD Enhancements:
  *   - Screen-pixel clustering for both Tanods and Incidents to eliminate
  *     marker clutter and pin collision in dense Poblacion areas.
  *   - Clustered incident flyout/popup dossier when points share identical
  *     coordinates, ensuring every stacked incident is accessible and assignable.
  *   - Category micro-icons and severity-based tactical badges.
  *   - Smart adaptive label density with hover/zoom reveal so labels never overlap.
- *   - Dispatched connection lines and route overlays with tokenized theme sync.
+ *   - Distance & Estimated Walking Time (ETA) badges on dispatch links.
+ *   - Official barangay boundary (PSA polygons, see data/barangayBoundaries.js).
+ *   - Community Landmarks & POIs layer (Barangay Hall, Schools, Evacuation Centers).
+ *   - GPS Accuracy radius circles for approximate/weak signals.
  *   - 100% tokenized CSS integration.
  */
 
 import { onThemeChange } from './themeEvents.js';
 import { attachBasemapFallback, OSM_TILE_URL } from '../utils/mapFallback.js';
 import { formatSosCode, formatIncidentCode } from '../services/tanodWorkflowUi.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
+import { boundaryFor, centerFor } from '../data/barangayBoundaries.js';
 
-const DEFAULT_CENTER = [123.6667, 12.9186]; // Pilar, Sorsogon [lng, lat]
-const DEFAULT_ZOOM = 13;
+const DEFAULT_ZOOM = 15; // a barangay (about 1-2 km across) fills the viewport
 const CLUSTER_RADIUS_PX = 44; // Screen-pixel distance for Tanod grouping
 const INCIDENT_CLUSTER_RADIUS_PX = 38; // Screen-pixel distance for Incident grouping
+
+/**
+ * Community Landmarks and Critical Infrastructure POIs in Pilar.
+ * Coordinates are the OpenStreetMap positions (Overpass query, 2026-10-17), not estimates.
+ */
+export const PILAR_COMMUNITY_POIS = [
+  { id: 'bgy-hall', name: 'Dao Barangay Hall & Tanod HQ', category: 'command', lat: 12.922, lng: 123.67449, glyph: '🏛️' },
+  { id: 'evac-center', name: 'Binanuahan Evacuation Center (LGU)', category: 'evacuation', lat: 12.92331, lng: 123.67567, glyph: '🛡️' },
+  { id: 'public-market', name: 'Pilar New Public Market', category: 'market', lat: 12.92199, lng: 123.67514, glyph: '🛒' },
+  { id: 'rhu-clinic', name: 'Rural Health Unit (Municipal Health Office)', category: 'medical', lat: 12.9255, lng: 123.66714, glyph: '🏥' },
+  { id: 'pilar-central', name: 'Pilar 1 Central School', category: 'school', lat: 12.92262, lng: 123.67314, glyph: '🏫' },
+  { id: 'banuyo-elem', name: 'Banuyo Elementary School', category: 'school', lat: 12.9255, lng: 123.67468, glyph: '🏫' },
+  { id: 'pilar-port', name: 'Port of Pilar Terminal', category: 'port', lat: 12.92144, lng: 123.67585, glyph: '⚓' },
+];
+
+/**
+ * Calculates geodesic distance in meters between two lat/lng pairs.
+ * @param {number} lat1
+ * @param {number} lon1
+ * @param {number} lat2
+ * @param {number} lon2
+ * @returns {number} meters
+ */
+export function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c);
+}
+
+/**
+ * Formats distance and estimated walking time (~80 meters / min).
+ * @param {number} meters
+ * @returns {string} e.g. "350m · ~4m walk"
+ */
+export function formatDistanceAndEta(meters) {
+  const walkingSpeedMpm = 80;
+  const minutes = Math.max(1, Math.round(meters / walkingSpeedMpm));
+  const distStr = meters >= 1000 ? `${(meters / 1000).toFixed(1)}km` : `${meters}m`;
+  return `${distStr} · ~${minutes}m walk`;
+}
 
 /**
  * Returns an inline SVG string for the given incident type.
@@ -61,6 +110,8 @@ export function getIncidentCategorySvg(type, size = 13) {
  */
 export function LiveMap(container, options = {}) {
   container.classList.add('live-map');
+  const BOUNDARY = boundaryFor(options.barangayId);
+  const DEFAULT_CENTER = centerFor(options.barangayId);
 
   const map = new maplibregl.Map({
     container,
@@ -81,6 +132,9 @@ export function LiveMap(container, options = {}) {
   let tanodMarkers = [];
   let sosMarkers = [];
   let incidentMarkers = [];
+  let dispatchLinkEtaMarkers = [];
+  let poiMarkers = [];
+
   const tanodMarkersById = new Map();
   const sosMarkersById = new Map();
   const incidentMarkersById = new Map();
@@ -119,6 +173,7 @@ export function LiveMap(container, options = {}) {
     dispatched: true,
     incident: true,
     sos: true,
+    poi: Boolean(options.showPois),
   };
 
   function updateLabelDensity() {
@@ -143,7 +198,10 @@ export function LiveMap(container, options = {}) {
     updateLabelDensity();
     if (pendingBoundary.value) {
       applyBoundary(map, pendingBoundary.value);
+    } else {
+      applyBoundary(map, BOUNDARY);
     }
+    renderPoiMarkers();
     if (pendingLinks.value !== undefined) {
       renderDispatchLinks();
     }
@@ -204,6 +262,44 @@ export function LiveMap(container, options = {}) {
     return `${parts[0][0]}. ${parts[parts.length - 1]}`;
   }
 
+  function renderPoiMarkers() {
+    poiMarkers = clearMarkers(poiMarkers);
+    if (!visibleLayers.poi) return;
+
+    for (const poi of PILAR_COMMUNITY_POIS) {
+      const el = document.createElement('div');
+      el.className = 'live-map__marker live-map__marker--poi';
+      el.innerHTML = `<span aria-hidden="true">${poi.glyph}</span>`;
+      el.title = `${poi.name} · ${poi.category.toUpperCase()}`;
+
+      const labelEl = document.createElement('span');
+      labelEl.className = 'live-map__pin-label';
+      labelEl.textContent = poi.name;
+      el.appendChild(labelEl);
+
+      const popupContent = document.createElement('div');
+      popupContent.className = 'live-map__incident-popup';
+      popupContent.innerHTML = `
+        <div class="live-map__popup-top-row">
+          <div class="live-map__incident-popup-heading">${poi.glyph} ${escapeHtml(poi.name)}</div>
+          <span class="status-pill status-pill--info">${escapeHtml(poi.category.toUpperCase())}</span>
+        </div>
+        <div class="live-map__popup-meta">
+          <span>Barangay Infrastructure · Key Community Point</span>
+          <span>Coordinates: ${poi.lat.toFixed(4)}, ${poi.lng.toFixed(4)}</span>
+        </div>
+      `;
+
+      const popup = new maplibregl.Popup({ offset: 14, closeButton: true }).setDOMContent(popupContent);
+      const marker = new maplibregl.Marker({ element: el })
+        .setLngLat([poi.lng, poi.lat])
+        .setPopup(popup)
+        .addTo(map);
+
+      poiMarkers.push(marker);
+    }
+  }
+
   /**
    * Greedy screen-pixel clustering for Tanods
    */
@@ -262,7 +358,16 @@ export function LiveMap(container, options = {}) {
         const markerTypeClass = isDispatched ? ' live-map__marker--dispatched' : ' live-map__marker--available';
         const isFocused = activeFocusedTanodId === item.userId;
         const focusedClass = isFocused ? ' live-map__marker--focused' : '';
-        el.className = 'live-map__marker live-map__marker--tanod' + markerTypeClass + (item.isStale ? ' live-map__marker--stale' : '') + focusedClass;
+
+        // GPS accuracy circle: if accuracy is weak (>30m), draw subtle translucent accuracy radius
+        const isApproxGps = (item.accuracy_m != null && item.accuracy_m > 30) || item.isStale;
+        const approxClass = isApproxGps ? ' live-map__marker--approx-gps' : '';
+        if (isApproxGps) {
+          const circleRem = Math.min(5, Math.max(2.5, (item.accuracy_m || 40) / 16));
+          el.style.setProperty('--approx-circle-size', `${circleRem}rem`);
+        }
+
+        el.className = 'live-map__marker live-map__marker--tanod' + markerTypeClass + (item.isStale ? ' live-map__marker--stale' : '') + approxClass + focusedClass;
         el.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
 
         const labelEl = document.createElement('span');
@@ -297,6 +402,12 @@ export function LiveMap(container, options = {}) {
         const ageText = document.createElement('span');
         ageText.textContent = `GPS fix: ${formatAge(item.ageSeconds)}${item.isStale ? ' · Stale signal' : ' · Live'}`;
         metaEl.appendChild(ageText);
+
+        if (item.accuracy_m != null) {
+          const accSpan = document.createElement('span');
+          accSpan.textContent = `Accuracy: ±${Math.round(item.accuracy_m)}m${item.accuracy_m > 30 ? ' (approximate fix)' : ' (precise)'}`;
+          metaEl.appendChild(accSpan);
+        }
 
         if (isDispatched && item.incidentCode) {
           const assignedLine = document.createElement('span');
@@ -610,7 +721,8 @@ export function LiveMap(container, options = {}) {
           assignButton.type = 'button';
           assignButton.className = (isDispatched ? 'ghost' : 'primary') + ' live-map__popup-btn';
           assignButton.textContent = isDispatched ? '+ Add Responder' : 'Assign';
-          assignButton.addEventListener('click', () => {
+          assignButton.addEventListener('click', (e) => {
+            e.stopPropagation();
             marker?.getPopup()?.remove();
             onAssign(item.incidentId);
           });
@@ -622,7 +734,8 @@ export function LiveMap(container, options = {}) {
           recordBtn.type = 'button';
           recordBtn.className = 'ghost live-map__popup-btn';
           recordBtn.textContent = 'View Incident';
-          recordBtn.addEventListener('click', () => {
+          recordBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
             marker?.getPopup()?.remove();
             onViewRecord(item.incidentId);
           });
@@ -637,6 +750,9 @@ export function LiveMap(container, options = {}) {
           const targetZoom = Math.max(map.getZoom(), 18.5);
           map.flyTo({ center: [item.longitude, item.latitude], zoom: targetZoom, duration: 500 });
           applyIncidentFocus(item.incidentId, false);
+          if (typeof options.onSelectIncident === 'function') {
+            options.onSelectIncident(item.incidentId);
+          }
         });
 
         const popup = new maplibregl.Popup({ offset: 18, closeButton: true }).setDOMContent(popupContent);
@@ -702,6 +818,14 @@ export function LiveMap(container, options = {}) {
           const codeSpan = document.createElement('span');
           codeSpan.className = 'live-map__cluster-popup-item-title';
           codeSpan.textContent = incCode;
+          if (typeof options.onSelectIncident === 'function') {
+            codeSpan.style.cursor = 'pointer';
+            codeSpan.title = 'Click to inspect in drawer';
+            codeSpan.addEventListener('click', (e) => {
+              e.stopPropagation();
+              options.onSelectIncident(inc.incidentId);
+            });
+          }
           const pill = document.createElement('span');
           pill.className = 'status-pill' + (inc.priority === 'critical' ? ' status-pill--critical' : inc.status === 'dispatched' ? ' status-pill--info' : ' status-pill--pending');
           pill.textContent = inc.priority;
@@ -718,7 +842,8 @@ export function LiveMap(container, options = {}) {
             assignBtn.type = 'button';
             assignBtn.className = (inc.status === 'dispatched' ? 'ghost' : 'primary') + ' live-map__popup-btn';
             assignBtn.textContent = inc.status === 'dispatched' ? '+ Add' : 'Assign';
-            assignBtn.addEventListener('click', () => {
+            assignBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
               clusterMarker?.getPopup()?.remove();
               onAssign(inc.incidentId);
             });
@@ -729,7 +854,8 @@ export function LiveMap(container, options = {}) {
             viewBtn.type = 'button';
             viewBtn.className = 'ghost live-map__popup-btn';
             viewBtn.textContent = 'View';
-            viewBtn.addEventListener('click', () => {
+            viewBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
               clusterMarker?.getPopup()?.remove();
               onViewRecord(inc.incidentId);
             });
@@ -834,6 +960,7 @@ export function LiveMap(container, options = {}) {
     renderTanodMarkers(lastRawMarkers);
     renderIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewRecord);
     setSosMarkers(lastRawSosItems, lastSosResolve, lastSosAck);
+    renderPoiMarkers();
     renderDispatchLinks();
     renderRoute();
     return { ...visibleLayers };
@@ -844,9 +971,11 @@ export function LiveMap(container, options = {}) {
     visibleLayers.dispatched = true;
     visibleLayers.incident = true;
     visibleLayers.sos = true;
+    visibleLayers.poi = Boolean(options.showPois);
     renderTanodMarkers(lastRawMarkers);
     renderIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewRecord);
     setSosMarkers(lastRawSosItems, lastSosResolve, lastSosAck);
+    renderPoiMarkers();
     renderDispatchLinks();
     renderRoute();
     return { ...visibleLayers };
@@ -883,6 +1012,8 @@ export function LiveMap(container, options = {}) {
     sosMarkersById.clear();
     clearMarkers(incidentMarkers);
     incidentMarkersById.clear();
+    clearMarkers(dispatchLinkEtaMarkers);
+    clearMarkers(poiMarkers);
     applyDispatchLinks(map, []);
     applyRoute(map, null);
     detachBasemapFallback();
@@ -1105,13 +1236,18 @@ function applyBoundary(map, geojson) {
     id: 'barangay-boundary-fill',
     type: 'fill',
     source: 'barangay-boundary',
-    paint: { 'fill-color': themeToken('--color-accent', '#3B82F6'), 'fill-opacity': 0.05 },
+    paint: { 'fill-color': themeToken('--color-accent', '#3B82F6'), 'fill-opacity': 0.04 },
   });
   map.addLayer({
     id: 'barangay-boundary-line',
     type: 'line',
     source: 'barangay-boundary',
-    paint: { 'line-color': themeToken('--color-primary', '#1D4ED8'), 'line-width': 2 },
+    paint: {
+      'line-color': themeToken('--color-primary', '#1D4ED8'),
+      'line-width': 2.5,
+      'line-dasharray': [4, 2],
+      'line-opacity': 0.8,
+    },
   });
 }
 

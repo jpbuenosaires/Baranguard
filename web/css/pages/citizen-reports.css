@@ -127,7 +127,7 @@
 }
 
 .citizen-inbox-left-panel .command-kpi__label {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -138,8 +138,8 @@
 }
 
 .citizen-inbox-left-panel .command-kpi__value {
-  font-size: 1.125rem;
-  font-weight: 800;
+  font-size: var(--font-size-lg);
+  font-weight: 700;
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
@@ -363,8 +363,7 @@
 .citizen-id-badge {
   display: inline-flex;
   align-items: center;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.78125rem;
+  font-size: var(--font-size-13);
   font-weight: 700;
   color: var(--color-link);
   background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
@@ -375,6 +374,7 @@
   line-height: 1.2;
   white-space: nowrap;
   transition: all 0.15s ease;
+  font-variant-numeric: tabular-nums;
 }
 
 .data-table tbody tr.is-clickable:hover .citizen-id-badge,
@@ -409,7 +409,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   color: var(--color-link);
   background: var(--tint-info-bg);
@@ -429,8 +429,7 @@
 }
 
 .citizen-location-coords {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-secondary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -463,8 +462,7 @@
 .citizen-linked-inc-badge {
   display: inline-flex;
   align-items: center;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   color: var(--color-text-secondary);
   background: color-mix(in srgb, var(--color-text-secondary) 10%, transparent);
@@ -473,6 +471,7 @@
   padding: 0.1rem 0.375rem;
   line-height: 1.2;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Submitted Date Stack (Relative + Exact Date) */
@@ -491,7 +490,7 @@
 }
 
 .citizen-submitted-cell__date {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-secondary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -645,7 +644,7 @@
 }
 
 .citizen-word-count-chip {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   color: var(--color-text-secondary);
   background: var(--color-surface);
@@ -655,7 +654,7 @@
 }
 
 .citizen-narrative-card__title {
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -668,7 +667,7 @@
 
 .citizen-narrative-card__text {
   margin: 0;
-  font-size: 0.9375rem;
+  font-size: var(--font-size-sm);
   line-height: 1.5;
   color: var(--color-text-primary);
   white-space: pre-wrap;
@@ -697,7 +696,7 @@
 }
 
 .citizen-detail-meta-label {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -712,7 +711,7 @@
 }
 
 .citizen-detail-meta-sub {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-secondary);
   line-height: 1.25;
 }
@@ -733,7 +732,7 @@
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-secondary);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -780,7 +779,7 @@
 
 .citizen-loc-btn {
   padding: 0.2rem 0.5rem !important;
-  font-size: 0.75rem !important;
+  font-size: var(--font-size-label) !important;
   min-height: 1.75rem !important;
 }
 
@@ -903,7 +902,7 @@
 .citizen-priority-pill {
   height: 100%;
   padding: 0 var(--spacing-sm-md);
-  font-size: 0.75rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);

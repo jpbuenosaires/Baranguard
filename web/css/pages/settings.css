@@ -28,7 +28,7 @@
 }
 
 .settings-rail__header {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -103,7 +103,7 @@
 }
 
 .settings-rail__desc {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-tertiary);
   margin-top: var(--spacing-3xs);
   line-height: 1.3;
@@ -253,7 +253,7 @@
 }
 
 .settings-help-text {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-tertiary);
   line-height: 1.35;
 }
@@ -287,7 +287,7 @@
 }
 
 .settings-identity-name {
-  font-size: 1.125rem;
+  font-size: var(--font-size-lg);
   font-weight: 700;
   color: var(--color-text-primary);
   line-height: 1.2;
@@ -304,7 +304,6 @@
   font-size: var(--font-size-xs, 0.75rem);
   color: var(--color-text-tertiary);
   font-variant-numeric: tabular-nums;
-  font-family: var(--font-mono, monospace);
 }
 
 /* ==========================================================================
@@ -346,7 +345,7 @@
 }
 
 .settings-rules-title {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
