@@ -355,6 +355,12 @@
 
 @media print {
   .tw-print-sheet--landscape { max-width: none; min-height: 0; }
+  .tw-print__page-break {
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+  }
 }
 
 /* Printed-form safeguards (audit 2026-10-09 S-05..S-09): loud, never subtle. */

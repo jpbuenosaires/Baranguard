@@ -141,7 +141,7 @@ final class RetentionService
     // §11's table, as executable constants. See class doc for why these
     // are not configurable.
     public const RAW_NARRATIVE_GRACE_DAYS = 30;   // after approved redaction
-    public const RAW_NARRATIVE_CEILING_DAYS = 90; // from created_at, unapproved
+    public const RAW_NARRATIVE_CEILING_DAYS = 365; // from created_at; was 90 until 2026-10-17 (one year, like the other operational data)
     public const RECORD_RETENTION_DAYS = 2557;    // 7 years (365.25 * 7, rounded)
     public const CITIZEN_REPORT_DAYS = 365;       // unconverted only
     public const SMS_LOG_DAYS = 365;
@@ -156,41 +156,46 @@ final class RetentionService
     /** Status marker for a retention rule whose length the barangay has not yet confirmed. */
     public const PENDING_BARANGAY_CONFIRMATION = 'pending_barangay_confirmation';
 
+    /** One year, set by the project owner 2026-10-17 to match GPS/duty/shift/SMS/notification retention; still to be confirmed by the barangay and COA. */
+    public const PROVISIONAL_ONE_YEAR = 'provisional_one_year';
+    public const NEW_TABLE_DEFAULT_DAYS = 365;
+
     /**
      * Retention rules for the tables added by migrations 0030-0033 (Rule 10:
      * constants, not config). `days` null = no number decided = the rule is
-     * a no-op. A future decision replaces `null` with an integer AND
-     * `status` with 'confirmed' (architecture review, council/COA sign-off).
+     * a no-op. Since 2026-10-17 every rule carries a provisional 365 days
+     * (status provisional_one_year); the barangay/COA decision then changes the
+     * integer AND `status` to 'confirmed' (architecture review, council/COA sign-off).
      * `clock` documents which column the age is measured from.
      */
     public const NEW_TABLE_RULES = [
         'tanod_availability' => [
-            'days' => null,
-            'status' => self::PENDING_BARANGAY_CONFIRMATION,
+            'days' => self::NEW_TABLE_DEFAULT_DAYS,
+            'status' => self::PROVISIONAL_ONE_YEAR,
             'clock' => 'period_end',
             'summary' => 'submitted availability windows, aged from the end of the availability period',
         ],
         'accomplishment_report' => [
-            'days' => null,
-            'status' => self::PENDING_BARANGAY_CONFIRMATION,
+            'days' => self::NEW_TABLE_DEFAULT_DAYS,
+            'status' => self::PROVISIONAL_ONE_YEAR,
             'clock' => 'prepared_at',
             'summary' => 'PREPARED monthly accomplishment reports + entries, aged from submission (prepared_at); open and returned reports are never purged',
         ],
         'school_checkin' => [
-            'days' => null,
-            'status' => self::PENDING_BARANGAY_CONFIRMATION,
+            'days' => self::NEW_TABLE_DEFAULT_DAYS,
+            'status' => self::PROVISIONAL_ONE_YEAR,
             'clock' => 'checked_in_at',
             'summary' => 'school check-in/out records, aged from check-in',
         ],
         'incident_referral' => [
-            'days' => null,
-            'status' => self::PENDING_BARANGAY_CONFIRMATION,
+            'days' => self::NEW_TABLE_DEFAULT_DAYS,
+            'status' => self::PROVISIONAL_ONE_YEAR,
             'clock' => 'referred_at',
             'summary' => 'referral log rows, aged from the referral time; protected by a legal hold on the linked incident',
         ],
         'ssz_term_report' => [
-            'days' => null,
-            'status' => self::PENDING_BARANGAY_CONFIRMATION,
+            'days' => self::NEW_TABLE_DEFAULT_DAYS,
+            'status' => self::PROVISIONAL_ONE_YEAR,
             'clock' => 'mayor_office_received_at',
             'summary' => 'SUBMITTED Annex D term reports, aged from the mayor-office received date (the only submission date the table stores); draft/prepared reports are never purged',
         ],

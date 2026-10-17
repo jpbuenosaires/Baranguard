@@ -175,6 +175,15 @@ expect_eq "$(db_one "SELECT COUNT(*) FROM information_schema.columns WHERE table
 ERR="$(mysql_exec "$VALDB" < "$M36D" 2>&1)" && pass "0036 .down.sql is re-runnable" || fail "0036 down re-run failed: $ERR"
 ERR="$(mysql_exec "$VALDB" < "$M36" 2>&1)" && pass "0036 re-applies after down" || fail "0036 re-apply failed: $ERR"
 expect_eq "$(chan $I_APP)/$(chan $I_SMS)/$(chan $I_WEB)" "tanod_alerted/sms/walk_in" "Backfill identical after down/up"
+M44="$BACKEND_DIR/migrations/0044_report_channel_phone_facebook.sql"
+M44D="$BACKEND_DIR/migrations/0044_report_channel_phone_facebook.down.sql"
+ERR="$(mysql_exec "$VALDB" < "$M44" 2>&1)" && pass "0044 applies cleanly (phone_call, facebook channels)" || fail "0044 failed: $ERR"
+expect_eq "$(db_one "SELECT column_type FROM information_schema.columns WHERE table_schema='$VALDB' AND table_name='incident' AND column_name='report_channel';")" "enum('tanod_alerted','walk_in','sms','phone_call','facebook','other')" "report_channel enum includes phone_call and facebook"
+mysql_exec "$VALDB" -e "UPDATE incident SET report_channel='facebook' WHERE incident_id=$I_WEB2;"
+ERR="$(mysql_exec "$VALDB" < "$M44D" 2>&1)" && pass "0044 down applies" || fail "0044 down failed: $ERR"
+expect_eq "$(chan $I_WEB2)" "other" "0044 down folds facebook rows into other"
+mysql_exec "$VALDB" -e "UPDATE incident SET report_channel='walk_in' WHERE incident_id=$I_WEB2;"
+ERR="$(mysql_exec "$VALDB" < "$M44" 2>&1)" && pass "0044 re-applies after down" || fail "0044 re-apply failed: $ERR"
 
 # ============================================================
 step "2. Start API + login"
@@ -219,13 +228,13 @@ expect_eq "$(echo "$RESP_BODY" | json_field related_incident_id)" "null" "New in
 call POST "$BASE_URL/incidents" "$SEC" "{$BODY_BASE}" "Idempotency-Key: $(uuid)"
 expect_eq "$RESP_CODE" "201" "Secretary web create without report_channel -> 201"
 expect_eq "$(echo "$RESP_BODY" | json_field report_channel)" "walk_in" "Secretary default report_channel = walk_in"
-for ch in tanod_alerted walk_in sms other; do
+for ch in tanod_alerted walk_in sms phone_call facebook other; do
   call POST "$BASE_URL/incidents" "$SEC" "{$BODY_BASE,\"report_channel\":\"$ch\"}" "Idempotency-Key: $(uuid)"
   expect_eq "$RESP_CODE/$(echo "$RESP_BODY" | json_field report_channel)" "201/$ch" "Secretary web create report_channel=$ch is stored"
   call POST "$BASE_URL/incidents" "$ADMIN" "{$BODY_BASE,\"report_channel\":\"$ch\"}" "Idempotency-Key: $(uuid)"
   expect_eq "$RESP_CODE/$(echo "$RESP_BODY" | json_field report_channel)" "201/$ch" "Admin web create report_channel=$ch is stored"
 done
-call POST "$BASE_URL/incidents" "$ADMIN" "{$BODY_BASE,\"report_channel\":\"phone_call\"}" "Idempotency-Key: $(uuid)"
+call POST "$BASE_URL/incidents" "$ADMIN" "{$BODY_BASE,\"report_channel\":\"carrier_pigeon\"}" "Idempotency-Key: $(uuid)"
 expect_eq "$RESP_CODE" "400" "Unknown report_channel -> 400"
 call POST "$BASE_URL/incidents" "$ADMIN" "{$BODY_BASE,\"report_channel\":5}" "Idempotency-Key: $(uuid)"
 expect_eq "$RESP_CODE" "400" "Non-string report_channel -> 400"

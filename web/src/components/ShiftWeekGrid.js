@@ -121,7 +121,9 @@ export function ShiftWeekGrid({
     if (row.userId === null) name.classList.add('text-tertiary');
     tr.appendChild(name);
 
-    const intervals = row.userId === null ? [] : availabilityIntervals(availability, row.userId);
+    // Availability is optional (2026-10-17): a tanod who gave none has no bar and no warning (null = not given).
+    const gaveAvailability = row.userId !== null && availability.some((a) => a.userId === row.userId);
+    const intervals = row.userId === null ? [] : (gaveAvailability ? availabilityIntervals(availability, row.userId) : null);
     const rowShifts = weekShifts.filter((s) => (s.userId ?? null) === row.userId);
 
     for (const date of days) {
@@ -146,7 +148,7 @@ export function ShiftWeekGrid({
     if (date === today) cell.classList.add('is-today');
 
     // Availability bar (only for real tanods, and only once it loaded).
-    if (row.userId !== null && availabilityLoaded) {
+    if (row.userId !== null && availabilityLoaded && intervals !== null) {
       const segments = availableSegmentsOnDay(date, intervals);
       const bar = document.createElement('div');
       bar.className = 'week-grid__avail';
@@ -214,7 +216,7 @@ export function ShiftWeekGrid({
     if (isSelected) chip.setAttribute('aria-selected', 'true');
 
     const problems = [];
-    if (row.userId !== null && availabilityLoaded) {
+    if (row.userId !== null && availabilityLoaded && intervals !== null) {
       const startMs = new Date(shift.startAt).getTime();
       const endMs = new Date(shift.endAt).getTime();
       if (!isWithinAvailability(startMs, endMs, intervals)) problems.push({ tone: 'warn', text: 'outside availability' });

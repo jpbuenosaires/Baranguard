@@ -79,3 +79,14 @@ claim, P2 polish.
 - [ ] P1 Decide: darker warning/success/info colours, Secretary incident filters, Lupon/KP referral destination, map tiles/fonts (third party).
 - [ ] P2 Deferred on purpose: MFA (C-02), Cloudflare Access (web host only, never the API), UPS/backup internet.
 - [ ] P2 Update `HANDOFF.md` (replace, don't append), log work in `backend/DEVLOG.md`, push `main`; drop `git stash@{0}`; delete stray `web/tests/*_out.txt`, `*_err.txt`, `node_v.txt`, `debug_test.mjs`.
+
+## Future / deferred (decided 2026-10-17, not part of the current build)
+
+- [ ] **Rewrite the capstone manuscript to match the system as built.** Kept as is for now (`docs/Baranguard_Capstone_Manuscript.html`, converted from the PDF). It still describes AI redaction, the electronic blotter, Semaphore SMS and the Lupon packet, which are removed or replaced. Do this after the barangay interview and device test, before the defense.
+- [ ] Resident self-reporting by SMS (free text, no keyword, no coordinates, replies off first). Only if the barangay will publish a number. Designed, not built.
+- [ ] "Approximate pin from a known place" for SMS or phone reports (needs an approximate-location flag).
+- [ ] Check DILG MC 2026-037 itself, then replace the "draft layout" notice on the Safer School Zones annexes.
+- [ ] Confirm the one-year retention with the barangay and COA; then change the `provisional_one_year` status to confirmed.
+- [ ] Ask the treasurer/COA whether the signed monthly accomplishment report is enough for honoraria (Rule 87).
+- [ ] Device test day: SOS by SMS with data off, FCM push, offline sync and duplicates, GPS on a locked phone, workstation restart.
+- [ ] Apply migrations 0029–0044 to the real `baranguard` database (back up first, DBA/root, in order).

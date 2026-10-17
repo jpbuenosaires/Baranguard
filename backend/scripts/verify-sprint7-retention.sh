@@ -162,14 +162,14 @@ expect_contains "$LIST_OUT" "Legal hold" "--list states legal hold is the only e
 # Wave 3 (review decision 10): the 0030-0033 tables have PLACEHOLDER rules
 # with no period set. They must be listed, flagged pending, and accepted by
 # --only; the deep behaviour is in verify-retention-new-tables.sh.
-expect_contains "$LIST_OUT" "pending_barangay_confirmation" "--list flags the new-table rules as pending barangay confirmation"
+expect_contains "$LIST_OUT" "provisional_one_year" "--list flags the new-table rules as provisional one year"
 case "$LIST_OUT" in *document_scan*) fail "--list still mentions document_scan (dropped by 0041)";; *) pass "--list no longer mentions document_scan";; esac
 expect_contains "$LIST_OUT" "ssz_term_report" "--list names the Annex D (ssz_term_report) rule"
 expect_contains "$LIST_OUT" "deliberately NOT time-purged" "--list records that school has no rule by design"
 PEND_OUT="$(run_job --only=tanod_availability,accomplishment_report,school_checkin,incident_referral,ssz_term_report)"
-expect_contains "$PEND_OUT" "ssz_term_report: pending barangay confirmation" "--only accepts ssz_term_report and reports it pending"
-expect_contains "$PEND_OUT" "incident_referral: pending barangay confirmation" "--only accepts the new-table rules and reports them pending"
-expect_contains "$PEND_OUT" "Purged 0 record(s)" "running only the pending rules purges nothing"
+expect_contains "$PEND_OUT" "ssz_term_report:" "--only accepts ssz_term_report"
+expect_contains "$PEND_OUT" "incident_referral:" "--only accepts the new-table rules"
+expect_contains "$PEND_OUT" "Purged 0 record(s)" "running only the one-year rules purges nothing young"
 
 BAD_OUT="$(run_job --only=not_a_rule 2>&1)"; BAD_CODE=$?
 expect_contains "$BAD_OUT" "Unknown rule" "--only rejects an unknown rule name"
@@ -185,10 +185,10 @@ INSERT INTO incident (barangay_id, reported_by, incident_type, priority, raw_nar
  (1,2,'theft','normal','RAW approved 10 days ago','[NAME] took it', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 DAY),'resolved','app', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 20 DAY), UTC_TIMESTAMP(), 0),
  (1,2,'theft','normal','RAW approved 40 days ago BUT HELD','[NAME] took it', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 40 DAY),'resolved','app', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 DAY), UTC_TIMESTAMP(), 1);
 SQL
-# Two more for the unapproved 90-day ceiling.
+# Two more for the unapproved 365-day ceiling (one year since 2026-10-17).
 mysql_exec "$VALDB" <<SQL
 INSERT INTO incident (barangay_id, reported_by, incident_type, priority, raw_narrative, status, source, created_at, updated_at, legal_hold) VALUES
- (1,2,'disturbance','normal','RAW unapproved 100 days old','pending','app', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 100 DAY), UTC_TIMESTAMP(), 0),
+ (1,2,'disturbance','normal','RAW unapproved 400 days old','pending','app', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 400 DAY), UTC_TIMESTAMP(), 0),
  (1,2,'disturbance','normal','RAW unapproved 30 days old','pending','app', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY), UTC_TIMESTAMP(), 0);
 SQL
 pass "Seeded 5 incidents across both raw_narrative clauses"
@@ -210,8 +210,8 @@ KEPT_IN_GRACE=$(db_one "SELECT COUNT(*) FROM incident WHERE raw_narrative = 'RAW
 expect_eq "$KEPT_IN_GRACE" "1" "10-day-approved incident is STILL INSIDE the 30-day grace and was kept"
 HELD_KEPT=$(db_one "SELECT COUNT(*) FROM incident WHERE raw_narrative = 'RAW approved 40 days ago BUT HELD';")
 expect_eq "$HELD_KEPT" "1" "legal hold blocked an otherwise-eligible purge"
-CEILING_PURGED=$(db_one "SELECT COUNT(*) FROM incident WHERE raw_narrative = 'RAW unapproved 100 days old';")
-expect_eq "$CEILING_PURGED" "0" "unapproved 100-day incident hit the 90-day ceiling"
+CEILING_PURGED=$(db_one "SELECT COUNT(*) FROM incident WHERE raw_narrative = 'RAW unapproved 400 days old';")
+expect_eq "$CEILING_PURGED" "0" "unapproved 400-day incident hit the 365-day ceiling"
 CEILING_KEPT=$(db_one "SELECT COUNT(*) FROM incident WHERE raw_narrative = 'RAW unapproved 30 days old';")
 expect_eq "$CEILING_KEPT" "1" "unapproved 30-day incident is under the ceiling and was kept"
 

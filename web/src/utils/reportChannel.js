@@ -1,6 +1,6 @@
 /**
- * reportChannel.js — the four ways a report can reach the barangay
- * (`incident.report_channel`, migration 0036). Distinct from `incident.source`
+ * reportChannel.js — the ways a report can reach the barangay
+ * (`incident.report_channel`, migrations 0036 and 0044). Distinct from `incident.source`
  * (which client created the row): the channel records how the matter was
  * reported, e.g. a walk-in typed by the Secretary is channel `walk_in`.
  */

@@ -96,6 +96,18 @@ export function openPrintPreviewModal({
   document.body.appendChild(overlay);
   document.body.classList.add('has-print-modal');
   if (isLandscape) document.body.classList.add('print-orientation-landscape');
+
+  // Inject explicit A4 @page orientation rule so all browser print engines reliably switch page dimensions
+  let orientationStyle = document.getElementById('print-page-orientation-override');
+  if (!orientationStyle) {
+    orientationStyle = document.createElement('style');
+    orientationStyle.id = 'print-page-orientation-override';
+    document.head.appendChild(orientationStyle);
+  }
+  orientationStyle.textContent = isLandscape
+    ? '@page { size: A4 landscape; margin: 12mm 15mm 15mm 15mm; }'
+    : '@page { size: A4 portrait; margin: 12mm 15mm 15mm 15mm; }';
+
   // The stamp is also fed to the @page bottom-left margin box so it repeats on
   // every A4 page without overlapping table rows (see tanod-workflow.css).
   const stampText = modal.querySelector('.print-sheet__stamp')?.textContent || '';
@@ -125,6 +137,8 @@ export function openPrintPreviewModal({
     document.body.classList.remove('has-print-modal');
     document.body.classList.remove('print-orientation-landscape');
     document.documentElement.style.removeProperty('--print-stamp');
+    const curOrientationStyle = document.getElementById('print-page-orientation-override');
+    if (curOrientationStyle) curOrientationStyle.remove();
     overlay.remove();
     if (returnFocusTo && typeof returnFocusTo.focus === 'function' && document.contains(returnFocusTo)) returnFocusTo.focus();
   }

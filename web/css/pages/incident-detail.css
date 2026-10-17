@@ -44,22 +44,26 @@
    ========================================================================== */
 
 .console-hero-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
   gap: var(--spacing-md);
   padding: var(--spacing-md) var(--spacing-lg);
+  min-height: 4.5rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-xs);
   flex-wrap: wrap;
   box-sizing: border-box;
+  width: 100%;
 }
 
 .console-hero-header__left {
-  display: flex;
-  align-items: center;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
   gap: var(--spacing-md);
   min-width: 0;
   flex: 1;
@@ -69,8 +73,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 2.75rem;
-  height: 2.75rem;
+  width: 2.5rem;
+  height: 2.5rem;
   border-radius: var(--radius-md);
   background: var(--tint-info-bg);
   border: 1px solid var(--color-border-blue);
@@ -88,27 +92,30 @@
 .case-hero__title-row {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-xs);
   flex-wrap: wrap;
 }
 
-.incident-id-badge,
-.case-hero__title {
+.case-hero__title.incident-id-badge,
+.console-hero-header .incident-id-badge {
   display: inline-flex;
   align-items: center;
-  font-size: var(--font-size-xl);
-  font-weight: 700;
-  color: var(--color-text-primary);
-  margin: 0;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
+  font-size: 1.35rem !important;
+  font-weight: 700 !important;
+  color: var(--color-text-primary) !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  line-height: 1.2 !important;
+  letter-spacing: -0.01em !important;
+  font-variant-numeric: tabular-nums !important;
 }
 
 .case-hero__type-badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.2rem 0.6rem;
+  padding: 0.15rem 0.55rem;
   border-radius: var(--radius-pill);
   font-size: var(--font-size-xs);
   font-weight: 600;
@@ -129,9 +136,11 @@
 
 /* Command Actions */
 .console-hero-header__actions {
-  display: flex;
-  align-items: center;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
   gap: var(--spacing-sm);
+  flex-shrink: 0;
   flex-wrap: wrap;
 }
 
@@ -139,7 +148,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs);
-  min-height: 2.375rem;
+  min-height: 2.25rem;
   padding: 0 var(--spacing-md);
   font-weight: 600;
   font-size: var(--font-size-sm);
@@ -154,7 +163,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs);
-  min-height: 2.375rem;
+  min-height: 2.25rem;
   padding: 0 var(--spacing-md);
   font-size: var(--font-size-sm);
   font-weight: 600;
@@ -163,15 +172,16 @@
 }
 
 .resolution-badge-card {
-  display: inline-flex;
-  align-items: center;
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
   gap: var(--spacing-xs);
-  padding: 0.35rem var(--spacing-md);
+  padding: 0.35rem 0.75rem;
   background: var(--tint-success-bg);
   border: 1px solid var(--color-border-green, #86efac);
   border-radius: var(--radius-md);
   color: var(--color-success-text);
-  min-height: 2.375rem;
+  min-height: 2.25rem;
   box-sizing: border-box;
 }
 
@@ -181,6 +191,13 @@
   justify-content: center;
   color: var(--color-success);
   flex-shrink: 0;
+}
+
+.resolution-badge-card__content {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--spacing-2xs);
+  flex-wrap: wrap;
 }
 
 .resolution-badge-card__title {
@@ -209,7 +226,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs);
-  min-height: 2.375rem;
+  min-height: 2.25rem;
   padding: 0 var(--spacing-md);
   font-size: var(--font-size-sm);
   border-radius: var(--radius-md);
@@ -851,7 +868,7 @@
 .timeline__item {
   position: relative;
   display: flex !important;
-  align-items: flex-start;
+  align-items: stretch !important;
   gap: var(--spacing-md);
   padding-bottom: var(--spacing-md);
   width: 100%;
@@ -880,7 +897,7 @@
   width: 1.75rem;
   height: 1.75rem;
   border-radius: 50%;
-  border: 2px solid var(--color-border);
+  border: 2px solid var(--timeline-connector, #CBD5E1);
   background: var(--color-surface);
   color: var(--color-text-secondary);
   z-index: 2;
@@ -917,7 +934,7 @@
 }
 
 .timeline__node--pending {
-  border-color: var(--color-border);
+  border-color: var(--timeline-connector, #CBD5E1);
   background: var(--color-surface);
 }
 
@@ -925,26 +942,26 @@
   width: 0.375rem;
   height: 0.375rem;
   border-radius: 50%;
-  background: var(--color-border);
+  background: var(--timeline-connector, #CBD5E1);
 }
 
 .timeline__connector {
   position: absolute;
   top: 1.75rem;
-  bottom: 0;
+  bottom: -0.25rem;
   left: 50%;
   width: 2px;
   transform: translateX(-50%);
-  background: var(--color-divider);
+  background: var(--timeline-connector, #CBD5E1) !important;
   z-index: 1;
 }
 
 .timeline__connector--done {
-  background: var(--color-primary);
+  background: var(--color-primary) !important;
 }
 
 .timeline__connector--resolved {
-  background: var(--color-success);
+  background: var(--color-success) !important;
 }
 
 .timeline__body {
@@ -1071,20 +1088,41 @@
   margin-top: var(--spacing-xs);
 }
 
+.panel-command-header--sub {
+  border-top: 1px solid var(--color-divider);
+  padding-top: var(--spacing-sm);
+}
+
 .panel-command-header__title {
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
-  color: var(--color-text-primary);
+  color: var(--color-text-secondary);
 }
 
 .panel-command-title {
   font-size: var(--font-size-xs);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   color: var(--color-text-tertiary);
   margin: 0;
+}
+
+.case-card__heading {
+  display: flex !important;
+  align-items: center !important;
+  gap: var(--spacing-xs) !important;
+  margin: 0 0 var(--spacing-xs) 0 !important;
+  font-size: var(--font-size-md) !important;
+  font-weight: 700 !important;
+  color: var(--color-text-primary) !important;
+}
+
+.case-card__heading span:first-child {
+  display: flex;
+  align-items: center;
+  color: var(--color-link);
 }
 
 .case-card--related .link-button {
@@ -1107,6 +1145,40 @@
   align-items: center;
   gap: var(--spacing-sm);
   font-size: var(--font-size-sm);
+}
+
+.related-incident-inline-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+  margin-top: var(--spacing-xs);
+}
+
+.related-incident-inline-row input {
+  flex: 1;
+  min-width: 140px;
+  height: 2.25rem;
+  padding: 0 var(--spacing-sm);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-size: var(--font-size-sm);
+  box-sizing: border-box;
+}
+
+.related-incident-inline-row input:focus {
+  border-color: var(--color-primary);
+  outline: none;
+}
+
+.related-incident-inline-row button {
+  height: 2.25rem;
+  padding: 0 var(--spacing-md);
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-md);
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .case-card__list {
@@ -1132,6 +1204,36 @@
 /* Safer School Zone (Annex C-1) Card overrides */
 .case-card--school {
   margin-top: var(--spacing-xs);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.case-card--school .case-card__field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-3xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-top: 2px;
+}
+
+.case-card--school .case-card__field .meta-tile__label {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.case-card--school .case-card__field .meta-tile__value {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  line-height: 1.5;
 }
 
 .case-card__unlinked-box {
@@ -1266,13 +1368,37 @@
   background: var(--color-surface);
 }
 
+
 .print-modal__footer-actions {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
 }
 
+/* ==========================================================================
+   13. Official A4 Print Stylesheet (Incident Case Dossier)
+   ========================================================================== */
+
+/* Screen mode: hide official print letterhead and legal footer */
+.incident-print-header,
+.incident-print-footer {
+  display: none;
+}
+
 @media print {
+  /* Standard A4 paper size (portrait: 210mm x 297mm) with balanced margins */
+  @page {
+    size: A4 portrait;
+    margin: 12mm 15mm 15mm 15mm;
+    @bottom-right {
+      content: "Page " counter(page) " of " counter(pages);
+      font-size: 8pt;
+      font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+      color: #64748b;
+    }
+  }
+
+  /* Support for PrintPreviewModal if active */
   body.has-print-modal #app,
   body:has(.print-modal-backdrop) #app,
   body.has-print-modal > *:not(.print-modal-backdrop),
@@ -1280,14 +1406,6 @@
   .print-modal__header,
   .print-modal__footer {
     display: none !important;
-  }
-
-  body:not(.has-print-modal):not(:has(.print-modal-backdrop)) #app {
-    height: auto !important;
-    min-height: 0 !important;
-    max-height: none !important;
-    overflow: visible !important;
-    display: block !important;
   }
 
   .modal-backdrop.print-modal-backdrop,
@@ -1327,4 +1445,654 @@
     -webkit-backdrop-filter: none !important;
     display: block !important;
   }
+
+  /* Unconstrain document and SPA viewport lock when printing page directly */
+  html,
+  body {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 10pt !important;
+    line-height: 1.45 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #app,
+  .app-shell,
+  .main-content,
+  .page-content,
+  .incident-detail-body {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+    position: static !important;
+    float: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    transform: none !important;
+    animation: none !important;
+  }
+
+  /* Hide interactive chrome: navigation, topbar, tabs, action buttons */
+  .sidebar,
+  .sidebar__scrim,
+  .topbar,
+  .page-header-host,
+  .page-header,
+  .console-tabs,
+  .console-hero-header__actions,
+  .meta-tile__action-btn,
+  .party-card__copy-btn,
+  .evidence-item__view-btn,
+  .case-card__edit-btn,
+  .case-card__scope-details summary,
+  .case-card__scope-details,
+  .related-incident-form,
+  .incident-form-actions,
+  .resolve-prerequisite-callout,
+  .toast-container,
+  button,
+  a.btn {
+    display: none !important;
+  }
+
+  /* Official Government Letterhead */
+  .incident-print-header {
+    display: block !important;
+    text-align: center;
+    border-bottom: 2px solid #0f172a;
+    padding-bottom: 3.5mm;
+    margin-bottom: 4mm;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .incident-print-header__letterhead {
+    margin-bottom: 2mm;
+  }
+
+  .incident-print-header__republic {
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #475569;
+    margin: 0 0 1mm 0;
+  }
+
+  .incident-print-header__jurisdiction {
+    font-size: 8.5pt;
+    color: #475569;
+    margin: 0 0 1.5mm 0;
+  }
+
+  .incident-print-header__barangay {
+    font-size: 13pt;
+    font-weight: 800;
+    color: #0f172a;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 0 0 1mm 0;
+  }
+
+  .incident-print-header__office {
+    font-size: 8.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #334155;
+    margin: 0 0 2mm 0;
+  }
+
+  .incident-print-header__title {
+    font-size: 11pt;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #0f172a;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    padding: 1.5mm 3.5mm;
+    margin: 1.5mm auto 2mm;
+    display: inline-block;
+  }
+
+  .incident-print-header__meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 8pt;
+    color: #475569;
+    margin-top: 2mm;
+    padding-top: 2mm;
+    border-top: 1px dashed #cbd5e1;
+  }
+
+  /* Command Hero Banner in Print */
+  .console-hero-header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    background: #f8fafc !important;
+    border: 1.5px solid #0f172a !important;
+    border-radius: 4px !important;
+    padding: 3mm 4mm !important;
+    margin-bottom: 4mm !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    box-shadow: none !important;
+  }
+
+  .case-hero__icon {
+    display: none !important;
+  }
+
+  .case-hero__title-row {
+    display: flex !important;
+    align-items: center !important;
+    gap: 3mm !important;
+    margin-bottom: 1.5mm !important;
+  }
+
+  .case-hero__title.incident-id-badge {
+    font-size: 13pt !important;
+    font-weight: 800 !important;
+    color: #0f172a !important;
+  }
+
+  .case-hero__type-badge {
+    font-size: 8.5pt !important;
+    font-weight: 700 !important;
+    padding: 0.5mm 2mm !important;
+    border: 1px solid #94a3b8 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border-radius: 3px !important;
+  }
+
+  .case-hero__badges {
+    display: flex !important;
+    align-items: center !important;
+    gap: 2mm !important;
+  }
+
+  .status-pill {
+    font-size: 8pt !important;
+    font-weight: 700 !important;
+    padding: 0.5mm 2.5mm !important;
+    border: 1px solid currentColor !important;
+    background: transparent !important;
+    border-radius: 3px !important;
+  }
+
+  .status-pill--success {
+    color: #166534 !important;
+    border-color: #166534 !important;
+  }
+  .status-pill--critical {
+    color: #991b1b !important;
+    border-color: #991b1b !important;
+  }
+  .status-pill--info {
+    color: #1e40af !important;
+    border-color: #1e40af !important;
+  }
+  .status-pill--warning {
+    color: #92400e !important;
+    border-color: #92400e !important;
+  }
+  .status-pill--neutral {
+    color: #334155 !important;
+    border-color: #64748b !important;
+  }
+
+  /* Force display of both Case Dossier and Operational Log panels */
+  .console-panels {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+  }
+
+  .console-panels .tab-panel,
+  #panel-dossier,
+  #panel-operations {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 0 4mm 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  .dossier-body,
+  .operations-body {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 3.5mm !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Section Command Header between Panels */
+  .panel-command-header {
+    display: flex !important;
+    align-items: center !important;
+    padding: 2mm 0 !important;
+    margin-top: 3mm !important;
+    border-top: 1.5px solid #0f172a !important;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  .panel-command-header__icon {
+    display: none !important;
+  }
+
+  .panel-command-title {
+    font-size: 8.5pt !important;
+    font-weight: 800 !important;
+    color: #0f172a !important;
+    letter-spacing: 0.05em !important;
+    text-transform: uppercase !important;
+  }
+
+  /* Dossier Cards Styling */
+  .card,
+  .dossier-card,
+  .case-card {
+    background: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 4px !important;
+    box-shadow: none !important;
+    margin: 0 0 3.5mm 0 !important;
+    padding: 3mm 4mm !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .dossier-card__header,
+  .case-card__header {
+    display: flex !important;
+    align-items: center !important;
+    margin-bottom: 2mm !important;
+    padding-bottom: 1.5mm !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  .dossier-card__icon {
+    display: none !important;
+  }
+
+  .dossier-card__heading,
+  .case-card__heading {
+    font-size: 10pt !important;
+    font-weight: 700 !important;
+    color: #0f172a !important;
+    margin: 0 !important;
+  }
+
+  /* Particulars 2-Column Grid */
+  .meta-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 2.5mm !important;
+  }
+
+  .meta-tile {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 3px !important;
+    background: #f8fafc !important;
+    padding: 2mm 3mm !important;
+    box-shadow: none !important;
+  }
+
+  .meta-tile__icon {
+    display: none !important;
+  }
+
+  .meta-tile__label {
+    font-size: 7.5pt !important;
+    font-weight: 700 !important;
+    color: #475569 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.04em !important;
+  }
+
+  .meta-tile__value {
+    font-size: 9pt !important;
+    font-weight: 600 !important;
+    color: #0f172a !important;
+  }
+
+  .meta-tile__coords {
+    font-size: 7.5pt !important;
+    color: #64748b !important;
+  }
+
+  /* Involved Parties 2-Column Grid */
+  .parties-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 2.5mm !important;
+  }
+
+  .party-card {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 3px !important;
+    background: #f8fafc !important;
+    padding: 2mm 3mm !important;
+    box-shadow: none !important;
+  }
+
+  .party-card--complainant {
+    border-left: 3px solid #1e40af !important;
+  }
+
+  .party-card--respondent {
+    border-left: 3px solid #64748b !important;
+  }
+
+  .party-card__type-pill {
+    font-size: 7.5pt !important;
+    font-weight: 700 !important;
+    color: #334155 !important;
+    margin-bottom: 1mm !important;
+  }
+
+  .party-card__name {
+    font-size: 9.5pt !important;
+    font-weight: 700 !important;
+    color: #0f172a !important;
+  }
+
+  .party-card__phone-badge {
+    font-size: 8pt !important;
+    color: #334155 !important;
+    border: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
+    padding: 0.5mm 1.5mm !important;
+    border-radius: 2px !important;
+  }
+
+  /* Official Narrative Statement */
+  .doc-blockquote {
+    background: #f8fafc !important;
+    border: 1px solid #cbd5e1 !important;
+    border-left: 4px solid #1e3a8a !important;
+    border-radius: 3px !important;
+    padding: 3mm 4mm !important;
+    font-size: 9.5pt !important;
+    line-height: 1.5 !important;
+    color: #0f172a !important;
+    white-space: pre-wrap !important;
+    break-inside: auto !important;
+  }
+
+  /* Digital Evidence */
+  .evidence-bar--empty {
+    border: 1px dashed #cbd5e1 !important;
+    background: #f8fafc !important;
+    padding: 2mm 3mm !important;
+    font-size: 8.5pt !important;
+    color: #475569 !important;
+  }
+
+  .evidence-item-wrap {
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 3px !important;
+    background: #ffffff !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 2mm !important;
+  }
+
+  .evidence-item {
+    padding: 2mm 3mm !important;
+    gap: 2mm !important;
+  }
+
+  .evidence-item__icon {
+    display: none !important;
+  }
+
+  .evidence-item__title {
+    font-size: 8.5pt !important;
+    font-weight: 700 !important;
+    color: #0f172a !important;
+  }
+
+  .evidence-item__meta {
+    font-size: 7.5pt !important;
+    color: #64748b !important;
+  }
+
+  .evidence-type-badge,
+  .evidence-hash-badge {
+    font-size: 7.5pt !important;
+    border: 1px solid #cbd5e1 !important;
+    padding: 0.5mm 1.5mm !important;
+    color: #334155 !important;
+  }
+
+  .evidence-item__image {
+    max-height: 50mm !important;
+    max-width: 100% !important;
+    object-fit: contain !important;
+    border-top: 1px solid #cbd5e1 !important;
+  }
+
+  /* Operational Response Timeline */
+  .timeline-status {
+    font-size: 8pt !important;
+    padding: 1mm 2mm !important;
+    border: 1px solid #cbd5e1 !important;
+    background: #f1f5f9 !important;
+    color: #1e293b !important;
+    margin-bottom: 2mm !important;
+    display: inline-block !important;
+  }
+
+  .timeline {
+    padding: 1mm 0 !important;
+  }
+
+  .timeline__item {
+    gap: 3mm !important;
+    padding-bottom: 3mm !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .timeline__rail {
+    width: 1.5rem !important;
+  }
+
+  .timeline__node {
+    width: 1.5rem !important;
+    height: 1.5rem !important;
+    border: 1.5px solid #94a3b8 !important;
+    background: #ffffff !important;
+    color: #475569 !important;
+    box-shadow: none !important;
+  }
+
+  .timeline__node--done {
+    background: #1e3a8a !important;
+    border-color: #1e3a8a !important;
+    color: #ffffff !important;
+  }
+
+  .timeline__node--resolved {
+    background: #166534 !important;
+    border-color: #166534 !important;
+    color: #ffffff !important;
+  }
+
+  .timeline__node--current {
+    border-color: #1d4ed8 !important;
+    color: #1d4ed8 !important;
+    box-shadow: none !important;
+  }
+
+  .timeline__node-dot {
+    background: #1d4ed8 !important;
+  }
+
+  .timeline__connector {
+    background: #cbd5e1 !important;
+    width: 2px !important;
+    top: 1.5rem !important;
+  }
+
+  .timeline__connector--done {
+    background: #1e3a8a !important;
+  }
+
+  .timeline__connector--resolved {
+    background: #166534 !important;
+  }
+
+  .timeline__label {
+    font-size: 8.5pt !important;
+    font-weight: 700 !important;
+    color: #0f172a !important;
+  }
+
+  .timeline__value {
+    font-size: 8pt !important;
+    color: #475569 !important;
+  }
+
+  .timeline__responder-badge {
+    font-size: 7.5pt !important;
+    border: 1px solid #cbd5e1 !important;
+    background: #f1f5f9 !important;
+    color: #1e293b !important;
+    padding: 0.5mm 1.5mm !important;
+  }
+
+  /* Responders Table */
+  .responders-table-wrap {
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 3px !important;
+    overflow: visible !important;
+  }
+
+  .responders-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 8pt !important;
+  }
+
+  .responders-table th {
+    background: #f1f5f9 !important;
+    color: #334155 !important;
+    font-weight: 700 !important;
+    font-size: 7.5pt !important;
+    padding: 1.5mm 2.5mm !important;
+    border-bottom: 1.5px solid #cbd5e1 !important;
+  }
+
+  .responders-table td {
+    padding: 1.5mm 2.5mm !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    color: #0f172a !important;
+  }
+
+  .responders-table tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Case Connections, Referrals & Safer School Zone */
+  .case-card--school .case-card__field {
+    border: 1px solid #e2e8f0 !important;
+    background: #f8fafc !important;
+    padding: 1.5mm 2.5mm !important;
+    margin-top: 1mm !important;
+  }
+
+  .case-card__list-item {
+    border: 1px solid #e2e8f0 !important;
+    background: #f8fafc !important;
+    padding: 1.5mm 2.5mm !important;
+    font-size: 8pt !important;
+  }
+
+  /* Official Attestation & Legal Footer */
+  .incident-print-footer {
+    display: block !important;
+    margin-top: 8mm;
+    padding-top: 4mm;
+    border-top: 1px solid #cbd5e1;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .incident-print-footer__line {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5mm;
+    font-size: 7.5pt;
+    color: #64748b;
+    text-align: center;
+    margin-bottom: 6mm;
+  }
+
+  .incident-print-footer__signatures {
+    display: flex;
+    justify-content: space-between;
+    gap: 20mm;
+    margin-top: 4mm;
+    padding: 0 10mm;
+  }
+
+  .incident-print-footer__sign-box {
+    flex: 1;
+    text-align: center;
+  }
+
+  .incident-print-footer__sign-line {
+    border-bottom: 1px solid #0f172a;
+    height: 12mm;
+    margin-bottom: 1.5mm;
+  }
+
+  .incident-print-footer__sign-label {
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    color: #64748b;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.5mm;
+  }
+
+  .incident-print-footer__sign-name {
+    font-size: 9pt;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .incident-print-footer__sign-role {
+    font-size: 8pt;
+    color: #475569;
+  }
 }
+

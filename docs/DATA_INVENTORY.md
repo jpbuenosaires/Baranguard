@@ -113,10 +113,10 @@ tables that carry it.
 
 **`raw_narrative` — OPEN POLICY DECISION, not decided here.** The rule
 in `RetentionService` is unchanged: hard-purged (set NULL,
-`raw_narrative_purged_at` stamped) at the 90-day ceiling from
+`raw_narrative_purged_at` stamped) at the one-year (365-day) ceiling from
 `created_at`, or 30 days after an approved redaction if one existed.
 Since 0029 nothing can ever approve a redaction, so in practice **every
-incident's narrative is permanently destroyed at 90 days with no
+incident's narrative is permanently destroyed at one year (365 days; was 90 until 2026-10-17) with no
 redacted or summarized replacement kept anywhere** (legal hold is the
 only exception). Whether that is acceptable — or whether the retention
 window, a manual Secretary-authored summary, or the barangay's binder

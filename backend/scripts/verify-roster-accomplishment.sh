@@ -882,17 +882,17 @@ expect_eq "  message names the tanod's windows" "$(printf '%s' "$(jget "$BODY" e
 mkshift "$ADMIN_T" "$T5_ID" "$AC" "08:00" "12:00"
 expect_code "Day inside the period but with no window" 422
 mkshift "$ADMIN_T" "$T5_ID" "$AZ" "08:00" "12:00"
-expect_code "Date with no availability submitted at all" 422
-expect_eq "  message says nothing was submitted" "$(printf '%s' "$(jget "$BODY" error.message)" | grep -c "has not submitted availability")" "1"
-expect_eq "  refused shifts wrote nothing (T5 has exactly 2 shifts)" "$(db_one "SELECT COUNT(*) FROM shift_schedule WHERE user_id=$T5_ID;")" "2"
+expect_code "Date with no availability submitted at all (availability is optional, 2026-10-17)" 201
+expect_eq "  refused shifts wrote nothing; the optional-date shift was created (T5 has exactly 3 shifts)" "$(db_one "SELECT COUNT(*) FROM shift_schedule WHERE user_id=$T5_ID;")" "3"
 api PATCH "/shifts/$S5_IN" "$ADMIN_T" "{\"end_at\":\"${AA}T17:00:00+08:00\",\"version\":1}"
 expect_code "PATCH extending the shift past the window" 422
 expect_eq "  error code OUTSIDE_AVAILABILITY" "$(jget "$BODY" error.code)" "OUTSIDE_AVAILABILITY"
 api PATCH "/shifts/$S5_IN" "$ADMIN_T" "{\"end_at\":\"${AA}T15:00:00+08:00\",\"version\":1}"
 expect_code "PATCH shortening it (still inside)" 200
 api PATCH "/shifts/$S8C" "$ADMIN_T" "{\"user_id\":$T5_ID,\"version\":$(db_one "SELECT version FROM shift_schedule WHERE shift_id=$S8C;")}"
-expect_code "PATCH reassigning another tanod's shift to T5 outside T5's availability" 422
-expect_eq "  shift kept its assignee" "$(db_one "SELECT user_id FROM shift_schedule WHERE shift_id=$S8C;")" "$T3_ID"
+expect_code "PATCH reassigning another tanod's shift to T5 on a day T5 submitted nothing for (availability is optional)" 200
+expect_eq "  shift moved to T5" "$(db_one "SELECT user_id FROM shift_schedule WHERE shift_id=$S8C;")" "$T5_ID"
+mysql_exec "$VALDB" -e "UPDATE shift_schedule SET user_id=$T3_ID WHERE shift_id=$S8C;"   # restore for the steps below
 s5v() { db_one "SELECT version FROM shift_schedule WHERE shift_id=$S5_IN;"; }
 api PATCH "/shifts/$S5_IN" "$ADMIN_T" "{\"user_id\":null,\"version\":$(s5v)}"
 expect_code "Unassigning (user_id null) is not checked" 200

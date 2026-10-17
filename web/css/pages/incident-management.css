@@ -523,6 +523,12 @@
   color: var(--color-primary);
 }
 
+.incident-channel-badge--phone_call,
+.incident-channel-badge--facebook {
+  background: var(--tint-info-bg);
+  color: var(--color-link);
+}
+
 .incident-channel-badge--tanod_alerted {
   background: var(--tint-warning-bg);
   color: var(--color-warning-text);

@@ -337,7 +337,11 @@ export const SSZ_PURSUANT_HTML = '<b>[Pursuant to</b> DILG Memorandum Circular N
 
 /** Print-preview opener that also switches the sheet to landscape for wide annexes. */
 export function applyPrintOrientation(preview, orientation) {
-  if (orientation === 'landscape') preview.sheet.classList.add('tw-print-sheet--landscape');
+  if (orientation === 'landscape') {
+    preview.sheet?.classList.add('tw-print-sheet--landscape');
+    preview.sheet?.classList.add('print-sheet--landscape');
+    document.body.classList.add('print-orientation-landscape');
+  }
 }
 
 /** Section card with a title, used by every page. */
