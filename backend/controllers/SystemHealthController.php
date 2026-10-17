@@ -312,7 +312,10 @@ final class SystemHealthController
         $cacheFile = dirname(__DIR__) . '/storage/ors-health.json';
         $keyId = sha1((string) baranguard_env('ORS_API_KEY'));
         $cached = is_file($cacheFile) ? json_decode((string) @file_get_contents($cacheFile), true) : null;
-        if (is_array($cached) && ($cached['key'] ?? null) === $keyId && time() - (int) ($cached['at'] ?? 0) < self::ORS_PROBE_CACHE_SECONDS
+        // A failure is remembered only briefly: one slow or dropped request must not keep the badge red for the
+        // whole healthy window (2026-10-17), while the short wait still protects the daily quota.
+        $ttl = (($cached['status'] ?? null) === 'healthy') ? self::ORS_PROBE_CACHE_SECONDS : self::ORS_PROBE_FAILURE_CACHE_SECONDS;
+        if (is_array($cached) && ($cached['key'] ?? null) === $keyId && time() - (int) ($cached['at'] ?? 0) < $ttl
             && in_array($cached['status'] ?? null, ['healthy', 'unhealthy'], true)) {
             return $cached['status'];
         }
@@ -323,6 +326,9 @@ final class SystemHealthController
 
     /** How long an ORS probe result is reused (about 96 probes a day at most). */
     private const ORS_PROBE_CACHE_SECONDS = 900;
+
+    /** How long a FAILED probe is reused before trying again. */
+    private const ORS_PROBE_FAILURE_CACHE_SECONDS = 45;
 
     /**
      * Reads the real filesystem timestamp of the most recent encrypted
