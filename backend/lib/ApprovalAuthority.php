@@ -14,9 +14,9 @@ use PDO;
  * Admin-managed attribute (`user.approval_authority`, a MariaDB SET added
  * by migration 0030). Never inferred from role alone, never a client claim.
  *
- * The preparer of a document may never also approve it
- * ({@see self::assertNotPreparer()}), a rule shared by the accomplishment
- * report and the Annex D term report.
+ * 2026-10-17: the preparer of a document MAY also publish, return or file it. The signature
+ * that counts is the Punong Barangay's on the printed paper; the record keeps who prepared it
+ * and the audit log keeps who acted.
  */
 final class ApprovalAuthority
 {
@@ -76,14 +76,6 @@ final class ApprovalAuthority
         AuthMiddleware::requireRole($identity, self::ELIGIBLE_ROLES);
         if (!self::has($pdo, $identity['user_id'], $authority)) {
             throw new ApiError(403, 'FORBIDDEN', 'You are not designated to perform this action.');
-        }
-    }
-
-    /** Segregation of duties: the preparer cannot also note/approve. */
-    public static function assertNotPreparer(int $actorUserId, int $preparerUserId): void
-    {
-        if ($actorUserId === $preparerUserId) {
-            throw new ApiError(409, 'CONFLICT', 'The preparer cannot also approve their own document.');
         }
     }
 
