@@ -411,7 +411,7 @@ final class DispatchOffersController
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function cancel(PDO $pdo, array $identity, string $offerIdParam): void
     {
-        AuthMiddleware::requireRole($identity, ['admin']);
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
         RosterSupport::requireIdempotencyKey();
         if (!ctype_digit($offerIdParam)) {
             throw new ApiError(404, 'NOT_FOUND', 'Offer not found.');

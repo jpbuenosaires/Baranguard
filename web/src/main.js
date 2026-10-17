@@ -38,9 +38,12 @@ import { renderSchoolZonesPage } from './pages/school-zones.js';
 import { renderStyleGuidePage } from './pages/style-guide.js';
 import { DEFAULT_PAGE_KEY } from './pages/settings.js';
 
+// The Secretary can open the Dispatch Center as back-up dispatcher but still lands on records work.
+const ROLE_HOME = { secretary: 'incident-management' };
+
 const PAGE_ROLES = {
   dashboard: ['admin', 'punong_barangay'],
-  dispatch: ['admin'],
+  dispatch: ['admin', 'secretary'],
   'incident-management': ['admin', 'secretary'],
   gis: ['admin', 'punong_barangay'],
   // 2026-09-05 merge of W9 Statistical Reports + W5 Historical Heatmap
@@ -218,7 +221,7 @@ function boot(currentPage, param, { notice } = {}) {
     try { preferred = localStorage.getItem(DEFAULT_PAGE_KEY); } catch { /* private mode */ }
     page = (preferred && PAGE_ROLES[preferred]?.includes(role) && !DETAIL_PAGES.has(preferred))
       ? preferred
-      : Object.keys(PAGE_ROLES).find((key) => PAGE_ROLES[key].includes(role) && !DETAIL_PAGES.has(key)) ?? null;
+      : ROLE_HOME[role] ?? Object.keys(PAGE_ROLES).find((key) => PAGE_ROLES[key].includes(role) && !DETAIL_PAGES.has(key)) ?? null;
   }
   // A detail page reached without its parameter (e.g. a stray navigate)
   // falls back rather than rendering a broken screen.

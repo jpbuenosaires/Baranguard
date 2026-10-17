@@ -90,3 +90,6 @@ claim, P2 polish.
 - [ ] Ask the treasurer/COA whether the signed monthly accomplishment report is enough for honoraria (Rule 87).
 - [ ] Device test day: SOS by SMS with data off, FCM push, offline sync and duplicates, GPS on a locked phone, workstation restart.
 - [ ] Apply migrations 0029–0044 to the real `baranguard` database (back up first, DBA/root, in order).
+- [ ] Device test of the Chief Tanod phone incident log (save offline, send on reconnect, no duplicate) and of the Secretary as back-up dispatcher on the web.
+- [ ] Buy the UPS and decide where the offsite backup copy is kept (`docs/POWER_CUT_PROCEDURE.md`); ask the council to confirm the draft procedure.
+- [ ] Apply migration 0045 to the real `baranguard` database with 0029 to 0044 (back up first).

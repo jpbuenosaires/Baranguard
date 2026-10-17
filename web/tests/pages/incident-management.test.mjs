@@ -127,30 +127,23 @@ describe('Incident Management behaviour', () => {
     await settle();
     assert.doesNotMatch(text($('.data-table')), /RAW-NARRATIVE/);
   });
-  test('Resolve/dispatch controls are Admin-only; the Secretary sees a read-only note instead', async () => {
-    for (const [role, id] of [['secretary', 902], ['secretary', 901]]) {
+  test('Resolve/dispatch controls are offered to the Admin and to the Secretary as back-up dispatcher', async () => {
+    for (const role of ['admin', 'secretary']) {
       const ctx = mountPage(renderIncidentManagementPage, { role });
       await settle();
-      click(buttonByText(new RegExp(`^INC-2026-${id}`), ctx.root));
+      click(buttonByText(/^INC-2026-902/, ctx.root));
       await settle();
-      assert.equal(buttonByText(/resolve incident/i, ctx.root), undefined, 'no Resolve button for the Secretary');
-      assert.equal(buttonByText(/dispatch tanod|assign additional responder/i, ctx.root), undefined);
-      assert.match(text(ctx.root), id === 902 ? /Resolving is done by the Admin/ : /Dispatching is done by the Admin/);
+      assert.ok(buttonByText(/resolve incident/i, ctx.root), `${role} gets Resolve`);
       cleanup();
     }
-    const ctx = mountPage(renderIncidentManagementPage, { role: 'admin' });
-    await settle();
-    click(buttonByText(/^INC-2026-902/, ctx.root));
-    await settle();
-    assert.ok(buttonByText(/resolve incident/i, ctx.root), 'Admin still gets Resolve');
   });
 
-  test('Admin can resolve a pending incident without dispatch only with a reason; the Secretary cannot', async () => {
+  test('Admin can resolve a pending incident without dispatch only with a reason, and so can the Secretary', async () => {
     const sec = mountPage(renderIncidentManagementPage, { role: 'secretary' });
     await settle();
     click(buttonByText(/^INC-2026-901/, sec.root));
     await settle();
-    assert.equal(buttonByText(/resolve without dispatch/i, sec.root), undefined, 'no such control for the Secretary');
+    assert.ok(buttonByText(/resolve without dispatch/i, sec.root), 'the back-up dispatcher has the control too');
     cleanup();
 
     const ctx = mountPage(renderIncidentManagementPage, { role: 'admin' });
@@ -189,7 +182,7 @@ describe('Incident Management behaviour', () => {
     });
   }
 
-  test('a reopened incident reads as active again: styled badge, Dispatch and Resolve-without-dispatch for the Admin, note for the Secretary', async () => {
+  test('a reopened incident reads as active again: styled badge, Dispatch and Resolve-without-dispatch for the Admin and the Secretary', async () => {
     for (const role of ['admin', 'secretary']) {
       overrideListStatus(904, 'reopened'); // cleanup() resets api overrides
       const ctx = mountPage(renderIncidentManagementPage, { role });
@@ -198,13 +191,8 @@ describe('Incident Management behaviour', () => {
       await settle();
       assert.ok($('.incident-detail-badge--pending', ctx.root), `${role}: reopened badge must use a defined modifier class`);
       assert.match(text($('.incident-detail-badges', ctx.root)), /Reopened/);
-      if (role === 'admin') {
-        assert.ok(buttonByText(/^dispatch tanod$/i, ctx.root), 'Admin can dispatch a reopened incident');
-        assert.ok(buttonByText(/resolve without dispatch/i, ctx.root));
-      } else {
-        assert.equal(buttonByText(/resolve without dispatch|dispatch tanod/i, ctx.root), undefined);
-        assert.match(text(ctx.root), /Dispatching is done by the Admin/);
-      }
+      assert.ok(buttonByText(/^dispatch tanod$/i, ctx.root), `${role} can dispatch a reopened incident`);
+      assert.ok(buttonByText(/resolve without dispatch/i, ctx.root));
       cleanup();
     }
   });

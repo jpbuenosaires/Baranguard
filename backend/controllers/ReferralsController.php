@@ -60,7 +60,7 @@ final class ReferralsController
     private const FUTURE_SKEW_SECONDS = 300;
 
     public const REFERRED_TO = [
-        'pnp', 'bfp', 'ambulance_ems', 'barangay_official', 'vaw_desk',
+        'pnp', 'bfp', 'ambulance_ems', 'barangay_official', 'vaw_desk', 'lupon_kp',
         'social_welfare', 'higher_lgu', 'doh', 'dpwh', 'other',
     ];
 

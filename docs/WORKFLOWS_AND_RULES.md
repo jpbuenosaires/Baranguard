@@ -699,3 +699,16 @@ Reviewed 2026-10-08 by reading the rules against each other and against the code
 77. The web dashboard signs out after 15 minutes without input (named constant `IDLE_TIMEOUT_MS`) and on any 401; it honours an API base override only on localhost or `https://api.<this site>` (or the page's own host on a port).
 78. A paper note and approval may be recorded together for a report still at `prepared` when the noter holds `note_report`, the signer holds `approve_report`, and neither is the preparer. **Superseded by Rule 80 (2026-10-12, migration 0041).**
 79. Operational times shown on the web are formatted by `web/src/utils/manilaTime.js` in Asia/Manila, 12-hour; incident and dispatch statuses are labelled by `web/src/utils/statusLabels.js` (pending = Pending, dispatched = Responding).
+
+
+---
+
+# Part 7: Rules from the owner's workflow review, 2026-10-17
+
+89. **The Secretary is the back-up dispatcher.** Besides the Chief Tanod (Admin), the Secretary may open the Dispatch Center, assign a tanod, cancel a dispatch, open or cancel a night offer, acknowledge and resolve an SOS, and resolve an incident, all on the web. Everything else the Secretary could not do before is unchanged: the Secretary still owns the records lifecycle and the complainant name, and still gets no phone device session (Rule 12 stands). The Admin sees contact numbers; the Secretary sees the tanod list without them. SOS and offer alerts still go to the Admin accounts only.
+90. **The Chief Tanod can log an incident from the phone**, with the report channel (phone call, Facebook, walk-in, SMS or other). The report is written to the phone's encrypted store first, sent with its own idempotency key (a signed write, `POST /incidents`), and deleted from the phone once the server confirms. The console never shows the narrative back (Rule 1). Sending happens while the app is open; there is no background job for the console.
+91. **A referral may go to the Lupon / Katarungang Pambarangay** (`lupon_kp`, migration 0045). It is a delegation record only: date, office, reference number. It counts as barangay-level in Annex D, like a barangay official or the VAW desk. The case itself stays in the barangay's binders and the DILG BIMS.
+92. **One workstation per barangay**, each with its own database and its own tunnel hostname if one is used. Dao, Binanuahan, Marifosque and Banuyo are separate deployments; the tenant separation inside the database remains as a second safeguard. Nothing in one barangay's data is visible from another's.
+93. **Power and connection cuts follow `docs/POWER_CUT_PROCEDURE.md`**: a UPS for the workstation and router, an offsite encrypted backup, a paper logbook while the system is down, and entry of the paper incidents afterwards.
+94. **Kept as is, by decision:** night dispatch offers are accepted online only (first accept wins, unchanged); dispatch still needs a published shift or an override reason; residents cannot report directly, staff log every report with its channel; tanods use their own mobile data, so no low-data mode or load allowance is built.
+95. **Kagawads have no account.** They sign printed reports and rosters on paper, which is already how approval works. The earlier idea of a Secretary account carrying approval authority for a Kagawad is dropped.

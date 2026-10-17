@@ -108,7 +108,7 @@ final class DispatchController
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function create(PDO $pdo, array $identity): void
     {
-        AuthMiddleware::requireRole($identity, ['admin']);
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
 
         $body = Http::jsonBody();
         $incidentId = $body['incident_id'] ?? null;
@@ -438,7 +438,7 @@ final class DispatchController
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function index(PDO $pdo, array $identity): void
     {
-        AuthMiddleware::requireRole($identity, ['admin', 'tanod', 'punong_barangay']);
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary', 'tanod', 'punong_barangay']);
 
         $status = Http::query('status');
         if ($status !== null && !in_array($status, self::DISPATCH_STATUSES, true)) {
@@ -538,7 +538,7 @@ final class DispatchController
 
         // cancel_reason is for the people who manage dispatch (Admin) and
         // oversee it (Punong Barangay); a Tanod's own list never carries it.
-        $showCancelReason = in_array($identity['role'], ['admin', 'punong_barangay'], true);
+        $showCancelReason = in_array($identity['role'], ['admin', 'secretary', 'punong_barangay'], true);
 
         $items = array_map(static function (array $row) use ($showCancelReason, $isPunongBarangay): array {
             $item = [
@@ -585,7 +585,7 @@ final class DispatchController
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function cancel(PDO $pdo, array $identity, string $dispatchIdParam): void
     {
-        AuthMiddleware::requireRole($identity, ['admin']);
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary']);
         if (!ctype_digit($dispatchIdParam)) {
             throw new ApiError(404, 'NOT_FOUND', 'Dispatch not found.');
         }

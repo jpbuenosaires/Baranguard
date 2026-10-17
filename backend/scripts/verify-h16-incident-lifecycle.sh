@@ -290,7 +290,7 @@ expect_eq "$(status_of PATCH "/incidents/${INC_F}/status" "$ADMIN_TOKEN" "$(uuid
 expect_eq "$(status_of PATCH "/incidents/${INC_F}/status" "$ADMIN_TOKEN" "$(uuid)" '{"status":"resolved","reason":"   "}')" "400" "Blank reason -> 400"
 LONG=$("$PHP_BIN" -r 'echo str_repeat("x", 256);')
 expect_eq "$(status_of PATCH "/incidents/${INC_F}/status" "$ADMIN_TOKEN" "$(uuid)" "{\"status\":\"resolved\",\"reason\":\"$LONG\"}")" "400" "256-char reason -> 400"
-expect_eq "$(status_of PATCH "/incidents/${INC_F}/status" "$SEC_TOKEN" "$(uuid)" '{"status":"resolved","reason":"Settled by phone call"}')" "403" "Secretary cannot resolve"
+expect_eq "$(status_of PATCH "/incidents/${INC_F}/status" "$SEC_TOKEN" "$(uuid)" '{"status":"resolved"}')" "400" "Secretary (back-up dispatcher) reaches the same rule: a reason is required"
 expect_eq "$(status_of PATCH "/incidents/${INC_F}/status" "$ADMIN_TOKEN" "$(uuid)" '{"status":"resolved","reason":"Settled by phone call"}')" "200" "Pending resolve with a reason -> 200"
 expect_eq "$(db_status_of "$INC_F")" "resolved" "Incident F resolved without a dispatch"
 expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT resolve_reason FROM incident WHERE incident_id=$INC_F;")" "Settled by phone call" "Reason stored on the incident"

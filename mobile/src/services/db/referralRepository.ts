@@ -29,6 +29,7 @@ export const REFERRAL_TARGETS: readonly { value: ReferralTarget; label: string; 
   { value: 'ambulance_ems', label: 'Ambulance / EMS', hint: 'Medical emergency services' },
   { value: 'barangay_official', label: 'Barangay official', hint: 'Kagawad, Punong Barangay, etc.' },
   { value: 'vaw_desk', label: 'VAW Desk', hint: 'Violence against women and children desk' },
+  { value: 'lupon_kp', label: 'Lupon / Katarungang Pambarangay', hint: 'Barangay justice system (Lupon Tagapamayapa)' },
   { value: 'social_welfare', label: 'Social welfare (MSWDO)', hint: 'Social welfare office' },
   { value: 'higher_lgu', label: 'Higher LGU', hint: 'Municipal or provincial office' },
   { value: 'doh', label: 'DOH', hint: 'Department of Health' },

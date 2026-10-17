@@ -18,7 +18,7 @@ const navLabels = () => $$('.sidebar__nav-item').map((b) => b.title);
 // REFERENCE.md §3/§7 + main.js PAGE_ROLES.
 const EXPECTED_NAV = {
   admin: ['Dashboard', 'Dispatch Center', 'Incident Management', 'Live Map', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Analytics', 'Personnel', 'System Tools', 'SMS Monitor', 'Audit Log', 'Service Health', 'Map Packages', 'Settings'],
-  secretary: ['Incident Management', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Personnel', 'Settings'],
+  secretary: ['Dispatch Center', 'Incident Management', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Personnel', 'Settings'],
   punong_barangay: ['Dashboard', 'Live Map', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Analytics', 'Personnel', 'Settings'],
 };
 

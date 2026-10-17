@@ -8,7 +8,7 @@
  */
 
 import {
-  getIncidents, createIncident, getIncident, updateIncident, getUsers,
+  getIncidents, createIncident, getIncident, updateIncident, getUsers, getTanodDirectory,
   getDutyStatus, getDispatches, updateIncidentStatus, getBarangays, sendSms,
   logout, ApiClientError,
 } from '../api/apiClient.js';
@@ -124,6 +124,8 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   const isAdmin = user.role === 'admin';
   const isSecretary = user.role === 'secretary';
   const canCreate = isAdmin || isSecretary;
+  // The Secretary is the back-up dispatcher (2026-10-17): dispatch and resolve like the Admin.
+  const canDispatch = isAdmin || isSecretary;
 
   // Active modal tracking
   let activeModalEl = null;
@@ -770,7 +772,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       barangayNameById.set(4, 'Banuyo');
     }
 
-    if (isAdmin) {
+    if (canDispatch) {
       loadTanodRoster();
     }
 
@@ -781,7 +783,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   async function loadTanodRoster() {
     try {
       const [usersRes, dutyStatuses] = await Promise.all([
-        getUsers({ role: 'tanod', limit: 100 }),
+        (isAdmin ? getUsers({ role: 'tanod', limit: 100 }) : getTanodDirectory()),
         getDutyStatus(user.barangayId),
       ]);
       tanodRosterById = new Map(usersRes.items.map((u) => [u.userId, u]));
@@ -966,7 +968,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
         const actionWrap = document.createElement('div');
         actionWrap.className = 'incident-row-actions';
 
-        if (isAdmin && (row.status === 'pending' || row.status === 'reopened')) {
+        if (canDispatch && (row.status === 'pending' || row.status === 'reopened')) {
           const quickDispatch = document.createElement('button');
           quickDispatch.type = 'button';
           quickDispatch.className = 'incident-quick-dispatch-btn';
@@ -1286,11 +1288,11 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
           assignBtn.disabled = false;
         }
       });
-      if (isAdmin) {
+      if (canDispatch) {
         tanodContent.append(tanodLeft, assignBtn);
       } else {
-        // Dispatch (POST /dispatch) is Admin-only server-side.
-        tanodStatus.textContent = 'Dispatching is done by the Admin';
+        // Dispatch (POST /dispatch) is Admin or Secretary server-side.
+        tanodStatus.textContent = 'Dispatching is done by the Admin or the Secretary';
         tanodContent.append(tanodLeft);
       }
       tanodCard.appendChild(tanodContent);
@@ -1361,12 +1363,12 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     // Primary Action Button (Dispatch or Resolve). Dispatch and resolve are
     // Admin-only on the server (POST /dispatch, PATCH /incidents/:id/status);
     // other roles get a read-only note instead of a control that would 403.
-    if (!isAdmin && (row.status === 'pending' || row.status === 'reopened' || row.status === 'dispatched')) {
+    if (!canDispatch && (row.status === 'pending' || row.status === 'reopened' || row.status === 'dispatched')) {
       const note = document.createElement('p');
       note.className = 'note';
       note.textContent = (row.status === 'pending' || row.status === 'reopened')
-        ? 'Dispatching is done by the Admin.'
-        : 'Resolving is done by the Admin.';
+        ? 'Dispatching is done by the Admin or the Secretary.'
+        : 'Resolving is done by the Admin or the Secretary.';
       actionsRow.appendChild(note);
     } else if (row.status === 'pending' || row.status === 'reopened') {
       const dispatchBtn = document.createElement('button');

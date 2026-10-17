@@ -272,9 +272,9 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_T
   -d "{\"incident_id\":${CRITICAL_INCIDENT_ID},\"tanod_id\":8,\"request_id\":\"10000000-0000-4000-8000-000000000004\"}" "${BASE_URL}/dispatch")
 [ "$CODE" = "422" ] && pass "Assigning a barangay-2 Tanod to a barangay-1 incident -> 422" || fail "Cross-tenant Tanod assignment -> $CODE (expected 422)"
 
-CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $SEC_TOKEN" -H "Content-Type: application/json" \
+CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $PB_TOKEN" -H "Content-Type: application/json" \
   -d "{\"incident_id\":${CRITICAL_INCIDENT_ID},\"tanod_id\":4,\"request_id\":\"10000000-0000-4000-8000-000000000005\"}" "${BASE_URL}/dispatch")
-[ "$CODE" = "403" ] && pass "Secretary -> 403 on POST /dispatch (Admin only)" || fail "Secretary POST /dispatch -> $CODE (expected 403)"
+[ "$CODE" = "403" ] && pass "Punong Barangay -> 403 on POST /dispatch (Admin or back-up Secretary only)" || fail "Punong Barangay POST /dispatch -> $CODE (expected 403)"
 
 step "11. GET /dispatch"
 RESP=$(curl -s -H "Authorization: Bearer $TANOD1_TOKEN" "${BASE_URL}/dispatch")

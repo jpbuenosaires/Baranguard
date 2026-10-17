@@ -84,7 +84,7 @@ describe('Settings behaviour', () => {
   });
 
   test('the default landing page only offers screens this role can open', async () => {
-    const SECRETARY_PAGES = ['incident-management', 'settings', 'approvals'];
+    const SECRETARY_PAGES = ['dispatch', 'incident-management', 'settings', 'approvals'];
     mountPage(renderSettingsPage, { role: 'secretary' });
     await settle();
     await openSection('Appearance')();

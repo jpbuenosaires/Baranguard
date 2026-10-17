@@ -142,6 +142,7 @@ export const REFERRED_TO_LABELS = {
   ambulance_ems: 'Ambulance / EMS',
   barangay_official: 'Barangay official',
   vaw_desk: 'VAW Desk',
+  lupon_kp: 'Lupon / Katarungang Pambarangay',
   social_welfare: 'Social Welfare',
   higher_lgu: 'Higher LGU (City/Municipality)',
   doh: 'DOH',

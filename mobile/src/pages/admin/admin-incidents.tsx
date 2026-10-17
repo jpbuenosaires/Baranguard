@@ -1,11 +1,13 @@
 /**
- * admin-incidents.tsx — Chief Tanod console, Incidents tab (read-only).
+ * admin-incidents.tsx — Chief Tanod console, Incidents tab. The list is read-only; the
+ * "Log an incident" button opens the phone report form (admin-log-incident.tsx).
  * A recent-incidents list; tapping one opens the same read-only sheet the
  * Dispatch tab uses (which carries the dispatch actions). No narrative is
  * requested or shown anywhere here.
  */
 
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { IonContent, IonPage, IonRefresher, IonRefresherContent } from '@ionic/react';
 import MobileHeader from '../../components/MobileHeader';
 import { LoadingBlock } from '../../components/LoadingBlock';
@@ -18,6 +20,7 @@ import { adminErrorMessage, getAdminIncidents, type AdminIncidentListItem } from
 
 const AdminIncidentsPage: React.FC = () => {
   const online = useOnline();
+  const navigate = useNavigate();
   const [items, setItems] = useState<AdminIncidentListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -46,12 +49,13 @@ const AdminIncidentsPage: React.FC = () => {
 
   return (
     <IonPage>
-      <MobileHeader title="Incidents" subtitle="Chief Tanod Console · read-only" hideStatusIndicator />
+      <MobileHeader title="Incidents" subtitle="Chief Tanod Console" hideStatusIndicator />
       <IonContent>
         <IonRefresher slot="fixed" onIonRefresh={(e) => void load().finally(() => e.detail.complete())}>
           <IonRefresherContent />
         </IonRefresher>
         <div className="wf-page">
+          <Button onClick={() => navigate('/tabs/incidents/new')}>Log an incident</Button>
           {!online && <Banner tone="warning">{NEEDS_CONNECTION}. Showing the last loaded list.</Banner>}
           {loading && <LoadingBlock compact />}
           {error && <ErrorState message={error} onRetry={() => void load()} />}
