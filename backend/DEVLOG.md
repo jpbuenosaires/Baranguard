@@ -19020,7 +19020,8 @@ Run before pushing 45 local commits to `origin/main`. Committed HEAD was NOT gre
   a month, and counted `roster_published` audit rows globally; `verify-offline-sync-conflicts.sh` expected a client
   timestamp to be honoured for `responding`/`on_duty` (now refused by design: going on duty is online-only, only
   `off_duty` takes `changed_at`), passed a ~35 KB body as a curl argument (Windows 32 KB command-line limit) and
-  compared `db_one` output containing a stray ``. A stale label test (`Print` -> `Print (A4)`) was updated.
+  compared `db_one` output containing a stray `
+`. A stale label test (`Print` -> `Print (A4)`) was updated.
 
 **Measured**: `web/tests` 738/738, `verify-web-wiring.mjs` 922/0, mobile `verify-local-schema.mjs` 230/0, `php -l` clean on
 every tracked PHP file, all `verify-*.sh` suites pass (e.g. h16 59, pentest-incidents 74, retention 89 + new-tables 112,
@@ -19265,3 +19266,11 @@ Audit of `tanod.reyes` (primary phone tester) and every screen against the UAT s
 - Chapter 4 (Results and Discussion) started: measured results only. Table 11 (38 backend suites, 1,795 counted checks, 0 failed after re-running), web tests 734/734, mobile schema 259/259, API latency (N=40 after 5 warm-up, workstation, demo DB: medians 28-41 ms, worst p95 about 58 ms). Sections 4.4 to 4.6 have tables with cells marked pending; nothing is estimated. GPS/sync figures from the seeded database are deliberately not reported.
 - Fixes found on the way: `measure-api-latency.mjs` called `/gps/live` without `barangay_id` (400); `verify-device-session.sh` cap check had a 1 s boundary flake (now +2 s tolerance).
 - Open for the authors: respondent table changed to 3 IT experts, 4 Punong Barangay, 4 Secretary, 4 Chief Tanod, 12 tanods (27; Lupon members are not users); Table 1 keeps the `[verify]` cells for DILG BIMS; hardware and software versions were read from this workstation.
+
+
+## 2026-10-17 (late) - Chapter 4 restructured to the BUCS IT 124 guide; channel select fix
+
+- Manuscript Chapter 4 rewritten to the official guide (v03): 4.1 Needs Assessment Result (Fig 4-1 as-is flow, Tables 4-1..4-3), 4.2 Data Gathering Result (Tables 4-4..4-8, all field cells pending), 4.3 The Developed System (4.3.1-4.3.8, Figs 4-2..4-21, Tables 4-9..4-18), 4.4 Evaluation Result (Tables 4-19..4-22, pending). Chapters 2 and 3 renumbered to chapter-based captions, figure captions moved above, Ch3 scale table relabelled Excellent..Poor to match the four ISO forms. Appendices now: A Android screens (as supplied), B data dictionary generated from information_schema (34 tables).
+- New figures: `fig4-1-asis-process`, `fig4-2-architecture`, `fig4-6-main-flow` (make_diagrams2.py), ERD regenerated in Crow's Foot notation from the live schema (18 of 34 tables; referral table dropped to avoid a crossing line). Retook `m01-new-incident.png` with a completed form.
+- Test levels: unit/component 993/0 (web 734 + mobile 259), integration 1,795/0 (38 backend suites); system and UAT rows pending. Defect table lists the 9 defects found in the verification pass (8 resolved, 1 deferred = 30 stylesheet findings).
+- Real bug found while shooting the form: the Log an Incident select still offered only four channels although migration 0044 and the badge code had phone_call and facebook. `web/src/utils/reportChannel.js` now lists them; incident-management test updated (29/0).
