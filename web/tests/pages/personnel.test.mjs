@@ -285,59 +285,11 @@ describe('Personnel behaviour', () => {
     assert.equal(call.body.is_suspended, true);
   });
 
-  test('the Users tab shows official titles and authorities, only for roles that may hold one', async () => {
+  test('the Users tab has no approval-authority column or button (Admin and Secretary hold sign-off by role)', async () => {
     mountPage(renderPersonnelPage, { role: 'admin' });
     await settle();
-    const body = text($('.page-content'));
-    assert.match(body, /Chief Tanod/);
-    assert.match(body, /Sign and publish the duty roster/);
-    const rows = $$('tbody tr');
-    const tanodRow = rows.find((r) => /Jose Reyes/.test(text(r)));
-    assert.equal(buttonByText(/approval authority/i, tanodRow), undefined, 'a Tanod can never hold an approval authority');
-    const kapitanRow = rows.find((r) => /Teresa Magbanua/.test(text(r)));
-    assert.ok(buttonByText(/approval authority/i, kapitanRow));
-  });
-
-  test('saving approval authority clears the cached authority lookup', async () => {
-    mountPage(renderPersonnelPage, { role: 'admin' });
-    await settle();
-    clearAuthorityCache();
-    await getMyAuthority({ userId: 2 });
-    await getMyAuthority({ userId: 2 });
-    const before = api.callsTo('GET', '/users/:id').length;
-    const secretaryRow = $$('tbody tr').find((r) => /Liwayway Ferrer/.test(text(r)));
-    click(buttonByText(/approval authority/i, secretaryRow));
-    await settle();
-    const dialog = $('[role="dialog"]');
-    dialog.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-    await settle();
-    await getMyAuthority({ userId: 2 });
-    assert.equal(api.callsTo('GET', '/users/:id').length, before + 1, 'the next lookup must refetch after a save');
-    clearAuthorityCache();
-  });
-
-  test('editing approval authority PATCHes official_title + the five-value array with an Idempotency-Key', async () => {
-    mountPage(renderPersonnelPage, { role: 'admin' });
-    await settle();
-    const secretaryRow = $$('tbody tr').find((r) => /Liwayway Ferrer/.test(text(r)));
-    click(buttonByText(/approval authority/i, secretaryRow));
-    await settle();
-    const dialog = $('[role="dialog"]');
-    assert.ok(dialog, 'the authority dialog did not open');
-    const boxes = $$('input[type="checkbox"]', dialog);
-    assert.equal(boxes.length, 5, 'exactly the five authorities from contract §2');
-    assert.deepEqual(boxes.filter((b) => b.checked).map((b) => b.value), ['note_report'], 'pre-checked from the account');
-    type($('#approval-official-title', dialog), 'Barangay Kagawad');
-    const approveRoster = boxes.find((b) => b.value === 'approve_roster');
-    approveRoster.checked = true;
-    dialog.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-    await settle();
-    const [call] = api.callsTo('PATCH', '/users/:id');
-    assert.ok(call, 'PATCH /users/:id was not sent');
-    assert.equal(call.body.official_title, 'Barangay Kagawad');
-    assert.deepEqual(call.body.approval_authority.sort(), ['approve_roster', 'note_report']);
-    assert.match(call.headers['idempotency-key'] || '', UUID);
-    assert.equal($('[role="dialog"]'), null, 'the dialog closes after saving');
+    assert.doesNotMatch(text($('.page-content')), /Title & authority|Sign and publish the duty roster/);
+    assert.equal(buttonByText(/approval authority/i, $('.page-content')), undefined);
   });
 
   test('the create-user password rule stays visible while typing (§13)', async () => {

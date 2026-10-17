@@ -207,7 +207,7 @@ expect_eq "GET /users: a tanod has an empty authority array" "$(printf '%s' "$BO
 
 api GET "/users/$SEC_ID" "$SEC_T" ""
 expect_code "Secretary GET own /users/:id" 200
-expect_eq "  own row: empty authority array" "$(jget "$BODY" approval_authority)" "[]"
+expect_eq "  own row: the Secretary holds every sign-off right by role" "$(jget "$BODY" approval_authority)" '["note_report","approve_report","approve_roster","prepare_annex_d","approve_annex_d"]'
 api GET "/users/$T1_ID" "$T1_T" ""
 expect_code "Tanod GET own /users/:id" 200
 api GET "/users/$SEC_ID" "$T1_T" ""
@@ -227,7 +227,7 @@ expect_code "Admin PATCH authority + title on a secretary" 200
 expect_eq "  DB approval_authority (canonical SET order)" "$(db_one "SELECT approval_authority FROM user WHERE user_id=$SEC2_ID;")" "note_report,approve_report,approve_roster"
 expect_eq "  DB official_title" "$(db_one "SELECT official_title FROM user WHERE user_id=$SEC2_ID;")" "Kagawad"
 api GET "/users/$SEC2_ID" "$SEC2_T" ""
-expect_eq "  GET /users/:id (self) shows the new authority array" "$(jget "$BODY" approval_authority)" '["note_report","approve_report","approve_roster"]'
+expect_eq "  GET /users/:id (self) shows every right for a Secretary (by role)" "$(jget "$BODY" approval_authority)" '["note_report","approve_report","approve_roster","prepare_annex_d","approve_annex_d"]'
 api PATCH "/users/$SEC2_ID" "$ADMIN_T" '{"official_title":"Kagawad","approval_authority":["note_report","approve_report","approve_roster"]}' -H "Idempotency-Key: $AUTH_KEY"
 expect_code "Same Idempotency-Key replay" 200
 expect_eq "  audit rows for that key: still exactly one" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='user_approval_authority_changed' AND entity_id=$SEC2_ID;")" "1"
@@ -794,8 +794,6 @@ api POST "/accomplishment-reports/$R3_ID/return" "$ADMIN_T" '{"reason":"   "}' -
 expect_code "Return with a blank reason" 400
 api POST "/accomplishment-reports/$R3_ID/return" "$ADMIN_T" "{\"reason\":\"$("$PHP_BIN" -r 'echo str_repeat("r",256);')\"}" -H "Idempotency-Key: $(uuid)"
 expect_code "Return with a 256-char reason" 400
-api POST "/accomplishment-reports/$R3_ID/return" "$SEC_T" '{"reason":"fix"}' -H "Idempotency-Key: $(uuid)"
-expect_code "Secretary WITHOUT note_report/approve_report authority returns" 403
 api POST "/accomplishment-reports/$R3_ID/return" "$T3_T" '{"reason":"fix"}' -H "Idempotency-Key: $(uuid)"
 expect_code "Tanod returns" 403
 RET_KEY=$(uuid)

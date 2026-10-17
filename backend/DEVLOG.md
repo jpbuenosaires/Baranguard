@@ -19283,3 +19283,7 @@ Decisions taken on the ten workflow risks (WORKFLOWS_AND_RULES Part 7, rules 89-
 - Chief Tanod phone: `POST /incidents` added to `ADMIN_DEVICE_ALLOWLIST` (signed), mobile schema v10 `admin_incident_outbox`, `adminIncidentOutbox.ts` (save first, send, keep refused rows), `admin-log-incident.tsx`, route `tabs/incidents/new`. Not device-verified. Mobile schema check 266/0, vitest 185/0.
 - Migration 0045 adds `lupon_kp` to the referral destinations (barangay-level in Annex D); applied to `baranguard_uiseed`.
 - New `docs/POWER_CUT_PROCEDURE.md`. Kept as is: night offers online-only, published-shift check, no resident reporting, no low-data mode, no Kagawad account.
+
+## 2026-10-17 (late night) - Approval authority dialog removed
+
+`ApprovalAuthority::listFor` now returns every right for role admin or secretary; `GET /users` reports the same. Web: Personnel > Users lost the "Title & authority" column, the Authority button and the dialog; dashboard text no longer points to Personnel. Tests: three dialog tests replaced by one absence check (web 732/0 apart from the known order-sensitive map test); `verify-roster-accomplishment.sh` and `verify-school-zones.sh` updated to the by-role rule (all checks pass). Rule 96. PATCH /users/:id still accepts the fields (dormant, no UI).

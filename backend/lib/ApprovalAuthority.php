@@ -40,9 +40,20 @@ final class ApprovalAuthority
     /** @return list<string> authorities currently held by this user. */
     public static function listFor(PDO $pdo, int $userId): array
     {
-        $stmt = $pdo->prepare('SELECT approval_authority FROM user WHERE user_id = :id AND is_active = 1 LIMIT 1');
+        $stmt = $pdo->prepare('SELECT role, approval_authority FROM user WHERE user_id = :id AND is_active = 1 LIMIT 1');
         $stmt->execute(['id' => $userId]);
-        $value = $stmt->fetchColumn();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row === false) {
+            return [];
+        }
+        // 2026-10-17: nothing to configure. The Chief Tanod (Admin) and the Secretary hold every
+        // sign-off right by role; the segregation rule (a preparer never approves their own
+        // document) still applies. The stored column is dormant for the Punong Barangay: there is
+        // no screen to set it, and a value written by hand is still honoured.
+        if (in_array($row['role'], ['admin', 'secretary'], true)) {
+            return self::ALL;
+        }
+        $value = $row['approval_authority'];
         if (!is_string($value) || $value === '') {
             return [];
         }

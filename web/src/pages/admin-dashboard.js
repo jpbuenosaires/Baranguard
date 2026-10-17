@@ -550,13 +550,13 @@ async function loadPendingApprovals(container, user, navigate) {
     if (authorities.length === 0 && !isManager) {
       host.innerHTML = '';
       if (headerChip) {
-        headerChip.textContent = 'No authority';
+        headerChip.textContent = 'Nothing waiting';
         headerChip.className = 'card-header__chip';
         headerChip.hidden = false;
       }
       const note = document.createElement('p');
       note.className = 'note';
-      note.textContent = 'No approval authority is assigned to your account, so nothing is waiting on you. An Admin can assign one under Personnel.';
+      note.textContent = 'Nothing is waiting on you.';
       host.appendChild(note);
       return;
     }
