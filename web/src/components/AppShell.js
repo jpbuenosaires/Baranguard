@@ -372,8 +372,8 @@ const NAV_ITEMS = [
   { key: 'audit-log', label: 'Audit Log', roles: ['admin'], icon: icons.shield, group: 'System' },
   { key: 'service-health', label: 'Service Health', roles: ['admin'], icon: icons.activity, group: 'System' },
   // §D/W18 — Admin only, built as a deliberate Sprint 8 exception.
-  // 2026-10-17: no sidebar row. It is opened from Settings > Map Packages; the route and role gate stay.
-  { key: 'map-packages', label: 'Map Packages', roles: ['admin'], icon: icons.map, group: 'Settings', hidden: true },
+  // Back in the sidebar (2026-10-17); Settings > Map Packages also opens it.
+  { key: 'map-packages', label: 'Map Packages', roles: ['admin'], icon: icons.map, group: 'System' },
   { key: 'settings', label: 'Settings', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.settings, group: 'System' },
 ];
 const NAV_COUNTS_POLL_MS = 60000; // Not time-critical — see ReportsController::navCounts()'s own doc.
@@ -804,7 +804,21 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   searchKbd.textContent = isMac ? '⌘K' : 'Ctrl K';
   searchKbd.setAttribute('aria-hidden', 'true');
 
-  searchInputWrap.append(searchIcon, searchInput, searchKbd);
+  const searchClearBtn = document.createElement('button');
+  searchClearBtn.type = 'button';
+  searchClearBtn.className = 'topbar__search-clear';
+  searchClearBtn.setAttribute('aria-label', 'Clear search input');
+  searchClearBtn.title = 'Clear search';
+  searchClearBtn.hidden = true;
+  searchClearBtn.innerHTML = icons.x(14);
+  searchClearBtn.addEventListener('click', () => {
+    searchInput.value = '';
+    searchClearBtn.hidden = true;
+    searchInput.focus();
+    renderQuickJumpPalette();
+  });
+
+  searchInputWrap.append(searchIcon, searchInput, searchClearBtn, searchKbd);
 
   const mobileSearchClose = document.createElement('button');
   mobileSearchClose.type = 'button';
@@ -894,6 +908,8 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
     btn.addEventListener('click', () => {
       searchResults.hidden = true;
       searchInput.value = '';
+      searchClearBtn.hidden = true;
+      addRecentSearch({ label: target.label, page: target.page, param: target.param });
       navigate(target.page, target.param);
     });
     return btn;
@@ -901,6 +917,47 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
 
   function renderQuickJumpPalette() {
     searchResults.innerHTML = '';
+
+    const recents = getRecentSearches();
+    if (recents.length > 0) {
+      const recHeader = document.createElement('div');
+      recHeader.className = 'topbar__search-section-header';
+
+      const recLabel = document.createElement('span');
+      recLabel.className = 'topbar__search-section-label';
+      recLabel.textContent = 'Recent Searches';
+
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'topbar__search-clear-recents';
+      clearBtn.textContent = 'Clear';
+      clearBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        clearRecentSearches();
+        renderQuickJumpPalette();
+      });
+
+      recHeader.append(recLabel, clearBtn);
+      searchResults.appendChild(recHeader);
+
+      const recList = document.createElement('div');
+      recList.className = 'topbar__search-recents-list';
+      for (const r of recents) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'topbar__search-recent-chip';
+        chip.innerHTML = `${icons.clock(12)}<span>${escapeHtml(r.label)}</span>`;
+        chip.addEventListener('click', () => {
+          searchResults.hidden = true;
+          searchInput.value = '';
+          searchClearBtn.hidden = true;
+          navigate(r.page, r.param);
+        });
+        recList.appendChild(chip);
+      }
+      searchResults.appendChild(recList);
+    }
+
     const header = document.createElement('div');
     header.className = 'topbar__search-section-label';
     header.textContent = 'Quick Jump to Screen';
@@ -946,6 +1003,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   let searchDebounceHandle = null;
   searchInput.addEventListener('input', () => {
     clearTimeout(searchDebounceHandle);
+    searchClearBtn.hidden = searchInput.value.length === 0;
     const q = searchInput.value.trim();
     if (q.length < 2) {
       searchResults.hidden = true;
@@ -953,6 +1011,12 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
       return;
     }
     searchDebounceHandle = setTimeout(() => runSearch(q), SEARCH_DEBOUNCE_MS);
+  });
+
+  searchInput.addEventListener('focus', () => {
+    if (searchInput.value.trim().length === 0) {
+      renderQuickJumpPalette();
+    }
   });
 
   // Escape closes the dropdown; Down arrow moves into the results, so the
@@ -1014,10 +1078,17 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
         row.type = 'button';
         row.className = 'topbar__search-result';
         const typeLabel = INCIDENT_TYPE_LABELS[item.incidentType] || item.incidentType;
-        row.innerHTML = `<strong>#${escapeHtml(item.incidentId)} — ${escapeHtml(typeLabel)}</strong><span class="status-pill status-pill--neutral">${escapeHtml(String(item.status ?? '').replace(/_/g, ' '))}</span>`;
+        const priorityMod = item.priority === 'urgent' || item.priority === 'high' ? 'critical' : (item.priority === 'low' ? 'neutral' : 'warning');
+        const statusMod = item.status === 'resolved' || item.status === 'closed' ? 'success' : (item.status === 'dispatched' || item.status === 'in_progress' ? 'info' : 'neutral');
+        const priorityBadge = item.priority && item.priority !== 'normal'
+          ? `<span class="topbar__search-result-priority topbar__search-result-priority--${priorityMod}">${escapeHtml(item.priority.toUpperCase())}</span>`
+          : '';
+        row.innerHTML = `<span class="topbar__search-result-left"><strong>#${escapeHtml(item.incidentId)} — ${escapeHtml(typeLabel)}</strong>${priorityBadge}</span><span class="status-pill status-pill--${statusMod}">${escapeHtml(String(item.status ?? '').replace(/_/g, ' '))}</span>`;
         row.addEventListener('click', () => {
           searchResults.hidden = true;
           searchInput.value = '';
+          searchClearBtn.hidden = true;
+          addRecentSearch({ label: `#${item.incidentId} — ${typeLabel}`, page: 'incident-detail', param: item.incidentId });
           // incident-detail takes the id and is the app's only per-incident
           // detail view, so a search result opens the incident itself.
           navigate('incident-detail', item.incidentId);
@@ -1245,6 +1316,23 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
       renderNotifications(result);
     });
 
+    const muteBtn = document.createElement('button');
+    muteBtn.type = 'button';
+    muteBtn.className = 'icon-btn notification-panel__mute-btn' + (isAlertMuted() ? ' is-muted' : '');
+    const isMuted = isAlertMuted();
+    muteBtn.setAttribute('aria-label', isMuted ? 'Unmute alert audio' : 'Mute alert audio');
+    muteBtn.title = isMuted ? 'Unmute alert audio' : 'Mute alert audio';
+    muteBtn.innerHTML = isMuted ? icons.volumeX(16) : icons.volume2(16);
+    muteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const nextMuted = !isAlertMuted();
+      setAlertMuted(nextMuted);
+      muteBtn.classList.toggle('is-muted', nextMuted);
+      muteBtn.setAttribute('aria-label', nextMuted ? 'Unmute alert audio' : 'Mute alert audio');
+      muteBtn.title = nextMuted ? 'Unmute alert audio' : 'Mute alert audio';
+      muteBtn.innerHTML = nextMuted ? icons.volumeX(16) : icons.volume2(16);
+    });
+
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'icon-btn notification-panel__close-btn';
@@ -1256,7 +1344,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
       bellMenu.close({ restoreFocus: true });
     });
 
-    headerActions.append(markAllBtn, closeBtn);
+    headerActions.append(muteBtn, markAllBtn, closeBtn);
     header.append(titleGroup, headerActions);
 
     // 2. Filter Tabs (All / Unread / Critical)
@@ -1289,6 +1377,24 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
       });
       tabsContainer.appendChild(tabBtn);
     });
+
+    function updateBadgeAndTabCounts() {
+      bellDot.hidden = result.unreadCount === 0;
+      bellDot.textContent = result.unreadCount > 9 ? '9+' : String(result.unreadCount);
+      bellTrigger.setAttribute(
+        'aria-label',
+        result.unreadCount === 0 ? 'Notifications' : `Notifications, ${result.unreadCount} unread`
+      );
+      badge.textContent = result.unreadCount === 0 ? 'All caught up' : `${result.unreadCount} unread`;
+      if (result.unreadCount === 0) markAllBtn.hidden = true;
+      const uCount = result.items.filter((i) => i.ackStatus === 'pending').length;
+      const cCount = result.items.filter((i) => i.notificationType === 'sos' || i.notificationType === 'priority_alert').length;
+      tabsContainer.querySelectorAll('.notification-panel__tab').forEach((t) => {
+        if (t.textContent.startsWith('All')) t.textContent = `All (${result.items.length})`;
+        if (t.textContent.startsWith('Unread')) t.textContent = `Unread (${uCount})`;
+        if (t.textContent.startsWith('Critical')) t.textContent = `Critical (${cCount})`;
+      });
+    }
 
     // 3. Notification Cards List
     function renderNotificationCards(container, currentResult) {
@@ -1329,7 +1435,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
         return;
       }
 
-      for (const item of filtered) {
+      function createNotificationCard(item) {
         const unread = item.ackStatus === 'pending';
         let iconFn = icons.bell;
         let badgeMod = 'neutral';
@@ -1446,6 +1552,46 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
           descEl.textContent = desc;
           cardContent.appendChild(descEl);
         }
+
+        // Inline Actions Row
+        const actionsRow = document.createElement('div');
+        actionsRow.className = 'notification-card__actions';
+
+        if (unread) {
+          const ackBtn = document.createElement('button');
+          ackBtn.type = 'button';
+          ackBtn.className = 'notification-card__action-btn notification-card__action-btn--ack';
+          ackBtn.innerHTML = `${icons.check(12)} Acknowledge`;
+          ackBtn.title = 'Mark this alert acknowledged';
+          ackBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            item.ackStatus = 'acknowledged';
+            card.classList.remove('notification-card--unread');
+            card.querySelector('.notification-card__dot')?.remove();
+            ackBtn.remove();
+            currentResult.unreadCount = Math.max(0, currentResult.unreadCount - 1);
+            updateBadgeAndTabCounts();
+            try {
+              await acknowledgeNotification(item.notificationId);
+            } catch {
+              // fallback
+            }
+          });
+          actionsRow.appendChild(ackBtn);
+        }
+
+        const viewBtn = document.createElement('span');
+        viewBtn.className = 'notification-card__action-btn notification-card__action-btn--view';
+        if (item.incidentId) {
+          viewBtn.textContent = 'View incident →';
+        } else if (item.sosId || item.dispatchId) {
+          viewBtn.textContent = 'Dispatch center →';
+        } else {
+          viewBtn.textContent = 'Open →';
+        }
+        actionsRow.appendChild(viewBtn);
+        cardContent.appendChild(actionsRow);
+
         card.appendChild(cardContent);
 
         // Unread dot
@@ -1469,12 +1615,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
             card.classList.remove('notification-card--unread');
             card.querySelector('.notification-card__dot')?.remove();
             currentResult.unreadCount = Math.max(0, currentResult.unreadCount - 1);
-            bellDot.hidden = currentResult.unreadCount === 0;
-            bellDot.textContent = currentResult.unreadCount > 9 ? '9+' : String(currentResult.unreadCount);
-            bellTrigger.setAttribute(
-              'aria-label',
-              currentResult.unreadCount === 0 ? 'Notifications' : `Notifications, ${currentResult.unreadCount} unread`
-            );
+            updateBadgeAndTabCounts();
             try {
               await acknowledgeNotification(item.notificationId);
             } catch {
@@ -1486,7 +1627,54 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
           else if (item.sosId || item.dispatchId) navigate('dispatch');
         });
 
-        container.appendChild(card);
+        return card;
+      }
+
+      function getTimelineGroup(dateString) {
+        if (!dateString) return 'Earlier';
+        const d = new Date(dateString);
+        if (isNaN(d.getTime())) return 'Earlier';
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const itemDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const diffDays = Math.round((today - itemDate) / (1000 * 60 * 60 * 24));
+        if (diffDays <= 0) return 'Today';
+        if (diffDays === 1) return 'Yesterday';
+        return 'Earlier';
+      }
+
+      const groups = {
+        Today: [],
+        Yesterday: [],
+        Earlier: [],
+      };
+      for (const item of filtered) {
+        const g = getTimelineGroup(item.createdAt);
+        if (groups[g]) groups[g].push(item);
+        else groups.Earlier.push(item);
+      }
+
+      for (const groupName of ['Today', 'Yesterday', 'Earlier']) {
+        const groupItems = groups[groupName];
+        if (groupItems.length === 0) continue;
+
+        const groupHeader = document.createElement('div');
+        groupHeader.className = 'notification-panel__group-header';
+
+        const groupTitle = document.createElement('span');
+        groupTitle.className = 'notification-panel__group-title';
+        groupTitle.textContent = groupName;
+
+        const groupCount = document.createElement('span');
+        groupCount.className = 'notification-panel__group-count';
+        groupCount.textContent = String(groupItems.length);
+
+        groupHeader.append(groupTitle, groupCount);
+        container.appendChild(groupHeader);
+
+        for (const item of groupItems) {
+          container.appendChild(createNotificationCard(item));
+        }
       }
     }
 
@@ -1537,7 +1725,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
         const hasNewCritical = result.items.some(
           (item) => !knownNotificationIds.has(item.notificationId) && AUDIBLE_NOTIFICATION_TYPES.has(item.notificationType)
         );
-        if (hasNewCritical) playCriticalAlertTone();
+        if (hasNewCritical && !isAlertMuted()) playCriticalAlertTone();
       }
       knownNotificationIds = new Set(result.items.map((item) => item.notificationId));
       renderNotifications(result);
@@ -1598,9 +1786,18 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
 
   const menuStatus = document.createElement('div');
   menuStatus.className = 'menu__account-status';
-  menuStatus.innerHTML = `<span class="menu__account-status-dot" aria-hidden="true"></span><span>Active Session</span>`;
+  menuStatus.innerHTML = `<span class="menu__account-status-dot" aria-hidden="true"></span><span>Active Session · Secured</span>`;
 
-  menuDetails.append(menuName, menuMetaRow, menuStatus);
+  const editProfileLink = document.createElement('button');
+  editProfileLink.type = 'button';
+  editProfileLink.className = 'menu__account-profile-link';
+  editProfileLink.innerHTML = `${icons.edit(12)}<span>Edit Profile</span>`;
+  editProfileLink.addEventListener('click', () => {
+    avatarMenu.close();
+    navigate('settings');
+  });
+
+  menuDetails.append(menuName, menuMetaRow, menuStatus, editProfileLink);
   menuHeader.append(menuAvatar, menuDetails);
   avatarMenu.panel.appendChild(menuHeader);
 
@@ -1637,6 +1834,25 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
     if (iconEl) iconEl.innerHTML = dark ? icons.sun(16) : icons.moon(16);
   };
   onThemeChanged();
+
+  const shortcutsItem = MenuItem({
+    label: 'Keyboard shortcuts',
+    description: 'Hotkeys & cheat sheet',
+    icon: icons.keyboard,
+    rightAccessory: (() => {
+      const kbd = document.createElement('kbd');
+      kbd.className = 'menu__item-kbd';
+      kbd.textContent = '?';
+      return kbd;
+    })(),
+    onClick: () => {
+      avatarMenu.close();
+      openKeyboardShortcutsModal();
+    },
+  });
+  avatarMenu.panel.appendChild(shortcutsItem);
+
+  ensureGlobalShortcuts();
 
   // V-06/N-03: the data-privacy notice (draft) is a static page, so it opens
   // even when the API is down; a new tab keeps the console where it was.

@@ -43,7 +43,7 @@ describe('Settings behaviour', () => {
     await settle();
     assert.doesNotMatch(text($('.page-content')), /Could not load system settings/);
     assert.match(text($('.page-content')), /SOS Fallback Contact/);
-    await openSection('Map Packages')();
+    click($$('.settings-rail__item').find((b) => /^Map Packages/.test(text(b))));
     await settle();
     assert.ok(buttonByText(/Open Map Packages/), 'Map Packages section has its button');
   });
