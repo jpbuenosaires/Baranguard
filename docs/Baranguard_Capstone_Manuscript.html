@@ -687,19 +687,20 @@ code { font-size: .92em; }
 
 <h3>4.3.2 Process and Data Models</h3>
 
-<p>Figure 4-3 presents the context diagram of the system. It shows the system as one process with its six external entities: barangay staff, tanods using the Android application, the Punong Barangay, the GSM gateway phone on the cellular network, the Firebase push service and OpenRouteService. Residents do not appear because they report through staff and do not use the system directly.</p>
+<p>The data flow diagrams follow the Kendall and Kendall notation: a double square is an external entity, a rounded rectangle is a process, an open-ended rectangle is a data store, and an arrow is a data flow named with a noun. Figure 4-3 presents the context diagram. It shows the system as the single process 0 with its six external entities: barangay staff, the tanod using the Android application, the Punong Barangay, the GSM gateway phone on the cellular network, the Firebase push service and OpenRouteService. Each entity is connected only to the process, no two entities are connected to each other, and every flow has a direction. Residents do not appear because they report through staff and do not use the system directly.</p>
 
 <figure>
-<figcaption id="f4-3"><strong>Figure 4-3.</strong> <em>Context Diagram (Data Flow Diagram Level 0)</em></figcaption>
-<img src="manuscript-images/figA1-dfd-level0.svg" alt="Level 0 data flow diagram">
+<figcaption id="f4-3"><strong>Figure 4-3.</strong> <em>Context Diagram</em></figcaption>
+<img src="manuscript-images/fig4-3-context.svg" alt="Context diagram of Baranguard">
 </figure>
 
-<p>Figure 4-4 decomposes the system into its main processes: incident intake and management, dispatch and night offers, field synchronisation, SOS and SMS fallback, tracking, routing and analytics, roster and reports, and access control and audit. The diagram shows that every process reads and writes the same data stores on the workstation, and that only three processes talk to external services, which keeps the external dependency small.</p>
+<p>Figure 4-4 presents Diagram 0, the explosion of the context process into seven processes, named by verb and noun: record incident reports, dispatch assigned tanods, synchronize offline records, relay SOS alerts, track and analyze incidents, prepare roster and reports, and control access and audit. The number of processes stays under the limit of nine. Each process has at least one input and one output, and each data store, D1 to D7, is connected to at least one process; stores are reached only through processes and never directly by an entity. The inputs and outputs of Diagram 0 are the same as those of the context diagram. The seven processes are not exploded further in this manuscript, so they are the primitive processes of the study.</p>
 
 <figure>
-<figcaption id="f4-4"><strong>Figure 4-4.</strong> <em>Data Flow Diagram Level 1</em></figcaption>
-<img src="manuscript-images/figA2-dfd-level1.svg" alt="Level 1 data flow diagram">
+<figcaption id="f4-4"><strong>Figure 4-4.</strong> <em>Data Flow Diagram, Diagram 0</em></figcaption>
+<img src="manuscript-images/fig4-4-dfd0.svg" alt="Data flow diagram level 0 with seven processes">
 </figure>
+<p class="tablenote"><em>Note.</em> The Barangay staff entity is drawn twice to keep the lines short. Dispatch alerts by SMS leave through process 4.0 and push alerts through process 2.0.</p>
 
 <p>Figure 4-5 presents the use cases by actor. The Chief Tanod, the Secretary, the Punong Barangay and the tanod have separate groups of use cases, and the groups overlap only where the system deliberately shares a function, such as viewing an incident. The privileges behind the diagram are given in full in Table 4-11.</p>
 
