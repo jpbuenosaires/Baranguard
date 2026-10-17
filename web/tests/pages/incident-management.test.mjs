@@ -90,7 +90,7 @@ describe('Incident Management behaviour', () => {
       const select = $('#incident-report-channel');
       assert.ok(select, 'Report channel select missing');
       assert.deepEqual([...select.options].map((o) => text(o)), ['Tanod alerted', 'Walk-in', 'SMS', 'Phone call', 'Facebook message', 'Other']);
-      assert.deepEqual([...select.options].map((o) => o.value), ['tanod_alerted', 'walk_in', 'sms', 'other']);
+      assert.deepEqual([...select.options].map((o) => o.value), ['tanod_alerted', 'walk_in', 'sms', 'phone_call', 'facebook', 'other']);
       assert.equal(select.value, 'walk_in');
       assert.equal(text($(`label[for="incident-report-channel"]`)), 'Report channel');
     });
