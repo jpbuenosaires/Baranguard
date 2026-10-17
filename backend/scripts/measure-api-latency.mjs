@@ -35,7 +35,7 @@ if (/baranguardph\.win/.test(base) && n > 50) {
 }
 
 const ENDPOINTS = [
-  ['GET /gps/live', '/gps/live'],
+  ['GET /gps/live', '/gps/live?barangay_id=1'],
   ['GET /incidents', '/incidents'],
   ['GET /dispatch', '/dispatch'],
   ['GET /reports/summary', '/reports/summary'],
