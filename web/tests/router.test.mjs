@@ -51,10 +51,10 @@ describe('router: landing page per role', () => {
   });
 
   test('a stored default landing page is honoured when the role may open it', async () => {
-    window.localStorage.setItem('baranguard.defaultPage', 'citizen-inbox');
+    window.localStorage.setItem('baranguard.defaultPage', 'approvals');
     signIn('secretary');
     const root = await boot();
-    assert.ok(heading(root).startsWith('Citizen Reports'));
+    assert.ok(heading(root).startsWith('Approvals'));
   });
 
   test('a stored default landing page the role may NOT open is ignored', async () => {

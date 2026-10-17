@@ -925,7 +925,6 @@ const LANDING_OPTIONS = [
   { key: 'incident-management', label: 'Incident Management', roles: ['admin', 'secretary'] },
   { key: 'gis', label: 'Live Map', roles: ['admin', 'punong_barangay'] },
   { key: 'analytics', label: 'Analytics', roles: ['admin', 'punong_barangay'] },
-  { key: 'citizen-inbox', label: 'Citizen Reports', roles: ['admin', 'secretary'] },
   { key: 'personnel', label: 'Personnel', roles: ['admin', 'punong_barangay'] },
   { key: 'sms-log', label: 'SMS Monitor', roles: ['admin'] },
   { key: 'audit-log', label: 'Audit Log', roles: ['admin'] },

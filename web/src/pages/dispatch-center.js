@@ -611,8 +611,42 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         liveMap?.resize();
       });
 
+      const quickFiltersWrap = document.createElement('div');
+      quickFiltersWrap.className = 'dispatch-map-quick-filters';
+      quickFiltersWrap.setAttribute('role', 'group');
+      quickFiltersWrap.setAttribute('aria-label', 'Quick filter incidents');
+
+      const filterDefs = [
+        { id: 'all', label: 'All', filter: { priority: 'all', status: 'all' } },
+        { id: 'critical', label: 'Critical', filter: { priority: 'critical', status: 'all' } },
+        { id: 'pending', label: 'Pending', filter: { priority: 'all', status: 'pending' } },
+        { id: 'dispatched', label: 'Dispatched', filter: { priority: 'all', status: 'dispatched' } },
+      ];
+
+      let activeFilterId = 'all';
+      const chipButtons = [];
+
+      for (const def of filterDefs) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = `dispatch-map-filter-chip${def.id === activeFilterId ? ' is-active' : ''}`;
+        chip.textContent = def.label;
+        chip.setAttribute('aria-pressed', String(def.id === activeFilterId));
+        chip.addEventListener('click', () => {
+          activeFilterId = def.id;
+          for (const btn of chipButtons) {
+            const isActive = btn === chip;
+            btn.classList.toggle('is-active', isActive);
+            btn.setAttribute('aria-pressed', String(isActive));
+          }
+          liveMap?.setIncidentFilter(def.filter);
+        });
+        chipButtons.push(chip);
+        quickFiltersWrap.appendChild(chip);
+      }
+
       mapActions.append(mapSearchInput, labelToggleBtn, fitAllBtn, gisJumpBtn, fullscreenBtn);
-      mapHeader.append(mapTitleWrap, mapActions);
+      mapHeader.append(mapTitleWrap, quickFiltersWrap, mapActions);
 
       mapViewportEl = document.createElement('div');
       mapViewportEl.className = 'dispatch-map-viewport';
@@ -1293,11 +1327,10 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       btn.type = 'button';
       btn.className = `legend-item legend-item-btn${vis[row.key] ? '' : ' is-muted'}`;
       btn.title = `Click to ${vis[row.key] ? 'hide' : 'show'} ${row.label} pins on map`;
-      btn.setAttribute('aria-pressed', String(Boolean(vis[row.key])));
       btn.innerHTML = `
         <span class="legend-item__left">
           <span class="legend-dot ${row.dotClass}" aria-hidden="true"></span>
-          <span>${escapeHtml(row.label)}</span>
+          <span class="legend-item-label">${escapeHtml(row.label)}</span>
         </span>
         <span class="legend-count-pill">${row.count}</span>
       `;

@@ -127,7 +127,7 @@ describe('Incident detail behaviour', () => {
   });
 
   test('Back returns each role to a screen it can actually open', async () => {
-    for (const [role, allowed] of [['secretary', ['incident-management', 'citizen-inbox']], ['admin', ['incident-management', 'dashboard', 'dispatch']], ['punong_barangay', ['dashboard', 'analytics']]]) {
+    for (const [role, allowed] of [['secretary', ['incident-management']], ['admin', ['incident-management', 'dashboard', 'dispatch']], ['punong_barangay', ['dashboard', 'analytics']]]) {
       const ctx = mountPage(renderIncidentDetailPage, { role, param: 902 });
       await settle();
       const back = buttonByText(/back/i, ctx.root);

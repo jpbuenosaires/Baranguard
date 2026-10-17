@@ -17,8 +17,8 @@ const navLabels = () => $$('.sidebar__nav-item').map((b) => b.title);
 
 // REFERENCE.md §3/§7 + main.js PAGE_ROLES.
 const EXPECTED_NAV = {
-  admin: ['Dashboard', 'Dispatch Center', 'Incident Management', 'Live Map', 'Citizen Reports', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Analytics', 'Personnel', 'System Tools', 'SMS Monitor', 'Audit Log', 'Service Health', 'Map Packages', 'Settings'],
-  secretary: ['Incident Management', 'Citizen Reports', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Personnel', 'Settings'],
+  admin: ['Dashboard', 'Dispatch Center', 'Incident Management', 'Live Map', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Analytics', 'Personnel', 'System Tools', 'SMS Monitor', 'Audit Log', 'Service Health', 'Map Packages', 'Settings'],
+  secretary: ['Incident Management', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Personnel', 'Settings'],
   punong_barangay: ['Dashboard', 'Live Map', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Analytics', 'Personnel', 'Settings'],
 };
 
@@ -33,10 +33,10 @@ describe('AppShell navigation', () => {
   }
 
   test('the current page is marked aria-current and nav items navigate', async () => {
-    const ctx = mountShell('secretary', 'citizen-inbox');
+    const ctx = mountShell('secretary', 'approvals');
     await settle();
     const active = $$('.sidebar__nav-item').filter((b) => b.getAttribute('aria-current') === 'page');
-    assert.deepEqual(active.map((b) => b.title), ['Citizen Reports']);
+    assert.deepEqual(active.map((b) => b.title), ['Approvals']);
     click($$('.sidebar__nav-item').find((b) => b.title === 'Incident Management'));
     assert.deepEqual(ctx.navigations.at(-1), { page: 'incident-management', param: undefined });
   });
@@ -62,9 +62,9 @@ describe('AppShell System Tools menu (2026-10-07)', () => {
     assert.deepEqual(children, TOOLS);
     const settings = $$('.sidebar__nav-item').find((b) => b.title === 'Settings');
     assert.ok(settings && !submenu().contains(settings), 'Settings must stay outside the System Tools menu');
-    // 13 top-level rows + the 4 tools inside the menu.
+    // 12 top-level rows + the 4 tools inside the menu.
     const topLevel = $$('.sidebar__nav-item').filter((b) => !submenu().contains(b));
-    assert.equal(topLevel.length, 13);
+    assert.equal(topLevel.length, 12);
     assertNoRuntimeErrors();
   });
 

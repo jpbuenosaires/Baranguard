@@ -45,6 +45,16 @@
   transform: scale(1.08);
 }
 
+/* Micro-offset when responder and incident share coordinates to prevent direct overlap */
+.live-map__marker--stacked-left {
+  margin-left: -12px !important;
+  margin-top: -10px !important;
+}
+.live-map__marker--stacked-right {
+  margin-left: 12px !important;
+  margin-top: 10px !important;
+}
+
 /* ─── TANOD MARKERS ──────────────────────────────────────────────── */
 .live-map__marker--tanod {
   background: var(--color-success-solid);
@@ -208,7 +218,6 @@
 /* ─── FLOATING CALLOUT PIN LABELS ────────────────────────────────── */
 .live-map__pin-label {
   position: absolute;
-  top: calc(100% + var(--spacing-3xs));
   left: 50%;
   transform: translateX(-50%);
   background: color-mix(in srgb, var(--color-navy-deep) 90%, transparent);
@@ -228,15 +237,31 @@
   transition: opacity 0.15s ease, transform 0.15s ease;
   z-index: 5;
 }
-.live-map__pin-label--incident {
-  background: color-mix(in srgb, var(--color-warning-solid) 92%, var(--color-navy-deep));
+
+/* Tanod labels float ABOVE the marker circle */
+.live-map__marker--tanod .live-map__pin-label {
+  top: auto;
+  bottom: calc(100% + var(--spacing-3xs));
 }
+
+/* Incident labels hang BELOW the marker diamond */
+.live-map__pin-label--incident {
+  top: calc(100% + var(--spacing-3xs));
+  bottom: auto;
+  background: color-mix(in srgb, var(--color-warning-solid) 92%, var(--color-navy-deep));
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+
 .live-map__marker--incident-critical .live-map__pin-label--incident {
   background: color-mix(in srgb, var(--color-critical-solid) 95%, var(--color-navy-deep));
 }
+
 .live-map__marker--incident-dispatched .live-map__pin-label--incident {
   background: color-mix(in srgb, var(--color-primary) 92%, var(--color-navy-deep));
 }
+
+/* SOS labels float ABOVE the marker */
 .live-map__pin-label--sos {
   top: auto;
   bottom: calc(100% + var(--spacing-xs));
@@ -247,8 +272,15 @@
 /* Adaptive Label Density: hide non-hovered labels when in compact mode to prevent collision */
 .live-map--labels-compact .live-map__marker:not(:hover):not(.live-map__marker--focused) .live-map__pin-label {
   opacity: 0;
-  transform: translateX(-50%) translateY(3px);
   pointer-events: none;
+}
+.live-map--labels-compact .live-map__marker--tanod:not(:hover):not(.live-map__marker--focused) .live-map__pin-label,
+.live-map--labels-compact .live-map__marker--sos:not(:hover):not(.live-map__marker--focused) .live-map__pin-label {
+  transform: translateX(-50%) translateY(-3px);
+}
+.live-map--labels-compact .live-map__marker--incident:not(:hover):not(.live-map__marker--focused) .live-map__pin-label,
+.live-map--labels-compact .live-map__marker--poi:not(:hover):not(.live-map__marker--focused) .live-map__pin-label {
+  transform: translateX(-50%) translateY(3px);
 }
 .live-map--labels-compact .live-map__marker:hover .live-map__pin-label,
 .live-map--labels-compact .live-map__marker--focused .live-map__pin-label,
@@ -543,16 +575,55 @@
   border-color: var(--color-primary);
 }
 .live-map__marker--poi .live-map__pin-label {
+  opacity: 0;
+  transform: translateX(-50%) translateY(3px);
+  pointer-events: none;
   background: color-mix(in srgb, var(--color-surface) 96%, transparent);
   color: var(--color-text-primary);
   border-color: var(--color-border);
   font-weight: 600;
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.live-map__marker--poi:hover .live-map__pin-label,
+.live-map__marker--poi.live-map__marker--focused .live-map__pin-label,
+.live-map--show-all-labels .live-map__marker--poi .live-map__pin-label {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Midpoint Distance & Walking ETA Badge on Active Dispatch Lines */
+.live-map__link-eta-badge {
+  background: color-mix(in srgb, var(--color-surface) 95%, transparent);
+  color: var(--color-primary);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-label);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 0.125rem var(--spacing-xs);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 3;
+  line-height: 1.2;
+}
+
+[data-theme="dark"] .live-map__link-eta-badge {
+  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 50%, transparent);
+  color: var(--color-link);
 }
 
 
-/* MapLibre's own stylesheet sets Helvetica Neue on the map and its markers/popups. */
 .live-map.maplibregl-map,
 .maplibregl-popup,
 .maplibregl-marker {
   font-family: var(--font-base);
 }
+

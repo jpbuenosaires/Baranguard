@@ -121,9 +121,13 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
 
   // Layout DOM references cached across poll updates
   let layoutEl = null;
-  let statCardsEl = null;
+  let kpiCardEl = null;
   let filterBarEl = null;
-  let filterBadgeEl = null;
+  let searchBoxEl = null;
+  let searchInputEl = null;
+  let searchClearBtnEl = null;
+  let filterTabsEl = null;
+  let searchQuery = '';
   let personnelHeaderEl = null;
   let personnelListEl = null;
   let mapSubtitleEl = null;
@@ -227,44 +231,100 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       layoutEl = document.createElement('div');
       layoutEl.className = 'gis-layout';
 
+      // 2. 3-KPI Card in PageHeader Actions (matching Dispatch Center header)
+      if (!kpiCardEl) {
+        kpiCardEl = document.createElement('div');
+        kpiCardEl.className = 'dispatch-kpi-card gis-kpi-card';
+        pageHeader.actions.appendChild(kpiCardEl);
+      }
+
       // ── LEFT COLUMN: Personnel & Status Panel ──
       const sidebar = document.createElement('aside');
       sidebar.className = 'gis-sidebar';
 
-      // 3 Mini Status Cards
-      statCardsEl = document.createElement('div');
-      statCardsEl.className = 'gis-stats-grid';
-      sidebar.appendChild(statCardsEl);
-
-      // Map Filters Row
+      // Accessible quick filter bar (supports keyboard cycling & assistive tech)
       filterBarEl = document.createElement('div');
-      filterBarEl.className = 'gis-filter-bar';
+      filterBarEl.className = 'gis-filter-bar sr-only';
       filterBarEl.setAttribute('role', 'button');
       filterBarEl.setAttribute('tabindex', '0');
-      filterBarEl.setAttribute('aria-label', 'Change which responders are shown');
-      filterBarEl.innerHTML = `
-        <div class="gis-filter-bar__left">
-          <span aria-hidden="true">${icons.filter(15)}</span>
-          <span>Show</span>
-        </div>
-      `;
-      filterBadgeEl = document.createElement('span');
-      filterBadgeEl.className = 'gis-filter-bar__badge';
-      filterBarEl.appendChild(filterBadgeEl);
-      filterBarEl.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        filterBarEl.click();
-      });
-      filterBarEl.addEventListener('click', () => {
-        // Toggle roster filter in a simple cycle: all -> available -> dispatched -> all
-        if (rosterFilter === 'all') rosterFilter = 'available';
-        else if (rosterFilter === 'available') rosterFilter = 'dispatched';
-        else rosterFilter = 'all';
+      filterBarEl.setAttribute('aria-label', 'Filter field personnel');
+      filterBarEl.textContent = FILTER_LABELS[rosterFilter] || 'Showing everyone';
+
+      const handleFilterBarCycle = () => {
+        const FILTER_ORDER = ['all', 'available', 'dispatched', 'active'];
+        const curIdx = FILTER_ORDER.indexOf(rosterFilter);
+        const nextIdx = (curIdx + 1) % FILTER_ORDER.length;
+        rosterFilter = FILTER_ORDER[nextIdx];
         updateMiniStatCardsSelection();
         renderCurrentRosterAndMap();
+      };
+      filterBarEl.addEventListener('click', handleFilterBarCycle);
+      filterBarEl.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          handleFilterBarCycle();
+        }
       });
       sidebar.appendChild(filterBarEl);
+
+      // Search Box Row
+      searchBoxEl = document.createElement('div');
+      searchBoxEl.className = 'gis-search-box';
+      searchBoxEl.innerHTML = `
+        <span class="gis-search-icon" aria-hidden="true">${icons.search(14)}</span>
+        <input type="text" class="gis-search-input" placeholder="Search tanod name or badge..." aria-label="Search field personnel">
+        <button type="button" class="gis-search-clear" aria-label="Clear search" hidden>${icons.x(13)}</button>
+      `;
+      searchInputEl = searchBoxEl.querySelector('.gis-search-input');
+      searchClearBtnEl = searchBoxEl.querySelector('.gis-search-clear');
+
+      searchInputEl.addEventListener('input', () => {
+        searchQuery = searchInputEl.value;
+        searchClearBtnEl.hidden = !searchQuery;
+        renderCurrentRosterAndMap();
+      });
+      searchClearBtnEl.addEventListener('click', () => {
+        searchQuery = '';
+        searchInputEl.value = '';
+        searchClearBtnEl.hidden = true;
+        searchInputEl.focus();
+        renderCurrentRosterAndMap();
+      });
+      sidebar.appendChild(searchBoxEl);
+
+      // Status Filter Tabs Row
+      filterTabsEl = document.createElement('div');
+      filterTabsEl.className = 'gis-filter-tabs';
+      filterTabsEl.setAttribute('role', 'tablist');
+      filterTabsEl.setAttribute('aria-label', 'Filter field personnel');
+      filterTabsEl.innerHTML = `
+        <button type="button" class="gis-filter-tab ${rosterFilter === 'all' ? 'is-active' : ''}" data-filter="all" role="tab" aria-selected="${rosterFilter === 'all'}">
+          <span>All</span>
+          <span class="gis-filter-tab__count">0</span>
+        </button>
+        <button type="button" class="gis-filter-tab ${rosterFilter === 'available' ? 'is-active' : ''}" data-filter="available" role="tab" aria-selected="${rosterFilter === 'available'}">
+          <span>On duty</span>
+          <span class="gis-filter-tab__count">0</span>
+        </button>
+        <button type="button" class="gis-filter-tab ${rosterFilter === 'dispatched' ? 'is-active' : ''}" data-filter="dispatched" role="tab" aria-selected="${rosterFilter === 'dispatched'}">
+          <span>Responding</span>
+          <span class="gis-filter-tab__count">0</span>
+        </button>
+        <button type="button" class="gis-filter-tab ${rosterFilter === 'stale' ? 'is-active' : ''}" data-filter="stale" role="tab" aria-selected="${rosterFilter === 'stale'}">
+          <span>Stale</span>
+          <span class="gis-filter-tab__count">0</span>
+        </button>
+      `;
+
+      filterTabsEl.querySelectorAll('.gis-filter-tab').forEach((tab) => {
+        tab.addEventListener('click', () => {
+          rosterFilter = tab.getAttribute('data-filter');
+          updateFilterTabsSelection();
+          updateMiniStatCardsSelection();
+          renderCurrentRosterAndMap();
+        });
+      });
+      sidebar.appendChild(filterTabsEl);
 
       // Personnel List Section Header
       personnelHeaderEl = document.createElement('div');
@@ -390,23 +450,29 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       liveMap = LiveMap(mapViewport, { showNavControl: false, showPois: true, barangayId: user.barangayId });
     }
 
-    // ── Update 3 Mini Status Cards ──
-    statCardsEl.innerHTML = `
-      <div class="gis-mini-stat gis-mini-stat--available ${rosterFilter === 'available' ? 'is-active' : ''}" data-filter="available" role="button" tabindex="0" aria-pressed="${rosterFilter === 'available'}">
-        <div class="gis-mini-stat__value">${availableCount}</div>
-        <div class="gis-mini-stat__label">On duty</div>
+    // ── Update 3-KPI Card in PageHeader Actions (matching Dispatch Center) ──
+    if (!kpiCardEl) {
+      kpiCardEl = document.createElement('div');
+      kpiCardEl.className = 'dispatch-kpi-card gis-kpi-card';
+      pageHeader.actions.appendChild(kpiCardEl);
+    }
+
+    kpiCardEl.innerHTML = `
+      <div class="dispatch-kpi-col gis-kpi-col gis-mini-stat ${rosterFilter === 'available' ? 'is-active' : ''}" data-filter="available" role="button" tabindex="0" aria-pressed="${rosterFilter === 'available'}" title="Filter: Online personnel">
+        <div class="dispatch-kpi-val dispatch-kpi-val--online gis-kpi-val gis-kpi-val--online">${availableCount}</div>
+        <div class="dispatch-kpi-label gis-kpi-label">Online</div>
       </div>
-      <div class="gis-mini-stat gis-mini-stat--dispatched ${rosterFilter === 'dispatched' ? 'is-active' : ''}" data-filter="dispatched" role="button" tabindex="0" aria-pressed="${rosterFilter === 'dispatched'}">
-        <div class="gis-mini-stat__value">${dispatchedCount}</div>
-        <div class="gis-mini-stat__label">Responding</div>
+      <div class="dispatch-kpi-col gis-kpi-col gis-mini-stat ${rosterFilter === 'dispatched' ? 'is-active' : ''}" data-filter="dispatched" role="button" tabindex="0" aria-pressed="${rosterFilter === 'dispatched'}" title="Filter: Dispatched personnel">
+        <div class="dispatch-kpi-val dispatch-kpi-val--dispatched gis-kpi-val gis-kpi-val--dispatched">${dispatchedCount}</div>
+        <div class="dispatch-kpi-label gis-kpi-label">Dispatched</div>
       </div>
-      <div class="gis-mini-stat gis-mini-stat--active ${rosterFilter === 'active' ? 'is-active' : ''}" data-filter="active" role="button" tabindex="0" aria-pressed="${rosterFilter === 'active'}">
-        <div class="gis-mini-stat__value">${activeAlertsCount}</div>
-        <div class="gis-mini-stat__label">Open SOS alerts</div>
+      <div class="dispatch-kpi-col gis-kpi-col gis-mini-stat ${rosterFilter === 'active' ? 'is-active' : ''}" data-filter="active" role="button" tabindex="0" aria-pressed="${rosterFilter === 'active'}" title="Filter: Open SOS alerts">
+        <div class="dispatch-kpi-val dispatch-kpi-val--pending gis-kpi-val gis-kpi-val--sos">${activeAlertsCount}</div>
+        <div class="dispatch-kpi-label gis-kpi-label">Open SOS</div>
       </div>
     `;
 
-    statCardsEl.querySelectorAll('.gis-mini-stat').forEach((card) => {
+    kpiCardEl.querySelectorAll('.gis-mini-stat').forEach((card) => {
       card.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
@@ -424,18 +490,45 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       });
     });
 
-    function updateMiniStatCardsSelection() {
-      if (filterBadgeEl) filterBadgeEl.textContent = FILTER_LABELS[rosterFilter] || FILTER_LABELS.all;
-      statCardsEl.querySelectorAll('.gis-mini-stat').forEach((card) => {
-        const on = card.getAttribute('data-filter') === rosterFilter;
-        card.classList.toggle('is-active', on);
-        card.setAttribute('aria-pressed', String(on));
+    function updateFilterTabsSelection() {
+      if (!filterTabsEl) return;
+      filterTabsEl.querySelectorAll('.gis-filter-tab').forEach((tab) => {
+        const on = tab.getAttribute('data-filter') === rosterFilter;
+        tab.classList.toggle('is-active', on);
+        tab.setAttribute('aria-selected', String(on));
       });
     }
 
-    // ── Update Filter Bar Badge & Subtitle ──
-    const activeFiltersCount = rosterFilter === 'all' ? 0 : 1;
-    filterBadgeEl.textContent = FILTER_LABELS[rosterFilter] || FILTER_LABELS.all;
+    function updateMiniStatCardsSelection() {
+      if (filterBarEl) filterBarEl.textContent = FILTER_LABELS[rosterFilter] || FILTER_LABELS.all;
+      if (kpiCardEl) {
+        kpiCardEl.querySelectorAll('.gis-mini-stat').forEach((card) => {
+          const on = card.getAttribute('data-filter') === rosterFilter;
+          card.classList.toggle('is-active', on);
+          card.setAttribute('aria-pressed', String(on));
+        });
+      }
+      updateFilterTabsSelection();
+    }
+
+    // ── Update Filter Tabs Counts ──
+    const staleCount = gpsItems.filter((g) => g.isStale).length;
+    const tabCounts = {
+      all: gpsItems.length,
+      available: availableCount,
+      dispatched: dispatchedCount,
+      stale: staleCount,
+    };
+    if (filterTabsEl) {
+      filterTabsEl.querySelectorAll('.gis-filter-tab').forEach((tab) => {
+        const filter = tab.getAttribute('data-filter');
+        const countEl = tab.querySelector('.gis-filter-tab__count');
+        if (countEl && tabCounts[filter] != null) {
+          countEl.textContent = tabCounts[filter];
+        }
+      });
+    }
+    updateFilterTabsSelection();
 
     mapSubtitleEl.innerHTML = `
       <span class="dispatch-map-live-pill"><span class="dispatch-map-live-dot" aria-hidden="true"></span>Live · 15s sync</span>
@@ -550,17 +643,31 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     }
 
     function renderRosterAndMap() {
+      const query = searchQuery.trim().toLowerCase();
       const filtered = gpsItems.filter((g) => {
         const isDisp = dispatchedIds.has(g.userId);
         const isOnDuty = onDutyIds.has(g.userId);
-        if (rosterFilter === 'available') return isOnDuty && !isDisp;
-        if (rosterFilter === 'dispatched') return isDisp;
-        if (rosterFilter === 'active') return isDisp || openSos.some((s) => s.userId === g.userId);
-        if (rosterFilter === 'stale') return g.isStale;
+        if (rosterFilter === 'available' && (!isOnDuty || isDisp)) return false;
+        if (rosterFilter === 'dispatched' && !isDisp) return false;
+        if (rosterFilter === 'active' && (!isDisp && !openSos.some((s) => s.userId === g.userId))) return false;
+        if (rosterFilter === 'stale' && !g.isStale) return false;
+
+        if (query) {
+          const tanodUser = tanodRosterById.get(g.userId);
+          const badge = (tanodUser?.badgeNumber || `T-${String(g.userId).padStart(3, '0')}`).toLowerCase();
+          const name = (g.fullName || '').toLowerCase();
+          if (!name.includes(query) && !badge.includes(query)) {
+            return false;
+          }
+        }
         return true;
       });
 
-      personnelHeaderEl.textContent = `Field personnel (${filtered.length})`;
+      if (query || rosterFilter !== 'all') {
+        personnelHeaderEl.textContent = `Field personnel (${filtered.length} of ${gpsItems.length})`;
+      } else {
+        personnelHeaderEl.textContent = `Field personnel (${filtered.length})`;
+      }
 
       // Map Markers
       liveMap.setMarkers(filtered.map((g) => {
@@ -615,9 +722,27 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       if (filtered.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'note gis-empty-note';
-        empty.textContent = gpsItems.length === 0
-          ? 'No Tanod locations reported yet.'
-          : 'No personnel match the selected filter.';
+        if (query) {
+          empty.innerHTML = `<span>No personnel matching "<strong>${escapeHtml(searchQuery)}</strong>".</span>`;
+          const clearBtn = document.createElement('button');
+          clearBtn.type = 'button';
+          clearBtn.className = 'gis-empty-clear-btn';
+          clearBtn.textContent = 'Clear search';
+          clearBtn.addEventListener('click', () => {
+            searchQuery = '';
+            if (searchInputEl) {
+              searchInputEl.value = '';
+              searchInputEl.focus();
+            }
+            if (searchClearBtnEl) searchClearBtnEl.hidden = true;
+            renderCurrentRosterAndMap();
+          });
+          empty.appendChild(clearBtn);
+        } else {
+          empty.textContent = gpsItems.length === 0
+            ? 'No Tanod locations reported yet.'
+            : 'No personnel match the selected filter.';
+        }
         personnelListEl.appendChild(empty);
         return;
       }

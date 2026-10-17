@@ -160,7 +160,6 @@ const NAV_ITEMS = [
   // is the mandated case ledger (REFERENCE.md §1). The per-incident detail
   // view is 'incident-detail' — reached from Incident Management, the
   // dashboard, search and notifications.
-  { key: 'citizen-inbox', label: 'Citizen Reports', roles: ['admin', 'secretary'], icon: icons.inbox, countKey: 'unconvertedCitizenReports', group: 'Records & Reporting' },
   // 2026-10 tanod-workflow build (docs/FEATURE_CONTRACT_2026-10.md §10).
   // No count badge on Approvals: GET /reports/nav-counts has no approvals
   // figure and a badge computed any other way would be a fabricated number

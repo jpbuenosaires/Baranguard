@@ -160,12 +160,6 @@ export function buildRoutes(scenario) {
     return detail;
   };
 
-  const citizenReports = empty ? [] : [
-    { report_id: 301, description: t('Loud videoke past midnight near the covered court'), contact_number: t('09181234567'), latitude: 12.9188, longitude: 123.6661, submitted_at: sqlAgo(25), incident_id: null },
-    { report_id: 302, description: t('Fallen tree blocking the road to Purok 2'), contact_number: null, latitude: null, longitude: null, submitted_at: sqlAgo(300), incident_id: null },
-    { report_id: 303, description: t('Stray dogs near the school gate'), contact_number: '09181112222', latitude: 12.921, longitude: 123.668, submitted_at: sqlAgo(2 * 1440), incident_id: 903 },
-  ];
-
   const shifts = empty ? [] : [
     { shift_id: 501, user_id: 4, patrol_zone: t('Zone 1 - Riverside'), start_at: sqlAgo(120), end_at: sqlAgo(-600), version: 1, approval_status: 'published', approved_by: 3, approved_at: sqlAgo(600), source_availability_id: null },
     { shift_id: 502, user_id: 5, patrol_zone: t('Zone 2 - Market'), start_at: sqlAgo(-1440), end_at: sqlAgo(-720), version: 3, approval_status: 'draft', approved_by: null, approved_at: null, source_availability_id: 32 },
@@ -232,7 +226,7 @@ export function buildRoutes(scenario) {
       response_time_trend: empty ? [] : trendDays.map((d, i) => ({ date: d.date, avg_minutes: i % 4 === 0 ? null : 15 + (i % 7) })),
     }) },
     { method: 'GET', path: '/reports/heatmap', handler: () => ok({ items: incidents.filter((i) => i.latitude !== null).map((i) => ({ latitude: i.latitude, longitude: i.longitude, weight: 1, incident_type: i.incident_type, priority: i.priority, status: i.status })) }) },
-    { method: 'GET', path: '/reports/nav-counts', handler: () => ok({ pending_incidents: empty ? 0 : 2, unconverted_citizen_reports: empty ? 0 : 2, pending_swap_requests: empty ? 0 : 1 }) },
+    { method: 'GET', path: '/reports/nav-counts', handler: () => ok({ pending_incidents: empty ? 0 : 2, pending_swap_requests: empty ? 0 : 1 }) },
     { method: 'GET', path: '/reports/export', handler: ({ query }) => ok({ file_url: `/reports/export/download?format=${query.format || 'csv'}`, format: query.format || 'csv', generated_at: sqlAgo(0) }) },
     { method: 'GET', path: '/reports/export/download', handler: () => ({ status: 200, raw: 'incident_id,type\r\n901,theft\r\n', headers: { 'Content-Type': 'text/csv' } }) },
     // Periodic PB digest (REMAINING.md section G, DEVLOG (37)) -- no
@@ -377,10 +371,6 @@ export function buildRoutes(scenario) {
     ].filter((o) => !query.incident_id || o.incident_id === Number(query.incident_id)), page: 1, limit: 25, total: 3 }) },
     { method: 'POST', path: '/dispatch-offers', handler: ({ body }) => ({ status: 201, body: { offer_id: 40, incident_id: body.incident_id, round: 1, status: 'open', recipient_count: 2, expires_at: isoIn(180) } }) },
     { method: 'PATCH', path: '/dispatch-offers/:id/cancel', handler: ({ params }) => ok({ offer_id: Number(params.id), status: 'cancelled', incident_id: 901 }) },
-
-    // --- Citizen reports ---
-    { method: 'GET', path: '/citizen-reports', handler: ({ query }) => ok(paginate(citizenReports.filter((r) => (query.status === 'unconverted' ? r.incident_id === null : true)), query)) },
-    { method: 'POST', path: '/citizen-reports/:id/convert', handler: ({ params }) => ({ status: 201, body: { incident_id: 905, citizen_report_id: Number(params.id), converted_at: sqlAgo(0) } }) },
 
     // --- Scheduling ---
     { method: 'GET', path: '/shifts', handler: ({ query }) => ok(paginate(shifts.filter((s) => !query.approval_status || s.approval_status === query.approval_status), query)) },

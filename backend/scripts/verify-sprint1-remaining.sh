@@ -280,42 +280,14 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $RELOGIN
 [ "$CODE" = "400" ] && pass "Admin editing a DIFFERENT user's profile fields is refused (400; write does not happen)" || fail "Cross-user edit -> $CODE (expected 400)"
 
 # ============================================================
-# W19 REMOVED (Wave 1, 2026-10-07) — POST /citizen-reports no longer exists.
-# W16 GET /citizen-reports (inbox) stays; fixture rows are SQL inserts now.
+# Citizen Reports inbox RETIRED (2026-10-17): every /citizen-reports route is gone.
 # ============================================================
-step "9. Wave 1: public POST /citizen-reports is REMOVED (no handler: router answers 405, path still exists for GET)"
-for body in \
-  '{"barangay_id":1,"description":"sandbox test citizen report narrative","contact_number":"09171112222"}' \
-  '{"barangay_id":99,"description":"n/a"}' \
-  '{}'; do
-  RESP=$(curl -s -w "\n%{http_code}" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" -d "$body")
-  CODE=$(echo "$RESP" | tail -1)
-  [ "$CODE" = "405" ] && pass "POST /citizen-reports (no Authorization) -> 405 (no handler any more)" || fail "POST /citizen-reports -> $CODE (expected 405)"
+step "9. /citizen-reports routes are retired (no handler: 404 for every method and role)"
+for pair in "POST:/citizen-reports" "GET:/citizen-reports" "POST:/citizen-reports/1/convert"; do
+  M="${pair%%:*}"; P="${pair#*:}"
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" -X "$M" -H "Authorization: Bearer $RELOGIN_TOKEN" -H "Content-Type: application/json" -d '{}' "${BASE_URL}${P}")
+  [ "$CODE" = "404" ] && pass "$M $P -> 404 (retired)" || fail "$M $P -> $CODE (expected 404)"
 done
-RESP=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer $RELOGIN_TOKEN" "${BASE_URL}/citizen-reports" -X POST -H "Content-Type: application/json" \
-  -d '{"barangay_id":1,"description":"authenticated attempt"}')
-CODE=$(echo "$RESP" | tail -1)
-[ "$CODE" = "405" ] && pass "POST /citizen-reports as an authenticated Admin -> 405 as well (route gone, not just the public path)" || fail "Admin POST /citizen-reports -> $CODE (expected 405)"
-CNT=$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM citizen_report;")
-[ "$CNT" = "1" ] && pass "No citizen_report row was created by any of the rejected POSTs (still only the pre-seeded 1)" || fail "citizen_report count=$CNT (expected 1)"
-
-step "10. Seed three more inbox rows by SQL (fixture formerly created through the public endpoint)"
-mysql_exec "$VALDB" -e "INSERT INTO citizen_report (barangay_id, contact_number, description, submitted_at) VALUES
-  (1, '09171112222', 'sandbox inbox fixture 1', UTC_TIMESTAMP()),
-  (1, NULL, 'sandbox inbox fixture 2', UTC_TIMESTAMP()),
-  (1, NULL, 'sandbox inbox fixture 3', UTC_TIMESTAMP());" && pass "Seeded 3 additional barangay-1 citizen_report rows" || fail "Fixture insert failed"
-
-step "11. W16 GET /citizen-reports (inbox, list only)"
-RESP=$(curl -s -H "Authorization: Bearer $RELOGIN_TOKEN" "${BASE_URL}/citizen-reports?status=unconverted")
-TOTAL=$(extract "$RESP" total)
-[ "$TOTAL" = "4" ] && pass "Admin sees 4 unconverted reports (1 pre-seeded + 3 SQL-seeded)" || fail "Inbox total=$TOTAL (expected 4)"
-
-CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TANOD_TOKEN" "${BASE_URL}/citizen-reports")
-[ "$CODE" = "403" ] && pass "Tanod -> 403 on citizen reports inbox (Admin/Secretary only)" || fail "Tanod inbox -> $CODE (expected 403)"
-
-RESP_B2=$(curl -s -H "Authorization: Bearer $ADMIN_B2_TOKEN" "${BASE_URL}/citizen-reports")
-TOTAL_B2=$(extract "$RESP_B2" total)
-[ "$TOTAL_B2" = "0" ] && pass "Barangay-2 admin sees 0 (tenant isolation — all seeded reports are barangay 1)" || fail "Barangay-2 inbox total=$TOTAL_B2 (expected 0)"
 
 step "Summary"
 echo "PASS=$PASS FAIL=$FAIL"

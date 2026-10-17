@@ -186,7 +186,6 @@ $smsPhone = '09175550101';
 $routes = [
     ["/audit-log", $adminToken],
     ["/barangays", null],
-    ["/citizen-reports", $adminToken],
     ["/dispatch", $adminToken],
     ["/dispatch/{$dispatchWithRouteId}/route?latitude=13.1857&longitude=123.6260&mode=car", $adminToken],
     ["/duty-status", $adminToken],

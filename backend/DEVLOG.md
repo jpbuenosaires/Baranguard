@@ -19213,3 +19213,41 @@ Audit of `tanod.reyes` (primary phone tester) and every screen against the UAT s
 - **POIs:** the seven landmark coordinates in `LiveMap.js` are now the OSM positions (Overpass, 2026-10-17). Per the PSA polygons the market and the Binanuahan evacuation centre lie in Binanuahan, the port outside all four barangays; the barangay hall and Pilar I Central School are in Dao.
 - **`baranguard_uiseed` only (not the real DB):** every coordinate in `incident`, `gps_track`, `tanod_sos`, `citizen_report` and `school` was snapped to the nearest real OSM road inside the Dao polygon (median shift 32 m, max 205 m); `dispatch.route_json` cleared and `route_status='unavailable'` (routes are recomputed on demand). Backup of the six tables taken first. `location_description` text was not edited and may not match the new spot.
 - Not changed: `seed-dao-demo.php` / `seed-demo-data.php` still hold the old coordinates and would reintroduce them.
+
+## 2026-10-17 (2) — Live Map UI/UX improvements (owner selected: Roster Search & Filter Tabs)
+
+- **Owner Selection**: Implemented Roster instant search and segmented status filter tabs on the Live Map (`gis-live-tracking.js`). (Basemap Switcher was proposed and subsequently removed per owner request).
+- **Roster Search & Filter Tabs**:
+  - Replaced legacy single-button cycling filter (`Show: Showing everyone -> available -> dispatched`) with an instant search box (`.gis-search-box`, `.gis-search-input`, `.gis-search-clear`) and segmented filter tabs (`.gis-filter-tabs`) featuring dynamic badge counts for All, On Duty, Responding, and Stale.
+  - Search filters simultaneously across Tanod `fullName` and `badgeCode` (e.g. `T-007` or `Arnel`).
+  - Integrated empty state with quick "Clear search" action.
+  - Synchronized bidirectional selection between top 3 mini status KPI cards and the filter tabs.
+- **Tests**: Added test suites in `web/tests/pages/gis-live-tracking.test.mjs` verifying search input reactivity, clear button behavior, and filter tabs switching. All tests pass cleanly.
+
+
+
+## 2026-10-17 (3) — Citizen Reports Inbox UI/UX & Triage Overhaul (owner request: "do it all")
+
+- **Owner Request**: Implement all approved triage, operational, and UX improvements for the Citizen Reports Inbox screen (`web/src/pages/citizen-reports-inbox.js`, `web/css/pages/citizen-reports.css`, `backend/controllers/CitizenReportsController.php`, `web/src/api/apiClient.js`):
+  1. *Interactive KPI Stat Cards*: The 4 command KPI cards (`Total Reports`, `Pending Review`, `Converted`, `GPS Shared`) now double as 1-click filter triggers with `.is-active` state, synchronized with filter chips and keyboard accessible (`role="button"`, `Enter`/`Space`).
+  2. *Duplicate Candidate & Similarity Clustering*: Implemented Jaccard keyword similarity and GPS proximity clustering. In the table, matching submissions display a `.citizen-similar-tag`. In the detail drawer, a dedicated "Similar / Clustered Reports" card lists related submissions and identifies if an identical report was already converted into an active incident (e.g. `CR-0003` -> `INC-2026-089`).
+  3. *Link as Related Incident (Duplicate Resolution)*: Added dual-mode triage tabs ("Create New Incident" vs "Link to Existing Incident"). Allows operators to convert a secondary duplicate report directly into the incident graph with `related_incident_id`, avoiding duplicate Tanod dispatches while preserving the citizen's contact and coordinates.
+  4. *Non-Actionable Dismissal Flow (Inbox Zero)*: Added a reversible "Dismiss as Non-Actionable..." workflow for stale, spam, or already-handled reports with standard reasons (`Duplicate`, `Resolved on ground`, `Insufficient details`, `Outside jurisdiction`, `Spam/Invalid`). Stored in local storage per barangay, decrementing the pending count, updating status to `Dismissed`, and offering a 1-click "Restore to Pending Review" action.
+  5. *Smart Category Auto-Suggestion*: Auto-classifies the report category based on narrative keywords (e.g. "dogs" -> `animal_complaint`, "videoke" -> `disturbance`, "fire" -> `fire`, "crash" -> `traffic_incident`), marked with an inline badge `✨ Auto-suggested`.
+  6. *Location Landmark Enrichment & SLA Aging*: Table LOCATION column displays detected Purok / landmark tags (e.g. `Purok 3`, `Covered Court`, `Near School Gate`) alongside GPS coordinates. SUBMITTED column renders color-coded SLA aging chips (`.citizen-aging-chip--warning` for $\ge 3$ days, `.citizen-aging-chip--danger` for $\ge 7$ days) to highlight backlogged items.
+  7. *Contact Quick-Copy & SMS Transparency*: CONTACT column includes an accessible 1-click copy button with clipboard visual feedback. Triage panel includes an automated SMS notification banner confirming delivery to the citizen upon conversion.
+- **Backend**: `CitizenReportsController::convert()` updated to safely accept optional `location_description` and `related_incident_id` in the JSON body, inserting them directly into `incident` and recording in `audit_log`.
+- **Tests**: Expanded `web/tests/pages/citizen-reports-inbox.test.mjs` from 16 to 20 tests covering interactive KPI filtering, category auto-suggestion, dismissal/restoration, and related incident linking. Full web test suite (544 tests across 103 suites) passes cleanly with zero regressions.
+
+## 2026-10-17 — Citizen report suggestions use real Dao place names
+
+- `citizen-reports-inbox.js`: category suggestion is now one ordered keyword rule list (`CATEGORY_RULES`, English/Tagalog/Bikol terms, whole-word match for short words); chips renamed "Suggested from keywords" / "Pre-filled from text" (no AI wording). Location hint matches real named places in Dao from OpenStreetMap (Smith Street, Putiao-Pilar-Donsol Road, Prieto, Dao Chapel, Pilar I Central School, market, pier, municipal hall, etc.). Puroks are not in any map data: "Purok N" / "Zone N" stays a pattern match. Bikol terms are unverified against real reports.
+- `baranguard_uiseed` only: all 159 `incident.location_description` values rewritten to the nearest real OSM place ("Along/Beside/Near X", or "About N m from X" beyond 150 m); any original "Purok N" kept (the purok numbers themselves were already invented). Backup of the incident table taken first.
+
+## 2026-10-17 — Citizen Reports inbox retired
+
+- Decision (user, after weighing barangay practice): residents report by walking in or calling a tanod; staff log everything as incidents (`report_channel`). The public form was already removed 2026-10-07, so the inbox could not receive anything new. SMS intake was designed (free text, no keyword/coordinates, replies off) but deliberately NOT built; listed as thesis future work.
+- Removed: web page `citizen-reports-inbox.js`, `citizen-reports.css`, its nav item (Admin/Secretary), sidebar badge, default-landing-page option, `getCitizenReports`/`convertCitizenReport`, the Analytics "Citizen Reports Intake & Conversion" card; backend `CitizenReportsController`, `routes/citizen-reports.php` (every `/citizen-reports*` path now 404), `unconverted_citizen_reports` in `GET /reports/nav-counts`. Routes 105 -> 103.
+- Kept on purpose: table `citizen_report` and existing rows (no migration, nothing dropped), retention rules, seed scripts, `formatCitizenReportCode` and audit labels for historical rows, SMS broadcast reading old contact numbers, resolve-notification to an old CR contact.
+- Verify scripts rewritten to assert the routes are gone (b2-pentest, incident-intake, sprint1-remaining) or drop the CR steps (dispatch-offers, chief-tanod-mobile, json-contracts). Results: b2 59/0, incident-intake 119/0, sprint1-remaining 30/0, chief-tanod-mobile 198/0, sprint7-retention 89/0; web wiring 937/0, web tests 732/0. verify-dispatch-offers shows 1 failure unrelated to this change (offer item contract lists no `barangay_name`, which `DispatchOffersController` now returns).
+- Uncommitted work-in-progress on the deleted citizen files (another session's) was copied to the session scratchpad before deletion.

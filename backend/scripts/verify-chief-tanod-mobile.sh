@@ -336,7 +336,6 @@ expect_scope POST /gps "$A1D" '{}'
 expect_scope POST /sms/send "$A1D" '{}'
 expect_scope GET  /sms/logs "$A1D"
 expect_scope POST /sms/broadcast "$A1D" '{}'
-expect_scope GET  /citizen-reports "$A1D"
 expect_scope GET  /accomplishment-reports "$A1D"
 expect_scope GET  /referrals "$A1D"
 expect_scope GET  /schools "$A1D"

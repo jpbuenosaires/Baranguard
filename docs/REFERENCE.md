@@ -488,7 +488,7 @@ an incident is an ordered cascade (`RetentionService::purgeOneIncident`).
 
 ---
 
-## 5. Endpoints (105 live `/api/v1` routes across 28 route files, all built; measured 2026-10-13)
+## 5. Endpoints (103 live `/api/v1` routes across 27 route files, all built; measured 2026-10-13)
 
 Read the route tables in `backend/routes/*.php` for the authoritative
 list; controllers carry the per-endpoint contract in their class docs.
@@ -578,7 +578,7 @@ map-packages (get/upload/download)
 time is per-incident `MIN(arrived_at)`, de-duplicated)
 **Ops** `/audit-log` · `/system/health` (+`/history`, Admin-only) ·
 `/search` · `/barangays` · `/users` (list `q=`, last_login_at,
-is_suspended; suspend/unsuspend + is_active toggle) · `/citizen-reports` (GET + convert only; the public `POST` was REMOVED 2026-10-07, now 405)
+is_suspended; suspend/unsuspend + is_active toggle) · ~~`/citizen-reports`~~ (**RETIRED 2026-10-17**: the Citizen Reports inbox, its routes, controller and nav item are gone, every path now answers 404. Walk-ins and phone reports are logged as incidents with `report_channel`. The `citizen_report` table and its existing rows are kept (retention, seeds); nothing creates new ones)
 (+`/:id/convert`, list `status=`) · `/duty-status`
 
 > **The whole blotter family (`/blotter`, `/incidents/:id/blotter`,

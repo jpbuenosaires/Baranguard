@@ -48,7 +48,7 @@ describe('Admin Dashboard behaviour', () => {
   });
 
   test('Punong Barangay is never offered a shortcut into an Admin-only screen', async () => {
-    const ADMIN_ONLY = new Set(['dispatch', 'sms-log', 'audit-log', 'service-health', 'map-packages', 'incident-management', 'citizen-inbox']);
+    const ADMIN_ONLY = new Set(['dispatch', 'sms-log', 'audit-log', 'service-health', 'map-packages', 'incident-management']);
     const ctx = mountPage(renderAdminDashboardPage, { role: 'punong_barangay' });
     await settle();
     const leaks = [];

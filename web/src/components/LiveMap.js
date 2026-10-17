@@ -29,20 +29,20 @@ import { boundaryFor, centerFor } from '../data/barangayBoundaries.js';
 
 const DEFAULT_ZOOM = 15; // a barangay (about 1-2 km across) fills the viewport
 const CLUSTER_RADIUS_PX = 44; // Screen-pixel distance for Tanod grouping
-const INCIDENT_CLUSTER_RADIUS_PX = 38; // Screen-pixel distance for Incident grouping
+const INCIDENT_CLUSTER_RADIUS_PX = 46; // Screen-pixel distance for Incident grouping
 
 /**
  * Community Landmarks and Critical Infrastructure POIs in Pilar.
  * Coordinates are the OpenStreetMap positions (Overpass query, 2026-10-17), not estimates.
  */
 export const PILAR_COMMUNITY_POIS = [
-  { id: 'bgy-hall', name: 'Dao Barangay Hall & Tanod HQ', category: 'command', lat: 12.922, lng: 123.67449, glyph: '🏛️' },
-  { id: 'evac-center', name: 'Binanuahan Evacuation Center (LGU)', category: 'evacuation', lat: 12.92331, lng: 123.67567, glyph: '🛡️' },
-  { id: 'public-market', name: 'Pilar New Public Market', category: 'market', lat: 12.92199, lng: 123.67514, glyph: '🛒' },
-  { id: 'rhu-clinic', name: 'Rural Health Unit (Municipal Health Office)', category: 'medical', lat: 12.9255, lng: 123.66714, glyph: '🏥' },
-  { id: 'pilar-central', name: 'Pilar 1 Central School', category: 'school', lat: 12.92262, lng: 123.67314, glyph: '🏫' },
-  { id: 'banuyo-elem', name: 'Banuyo Elementary School', category: 'school', lat: 12.9255, lng: 123.67468, glyph: '🏫' },
-  { id: 'pilar-port', name: 'Port of Pilar Terminal', category: 'port', lat: 12.92144, lng: 123.67585, glyph: '⚓' },
+  { id: 'bgy-hall', name: 'Dao Brgy Hall & HQ', category: 'command', lat: 12.922, lng: 123.67449, glyph: '🏛️' },
+  { id: 'evac-center', name: 'Binanuahan Evac Center', category: 'evacuation', lat: 12.92331, lng: 123.67567, glyph: '🛡️' },
+  { id: 'public-market', name: 'Pilar Public Market', category: 'market', lat: 12.92199, lng: 123.67514, glyph: '🛒' },
+  { id: 'rhu-clinic', name: 'Rural Health Unit', category: 'medical', lat: 12.9255, lng: 123.66714, glyph: '🏥' },
+  { id: 'pilar-central', name: 'Pilar Central School', category: 'school', lat: 12.92262, lng: 123.67314, glyph: '🏫' },
+  { id: 'banuyo-elem', name: 'Banuyo Elem School', category: 'school', lat: 12.9255, lng: 123.67468, glyph: '🏫' },
+  { id: 'pilar-port', name: 'Port of Pilar', category: 'port', lat: 12.92144, lng: 123.67585, glyph: '⚓' },
 ];
 
 /**
@@ -74,6 +74,16 @@ export function formatDistanceAndEta(meters) {
   const minutes = Math.max(1, Math.round(meters / walkingSpeedMpm));
   const distStr = meters >= 1000 ? `${(meters / 1000).toFixed(1)}km` : `${meters}m`;
   return `${distStr} · ~${minutes}m walk`;
+}
+
+/**
+ * Shortens official incident code for compact map callout badges (e.g. "INC-2026-144" -> "INC-144").
+ * @param {string} codeStr
+ * @returns {string}
+ */
+export function formatIncidentMapBadge(codeStr) {
+  if (!codeStr) return '';
+  return String(codeStr).replace(/^INC-\d{4}-/, 'INC-').replace(/^INC-#/, 'INC-');
 }
 
 /**
@@ -150,6 +160,7 @@ export function LiveMap(container, options = {}) {
   let labelMode = 'auto'; // 'auto' | 'always' | 'hover'
   let incidentFilterQuery = '';
   let incidentFilterPriority = 'all';
+  let incidentFilterStatus = 'all';
 
   let ready = false;
   let hasFittedBounds = false;
@@ -367,7 +378,14 @@ export function LiveMap(container, options = {}) {
           el.style.setProperty('--approx-circle-size', `${circleRem}rem`);
         }
 
-        el.className = 'live-map__marker live-map__marker--tanod' + markerTypeClass + (item.isStale ? ' live-map__marker--stale' : '') + approxClass + focusedClass;
+        const isNearIncident = lastRawIncidents.some((inc) => (
+          inc.latitude != null && inc.longitude != null &&
+          Math.abs(Number(item.latitude) - Number(inc.latitude)) < 0.0002 &&
+          Math.abs(Number(item.longitude) - Number(inc.longitude)) < 0.0002
+        ));
+        const stackClass = isNearIncident ? ' live-map__marker--stacked-left' : '';
+
+        el.className = 'live-map__marker live-map__marker--tanod' + markerTypeClass + (item.isStale ? ' live-map__marker--stale' : '') + approxClass + focusedClass + stackClass;
         el.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
 
         const labelEl = document.createElement('span');
@@ -647,6 +665,9 @@ export function LiveMap(container, options = {}) {
       if (incidentFilterPriority && incidentFilterPriority !== 'all') {
         if (item.priority !== incidentFilterPriority) return false;
       }
+      if (incidentFilterStatus && incidentFilterStatus !== 'all') {
+        if (item.status !== incidentFilterStatus) return false;
+      }
       return true;
     });
 
@@ -660,18 +681,26 @@ export function LiveMap(container, options = {}) {
         const focusedClass = isFocused ? ' live-map__marker--focused' : '';
         const catKey = (item.incidentType || 'other').replace(/_/g, '-');
 
+        const isNearTanod = lastRawMarkers.some((tanod) => (
+          tanod.latitude != null && tanod.longitude != null &&
+          Math.abs(Number(item.latitude) - Number(tanod.latitude)) < 0.0002 &&
+          Math.abs(Number(item.longitude) - Number(tanod.longitude)) < 0.0002
+        ));
+        const stackClass = isNearTanod ? ' live-map__marker--stacked-right' : '';
+
         const el = document.createElement('div');
         el.className = 'live-map__marker live-map__marker--incident'
           + (isCritical ? ' live-map__marker--incident-critical' : '')
           + (isDispatched ? ' live-map__marker--incident-dispatched' : '')
           + ` live-map__marker--cat-${catKey}`
-          + focusedClass;
+          + focusedClass
+          + stackClass;
         el.setAttribute('data-incident-id', String(item.incidentId));
         el.innerHTML = `<span class="live-map__incident-diamond" aria-hidden="true">${getIncidentCategorySvg(item.incidentType || 'other', 13)}</span>`;
 
         const labelEl = document.createElement('span');
         labelEl.className = 'live-map__pin-label live-map__pin-label--incident';
-        labelEl.textContent = codeStr;
+        labelEl.textContent = formatIncidentMapBadge(codeStr);
         el.appendChild(labelEl);
 
         el.title = `${codeStr}: ${item.typeLabel || item.incidentType} — ${item.priority} priority`;
@@ -929,11 +958,42 @@ export function LiveMap(container, options = {}) {
 
   function renderDispatchLinks() {
     if (!ready || destroyed) return;
+    dispatchLinkEtaMarkers = clearMarkers(dispatchLinkEtaMarkers);
+
     if (!visibleLayers.dispatched || !visibleLayers.incident) {
       applyDispatchLinks(map, []);
       return;
     }
-    applyDispatchLinks(map, lastDispatchLinks);
+
+    const validLinks = Array.isArray(lastDispatchLinks)
+      ? lastDispatchLinks.filter((l) => l && l.fromLng != null && l.fromLat != null && l.toLng != null && l.toLat != null)
+      : [];
+
+    applyDispatchLinks(map, validLinks);
+
+    for (const link of validLinks) {
+      const fromLng = Number(link.fromLng);
+      const fromLat = Number(link.fromLat);
+      const toLng = Number(link.toLng);
+      const toLat = Number(link.toLat);
+      const meters = calculateDistanceMeters(fromLat, fromLng, toLat, toLng);
+      if (meters < 25) continue;
+
+      const midLng = (fromLng + toLng) / 2;
+      const midLat = (fromLat + toLat) / 2;
+      const etaText = formatDistanceAndEta(meters);
+
+      const el = document.createElement('div');
+      el.className = 'live-map__link-eta-badge';
+      el.textContent = etaText;
+      el.title = `Estimated distance: ${etaText}`;
+
+      const marker = new maplibregl.Marker({ element: el })
+        .setLngLat([midLng, midLat])
+        .addTo(map);
+
+      dispatchLinkEtaMarkers.push(marker);
+    }
   }
 
   function setDispatchLinks(links) {
@@ -1126,6 +1186,7 @@ export function LiveMap(container, options = {}) {
   function setIncidentFilter(filter = {}) {
     if ('query' in filter) incidentFilterQuery = String(filter.query || '').trim();
     if ('priority' in filter) incidentFilterPriority = filter.priority || 'all';
+    if ('status' in filter) incidentFilterStatus = filter.status || 'all';
     renderIncidentMarkers(lastRawIncidents, lastIncidentAssign, lastIncidentViewRecord);
   }
 
@@ -1160,7 +1221,11 @@ export function LiveMap(container, options = {}) {
       count++;
     }
     if (count > 0) {
-      map.fitBounds(bounds, { padding: 56, maxZoom: 16, duration: 600 });
+      map.fitBounds(bounds, {
+        padding: { top: 60, bottom: 95, left: 70, right: 60 },
+        maxZoom: 16,
+        duration: 600,
+      });
     } else {
       map.flyTo({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, duration: 600 });
     }
@@ -1236,7 +1301,7 @@ function applyBoundary(map, geojson) {
     id: 'barangay-boundary-fill',
     type: 'fill',
     source: 'barangay-boundary',
-    paint: { 'fill-color': themeToken('--color-accent', '#3B82F6'), 'fill-opacity': 0.04 },
+    paint: { 'fill-color': themeToken('--color-accent', '#3B82F6'), 'fill-opacity': 0.06 },
   });
   map.addLayer({
     id: 'barangay-boundary-line',

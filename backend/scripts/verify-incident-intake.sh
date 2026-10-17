@@ -198,20 +198,14 @@ fi
 HT="X-Device-Id: $DEV_T"
 
 # ============================================================
-step "3. POST /citizen-reports is REMOVED (no handler: 405 via GET path, 404 otherwise)"
+step "3. /citizen-reports is RETIRED (2026-10-17): no handler for any method"
 # ============================================================
-# The path still exists for GET (inbox), so the router answers a POST with its
-# generic "path matched, method not allowed" 405 (public/index.php) rather than
-# the 404 an entirely absent path gets. Either way: no handler, no row.
-call POST "$BASE_URL/citizen-reports" "" '{"barangay_id":1,"description":"anonymous"}'
-case "$RESP_CODE" in 404|405) pass "Unauthenticated POST /citizen-reports has no handler ($RESP_CODE route miss)" ;; *) fail "Unauthenticated POST /citizen-reports -> $RESP_CODE (expected 404/405)" ;; esac
-call POST "$BASE_URL/citizen-reports" "$ADMIN" '{"barangay_id":1,"description":"as admin"}'
-case "$RESP_CODE" in 404|405) pass "Admin POST /citizen-reports has no handler ($RESP_CODE route miss)" ;; *) fail "Admin POST /citizen-reports -> $RESP_CODE (expected 404/405)" ;; esac
-call POST "$BASE_URL/citizen-reports/1" "" '{}'
-expect_eq "$RESP_CODE" "404" "POST /citizen-reports/1 (never existed) -> 404"
+for pair in "POST:/citizen-reports" "GET:/citizen-reports" "POST:/citizen-reports/1/convert"; do
+  M="${pair%%:*}"; P="${pair#*:}"
+  call "$M" "$BASE_URL$P" "$ADMIN" '{}'
+  expect_eq "$RESP_CODE" "404" "$M $P -> 404 (retired)"
+done
 expect_eq "$(db_one "SELECT COUNT(*) FROM citizen_report;")" "0" "No citizen_report row created"
-call GET "$BASE_URL/citizen-reports" "$ADMIN" ""
-expect_eq "$RESP_CODE" "200" "GET /citizen-reports (inbox) still works"
 
 # ============================================================
 step "4. Web create — report_channel default, explicit values, validation"
@@ -261,17 +255,6 @@ expect_eq "$(db_one "SELECT report_channel FROM incident WHERE device_id='$DEV_T
 call POST "$BASE_URL/sync/batch" "$TANOD" "$SYNC_BODY" "$HT"
 expect_eq "$(echo "$RESP_BODY" | json_field results.0.status)" "duplicate" "sync replay is a duplicate"
 expect_eq "$(db_one "SELECT report_channel FROM incident WHERE device_id='$DEV_T' AND client_event_id='$MOB_EVT';")" "tanod_alerted" "channel unchanged after replay"
-
-# ============================================================
-step "6. Citizen-report convert -> walk_in"
-# ============================================================
-mysql_exec "$VALDB" -e "INSERT INTO citizen_report (barangay_id, contact_number, description, submitted_at) VALUES (1, NULL, 'INTAKE citizen fixture', UTC_TIMESTAMP());"
-CR=$(db_one "SELECT report_id FROM citizen_report WHERE description='INTAKE citizen fixture';")
-call POST "$BASE_URL/citizen-reports/$CR/convert" "$SEC" '{"incident_type":"theft"}'
-expect_eq "$RESP_CODE" "200" "Secretary converts a SQL-seeded citizen report -> 200"
-CONV_INC=$(echo "$RESP_BODY" | json_field incident_id)
-expect_eq "$(chan $CONV_INC)" "walk_in" "Converted incident has report_channel = walk_in"
-expect_eq "$(db_one "SELECT source FROM incident WHERE incident_id=$CONV_INC;")" "web" "...and source = web"
 
 # ============================================================
 step "7. list / show / search expose report_channel + related_incident_id"
