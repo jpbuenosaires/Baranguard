@@ -42,11 +42,22 @@ nav.toc li.l1 { font-weight:700; margin-top: 8px; }
   figure, table { break-inside: avoid; }
   @page { size: A4; margin: 25mm; }
 }
+
+.pending { background:#fff3cd; color:#7a5200; padding:0 .35em; border-radius:3px; font-size:.9em; }
+@media (prefers-color-scheme: dark) { .pending { background:#4a3b0a; color:#ffd96b; } }
+.status-note { border:1px solid #d9b44a; background:#fff8e1; color:#4a3b00; padding:12px 16px; margin:0 0 18px; text-indent:0; font-size:10.5pt; line-height:1.55; }
+@media (prefers-color-scheme: dark) { .status-note { background:#2c2508; color:#f1deaa; border-color:#7a6320; } }
+ol.objectives { margin: 4px 0 14px; padding-left: 2.2em; } ol.objectives li { margin-bottom: 6px; }
+ul { margin: 4px 0 14px; padding-left: 1.6em; } ul li { margin-bottom: 6px; }
+p.item, p.def { text-indent: 0; padding-left: 1.2em; }
+p.tablenote, p.formula { text-indent: 0; }
+p.formula { text-align:center; font-family: Cambria, Georgia, serif; font-size: 12pt; }
+figure img { max-height: 760px; }
 </style>
 </head>
 <body>
 <div class="wrap">
-<div class="note-top">Editable HTML conversion of the capstone manuscript PDF (61 pages, converted 2026-10-17). The table of contents, list of tables and list of figures are generated automatically from the headings and captions, so they stay correct when you revise. The text still describes the original design (AI redaction, electronic blotter, Semaphore), which the working system no longer matches.</div>
+<div class="note-top">Editable HTML manuscript, revised 2026-10-17 to match the system as built: the AI redaction, electronic blotter, Lupon packet and Semaphore content were removed or replaced; the table of contents, list of tables and list of figures are generated from the headings and captions. Appendix figures A-1 to D-5 were redrawn from the running system and are stored in <code>docs/manuscript-images/</code>; Figures D-6 to D-8 (Android) are kept as originally supplied. Chapter 4 is started: measured results are in, and cells marked pending wait for field and user data. The unrevised manuscript is kept as <code>Baranguard_Capstone_Manuscript_original.html</code>.</div>
 <section class="paper">
 <header class="cover">
 <p class="cover-title"><strong>Baranguard: Barangay Intelligence and Emergency Dispatch System</strong></p>
@@ -68,255 +79,598 @@ nav.toc li.l1 { font-weight:700; margin-top: 8px; }
 <section class="paper"><h1>LIST OF TABLES</h1><nav class="toc"><ul id="lot-list"></ul></nav></section>
 <section class="paper"><h1>LIST OF FIGURES</h1><nav class="toc"><ul id="lof-list"></ul></nav></section>
 <main class="paper">
-<h1 id="s1">1 Introduction</h1>
-<h2 id="s2">1.1 Background of the Study</h2>
+<h1>1 Introduction</h1>
+
+<h2>1.1 Background of the Study</h2>
+
 <p>The rapid advancement of information technology has transformed the way organizations manage data and coordinate emergency responses, shifting from localized, paper-based protocols to highly integrated, intelligence-driven digital frameworks. Globally, the demand for robust emergency response solutions is surging, driven by rising natural disasters and the need for interconnected public safety networks. Consequently, the global incident and emergency management market is projected to grow substantially through 2030 (MarketsandMarkets, 2024). This global technological shift aligns with the United Nations' Sustainable Development Goals (SDGs), particularly SDG 3, which promotes good health and well-being; SDG 11, which advocates for sustainable, safe, and resilient cities; and SDG 16, which emphasizes the promotion of peace, justice, and effective, accountable institutions (United Nations, 2015).</p>
-<p>In the Philippines, a significant digital divide hampers the modernization of grassroots emergency management. While the Department of Information and Communications Technology (DICT) has spearheaded the e-Government Masterplan (eGMP) 2022–2025 to connect local government units (DICT, 2024), recent data from the Philippine Statistics Authority (PSA) indicate that only approximately 44 percent of households currently have internet access (PSA, 2024). At the grassroots level, the barangay serves as the primary planning and implementing unit of government policies, acting as the immediate responder to localized crises. Despite this mandate, a vast majority of Philippine barangays continue to rely on manual, handwritten logbooks for their blotter and emergency dispatch systems. These manual processes are inefficient, susceptible to physical data loss, and pose data privacy risks under Republic Act No. 10173 (Data Privacy Act of 2012) due to the unmasked handling of sensitive citizen information (National Privacy Commission, 2012).</p>
+
+<p>In the Philippines, a significant digital divide hampers the modernization of grassroots emergency management. While the Department of Information and Communications Technology (DICT) has spearheaded the e-Government Masterplan (eGMP) 2022–2025 to connect local government units (DICT, 2024), recent data from the Philippine Statistics Authority (PSA) indicate that only approximately 44 percent of households currently have internet access (PSA, 2024). At the grassroots level, the barangay serves as the primary planning and implementing unit of government policies, acting as the immediate responder to localized crises. Despite this mandate, a vast majority of Philippine barangays continue to rely on manual, handwritten logbooks for their blotter and emergency dispatch systems. These manual processes are inefficient, susceptible to physical data loss, and pose data privacy risks under Republic Act No. 10173 (Data Privacy Act of 2012) due to the unprotected handling of sensitive citizen information (National Privacy Commission, 2012).</p>
+
 <p>This operational bottleneck is evident in the Municipality of Pilar, a first-class coastal municipality in the province of Sorsogon with a population of 76,908 (PhilAtlas, 2024). The municipality is geographically vulnerable to severe weather disturbances, including the destructive impacts of recent typhoons and fires, which disrupt local communication lines. Within Pilar, the communities of Barangay Dao (population 2,485), Barangay Marifosque (population 2,473), Barangay Binanuahan (population 1,889), and Barangay Banuyo (population 3,809) exemplify the challenges of rural public safety administration. In these barangays, field responders (tanods) lack real-time geographical tracking and face communication breakdowns when terrestrial IP networks fail during calamities.</p>
-<p>While several web-based barangay information systems currently exist in the local market, they predominantly function as static administrative repositories (Tosper et al., 2025). These existing solutions present operational limitations in rural contexts because they lack offline-first operational resilience, omit automated data masking for privacy compliance, and rely on continuous internet connectivity to maintain core dispatch workflows. This study proposes Baranguard: Barangay Intelligence and Emergency Dispatch System, an offline-first, local-server-based platform featuring an SMS best-effort fallback mechanism and the integration of the locally self-hosted Llama-SEA-LION-v3.5-8B-R small language model (SLM) to automate text summarization and PII redaction. By adapting AI capabilities for low-connectivity environments, Baranguard provides an offline-first operational framework for local emergency management while supporting compliance with applicable data privacy requirements under RA 10173 through automated draft PII redaction, role-based access controls, and mandatory administrative human review prior to public record storage.</p>
-<h2 id="s3">1.2 Objectives of the Study</h2>
-<p>This study aimed to design and develop Baranguard, a local-server-based, offline-first barangay intelligence and emergency dispatch system tailored for Barangays Dao, Binanuahan, Marifosque, and Banuyo in Pilar, Sorsogon. Specifically, the study aimed: 1. To design a GIS-enabled web-based command center that centralizes incident</p>
-<p>records, tracks responder locations in real-time, and generates historical incident</p>
-<p>heatmaps. 2. To develop an offline-first mobile operations application for barangay tanods</p>
-<p>capable of capturing incident details without internet access and synchronising</p>
-<p>queued records to the barangay command centre server upon reconnection. 3. To implement an SMS best-effort fallback communication protocol that</p>
-<p>automatically transmits emergency alerts and geolocation data from field</p>
-<p>responders when broadband networks fail under partial-outage conditions. 4. To evaluate the system's technical quality, usability, and performance using the</p>
-<p>ISO/IEC 25010:2023 software quality model.</p>
-<h2 id="s4">1.3 Significance of the Study</h2>
-<p><strong>Primary Beneficiaries.</strong> The direct users of the system, barangay tanods and dispatchers, will experience a modernized, efficient workflow. The offline-first mobile application improves their daily tasks by allowing them to log incidents locally via SQLite caching, consult pre-cached offline map tiles for geographic orientation, and communicate via automated SMS fallback during network outages. This is designed to reduce duplicated manual documentation effort and to shorten dispatch coordination time, the interval between an incident being received at the command centre and a responder confirming deployment. Emergency response time in the full sense, measured to a responder's physical arrival, is determined largely by road conditions and responder availability and is not claimed as an outcome of this study.</p>
-<p><strong>Administrators and Management.</strong> Local chief executives and barangay officials will benefit from enhanced, data-driven governance. The web-based command center provides historical heatmaps and statistical reports, enabling proactive decisions regarding resource deployment and patrol scheduling. Baranguard implements AI-assisted privacy processing with mandatory human validation: the language model produces a draft redaction, and the Barangay Secretary must explicitly review and approve that draft before a blotter record can be finalized. The Secretary, not the model, remains the authoritative decision-maker, consistent with the Secretary's statutory custody of barangay records under Section 394(c) of Republic Act No. 7160. This arrangement supports compliance with the Data Privacy Act of 2012 (RA 10173) while keeping accountability with a named human officer.</p>
-<p><strong>Future Researchers.</strong> The architectural framework of Baranguard serves as a pioneering reference for future IT capstone students and academic researchers. By demonstrating the practical deployment of an Agile Scrum framework, an offline-first mobile architecture with SQLite synchronization, and the local, on-premise integration of a Southeast Asian-optimized small language model (Llama-SEA-LION-v3.5-8B-R) in civic technology, this study contributes to the body of knowledge on resilient local e-governance systems.</p>
+
+<p>While several web-based barangay information systems currently exist in the local market, they predominantly function as static administrative repositories (Tosper et al., 2025). These existing solutions present operational limitations in rural contexts because they lack offline-first operational resilience and rely on continuous internet connectivity to maintain core dispatch workflows. This study proposes Baranguard: Barangay Intelligence and Emergency Dispatch System, an offline-first, local-server-based platform that joins three components: a GIS-enabled web command center for the Chief Tanod and barangay officials, an offline-first Android application for tanods, and an SMS best-effort fallback that carries emergency alerts when broadband fails.</p>
+
+<p>Baranguard is positioned as a complement to, not a replacement for, the Barangay Information Management System (BIMS) of the Department of the Interior and Local Government (DILG), whose Katarungang Pambarangay module and electronic blotter remain the official case ledger. Barangays continue to keep the blotter and Lupon records in their own binders, and Baranguard holds no case registry. It supports compliance with RA 10173 through role-based access, per-barangay data isolation, encryption of SMS payloads, an audit log that records identifiers only, and a retention rule that permanently destroys confidential incident narratives after one year.</p>
+
+<h2>1.2 Objectives of the Study</h2>
+
+<p>This study aimed to design and develop Baranguard, a local-server-based, offline-first barangay intelligence and emergency dispatch system tailored for Barangays Dao, Binanuahan, Marifosque, and Banuyo in Pilar, Sorsogon. Specifically, the study aimed:</p>
+<ol class="objectives">
+<li>To design a GIS-enabled web-based command center that centralizes incident records, tracks responder locations in real-time, and generates historical incident heatmaps.</li>
+<li>To develop an offline-first mobile operations application for barangay tanods capable of capturing incident details without internet access and synchronising queued records to the barangay command centre server upon reconnection.</li>
+<li>To implement an SMS best-effort fallback communication protocol that automatically transmits emergency alerts and geolocation data from field responders when broadband networks fail under partial-outage conditions.</li>
+<li>To evaluate the system's technical quality, usability, and performance using the ISO/IEC 25010:2023 software quality model.</li>
+</ol>
+
+<h2>1.3 Significance of the Study</h2>
+
+<p><strong>Primary Beneficiaries.</strong> The direct users of the system, barangay tanods and the Chief Tanod who directs them, will experience a modernized, efficient workflow. The offline-first mobile application improves their daily tasks by allowing them to log incidents locally via SQLite caching, consult pre-cached offline map tiles for geographic orientation, receive dispatch assignments and, at night, dispatch offers, and raise an emergency alert that falls back to SMS during network outages. This is designed to reduce duplicated manual documentation effort and to shorten dispatch coordination time, the interval between an incident being received at the command centre and a responder confirming deployment. Emergency response time in the full sense, measured to a responder's physical arrival, is determined largely by road conditions and responder availability and is not claimed as an outcome of this study.</p>
+
+<p><strong>Administrators and Management.</strong> Local chief executives and barangay officials will benefit from enhanced, data-driven governance. The web-based command center provides historical heatmaps and statistical reports, enabling proactive decisions regarding resource deployment and patrol scheduling. Rosters, monthly accomplishment reports and school-zone reports are produced as A4 printouts that officials sign on paper, which keeps the system consistent with how barangay records are already authorized. The Barangay Secretary remains the custodian of confidential incident narratives, consistent with the Secretary's statutory custody of barangay records under Section 394(c) of Republic Act No. 7160, and a named officer, not the software, remains accountable for every record. This arrangement supports compliance with the Data Privacy Act of 2012 (RA 10173).</p>
+
+<p><strong>Future Researchers.</strong> The architectural framework of Baranguard serves as a reference for future IT capstone students and academic researchers. By demonstrating the practical deployment of an Agile Scrum framework, an offline-first mobile architecture with encrypted SQLite synchronization and device-signed writes, and a single-workstation local-server deployment that remains reachable through a persistent tunnel, this study contributes to the body of knowledge on resilient local e-governance systems.</p>
+
 <p><strong>Community and Society.</strong> The residents of Barangays Dao, Binanuahan, Marifosque, and Banuyo will benefit from a safer, more responsive community environment. The system supports SDG 3 (Good Health and Well-Being) by enabling faster emergency medical dispatch that reduces preventable injury and mortality in underserved coastal communities. It further supports SDG 11 (Sustainable Cities and Communities) and SDG 16 (Peace, Justice, and Strong Institutions), fostering greater social inclusion, transparent public service delivery, and elevated trust in local peacekeeping mechanisms (United Nations, 2015).</p>
-<h2 id="s5">1.4 Scope and Delimitations</h2>
-<p>This study encompasses the development and deployment of a dual-platform incident management system, featuring an Android-based mobile application for field responders and a local network-based web application deployed on an administrative workstation for dispatchers. The system's core functionalities integrate a web-based command center equipped with GIS heatmaps, live dispatch tracking, and an AI-assisted electronic blotter. To ensure reliability in the field, the mobile application is designed with offline data caching and a three-state location behaviour: where the device has an active network path, GPS coordinates are transmitted to the command centre in real time; where the device is offline, coordinates are captured locally and queued for synchronisation on reconnection; and where broadband has failed but cellular signal persists, emergency coordinates may be transmitted over an SMS best-effort fallback channel. Natural language processing tasks, narrative summarisation and PII redaction, are managed by the locally self-hosted Llama-SEA-LION-v3.5-8B-R model, which runs on the administrative workstation and does not transmit data to external AI services. The model's capacity to interpret code-switched Taglish input is relied upon operationally, but dialect translation is not offered as an evaluated system capability and is not assessed in this study. The primary users and respondents are barangay officials, dispatchers, and field responders (tanods). The system implements four distinct roles. Administrators manage users, devices, shift schedules, and map packages from the web dashboard. The Barangay Secretary holds exclusive authority to finalise and amend blotter records, in keeping with the Secretary's statutory custody of barangay records under RA 7160 394(c); amendments preserve the superseded text in a revision table rather than overwriting it. Tanods operate on the Android application only and have no dashboard access. The Punong Barangay holds read-only access to reports and analytics. Residents do not receive a mobile application; citizen incident reports are submitted through a public web form and appear in a dashboard inbox for dispatcher triage. Deployment and testing are bounded to Barangays Dao, Binanuahan, Marifosque, and Banuyo in the Municipality of Pilar, Sorsogon. The system's technical efficacy and user acceptance are evaluated using the ISO/IEC 25010:2023 software quality assessment model.</p>
-<p>To maintain developmental feasibility, specific boundaries have been established. The system excludes a payroll module for barangay staff, predictive case resolution algorithms, and financial e-payment gateways for barangay clearances. Direct mobile application access is restricted to authorized responders and tanods to prevent network spamming, thereby excluding general residents from the mobile platform. AI integration is limited to text-based natural language processing tasks; complex computer vision, real-time video surveillance analysis, and facial recognition are omitted due to hardware limitations of standard mobile devices. Envelope encryption of SMS payloads, per-device secret provisioning, replay-window validation, and automated draft PII redaction are implemented to support compliance with RA 10173, requiring administrative human verification of filtered narrative logs prior to record finalization; advanced biometric authentication protocols fall outside the developmental scope. The central database and web dashboard are hosted locally on an administrative workstation within the barangay command center, maintaining local area network (LAN) accessibility during internet blackouts while buffering field records locally on responder mobile devices. The local AI inference layer, however, operates directly on the unified administrative workstation, independent of external cloud AI services, to preserve data sovereignty and offline AI capability.</p>
-<h3 id="s6">1.4.1 Resilience Layer Limitations and Mitigations</h3>
+
+<h2>1.4 Scope and Delimitations</h2>
+
+<p>This study encompasses the development and deployment of a dual-platform incident management system, featuring an Android-based mobile application for field responders and a local network-based web application deployed on an administrative workstation. The system's core functionalities are a web-based command center equipped with GIS heatmaps, live responder tracking and a dispatch center; an offline-first tanod application; and an SMS best-effort fallback for emergency alerts. To ensure reliability in the field, the mobile application is designed with offline data caching and a three-state location behaviour: where the device has an active network path, GPS coordinates are transmitted to the command centre in real time; where the device is offline, coordinates are captured locally and queued for synchronisation on reconnection; and where broadband has failed but cellular signal persists, an emergency alert with the last known coordinates may be transmitted over the SMS best-effort fallback channel. The fallback carries emergency (SOS) alerts only, not general incident reporting.</p>
+
+<p>The system implements four roles. The Admin account is the seat of the Chief Tanod, who dispatches tanods, manages users, devices, rosters and map packages, and reads the confidential incident narrative on the web. The Barangay Secretary is the Records and Reports Officer, who holds exclusive authority over the incident lifecycle (duplicate, invalid, cancelled, reopened) and the complainant's name, in keeping with the Secretary's statutory custody of barangay records under RA 7160 394(c). The Punong Barangay holds oversight access to the dashboard, analytics, approvals and reports, and has no list of cases. Tanods operate on the Android application only and have no dashboard access. Approval authority, for example over a roster or an Annex D report, is a setting that the Chief Tanod grants to a named official, not a separate role. Residents do not use the system directly: walk-in, phone-call, Facebook and SMS reports are logged by staff as incidents, and each incident records the channel through which it arrived. Deployment and testing are bounded to Barangays Dao, Binanuahan, Marifosque, and Banuyo in the Municipality of Pilar, Sorsogon. The system's technical efficacy and user acceptance are evaluated using the ISO/IEC 25010:2023 software quality assessment model.</p>
+
+<p>To maintain developmental feasibility and to respect the legal position of the barangay's existing records, specific boundaries have been established. Baranguard is not a case registry and does not replace the DILG BIMS: it holds no electronic blotter and no Katarungang Pambarangay or Lupon records, and the barangays keep these in their own binders. The system excludes a payroll module for barangay staff, predictive case resolution algorithms, financial e-payment gateways for barangay clearances, resident profiling and certificate issuance. It uses no artificial intelligence of any kind, and complex computer vision, real-time video surveillance analysis and facial recognition are omitted. Direct mobile application access is restricted to authorized responders and tanods to prevent network spamming, thereby excluding general residents from the mobile platform. Envelope encryption of SMS payloads, per-device secret provisioning, replay-window validation, device-signed offline writes and an allow-listed audit log are implemented to support compliance with RA 10173; advanced biometric authentication and multi-factor authentication fall outside the developmental scope. The central database and web dashboard are hosted locally on an administrative workstation within the barangay command center, maintaining local area network (LAN) accessibility during internet blackouts while buffering field records locally on responder mobile devices. One cloud service is used: road routes are requested from OpenRouteService, which receives the origin and destination coordinates of a route and nothing else; map display and all other functions continue without it.</p>
+
+<h3>1.4.1 Resilience Layer Limitations and Mitigations</h3>
+
 <p>A critical architectural consideration is the behavior of the system under full communication blackout conditions, such as those experienced during a direct Category 4+ typhoon landfall. Historical precedent from Super Typhoon Rolly (Goni) in November 2020, which made its first landfall in Catanduanes at maximum sustained winds of 225 km/h and brought documented catastrophic disruption to the Bicol–Sorsogon region, including the municipality of Pilar itself, demonstrates that both broadband internet infrastructure and cellular tower networks can fail simultaneously. The NDRRMC's final situational report documented that 125 cities and municipalities were left without electricity after landfall, and telecommunications lines remained down across multiple Bicol provinces for days, with Globe and Smart signals described as "intermittent" in Albay and 13 municipalities in Camarines Sur reporting a complete loss of network coverage from both telecoms providers (NDRRMC, 2020). Under such conditions, the SMS fallback protocol, while valuable, operates as a best-effort bridge rather than a guaranteed channel. The SMS mechanism is empirically most effective in the more common partial-outage scenario, where cellular signal persists after broadband loss, a pattern documented across multiple Philippine typhoon events where LTE data services degrade before voice and SMS signaling channels do (DICT, 2024). Proposing a further cellular-based tertiary fallback would be architecturally redundant, as it would suffer the same failure mode.</p>
-<p>For full blackout scenarios where both broadband and cellular fail, the system's primary resilience mechanism is the offline-first mobile architecture. All incident records captured in the field by Tanods are preserved in the local SQLite database on the device to prevent loss caused by network disconnection. These records synchronize automatically via batch API payload to the local server database upon restoration of connectivity, whether through cellular data, broadband, or local Wi-Fi. Consequently, incident records are preserved locally during network outages and reconciled with the command center once communication is re-established. Dispatchers operating the web dashboard during a full blackout follow manual operational protocols until connectivity is restored, at which point Baranguard reconciles the offline queue. Future research may investigate the integration of store-and-forward radio mesh protocols as a non-cellular tertiary communication channel.</p>
+
+<p>For full blackout scenarios where both broadband and cellular fail, the system's primary resilience mechanism is the offline-first mobile architecture. All incident records captured in the field by Tanods are preserved in the local SQLite database on the device to prevent loss caused by network disconnection. These records synchronize automatically via batch API payload to the local server database upon restoration of connectivity, whether through cellular data, broadband, or local Wi-Fi. Consequently, incident records are preserved locally during network outages and reconciled with the command center once communication is re-established. Dispatchers operating the web dashboard during a full blackout follow manual operational protocols until connectivity is restored, at which point Baranguard reconciles the offline queue. A further stated limit is that the whole system depends on one workstation: if it is powered off, only the device-local SMS alert to a backup contact still works, and protecting the workstation with a UPS and a backup internet line is a deployment decision outside this study. Future research may investigate the integration of store-and-forward radio mesh protocols as a non-cellular tertiary communication channel.</p>
+
 <p>Taken together, these architectural decisions reflect a deliberate design philosophy prioritizing local data preservation over real-time transmission guarantees. Rather than attempting to engineer around the physical constraints of typhoon-grade infrastructure disruption, a challenge that affects primary telecommunications networks, Baranguard accepts bounded communication latency as a trade-off for field-level operational continuity and record preservation. This trade-off aligns with resilience engineering principles, which distinguish between robustness (resisting disruption) and recoverability (restoring function after disruption); Baranguard's offline-first architecture optimizes for the latter. The system is not designed to eliminate communication gaps during complete network failures, but to ensure that upon reconnection, the incident record queue is reconciled, consistent, and actionable by barangay officials.</p>
-<h1 id="s7">2 Theoretical Framework</h1>
+
+<h1>2 Theoretical Framework</h1>
+
 <p>This chapter synthesizes existing studies, systems, and literature that are relevant to the Baranguard system. It establishes the academic foundation of the research, identifies the gaps in current technological implementations, and presents the conceptual framework and definition of terms used throughout the study.</p>
-<h2 id="s8">2.1 Review of Related Literature (RRL)</h2>
-<p>The literature reviewed for this study was identified through searches of Google Scholar, the Philippine E-Journals database, and the official issuance repositories of the DILG and DICT, using combinations of the terms barangay information system, incident reporting, emergency dispatch, offline-first, SMS fallback, small language model, and PII redaction. The search covered material published between 2020 and 2026 and was restricted to English- and Filipino-language sources. Claims regarding the absence of particular capabilities are therefore scoped to the systems identified within this review and are not presented as exhaustive statements about all deployed systems.</p>
-<h3 id="s9">2.1.1 Digitalization of Barangay Information and Incident Reporting Systems</h3>
+
+<h2>2.1 Review of Related Literature (RRL)</h2>
+
+<p>The literature reviewed for this study was identified through searches of Google Scholar, the Philippine E-Journals database, and the official issuance repositories of the DILG and DICT, using combinations of the terms barangay information system, incident reporting, emergency dispatch, offline-first, SMS fallback, data privacy, and records custody. The search covered material published between 2020 and 2026 and was restricted to English- and Filipino-language sources. Claims regarding the absence of particular capabilities are therefore scoped to the systems identified within this review and are not presented as exhaustive statements about all deployed systems.</p>
+
+<h3>2.1.1 Digitalization of Barangay Information and Incident Reporting Systems</h3>
+
 <p>The digitalization of local government units has become a paramount objective to enhance public service delivery and governance transparency. In the Philippines, the barangay serves as the fundamental administrative unit, yet many continue to rely on manual, paper-based systems for incident reporting, which often leads to operational inefficiencies and data mismanagement. Longcop and Fuentes (2024) assessed Barangay Health Emergency Response Teams (BHERTs) in Northern Samar, finding that reliance on manual tracking severely limits emergency response capabilities and highlighting the necessity for modernized equipment and data systems. Addressing these administrative bottlenecks, Tosper et al. (2025) developed WebYu, a web-based barangay information management system for Barangay Yuson. Their evaluation using the ISO 25010 standard demonstrated that digitizing resident records and certificate issuance reduced processing times by 68% and documentation errors by 72%.</p>
+
 <p>Similarly, Gasmido et al. (2025) created a web-based platform using the Agile Scrum framework, achieving an excellent overall ISO 25010 evaluation mean of 4.62, demonstrating that digital centralization improves LGU workflows. Beyond basic administrative tasks, Lardera and Bagolong (2026) introduced a system integrating automated mobile messaging, which allowed barangay officials to send real-time SMS notifications for announcements and emergency alerts, thereby strengthening citizen participation and response coordination. Furthermore, Villafuerte (2024) examined the public safety challenges faced by barangay public safety officers (BPSOs) in the National Capital Region, noting that despite high effectiveness in current measures, critical challenges remain in community engagement, communication infrastructure, and policing strategies.</p>
-<p>The reviewed studies demonstrate that transitioning from manual blotters to web-based information systems improves administrative efficiency and data accuracy in local government units. However, they highlight a critical need to extend digital platforms beyond static record-keeping by integrating network-resilient mobile communication and emergency dispatch tools tailored for frontline peacekeepers and responders operating in low-connectivity environments, which directly supports the development of the Baranguard system. .</p>
-<h3 id="s10">2.1.2 Resilient Communications: Offline-First Architecture and SMS Fallback</h3>
-<p>Emergency situations and natural disasters frequently compromise traditional terrestrial networks, rendering standard cloud-dependent applications useless during critical response periods. New Light Technologies (2024) emphasized that in disaster zones, an offline-first mobile architecture is essential. By treating disconnected operation as the primary mode rather than a fallback, offline-first designs allow field personnel to continuously capture incident data and access cached geographic maps regardless of internet availability. Complementing this architectural approach, Omar and Van Belle (2023) investigated alternative communication technologies during crises. Their findings revealed the efficacy of utilizing Short Message Service (SMS) as a reliable alternative when IP-based platforms fail due to broadband disruptions, while also noting that SMS itself is subject to failure during the most severe disaster events. The integration of resilient protocols is further supported by Sasane et al. (2026), who developed an IoT-based disaster management system that paired a cloud-hosted backend with SMS incident reporting and offline-capable mobile dashboards.</p>
+
+<p>The reviewed studies demonstrate that transitioning from manual blotters to web-based information systems improves administrative efficiency and data accuracy in local government units. However, they highlight a critical need to extend digital platforms beyond static record-keeping by integrating network-resilient mobile communication and emergency dispatch tools tailored for frontline peacekeepers and responders operating in low-connectivity environments, which directly supports the development of the Baranguard system.</p>
+
+<h3>2.1.2 Resilient Communications: Offline-First Architecture and SMS Fallback</h3>
+
+<p>Emergency situations and natural disasters frequently compromise traditional terrestrial networks, rendering standard cloud-dependent applications useless during critical response periods. New Light Technologies (2024) emphasized that in disaster zones, an offline-first mobile architecture is essential. By treating disconnected operation as the primary mode rather than a fallback, offline-first designs allow field personnel to continuously capture incident data and access cached geographic maps regardless of internet availability. Complementing this architectural approach, Omar and Van Belle (2023) investigated alternative communication technologies during crises. Their findings revealed the efficacy of utilizing Short Message Service (SMS) as a reliable alternative when IP-based platforms fail due to broadband disruptions, while also noting that SMS itself is subject to failure during the most severe disaster events. Omar et al. (2024) likewise examined frameworks for resilient messaging in emergency scenarios, extending the discussion from SMS toward richer messaging channels. The integration of resilient protocols is further supported by Sasane et al. (2026), who developed an IoT-based disaster management system that paired a cloud-hosted backend with SMS incident reporting and offline-capable mobile dashboards.</p>
+
 <p>Budimir et al. (2021) highlighted that the widespread ownership of mobile phones in developing nations presents opportunities for disaster risk management, provided that systems are designed to operate under infrastructural constraints. Furthermore, Qureshi et al. (2021) noted that critical incident management systems must securely and efficiently process mobile reports even during high-stress, low-connectivity events.</p>
+
 <p>The synthesized literature establishes that persistent internet connectivity cannot be assumed during disaster response operations. The studies validate that combining an offline-first mobile architecture with an SMS best-effort fallback protocol is a proven strategy for maintaining uninterrupted data capture in partial-outage scenarios, while local SQLite data caching and post-reconnection batch synchronization provide the last line of resilience during full blackout events, directly informing the resilient design of the Baranguard application.</p>
-<h3 id="s11">2.1.3 AI Integration, Small Language Models, and Data Privacy Compliance</h3>
-<p>The digitization of incident blotters introduces significant data privacy risks, necessitating advanced computational solutions to protect sensitive citizen information. The Data Privacy Act of 2012 (RA 10173) mandates that government agencies and private entities secure personally identifiable information (PII) in their information systems (National Privacy Commission, 2012). To address compliance in unstructured data, the AI Research Group (2025) demonstrated the effectiveness of combining optical character recognition (OCR) and large language models (LLMs) to automatically detect and redact PII from physical documents, achieving a redaction precision of 92.5% and mitigating privacy risks. This precision benchmark directly informs the acceptance thresholds defined for Baranguard's PII redaction module in Section 3.3.4.</p>
-<p>While global LLMs are powerful, they often lack cultural nuance and pose data sovereignty concerns, routing sensitive government blotter narratives to external AI services raises substantive concerns under the data minimisation and purpose limitation principles of RA 10173, particularly where the processing location and retention practices of the external service are outside the control of the personal information controller. To resolve this, Ng, R., et al. (2025) introduced SEA-LION (Southeast Asian Languages in One Network), a family of language models designed and instruction-tuned for under-represented Southeast Asian languages, including Tagalog and Filipino. The Llama-SEA-LION-v3.5-8B-R model offers a decoder architecture with reasoning capabilities and a 128K context length, making it suitable for localized natural language processing tasks. Gravitee (2026) emphasized the importance of performing automated data redaction before data interacts with any external AI system to mitigate PII exposure and support regulatory compliance framework workflows. By keeping the model at 8 billion parameters and running inference directly on the local administrative workstation, Baranguard eliminates external API dependency entirely, ensuring that AI inference remains available on the local network during internet outages and that unredacted incident narratives are never transmitted to external AI services. As Corradini, Leonesi, and Piangerelli (2025) highlight in their review of small language models, localizing inference is a critical architectural decision for maintaining data sovereignty and mitigating the privacy risks associated with external API routing.</p>
-<h2 id="s12">2.2 Gap Bridged by the Study</h2>
-<p>Despite numerous deployments of web-based barangay information systems across the Philippines, a significant gap remains in the integration of resilient emergency dispatch protocols and automated data privacy compliance for rural local government units. Existing systems are predominantly designed as static administrative repositories for resident profiling and certificate issuance, which fail to operate effectively during natural disasters when internet connectivity is severed. Furthermore, traditional digital blotter systems lack automated decision-support mechanisms to process unstructured incident narratives and generate draft PII redactions to support Data Privacy Act of 2012 (RA 10173) compliance workflows. This leaves rural communities highly vulnerable during typhoons and grid failures, where rapid response is critical but communication infrastructure is severely compromised. Furthermore, manual redaction processes often introduce human error, creating severe legal liabilities for local administrators handling sensitive field data.</p>
-<p>This study bridges this gap by developing the Baranguard system, which transitions the traditional electronic blotter into an active, offline-first emergency dispatch platform. The mobile application caches data locally in an embedded SQLite database and employs an SMS best-effort fallback mechanism for transmitting coordinates during partial broadband outages. This design is intended to preserve locally captured incident records during temporary network interruptions and to synchronise them once connectivity is restored. By leveraging cellular network redundancy, the system maintains a vital lifeline between responders and the command center when standard internet pipelines fail. The locally self-hosted Llama-SEA-LION-v3.5-8B-R model automates the summarization and PII redaction of incident records without transmitting data to any external cloud AI service. This local, on-premises inference deployment removes the dependency on continuous external bandwidth for AI processing and keeps incident narratives within the barangay's own infrastructure. The term edge AI is deliberately avoided: inference runs on the administrative workstation, not on the responder's handset, and the mobile device reaches the model over the local network rather than executing it on-device. Consequently, the platform is operationally resilient and supports compliance with applicable data privacy requirements under RA 10173 through automated PII redaction, access controls, and human review, while remaining tailored to the unique linguistic and geographical context of the Philippines.</p>
-<table><caption><strong>Table 0.</strong> Capability Comparison. Reviewed Systems and Baranguard</caption><thead><tr><th><strong>Capability</strong></th><th>WebYu (Tosper et al., 2025</th><th>Digital Barangay (Gasmido et al., 2025)</th><th>DILG BIMS</th><th>Baranguard</th></tr></thead><tbody><tr><td>Resident profiling and records</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Partial</td></tr><tr><td>Certificate and document issuance</td><td>Yes</td><td>Yes</td><td>Yes</td><td>No</td></tr><tr><td>Katarungang Pambarangay module</td><td>No</td><td>No</td><td>Yes</td><td>Lupon packet generation</td></tr><tr><td>Offline-first field data capture</td><td>Not Identified</td><td>Not Identified</td><td>[verify]</td><td>Yes</td></tr><tr><td>Live responder dispatch and tracking</td><td>Not Identified</td><td>Not Identified</td><td>[verify]</td><td>Yes</td></tr><tr><td>SMS fallback channel</td><td>No</td><td>Automated messaging</td><td>[verify]</td><td>Yes (encrypted, best-effort)</td></tr><tr><td>Local AI-assisted PII redaction</td><td>Not Identified</td><td>Not Identified</td><td>[verify]</td><td>Yes</td></tr></tbody></table>
-<h2 id="s13">2.3 Theoretical Framework</h2>
+
+<h3>2.1.3 Data Privacy, Records Custody, and Access Control</h3>
+
+<p>The digitization of incident records introduces data privacy risks, because an incident narrative can contain the names, addresses and circumstances of complainants, respondents and victims. The Data Privacy Act of 2012 (RA 10173) mandates that government agencies and private entities secure personally identifiable information (PII) in their information systems (National Privacy Commission, 2012). In a barangay the custody of such records is also a matter of statute: Section 394(c) of Republic Act No. 7160 makes the Barangay Secretary the keeper of barangay records, so a system that handles incident narratives has to respect who may read, edit and keep them, not only how they are stored.</p>
+
+<p>Two strands of the literature inform how Baranguard handles this. First, Qureshi et al. (2021) argue that critical incident management systems must be privacy-preserving as well as efficient, which supports designs in which access to sensitive incident content is restricted by role and every access is attributable. Second, Perante-Calina (2026) frames digital governance in local government around transparency, accountability, participation and equity, which is consistent with keeping an audit trail of who acted on a record and with keeping a named officer accountable for each decision. Baranguard applies these ideas by confining the confidential narrative to the Secretary and, on the web only, the Chief Tanod, by never sending it to push notifications, SMS or logs, by recording only identifiers and statuses in the audit log, and by permanently destroying the narrative after a fixed retention period.</p>
+
+<p>The literature reviewed also shows that records systems in local government are usually studied as repositories, while the question of how an emergency tool should coexist with the official case records is rarely addressed. Baranguard takes a deliberate position: the DILG's BIMS, with its Katarungang Pambarangay module and electronic blotter, remains the official ledger, and Baranguard concentrates on the operational layer that BIMS does not provide, namely dispatch, responder tracking, SOS and offline field capture.</p>
+
+<h2>2.2 Gap Bridged by the Study</h2>
+
+<p>Despite numerous deployments of web-based barangay information systems across the Philippines, a significant gap remains in the integration of resilient emergency dispatch protocols for rural local government units. Existing systems are predominantly designed as static administrative repositories for resident profiling and certificate issuance, which fail to operate effectively during natural disasters when internet connectivity is severed. This leaves rural communities highly vulnerable during typhoons and grid failures, where rapid response is critical but communication infrastructure is severely compromised. Furthermore, the field responders who carry out the response, the tanods, are mostly volunteers who receive an honorarium, work without a daily time record and report their work in a monthly accomplishment report, so a useful tool must also fit how their duty is scheduled, reported and signed.</p>
+
+<p>This study bridges this gap by developing the Baranguard system, which adds an active, offline-first emergency dispatch layer beside the records that barangays already keep. The mobile application caches data locally in an embedded encrypted SQLite database and employs an SMS best-effort fallback mechanism for transmitting an emergency alert with coordinates during partial broadband outages. This design is intended to preserve locally captured incident records during temporary network interruptions and to synchronise them once connectivity is restored. By leveraging cellular network redundancy, the system maintains a vital lifeline between responders and the command center when standard internet pipelines fail. The central services run on a single administrative workstation inside the barangay, so the dashboard remains reachable over the local network during an internet outage. Consequently, the platform is operationally resilient and supports compliance with applicable data privacy requirements under RA 10173 through access controls, an identifier-only audit log and a fixed retention period, while remaining tailored to the geographical and organizational context of the Philippine barangay. The comparison in Table 1 shows where this study sits relative to the reviewed systems.</p>
+
+<table>
+<caption><strong>Table 1.</strong> <em>Capability Comparison: Reviewed Systems and Baranguard</em></caption>
+<thead><tr><th>Capability</th><th>WebYu (Tosper et al., 2025)</th><th>Digital Barangay (Gasmido et al., 2025)</th><th>DILG BIMS</th><th>Baranguard</th></tr></thead>
+<tbody>
+<tr><td>Resident profiling and records</td><td>Yes</td><td>Yes</td><td>Yes</td><td>No (out of scope)</td></tr>
+<tr><td>Certificate and document issuance</td><td>Yes</td><td>Yes</td><td>Yes</td><td>No (out of scope)</td></tr>
+<tr><td>Katarungang Pambarangay and electronic blotter</td><td>No</td><td>No</td><td>Yes</td><td>No (complements BIMS; records stay in binders)</td></tr>
+<tr><td>Offline-first field data capture</td><td>Not identified</td><td>Not identified</td><td>[verify]</td><td>Yes</td></tr>
+<tr><td>Live responder dispatch and tracking</td><td>Not identified</td><td>Not identified</td><td>[verify]</td><td>Yes</td></tr>
+<tr><td>SMS fallback channel</td><td>No</td><td>Automated messaging</td><td>[verify]</td><td>Yes (encrypted SOS alert, best-effort)</td></tr>
+<tr><td>Tanod duty roster and accomplishment report</td><td>Not identified</td><td>Not identified</td><td>[verify]</td><td>Yes (printed for paper signing)</td></tr>
+</tbody></table>
+<p class="tablenote"><em>Note.</em> "Not identified" means the capability was not found in the published description of the system; it is not a claim that the system lacks it. "[verify]" marks a cell still to be confirmed against DILG documentation.</p>
+
+<h2>2.3 Theoretical Framework</h2>
+
 <p>Endsley's cognitive model divides situational awareness into three hierarchical levels, all of which are addressed by the Baranguard software to ensure that dispatchers and field responders maintain operational clarity.</p>
-<figure><img src="thesis-images/p20-1.png" alt=""><figcaption id="f1"><strong>Figure 1.</strong> <em>Three-Level Situational Awareness Framework as Applied to Baranguard.</em></figcaption></figure>
-<p><em>Note.</em> Adapted from Endsley's (1995) three-level model of situational awareness, as applied to the Baranguard emergency dispatch system. Level 1 (Perception) corresponds to real-time data ingestion; Level 2 (Comprehension) corresponds to AI-assisted synthesis and PII redaction; Level 3 corresponds to historical trend visualisation supporting situational assessment.</p>
+
+<figure><img src="manuscript-images/fig1-situational-awareness.svg" alt="Three levels of situational awareness mapped to Baranguard features"><figcaption id="f1"><strong>Figure 1.</strong> <em>Three-Level Situational Awareness Framework as Applied to Baranguard.</em></figcaption></figure>
+<p><em>Note.</em> Adapted from Endsley's (1995) three-level model of situational awareness, as applied to the Baranguard emergency dispatch system. Level 1 (Perception) corresponds to real-time data ingestion; Level 2 (Comprehension) corresponds to the consolidated dispatch queue, live map and incident detail; Level 3 corresponds to historical trend visualisation supporting situational assessment.</p>
+
 <p>As illustrated in Figure 1, these three levels map directly onto the system's core functional layers:</p>
-<p><strong>Level 1 Perception:</strong> The ability to perceive the status, attributes, and dynamics of relevant elements in the environment. In Baranguard, this corresponds to the system's ability to ingest real-time incident reports, capture exact GPS coordinates from responders, and receive SMS distress signals from offline field tanods.</p>
-<p><strong>Level 2 Comprehension:</strong> The synthesis of Level 1 elements enables the holistic understanding of the situation. Baranguard achieves this by using the locally hosted Llama-SEA-LION SLM to parse and summarize raw, unstructured field data. By filtering informational noise and generating draft PII redactions for the Secretary's review and approval, the system presents clear and actionable intelligence to the dispatch commander through the web dashboard while supporting compliance with applicable data privacy requirements under RA 10173 through automated PII redaction, access controls, and human review.</p>
+
+<p><strong>Level 1 Perception:</strong> The ability to perceive the status, attributes, and dynamics of relevant elements in the environment. In Baranguard, this corresponds to the system's ability to ingest incident reports logged by staff and by tanods in the field, capture the GPS coordinates and duty status of responders, and receive SOS alerts, including the encrypted SMS alerts sent by offline field tanods.</p>
+
+<p><strong>Level 2 Comprehension:</strong> The synthesis of Level 1 elements enables the holistic understanding of the situation. Baranguard achieves this by presenting the elements together on the Dispatch Center: a queue of pending, reopened and dispatched incidents ordered by priority, a live map of tanods, incidents, SOS alerts and community landmarks, the incident detail with its timeline, and counts and badges that agree with one another. The system also reports when one of its own information sources is unavailable, for example when road routing cannot be reached, so that a dispatcher is never given a silent gap or an invented value.</p>
+
 <p><strong>Level 3 Projection:</strong> The ability to anticipate future states based on comprehension of the current situation. Baranguard supports this level indirectly rather than computationally: the system aggregates historical incident records into spatial heatmaps and descriptive trend reports, from which barangay officials form their own judgements about patrol scheduling and resource placement. The system performs no predictive modelling and generates no forecasts; the projection function in Endsley's model is exercised by the human decision-maker, informed by the retrospective evidence the system presents.</p>
-<h2 id="s14">2.4 Concept of the Study</h2>
-<p>The structural development and data flow of the Baranguard system operate on a comprehensive Input-Process-Output (IPO) conceptual model. This framework illustrates the transformation of raw community inputs into structured, actionable intelligence through a locally hosted, resilient processing infrastructure.</p>
-<p><strong>Input:</strong> The system receives raw data from two primary vectors. The first is administrative data, which includes historical blotter records, resident demographic profiles, and barangay structural maps. The second is operational data, comprising citizen incident reports submitted through the public web form, field observations and incident narratives captured by Tanods on the mobile application, and GPS coordinates transmitted or queued by responder devices.</p>
-<p><strong>Process:</strong> The core processing layer runs entirely on the unified administrative workstation within the barangay command centre. The centralised database, the web dashboard, and AI inference are all hosted on this single machine, which remains reachable over the barangay local area network during internet outages. Within this environment, the following mechanisms execute:</p>
-<p>A. <strong><em>Offline-first</em></strong> <strong><em>sync</em></strong> <strong><em>and</em></strong> <strong><em>SMS</em></strong> <strong><em>parsing:</em></strong> The mobile application</p>
-<p>synchronises cached SQLite data to the command centre server when a</p>
-<p>network path is available, whether over cellular data, broadband, or local</p>
-<p>Wi-Fi. Synchronisation is idempotent: a (device_id, client_event_id) pair</p>
-<p>prevents duplicate records when a batch is retried after an interrupted</p>
-<p>upload. During partial outages, the backend SMS parsing engine</p>
-<p>decodes SMS fallback messages into structured database entries.</p>
-<p>B. <strong><em>AI processing (local)</em></strong><em>:</em> The locally hosted Llama-SEA-LION-v3.5-8B-R</p>
-<p>model ingests the narrative text directly on the unified administrative</p>
-<p>workstation. It performs natural language translation, generates concise</p>
-<p>incident summaries, and executes automated PII redaction to enforce</p>
-<p>data privacy compliance, entirely without external API calls. Because</p>
-<p>inference runs on the administrative workstation rather than on an</p>
-<p>external service, AI processing is unaffected by internet outages and</p>
-<p>remains available whenever the workstation is powered and reachable on</p>
-<p>the barangay local area network. When a Tanod device is disconnected</p>
-<p>from that network, incident capture continues locally on the device and</p>
-<p>the narrative is queued; AI processing is applied after the record reaches</p>
-<p>the server.</p>
-<p><strong>Output:</strong> The culmination of processing yields: an access-controlled electronic blotter repository in which finalised records cannot be silently altered, since any amendment copies the superseded narrative into a revision table before the new text is written; dispatch assignments delivered to responder devices; historical incident and hazard heatmaps supporting patrol planning; generated Lupon packets for dispute resolution proceedings; and SMS status notifications sent to citizens who submitted reports through the public web form.</p>
-<p>The complete end-to-end data transformation from raw community inputs to structured actionable intelligence is summarized in Figure 2.</p>
-<figure><img src="thesis-images/p24-1.png" alt=""><figcaption id="f2"><strong>Figure 2.</strong> <em>Input-Process-Output (IPO)</em></figcaption></figure>
-<p><em>Note. The IPO framework illustrates the three-stage data transformation pipeline</em> <em>of the Baranguard system. Inputs consist of administrative and real-time operational</em> <em>data. Processing is performed through offline-first synchronization, SMS parsing, and</em> <em>local AI inference via the Llama-SEA-LION-v3.5-8B-R model. Outputs include the</em> <em>electronic blotter repository, dispatch alerts, heatmap analytics, and SMS confirmation</em> <em>receipts.</em> <strong>2.5 Definition of Terms</strong></p>
+
+<h2>2.4 Concept of the Study</h2>
+
+<p>The structural development and data flow of the Baranguard system operate on a comprehensive Input-Process-Output (IPO) conceptual model. This framework illustrates the transformation of raw operational inputs into structured, actionable information through a locally hosted, resilient processing infrastructure.</p>
+
+<p><strong>Input:</strong> The system receives data from two primary vectors. The first is administrative data, which includes the barangays, user accounts and devices, the school inventory, rosters and the barangay maps. The second is operational data, comprising incident reports logged by staff through the web form (walk-in, phone call, Facebook message or SMS), field observations and incident narratives captured by tanods on the mobile application, GPS coordinates and duty status transmitted or queued by responder devices, and SOS alerts sent over data or by SMS.</p>
+
+<p><strong>Process:</strong> The core processing layer runs on the unified administrative workstation within the barangay command centre. The centralised database and the web dashboard are hosted on this single machine, which remains reachable over the barangay local area network during internet outages. Within this environment, the following mechanisms execute:</p>
+
+<p class="item"><strong>A. Offline-first sync and SMS decoding.</strong> The mobile application synchronises cached SQLite data to the command centre server when a network path is available, whether over cellular data, broadband, or local Wi-Fi. Synchronisation is idempotent: a (device_id, client_event_id) pair prevents duplicate records when a batch is retried after an interrupted upload. During partial outages, a gateway phone attached to the workstation receives the SMS fallback messages, and the backend decodes them into structured entries after verifying and decrypting the envelope.</p>
+
+<p class="item"><strong>B. Dispatch and routing.</strong> The Chief Tanod assigns an incident to a tanod. At night, between 18:00 and 06:00, the system instead sends a dispatch offer to the on-duty tanods in rounds, and the first tanod who accepts is assigned. A road route from the tanod's position to the incident is requested from OpenRouteService when needed; the stored route is reused for a short time, and a straight-line distance is shown, labelled as such, when routing is unavailable.</p>
+
+<p class="item"><strong>C. Access control and audit.</strong> Every request is checked for role, barangay and ownership on the server. Writes from tanod phones are idempotent and signed by a key held on the device. The audit log records identifiers and statuses only, never narratives, credentials or coordinates.</p>
+
+<p class="item"><strong>D. Rostering and reporting.</strong> The Chief Tanod builds and publishes the shift roster, tanods record accomplishment entries, and the Secretary prepares reports. These are produced as A4 printouts that officials sign on paper.</p>
+
+<p><strong>Output:</strong> The culmination of processing yields: dispatch assignments, offers and push alerts delivered to responder devices; a dispatch queue, live map, SOS panel and incident records for the command center; historical incident and hazard heatmaps supporting patrol planning; printed rosters, accomplishment reports and school-zone reports for paper signing; and an audit log of who acted on which record.</p>
+
+<p>The complete end-to-end data transformation is summarized in Figure 2.</p>
+
+<figure><img src="manuscript-images/fig2-ipo.svg" alt="Input, process and output of the Baranguard system"><figcaption id="f2"><strong>Figure 2.</strong> <em>Input-Process-Output (IPO)</em></figcaption></figure>
+<p><em>Note.</em> The IPO framework illustrates the three-stage pipeline of the Baranguard system. Inputs consist of administrative and real-time operational data. Processing is performed on the administrative workstation through offline-first synchronization, SMS decoding, dispatch and routing, access control and audit, and rostering. Outputs include dispatch alerts, the command center views, heatmap analytics and printed reports.</p>
+
+<h2>2.5 Definition of Terms</h2>
+
 <p>The following key terms are defined conceptually and operationally as applied within this capstone project:</p>
-<p><strong>Agile Scrum methodology.</strong> An iterative software engineering framework that emphasizes continuous improvement and rapid delivery through short development cycles. In this study, it serves as the specific lifecycle adopted to build, test, and refine the system in collaboration with Pilar barangay officials.</p>
-<p><strong>Barangay.</strong> The basic political and administrative unit of government in the Philippines responsible for public service delivery. Identifies the primary deployment sites for the system: Barangays Dao, Binanuahan, Marifosque, and Banuyo in Pilar, Sorsogon.</p>
-<p><strong>Baranguard.</strong> Combines "Barangay" and "Vanguard" to represent a frontline defense and administrative response unit in local communities. The official name of the proposed local-server based, offline-first incident reporting and emergency dispatch software developed in this project.</p>
-<p><strong>Data Privacy Act of 2012 (RA 10173).</strong> A Philippine legislative framework designed to protect all forms of private, personal, or sensitive information. Establishes the statutory obligations that the system's privacy controls are designed to support. Complainant and victim details in blotter narratives are proposed for redaction by the language model and confirmed by the Barangay Secretary before a record is finalised.</p>
-<p><strong>Dispatch.</strong> The act of sending personnel, equipment, or resources to a specific destination to execute an emergency or administrative response. The core mechanism within the command center that allows administrators to assign tasks, provide GPS routing, and deploy tanods to incident locations.</p>
-<p><strong>Electronic blotter.</strong> An electronic recording system utilized by law enforcement and local government units to log and monitor daily incident reports. The digital module within the system's dashboard is designed to replace the physical logbooks currently used by the selected barangays.</p>
-<p><strong>Human-in-the-loop validation.</strong> A design pattern in which an automated system produces a proposed output that a designated human operator must explicitly approve before the output takes effect. In Baranguard, the language model's redacted narrative carries draft status until the Barangay Secretary approves it; blotter finalisation is blocked until that approval is recorded.</p>
-<p><strong>Intelligence.</strong> In emergency management, curated, actionable information collected and analyzed to support decision-making. Represents the analytical capabilities of the system, using a small language model to synthesize unstructured incident reports and extract insights for officials.</p>
-<p><strong>ISO/IEC 25010:2023.</strong> The current international standard for software product quality measurement defines characteristics such as functional suitability, performance efficiency, compatibility, interaction capability, reliability, security, maintainability, flexibility, and safety. Acts as the formal evaluation instrument used by IT experts and end-users to rate the technical integrity and user acceptance of the deployed system.</p>
-<p><strong>Local-server deployment.</strong> A hosting arrangement in which application and database services run on hardware physically located at the point of use rather than on remote infrastructure. In Baranguard, the database, web dashboard, and AI inference runtime all operate on a single administrative workstation inside the barangay command centre, which preserves system availability over the local area network during internet outages.</p>
-<p><strong>Offline-first architecture.</strong> A software design paradigm in which an application functions primarily without an active internet connection by storing data locally in an embedded database. Defines the structural framework of the mobile application, enabling field Tanods to capture incidents, record GPS coordinates, and access pre-cached MBTiles map packages during network disconnections, with offline records queued in SQLite for automatic synchronization once server connectivity is restored.</p>
-<p><strong>Personally identifiable information (PII).</strong> Any data that could potentially identify a specific individual, either directly or indirectly, such as names or home addresses. Refers to the sensitive narrative data collected from complainants that the system's locally hosted AI model is programmed to detect and obscure automatically, without transmitting raw data to any external service.</p>
-<p><strong>SMS best-effort fallback.</strong> A communication mechanism that utilizes standard cellular networks to transmit critical data during broadband internet outages. While optimized for partial-outage scenarios as a non-guaranteed protocol, complete network blackouts are instead managed by the offline-first SQLite cache.</p>
-<p><strong>Small language model (SLM).</strong> A compact artificial intelligence model optimized for natural language processing tasks that requires minimal computational overhead. Refers exclusively to the Llama-SEA-LION-v3.5-8B-R model, which is locally self-hosted on the unified administrative workstation and performs all summarization and PII redaction tasks on-premises, with no external API dependency.</p>
-<h1 id="s15">3 Materials and Methods</h1>
-<p>This chapter presents the software, hardware, and methodological framework utilized in the development of Baranguard: Barangay Intelligence and Emergency Dispatch System. The resources and methods were selected based on the requirements of an offline-first architecture, the integration of a locally hosted intelligent language model, and the operational constraints of the target local government units.</p>
-<h2 id="s16">3.1 Materials</h2>
-<p>In line with the project's objective to provide a resilient, local-server-based, and offline-first solution for local governance, the materials were chosen to support high-performance local AI inference, continuous data synchronization, and reliable multi-channel communication without requiring constant, high-bandwidth internet access in the field.</p>
-<h3 id="s17">3.1.1 Software</h3>
-<p>The following software tools and frameworks were utilized in the development of the Baranguard system, with their respective versions summarized in Table 1:</p>
-<p><strong>PHP 8.2 and Node.js.</strong> PHP 8.2 is the primary server-side language, implemented without a web framework using custom routing. Node.js supports supplementary background processing.</p>
-<p><strong>Vanilla JavaScript (ECMAScript 2023+).</strong> Responsible for all dashboard frontend logic and live incident and responder updates. The dashboard is written without a JavaScript framework or bundler; offline resilience is provided by the local hosting of the server itself rather than by client-side caching. Offline data capture is handled exclusively by the mobile application.</p>
-<p><strong>Ionic Framework 8.8.5.</strong> Provides pre-built, mobile-optimized UI components to build the frontend interface for the tanod mobile application, ensuring a native-like experience on Android devices.</p>
-<p><strong>MySQL 8.0 / MariaDB (XAMPP).</strong> Serves as the primary structured relational storage layer hosted locally on the administrative workstation within the barangay command center, securing resident profiles, incident records, and spatial data over the local area network (LAN).</p>
-<p><strong>MapLibre GL JS.</strong> Renders all interactive maps in both platforms — the GIS live-tracking and historical heatmap pages on the dashboard, and the live-map and assignment-detail pages in the mobile application. MapLibre was selected over proprietary alternatives because it renders directly from locally stored MBTiles packages, which is a precondition for offline map display.</p>
-<p><strong>SQLite (via Capacitor).</strong> Operates as the embedded local database within the mobile application, capturing and caching field reports and GPS coordinates during offline periods before synchronising them to the command centre server.</p>
-<p><strong>Capacitor 8.0.</strong> Acts as the bridge that wraps the web-based JavaScript codebase into a native Android container, granting the application access to background notification services and native SMS functions for emergency dispatch alerts.</p>
-<p><strong>Visual Studio Code 1.85+ and Android Studio.</strong> The primary integrated development environments used for writing, debugging, and compiling the full-stack codebase and the final APK file for physical deployment.</p>
-<p><strong>Git and GitHub 2.44.0.</strong> Used for source code management and collaborative team development, ensuring version history is preserved.</p>
-<p><strong>Plain CSS (no framework).</strong> Dashboard styling is implemented in hand-authored CSS without a utility framework or preprocessor, avoiding a build step and keeping the deployed dashboard directly editable by future maintainers, a maintainability consideration for barangay-level deployment where no development toolchain is present.</p>
-<p><strong>Semaphore SMS Gateway and Paired Mobile Device.</strong> Semaphore is utilized as the primary cloud-based SMS gateway provider to transmit emergency dispatch alerts and intercept fallback messages during partial broadband outages. To ensure operational continuity when the barangay hall's local broadband connection fails, a paired mobile phone is tethered directly to the unified administrative workstation. This acts as a localized GSM modem, catching and sending standard text messages independent of terrestrial IP networks.</p>
-<p><strong>XAMPP Server Environment.</strong> Provides the local Apache web server and MariaDB/MySQL database stack hosted directly on the unified administrative workstation, ensuring full command center operations remain functional over LAN during internet broadband blackouts without external cloud hosting dependencies.</p>
-<p><strong>OpenRouteService (ORS).</strong> Provides turn-by-turn navigation routing via its GeoJSON directions endpoint. Routing requires network connectivity; where ORS is unreachable, the application returns a previously cached route where one exists, or reports the route as unavailable. Map display remains functional offline through cached tiles even when routing does not.</p>
-<p><strong>Ollama</strong> <strong>(local</strong> <strong>inference</strong> <strong>runtime).</strong> Used to self-host the Llama-SEA-LION-v3.5-8B-R model on the unified administrative workstation, enabling on-premises AI inference without routing data to external APIs. This supports RA 10173 data privacy workflows by generating draft PII redactions locally for administrative human verification prior to record storage.</p>
-<table><caption><strong>Table 1.</strong> Software Tools and Version</caption><thead><tr><th><strong>Software</strong></th><th><strong>Version</strong></th></tr></thead><tbody><tr><td>PHP</td><td>8.2</td></tr><tr><td>MariaDB (XAMPP)</td><td>10.4</td></tr><tr><td>Apache (XAMPP)</td><td></td></tr><tr><td>Node.js</td><td></td></tr><tr><td>Vanilla JavaScript</td><td>ECMAScript 2023</td></tr><tr><td>MapLibre GL JS</td><td></td></tr><tr><td>OpenRouteService API</td><td>v2 (directions/geojson)</td></tr><tr><td>Ionic Framework</td><td>8.8.5</td></tr><tr><td>Capacitor</td><td>8.0</td></tr><tr><td>React</td><td></td></tr><tr><td>Vite</td><td></td></tr><tr><td>TypeScript</td><td></td></tr><tr><td>Android SDK / target API level</td><td></td></tr><tr><td>Android Studio</td><td>Panda 4</td></tr><tr><td>Visual Studio Code</td><td>1.85+</td></tr><tr><td>Git and GitHub</td><td>2.44.0</td></tr><tr><td>Llama-SEA-LION-v3.5-8B-R</td><td></td></tr><tr><td>Semaphore SMS Gateway</td><td></td></tr><tr><td>Ollama (AI Runtime)</td><td></td></tr></tbody></table>
-<p><em>Note.</em> Versions listed reflect the exact tool and library versions used during development and evaluation, to support reproducibility.</p>
-<p><strong>eGIF Compliance.</strong> In accordance with the DICT's e-Government Interoperability Framework (eGIF) v2.0, the system's REST API endpoints use JSON as the standard data exchange format, conforming to eGIF's mandate for open, non-proprietary standards in government information systems. SMS message encoding follows the standard GSM 03.38 character set for maximum compatibility across Philippine mobile networks. No proprietary or closed-format data exchange protocols are used in inter-system communication. Where the system interfaces with cloud infrastructure, standard HTTPS with TLS 1.3 encryption is employed, consistent with eGIF's security interoperability guidelines. While formal eGIF compliance audits are primarily mandated for higher-level government agencies (cities and municipalities), Baranguard voluntarily adopts these eGIF v2.0 interoperability standards. This proactive compliance ensures the barangay-level system can seamlessly integrate with the DICT's larger e-Government architecture in the future.</p>
-<h3 id="s18">3.1.2 SLM Model Selection Rationale</h3>
-<p>The integration of artificial intelligence for text summarization and automated PII redaction relies on selecting a model capable of interpreting the linguistic nuances of the Philippines. As detailed in Table 2, the Llama-SEA-LION-v3.5-8B-R model was selected as the locally self-hosted SLM over other baseline models based on the following criteria:</p>
-<p><strong>Filipino language competency.</strong> The primary determinant is the model's ability to perform natural language processing tasks on barangay blotter text, which characteristically contains code-switched Taglish, Filipino proper names, and regional dialects. Developed by AI Singapore to address the under-representation of Southeast Asian languages, it was instruction-tuned on Filipino and evaluated on the SEA-HELM multilingual benchmark, outperforming generalized global models on regional tasks Ng, R., et al. (2025).</p>
-<p><strong>Reasoning and context length.</strong> The model possesses a 128K context length and specialized reasoning capability (the "-R" designation), critical for accurately detecting context-dependent PII and translating convoluted field narratives without hallucinating facts.</p>
-<p><strong>Local inference efficiency.</strong> At 8 billion parameters, the model functions as a small language model that requires significantly less computational overhead than massive models, allowing for cost-efficient, low-latency local inference on the unified administrative workstation. Running inference locally via Ollama keeps AI features available whenever the administrative workstation is running, independently of internet connectivity, and ensures that unredacted incident narratives are never transmitted to an external AI service. Unredacted narratives remain within the barangay's own deployment environment throughout processing. This supports both the offline-first design contract and RA 10173 compliance workflows by keeping raw narratives on-premises while generating draft PII redactions for administrative human verification prior to record storage.</p>
-<table><caption><strong><em>Table 2.</em></strong> <em>SLM Model Comparison</em></caption><thead><tr><th><strong>Model</strong></th><th><strong>Parameters</strong></th><th><strong>Context</strong> <strong>Length</strong></th><th><strong>Filipino NLP</strong> <strong>Competency</strong></th><th><strong>SEA-HELM</strong> <strong>Benchmark Score</strong></th></tr></thead><tbody><tr><td>Llama-SEA-LION-v3.5-8B-R <em>(selected)</em></td><td>8B</td><td>128K</td><td>Explicitly trained on Filipino; SEA-HELM validated Ng, R., et al. (2025).</td><td>Outperformed global models in Filipino and Tagalog NLP tasks Ng, R., et al. (2025).</td></tr><tr><td>Phi-3 Mini 3.8B</td><td>3.8B</td><td>4K / 128K</td><td>English-centric; documented multilingual limitations</td><td>Not evaluated on SEA-HELM</td></tr><tr><td>Gemma 2B</td><td>2B</td><td>8K</td><td>No Filipino-specific training</td><td>Not evaluated on SEA-HELM</td></tr></tbody></table>
-<p><em>Note.</em> Selection criteria prioritized Filipino language competency, reasoning capability, context length, and local inference efficiency on the unified administrative workstation. SEA-HELM = Southeast Asian Languages Holistic Evaluation and Alignment Metric.</p>
-<h3 id="s19">3.1.3 Hardware</h3>
-<p>The hardware resources employed for development and field deployment are outlined below. Because the system is designed for deployment on a single workstation rather than on dedicated server hardware, no rack-mounted or clustered infrastructure is required at the barangay hall. To ensure deployment feasibility and cost-efficiency for rural local government units, the local AI inference environment and the dispatcher dashboard are combined into a single unified machine. This workstation is configured to use 4-bit quantization via Ollama, reducing the memory footprint of the 8B-parameter model and allowing the web interface and the inference runtime to operate concurrently on one machine. Concurrent operation was treated as a testable requirement rather than an assumption: dashboard API responses were required to complete within two seconds while an inference request was in progress, with measured throughput, first-token latency, and memory utilisation reported in the performance testing results. The specific hardware requirements for the development, unified administrative, and field deployment phases are outlined in Table 3.</p>
-<table><caption><strong><em>Table 3.</em></strong> <em>Hardware Specifications</em></caption><thead><tr><th><strong>Device</strong></th><th><strong>Role</strong></th><th><strong>Specifications</strong></th></tr></thead><tbody><tr><td>Development workstations</td><td>Primary machines for coding, API integration, and local server configuration</td><td>Intel Core i5 / AMD Ryzen 5 equivalent, 16 GB RAM, 512 GB SSD, Windows 11</td></tr><tr><td>Unified Administrative Workstation</td><td>Acts concurrently as the web-based command center for dispatchers and the local SLM inference server (Ollama) for on-premises AI processing</td><td>Minimum: 6-Core CPU (Intel Core i5 / AMD Ryzen 5), 16 GB RAM, 6 GB+ VRAM GPU (Recommended for low-latency AI), Windows 10/11 or Linux</td></tr><tr><td>Android mobile devices</td><td>Field testing and deployment for the tanod mobile application</td><td>Minimum Android 9.0 (Pie), 2 GB+ RAM, active cellular reception, GPS module</td></tr></tbody></table>
-<h2 id="s20">3.2 Software Methodology</h2>
-<p>The Agile Scrum framework was adopted as the development methodology for this project. Scrum was selected over traditional Waterfall and Rapid Application Development (RAD) because it provides time-boxed checkpoints (sprints) that allow barangay officials to test the SMS fallback mechanisms and AI draft PII redaction review workflows continuously, ensuring complex components align with on-the-ground public safety requirements, as compared in Table 4. The standard Agile Scrum process utilized throughout the system's development life cycle is illustrated in Figure 3 below.</p>
-<figure><img src="thesis-images/p36-1.png" alt=""><figcaption id="f3">Figure 3. Agile Scrum Development Process Applied to Baranguard.</figcaption></figure>
+
+<p class="def"><strong>Accomplishment report.</strong> The monthly report in which a tanod lists the work done, with the confirmed duration of each entry. In this study it is the tanod's record of service, printed and signed on paper, and it is not an automatic attendance record.</p>
+
+<p class="def"><strong>Agile Scrum methodology.</strong> An iterative software engineering framework that emphasizes continuous improvement and rapid delivery through short development cycles. In this study, it serves as the specific lifecycle adopted to build, test, and refine the system in collaboration with Pilar barangay officials.</p>
+
+<p class="def"><strong>Barangay.</strong> The basic political and administrative unit of government in the Philippines responsible for public service delivery. Identifies the primary deployment sites for the system: Barangays Dao, Binanuahan, Marifosque, and Banuyo in Pilar, Sorsogon.</p>
+
+<p class="def"><strong>Baranguard.</strong> Combines "Barangay" and "Vanguard" to represent a frontline defense and administrative response unit in local communities. The official name of the proposed local-server based, offline-first emergency dispatch software developed in this project.</p>
+
+<p class="def"><strong>BIMS (Barangay Information Management System).</strong> The information system of the Department of the Interior and Local Government that barangays are directed to use, including its Katarungang Pambarangay module and electronic blotter. Baranguard complements it and does not replace it.</p>
+
+<p class="def"><strong>Chief Tanod.</strong> The head of the barangay tanods. In the system the Chief Tanod uses the Admin account to dispatch tanods, build rosters and manage users and devices, but is not a responder in the system.</p>
+
+<p class="def"><strong>Data Privacy Act of 2012 (RA 10173).</strong> A Philippine legislative framework designed to protect all forms of private, personal, or sensitive information. Establishes the statutory obligations that the system's privacy controls are designed to support. The confidential narrative of an incident is readable only by the Secretary and, on the web, the Chief Tanod, and is destroyed after one year.</p>
+
+<p class="def"><strong>Dispatch.</strong> The act of sending personnel, equipment, or resources to a specific destination to execute an emergency or administrative response. The core mechanism within the command center that allows the Chief Tanod to assign a tanod to an incident and provides GPS routing.</p>
+
+<p class="def"><strong>Dispatch offer.</strong> At night, a request sent to the on-duty tanods that is accepted by the first tanod who responds while online, who is then assigned to the incident.</p>
+
+<p class="def"><strong>Incident record.</strong> The operational record of a reported matter in Baranguard, with its type, priority, status, location, report channel and, for the Secretary, a confidential narrative. It is not the barangay's official blotter entry.</p>
+
+<p class="def"><strong>Intelligence.</strong> In emergency management, curated, actionable information collected and analyzed to support decision-making. Represents the analytical capabilities of the system, which consolidate reports, positions and history into a dispatch queue, live map, heatmaps and statistics for officials.</p>
+
+<p class="def"><strong>ISO/IEC 25010:2023.</strong> The current international standard for software product quality measurement defines characteristics such as functional suitability, performance efficiency, compatibility, interaction capability, reliability, security, maintainability, flexibility, and safety. Acts as the formal evaluation instrument used by IT experts and end-users to rate the technical integrity and user acceptance of the deployed system.</p>
+
+<p class="def"><strong>Local-server deployment.</strong> A hosting arrangement in which application and database services run on hardware physically located at the point of use rather than on remote infrastructure. In Baranguard, the database and the web dashboard operate on a single administrative workstation inside the barangay command centre, which preserves system availability over the local area network during internet outages.</p>
+
+<p class="def"><strong>Offline-first architecture.</strong> A software design paradigm in which an application functions primarily without an active internet connection by storing data locally in an embedded database. Defines the structural framework of the mobile application, enabling field Tanods to capture incidents, record GPS coordinates, and access pre-cached MBTiles map packages during network disconnections, with offline records queued in SQLite for automatic synchronization once server connectivity is restored.</p>
+
+<p class="def"><strong>Paper-first signing.</strong> The practice, adopted in this study, that rosters, accomplishment reports and school-zone reports are printed and signed on paper outside the application. The application does not record signatures or approvals.</p>
+
+<p class="def"><strong>Personally identifiable information (PII).</strong> Any data that could potentially identify a specific individual, either directly or indirectly, such as names or home addresses. Refers to the sensitive data in incident narratives that the system's access controls, audit rules and retention rule are designed to protect.</p>
+
+<p class="def"><strong>Roster.</strong> The schedule of shifts of the tanods. It is drafted by the Chief Tanod, published to the tanods, and printed for signing.</p>
+
+<p class="def"><strong>SMS best-effort fallback.</strong> A communication mechanism that utilizes standard cellular networks to transmit a critical alert during broadband internet outages. While optimized for partial-outage scenarios as a non-guaranteed protocol, complete network blackouts are instead managed by the offline-first SQLite cache.</p>
+
+<p class="def"><strong>Tanod.</strong> A barangay peace-and-order volunteer who responds to incidents in the field. The only role that uses the Android application.</p>
+
+<h1>3 Materials and Methods</h1>
+
+<p>This chapter presents the software, hardware, and methodological framework utilized in the development of Baranguard: Barangay Intelligence and Emergency Dispatch System. The resources and methods were selected based on the requirements of an offline-first architecture, a single-workstation local deployment, and the operational constraints of the target local government units.</p>
+
+<h2>3.1 Materials</h2>
+
+<p>In line with the project's objective to provide a resilient, local-server-based, and offline-first solution for local governance, the materials were chosen to support dependable local hosting, continuous data synchronization, and reliable multi-channel communication without requiring constant, high-bandwidth internet access in the field.</p>
+
+<h3>3.1.1 Software</h3>
+
+<p>The following software tools and frameworks were utilized in the development of the Baranguard system, with their respective versions summarized in Table 2:</p>
+
+<p class="item"><strong>PHP 8.2.</strong> The primary server-side language, implemented without a web framework using custom routing and serving all API endpoints. Node.js is used only for command-line tooling and tests.</p>
+
+<p class="item"><strong>Vanilla JavaScript (ECMAScript 2023+).</strong> Responsible for all dashboard frontend logic and live incident and responder updates. The dashboard is written without a JavaScript framework or bundler; offline resilience is provided by the local hosting of the server itself rather than by client-side caching. Offline data capture is handled exclusively by the mobile application.</p>
+
+<p class="item"><strong>Ionic React 9 on React 19, with Vite and TypeScript.</strong> Provide the mobile-optimized UI components and the build chain of the tanod mobile application, ensuring a native-like experience on Android devices.</p>
+
+<p class="item"><strong>MariaDB 10.4 (XAMPP).</strong> Serves as the primary structured relational storage layer hosted locally on the administrative workstation within the barangay command center, holding user accounts, incident records, dispatches, rosters and spatial data over the local area network (LAN). The schema is built from numbered, never-edited migrations.</p>
+
+<p class="item"><strong>MapLibre GL JS.</strong> Renders all interactive maps in both platforms: the live map and heatmap pages on the dashboard, and the live-map and assignment-detail pages in the mobile application. The mobile application reads locally stored MBTiles packages, which is a precondition for offline map display. The web dashboard uses OpenStreetMap raster tiles and a boundary of each barangay taken from the PSA/PSGC barangay polygons.</p>
+
+<p class="item"><strong>SQLite with SQLCipher (via Capacitor).</strong> Operates as the encrypted embedded local database within the mobile application, capturing and caching field reports, GPS coordinates, shifts and accomplishment entries during offline periods before synchronising them to the command centre server.</p>
+
+<p class="item"><strong>Capacitor 8.</strong> Acts as the bridge that wraps the web-based JavaScript codebase into a native Android container, granting the application access to background location, push notification services, a device-held signing key and native SMS functions for the emergency fallback alert.</p>
+
+<p class="item"><strong>Visual Studio Code and Android Studio.</strong> The primary integrated development environments used for writing, debugging, and compiling the full-stack codebase and the final APK file for physical deployment.</p>
+
+<p class="item"><strong>Git and GitHub.</strong> Used for source code management and collaborative team development, ensuring version history is preserved.</p>
+
+<p class="item"><strong>Plain CSS (no framework).</strong> Dashboard styling is implemented in hand-authored CSS with a token-based design system and a single self-hosted typeface, without a utility framework or preprocessor, avoiding a build step and keeping the deployed dashboard directly editable by future maintainers, a maintainability consideration for barangay-level deployment where no development toolchain is present.</p>
+
+<p class="item"><strong>Local GSM gateway (paired mobile device).</strong> To carry emergency fallback messages when broadband fails, an Android phone with its own SIM is tethered to the unified administrative workstation and runs a small gateway application. It receives the encrypted SOS messages sent by tanod phones and sends dispatch text messages over the cellular network, independently of terrestrial IP networks. No cloud SMS provider is used.</p>
+
+<p class="item"><strong>XAMPP Server Environment.</strong> Provides the local Apache web server and MariaDB database stack hosted directly on the unified administrative workstation, ensuring full command center operations remain functional over LAN during internet broadband blackouts without external cloud hosting dependencies.</p>
+
+<p class="item"><strong>Cloudflare Tunnel.</strong> A persistent outbound tunnel from the workstation that gives the web dashboard and the API a stable public address, so that tanod phones can reach the server away from the barangay LAN. It adds no hosting: the data stays on the workstation.</p>
+
+<p class="item"><strong>OpenRouteService (ORS).</strong> Provides turn-by-turn navigation routing via its GeoJSON directions endpoint. Routing requires network connectivity and spends a daily request quota, so the system reuses a recent route, caches its health check, and pauses requests after a failure. Where ORS is unreachable, the application returns a previously stored route where one exists, or a labelled straight-line distance, or reports the route as unavailable. Map display remains functional offline through cached tiles even when routing does not.</p>
+
+<p class="item"><strong>Firebase Cloud Messaging (FCM).</strong> Delivers push notifications (assignments, dispatch offers, SOS) to the tanod phones. The notification body never carries an incident narrative.</p>
+
+<table>
+<caption><strong>Table 2.</strong> <em>Software Tools and Version</em></caption>
+<thead><tr><th>Software</th><th>Version</th></tr></thead>
+<tbody>
+<tr><td>PHP</td><td>8.2.12</td></tr>
+<tr><td>MariaDB (XAMPP)</td><td>10.4.32</td></tr>
+<tr><td>Apache (XAMPP)</td><td>2.4.58</td></tr>
+<tr><td>Node.js (tooling and tests only)</td><td>24.14.0</td></tr>
+<tr><td>Vanilla JavaScript</td><td>ECMAScript 2023</td></tr>
+<tr><td>MapLibre GL JS (web, vendored / mobile)</td><td>4.7.1 / 6.9</td></tr>
+<tr><td>OpenRouteService API</td><td>v2 (directions/geojson)</td></tr>
+<tr><td>Ionic React</td><td>9</td></tr>
+<tr><td>React</td><td>19.0</td></tr>
+<tr><td>Capacitor</td><td>8.5</td></tr>
+<tr><td>@capacitor-community/sqlite (SQLCipher)</td><td>8.1</td></tr>
+<tr><td>Vite</td><td>8</td></tr>
+<tr><td>TypeScript</td><td>5.9</td></tr>
+<tr><td>Android SDK (compile and target / minimum)</td><td>API 36 / API 24</td></tr>
+<tr><td>Gradle / JDK</td><td>8.14.3 / 21</td></tr>
+<tr><td>Android Studio</td><td>Panda 4</td></tr>
+<tr><td>Visual Studio Code</td><td>1.85+</td></tr>
+<tr><td>Git</td><td>2.53</td></tr>
+<tr><td>Cloudflare Tunnel (cloudflared)</td><td>2026.9.3</td></tr>
+</tbody></table>
+<p class="tablenote"><em>Note.</em> Versions listed reflect the exact tool and library versions used during development and evaluation, to support reproducibility. Dashboard fonts are self-hosted (Inter) so that the dashboard renders identically without internet access.</p>
+
+<p><strong>eGIF Compliance.</strong> In accordance with the DICT's e-Government Interoperability Framework (eGIF) v2.0, the system's REST API endpoints use JSON as the standard data exchange format, conforming to eGIF's mandate for open, non-proprietary standards in government information systems. SMS message encoding follows the standard GSM 03.38 character set for maximum compatibility across Philippine mobile networks. No proprietary or closed-format data exchange protocols are used in inter-system communication. Where the system interfaces with cloud infrastructure, standard HTTPS with TLS encryption is employed, consistent with eGIF's security interoperability guidelines. While formal eGIF compliance audits are primarily mandated for higher-level government agencies (cities and municipalities), Baranguard voluntarily adopts these eGIF v2.0 interoperability standards. This proactive compliance ensures the barangay-level system can seamlessly integrate with the DICT's larger e-Government architecture in the future.</p>
+
+<h3>3.1.2 Hardware</h3>
+
+<p>The hardware resources employed for development and field deployment are outlined below. Because the system is designed for deployment on a single workstation rather than on dedicated server hardware, no rack-mounted or clustered infrastructure is required at the barangay hall. The workstation runs the web dashboard, the API and the database; it requires no graphics processor, because no artificial intelligence workload is hosted on it. A phone with a SIM card is tethered to the workstation as the SMS gateway. The specific hardware used for the development, unified administrative, and field deployment phases is outlined in Table 3.</p>
+
+<table>
+<caption><strong>Table 3.</strong> <em>Hardware Specifications</em></caption>
+<thead><tr><th>Device</th><th>Role</th><th>Specifications</th></tr></thead>
+<tbody>
+<tr><td>Development and administrative workstation</td><td>Primary machine for coding, API integration and local server configuration; also serves as the web-based command center, API and database host</td><td>Intel Core i5-1235U (12th Gen), about 8 GB RAM (7.7 GB usable), integrated graphics, Windows 11</td></tr>
+<tr><td>Android mobile devices</td><td>Field testing and deployment for the tanod mobile application</td><td>Minimum Android 7.0 (API 24), GPS module, active cellular reception; tested on an Infinix X6840 and a Samsung Galaxy A21s</td></tr>
+<tr><td>SMS gateway phone</td><td>Receives encrypted SOS messages and sends dispatch texts over its own SIM</td><td>Android phone with a SIM card and SMS permission, connected to the workstation by USB</td></tr>
+</tbody></table>
+
+<h2>3.2 Software Methodology</h2>
+
+<p>The Agile Scrum framework was adopted as the development methodology for this project, consistent with its documented use in Filipino IT capstone projects (Ng, 2025). Scrum was selected over traditional Waterfall and Rapid Application Development (RAD) because it provides time-boxed checkpoints (sprints) that allow barangay officials to test the SMS fallback mechanism, the dispatch workflow and the paper-based reporting workflow continuously, ensuring complex components align with on-the-ground public safety requirements, as compared in Table 4. The standard Agile Scrum process utilized throughout the system's development life cycle is illustrated in Figure 3 below.</p>
+
+<figure><img src="manuscript-images/fig3-agile-scrum.png" alt="Agile Scrum development process"><figcaption id="f3"><strong>Figure 3.</strong> <em>Agile Scrum Development Process Applied to Baranguard.</em></figcaption></figure>
 <p><em>Note.</em> This diagram illustrates the iterative Scrum cycle followed throughout the project's nine development phases, from the Pre-Sprint baseline measurement collection through Sprint 8 (User Acceptance Testing and ISO/IEC 25010:2023 evaluation). Each sprint followed the standard cycle of sprint planning, development, review, and retrospective described in Sections 3.2.1 through 3.2.5. The specific backlog item and duration for each sprint are detailed in Table 6.</p>
-<table><caption><strong><em>Table 4.</em></strong> <em>Agile Methodology Comparison</em></caption><thead><tr><th><strong>Criterion</strong></th><th><strong>Scrum</strong> <strong><em>(selected)</em></strong></th><th><strong>Waterfall</strong></th><th><strong>RAD</strong></th></tr></thead><tbody><tr><td>Stakeholder validation</td><td>Bi-weekly sprint reviews</td><td>End of project cycle only</td><td>Prototype-focused only</td></tr><tr><td>Scope control</td><td>Managed via product backlog</td><td>Rigid, inflexible requirements</td><td>Scope tends to expand</td></tr><tr><td>Complex integrations</td><td>Sprint-by-sprint integration</td><td>Sequential, late-stage integration</td><td>Limited to rapid prototypes</td></tr></tbody></table>
-<h3 id="s21">3.2.0 Baseline Measurement</h3>
+
+<table>
+<caption><strong>Table 4.</strong> <em>Agile Methodology Comparison</em></caption>
+<thead><tr><th>Criterion</th><th>Scrum (selected)</th><th>Waterfall</th><th>RAD</th></tr></thead>
+<tbody>
+<tr><td>Stakeholder validation</td><td>Bi-weekly sprint reviews</td><td>End of project cycle only</td><td>Prototype-focused only</td></tr>
+<tr><td>Scope control</td><td>Managed via product backlog</td><td>Rigid, inflexible requirements</td><td>Scope tends to expand</td></tr>
+<tr><td>Complex integrations</td><td>Sprint-by-sprint integration</td><td>Sequential, late-stage integration</td><td>Limited to rapid prototypes</td></tr>
+</tbody></table>
+
+<h3>3.2.0 Baseline Measurement</h3>
+
 <p>Prior to Sprint 0, the research team conducted structured observation sessions and semi-structured interviews with tanods and barangay officials across the four target barangays to establish pre-intervention performance baselines. These baseline metrics serve as the quantitative comparator against which post-deployment ISO 25010:2023 evaluation scores and self-reported efficiency improvements are contextualized.</p>
-<p>The following metrics were collected from each barangay through a minimum of two observation sessions and three staff interviews per barangay: 1. <strong>Blotter logging time:</strong> The average time (in minutes) required for a tanod or</p>
-<p>secretary to manually write and file a complete blotter entry from the moment an</p>
-<p>incident is verbally reported, including time spent locating the correct logbook,</p>
-<p>writing the narrative, and obtaining a supervisor signature. 2. <strong>Tanod dispatch time:</strong> The average time (in minutes) for a dispatcher to identify</p>
-<p>an available tanod, contact them via mobile application alert or SMS fallback, and</p>
-<p>confirm their deployment to an incident location. 3. <strong>Data integrity error rate:</strong> The number of documented data loss or legibility</p>
-<p>incidents per quarter, including lost logbook pages, water-damaged entries,</p>
-<p>illegible handwriting flagged during audit, and entries with missing required fields. 4. <strong>Post-deployment comparison:</strong> The same three metrics were re-measured after</p>
-<p>the deployment period. Blotter logging time and dispatch coordination time were</p>
-<p>captured from system timestamps rather than by observation, specifically, the</p>
-<p>interval between incident record creation and record finalization, and the interval</p>
-<p>between dispatch creation and responder acknowledgement, which removes</p>
-<p>observer effects from the post-intervention measure. Because the</p>
-<p>pre-intervention measure is observational and the post-intervention measure is</p>
-<p>instrumented, the two are not statistically equivalent; the comparison is reported</p>
-<p>as an indicative operational change rather than a controlled experimental result.</p>
-<h3 id="s22">3.2.1 Project Initialization and Defining the Product Backlog</h3>
-<table><caption><strong><em>Table 5.</em></strong> <em>The User Stories</em></caption><thead><tr><th><strong>Item</strong></th><th><strong>User Story</strong></th></tr></thead><tbody><tr><td>1</td><td>As a dispatcher, I want to view a GIS heatmap so that I can visualize high-risk incident zones.</td></tr><tr><td>2</td><td>As a dispatcher, I want to track tanods via GPS so that I can deploy the closest responder to an emergency.</td></tr><tr><td>3</td><td>As a tanod, I want to log incident details offline so that I can capture data even when typhoon winds disrupt mobile internet.</td></tr><tr><td>4</td><td>As a tanod, I want the application to automatically send an SMS fallback alert so that my dispatch coordinates reach the command center when broadband fails and cellular signal is still available.</td></tr><tr><td>5</td><td>As an administrator, I want the system to automatically generate draft PII redactions for administrative review so that narratives can be reviewed and cleared of personal information before any public-facing record is produced.</td></tr><tr><td>6</td><td>As a dispatcher, I want the SLM to automatically summarize unstructured field notes so that I can quickly grasp the nature of the emergency.</td></tr></tbody></table>
+
+<p>The following metrics were collected from each barangay through a minimum of two observation sessions and three staff interviews per barangay:</p>
+<ol class="objectives">
+<li><strong>Incident recording time:</strong> The average time (in minutes) required for a tanod or staff member to manually write and file a complete incident entry from the moment an incident is verbally reported, including time spent locating the correct logbook, writing the narrative, and obtaining a supervisor signature.</li>
+<li><strong>Tanod dispatch time:</strong> The average time (in minutes) for the Chief Tanod to identify an available tanod, contact them via mobile application alert or SMS, and confirm their deployment to an incident location.</li>
+<li><strong>Data integrity error rate:</strong> The number of documented data loss or legibility incidents per quarter, including lost logbook pages, water-damaged entries, illegible handwriting flagged during audit, and entries with missing required fields.</li>
+<li><strong>Post-deployment comparison:</strong> The same three metrics were re-measured after the deployment period. Dispatch coordination time was captured from system timestamps rather than by observation, specifically, the interval between dispatch creation and responder acknowledgement, and incident recording time was captured by timing a staff member entering a standard test incident, which removes observer effects from the post-intervention measure. Because the pre-intervention measure is observational and the post-intervention measure is instrumented, the two are not statistically equivalent; the comparison is reported as an indicative operational change rather than a controlled experimental result.</li>
+</ol>
+
+<h3>3.2.1 Project Initialization and Defining the Product Backlog</h3>
+
+<table>
+<caption><strong>Table 5.</strong> <em>The User Stories</em></caption>
+<thead><tr><th>Item</th><th>User Story</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>As the Chief Tanod, I want to view a GIS heatmap so that I can visualize high-risk incident zones.</td></tr>
+<tr><td>2</td><td>As the Chief Tanod, I want to track tanods via GPS so that I can deploy the closest responder to an emergency.</td></tr>
+<tr><td>3</td><td>As a tanod, I want to log incident details offline so that I can capture data even when typhoon winds disrupt mobile internet.</td></tr>
+<tr><td>4</td><td>As a tanod, I want the application to automatically send an SMS fallback alert so that my emergency coordinates reach the command center when broadband fails and cellular signal is still available.</td></tr>
+<tr><td>5</td><td>As the Chief Tanod, I want an incident logged from a walk-in, phone call, Facebook message or SMS to record how it reached the barangay so that the record shows its source.</td></tr>
+<tr><td>6</td><td>As the Chief Tanod, I want to send a night dispatch offer to on-duty tanods so that the first available tanod is assigned without phoning each one.</td></tr>
+<tr><td>7</td><td>As the Barangay Secretary, I want to be the only one who edits the incident lifecycle and the complainant's name so that records custody stays with the Secretary.</td></tr>
+<tr><td>8</td><td>As the Chief Tanod, I want to publish the tanod roster, and as a tanod to submit my accomplishment report, so that both can be printed and signed on paper.</td></tr>
+<tr><td>9</td><td>As the Punong Barangay, I want a read-only dashboard, analytics and approvals view so that I can oversee operations without handling cases.</td></tr>
+</tbody></table>
+
 <p>The development process was initiated through a formal kick-off meeting with representatives from the four target barangays in Pilar, Sorsogon. Through semi-structured interviews and prototype reviews, the team identified the operational bottlenecks in current manual incident reporting processes. These requirements were consolidated into a formalized product backlog, which serves as the prioritized list of all features needed for the system, as detailed in Table 5 above.</p>
-<h3 id="s23">3.2.2 Sprint Planning</h3>
+
+<h3>3.2.2 Sprint Planning</h3>
+
 <p>The project was divided into a pre-sprint phase for baseline measurement and an eight-sprint development cycle, as outlined in Table 6.</p>
-<table><caption><strong><em>Table 6.</em></strong> <em>Sprint Backlog and Release Plan</em></caption><thead><tr><th><strong>Item</strong></th><th><strong>Sprint Backlog Description</strong></th><th><strong>Sprint</strong></th><th><strong>Week</strong></th></tr></thead><tbody><tr><td>0</td><td>Baseline measurement collection and pre-intervention documentation</td><td>Pre-Sprint</td><td>Week 0</td></tr><tr><td>1</td><td>Local server environment setup (XAMPP/MariaDB) and database schema design</td><td>Sprint 0</td><td>Week 1–2</td></tr><tr><td>2</td><td>Development of web-based command center and GIS dashboard</td><td>Sprint 1</td><td>Week 3–4</td></tr><tr><td>3</td><td>Development of mobile application UI and offline SQLite caching engine</td><td>Sprint 2</td><td>Week 5–6</td></tr><tr><td>4</td><td>Integration of real-time GPS tracking and asynchronous local server sync</td><td>Sprint 3</td><td>Week 7–8</td></tr><tr><td>5</td><td>SMS gateway integration and data-to-SMS parsing fallback protocol</td><td>Sprint 4</td><td>Week 9–10</td></tr><tr><td>6</td><td>Local inference server setup (Ollama) and integration of Llama-SEA-LION-v3.5-8B-R</td><td>Sprint 5</td><td>Week 11–12</td></tr><tr><td>7</td><td>Development and validation of the PII redaction pipeline (prompt configuration and evaluation harness)</td><td>Sprint 6</td><td>Week 13–14</td></tr><tr><td>8</td><td>Role-based access control, security hardening, and integration testing</td><td>Sprint 7</td><td>Week 15–16</td></tr><tr><td>9</td><td>User acceptance testing (UAT) and ISO/IEC 25010:2023 evaluation</td><td>Sprint 8</td><td>Week 17–18</td></tr></tbody></table>
-<h3 id="s24">3.2.3 Sprint Development</h3>
-<p>During the sprint development phase, the team executed the planned technical tasks. The web platform was built and deployed to the XAMPP environment on the unified administrative workstation, while the Android APK was compiled using Ionic and Capacitor. The locally hosted Llama-SEA-LION-v3.5-8B-R model was configured to run on the unified administrative workstation with no external API dependencies. Progress was tracked through recorded stand-up sessions logged in the team development log, with issues — particularly SMS gateway latency and local inference optimisation, raised and resolved against the sprint backlog, and code branches merged using Git.</p>
-<h3 id="s25">3.2.4 Sprint Review</h3>
-<p>At the conclusion of each two-week sprint, a functioning software increment was demonstrated to the user acceptance testing team, which included barangay officials and tanods. End-users tested new features, such as testing the mobile application in airplane mode to verify SMS fallback triggers and testing local AI summarization on sample Taglish narratives, and provided immediate feedback on operational viability.</p>
-<h3 id="s26">3.2.5 Sprint Retrospective</h3>
-<p>Following each sprint review, the development team conducted an internal retrospective to evaluate their workflow. They discussed what engineering practices succeeded and what required adjustment, such as optimizing the local inference speed and refining the NLP prompts sent to the Llama-SEA-LION model to reduce hallucination rates on regional dialect inputs. By identifying these core performance issues early, developers systematically eliminated technical debt, integrated localized automated testing pipelines, and enhanced overall system predictability. These process adjustments ensured high code quality and team efficiency throughout the development cycle.</p>
-<h2 id="s27">3.3 Evaluation Procedure</h2>
+
+<table>
+<caption><strong>Table 6.</strong> <em>Sprint Backlog and Release Plan</em></caption>
+<thead><tr><th>Item</th><th>Sprint Backlog Description</th><th>Sprint</th><th>Week</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>Baseline measurement collection and pre-intervention documentation</td><td>Pre-Sprint</td><td>Week 0</td></tr>
+<tr><td>1</td><td>Local server environment setup (XAMPP/MariaDB) and database schema design</td><td>Sprint 0</td><td>Week 1–2</td></tr>
+<tr><td>2</td><td>Development of web-based command center and GIS dashboard</td><td>Sprint 1</td><td>Week 3–4</td></tr>
+<tr><td>3</td><td>Development of mobile application UI and offline SQLite caching engine</td><td>Sprint 2</td><td>Week 5–6</td></tr>
+<tr><td>4</td><td>Integration of real-time GPS tracking and asynchronous local server sync</td><td>Sprint 3</td><td>Week 7–8</td></tr>
+<tr><td>5</td><td>Local GSM gateway integration and encrypted SMS fallback protocol</td><td>Sprint 4</td><td>Week 9–10</td></tr>
+<tr><td>6</td><td>Tanod workflow: dispatch offers, availability, rostering, accomplishment reports, referrals and school-zone reports</td><td>Sprint 5</td><td>Week 11–12</td></tr>
+<tr><td>7</td><td>Chief Tanod phone console, report channels, retention rules and printable reports</td><td>Sprint 6</td><td>Week 13–14</td></tr>
+<tr><td>8</td><td>Role-based access control, security hardening, and integration testing</td><td>Sprint 7</td><td>Week 15–16</td></tr>
+<tr><td>9</td><td>User acceptance testing (UAT) and ISO/IEC 25010:2023 evaluation</td><td>Sprint 8</td><td>Week 17–18</td></tr>
+</tbody></table>
+
+<h3>3.2.3 Sprint Development</h3>
+
+<p>During the sprint development phase, the team executed the planned technical tasks. The web platform was built and deployed to the XAMPP environment on the unified administrative workstation, while the Android APK was compiled using Ionic and Capacitor. Progress was tracked through recorded stand-up sessions logged in the team development log, with issues, particularly SMS gateway reliability and background location on Android devices, raised and resolved against the sprint backlog, and code branches merged using Git. Every design decision was recorded with its reason in the development log, and the numbered database migrations were never edited once applied.</p>
+
+<h3>3.2.4 Sprint Review</h3>
+
+<p>At the conclusion of each two-week sprint, a functioning software increment was demonstrated to the user acceptance testing team, which included barangay officials and tanods. End-users tested new features, such as testing the mobile application in airplane mode to verify that SMS fallback triggers, and provided immediate feedback on operational viability. Several scope decisions were taken as a result: the electronic blotter and the public report form were removed because barangays are directed to keep these records in their own binders and to use the DILG BIMS as the case ledger, and rosters and reports are printed and signed on paper rather than approved in the application.</p>
+
+<h3>3.2.5 Sprint Retrospective</h3>
+
+<p>Following each sprint review, the development team conducted an internal retrospective to evaluate their workflow. They discussed what engineering practices succeeded and what required adjustment, such as keeping every offline write idempotent, limiting calls to the external routing service, and making sure that every screen states honestly when an information source is unavailable. By identifying these core issues early, developers systematically eliminated technical debt, integrated localized automated testing, and enhanced overall system predictability. These process adjustments ensured high code quality and team efficiency throughout the development cycle.</p>
+
+<h2>3.3 Evaluation Procedure</h2>
+
 <p>The evaluation was conducted to determine whether Baranguard met its functional requirements and to assess its software quality using the ISO/IEC 25010:2023 standard. A summary of the system testing and evaluation methods is provided in Table 7.</p>
-<table><caption><strong><em>Table 7.</em></strong> <em>Summary of System Testing and Evaluation Methods</em></caption><thead><tr><th><strong>Test Type</strong></th><th><strong>Purpose</strong></th></tr></thead><tbody><tr><td>Unit testing</td><td>Validate individual module functions</td></tr><tr><td>Integration testing</td><td>Verify cross-module data propagation</td></tr><tr><td>Performance testing</td><td>Verify that the unified administrative workstation can concurrently handle web dashboard operations and local 4-bit AI inference while maintaining dashboard API response times below two seconds and without memory exhaustion, with measured latency and utilisation reported.</td></tr><tr><td>SLM Validation testing</td><td>Evaluate the precision, recall, and F1-score of the locally hosted Llama-SEA-LION-v3.5-8B-R model for automated draft PII redaction across a 350-record synthetic narrative dataset containing multi-entity PII instances per document.</td></tr><tr><td>System testing</td><td>End-to-end workflow validation under simulated disaster scenarios</td></tr><tr><td>User acceptance testing (UAT)</td><td>Scenario-based task evaluation by barangay personnel</td></tr><tr><td>Safety scenario testing</td><td>Verify defined system behaviour under a matrix of adverse operational scenarios (GPS error, duplicate alerts, delayed SMS, AI omission, missed redaction, misassigned dispatch)</td></tr><tr><td>Summarisation fidelity assessment</td><td>Assess factual consistency, omission, and fabrication in AI-generated incident summaries against source narratives</td></tr></tbody></table>
-<h3 id="s28">3.3.1 Respondents and Sample Size Justification</h3>
-<p>The study utilized a purposive sampling technique to select 27 respondents. Because evaluating the system requires specific domain knowledge and direct operational involvement in emergency dispatch protocols, probability sampling formulas were not applied. Instead, respondents were deliberately chosen based on their technical expertise and their mandated roles within the local government units of Barangays Dao, Binanuahan, Marifosque, and Banuyo. The sample includes IT professionals to assess the system's technical and architectural integrity, alongside a comprehensive cross-section of barangay personnel—ranging from executive officials to frontline responders—to validate operational usability and functional suitability under the ISO/IEC 25010:2023 standard.</p>
+
+<table>
+<caption><strong>Table 7.</strong> <em>Summary of System Testing and Evaluation Methods</em></caption>
+<thead><tr><th>Test Type</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>Unit and integration testing</td><td>Validate individual module functions and cross-module data propagation through automated backend, web and mobile test suites</td></tr>
+<tr><td>Security testing</td><td>Verify role, barangay and ownership checks on every endpoint, session revocation, lockout, device-signed writes and that confidential narratives never leave the system</td></tr>
+<tr><td>Performance testing</td><td>Measure API response times (median and 95th percentile) on the administrative workstation against the two-second criterion, and the delivery delay of GPS fixes and synchronised records</td></tr>
+<tr><td>Offline and duplicate testing</td><td>Verify that records captured offline reach the server exactly once after reconnection, including retried and conflicting batches</td></tr>
+<tr><td>System testing</td><td>End-to-end workflow validation under simulated outage scenarios</td></tr>
+<tr><td>User acceptance testing (UAT)</td><td>Scenario-based task evaluation by barangay personnel using a signed scenario sheet per role</td></tr>
+<tr><td>Safety scenario testing</td><td>Verify defined system behaviour under a matrix of adverse operational scenarios (GPS error or no fix, duplicate alerts, delayed SMS, misassigned dispatch, a tanod without mobile data, routing unavailable)</td></tr>
+</tbody></table>
+
+<h3>3.3.1 Respondents and Sample Size Justification</h3>
+
+<p>The study utilized a purposive sampling technique to select 27 respondents. Because evaluating the system requires specific domain knowledge and direct operational involvement in emergency dispatch protocols, probability sampling formulas were not applied. Instead, respondents were deliberately chosen based on their technical expertise and their mandated roles within the local government units of Barangays Dao, Binanuahan, Marifosque, and Banuyo. The sample includes IT professionals to assess the system's technical and architectural integrity, alongside a comprehensive cross-section of barangay personnel, ranging from executive officials to frontline responders, to validate operational usability and functional suitability under the ISO/IEC 25010:2023 standard.</p>
+
 <p>The specific distribution of these 27 respondents and the rationale for their selection are detailed in Table 8.</p>
-<table><caption><strong><em>Table 8.</em></strong> <em>Distribution of Respondents and Sample Size</em></caption><thead><tr><th><strong>Role</strong></th><th><strong>Count</strong></th><th><strong>Rationale</strong></th></tr></thead><tbody><tr><td><strong>IT Experts</strong></td><td>3</td><td>Technical panel to evaluate cloud security, local SLM inference latency, and codebase maintainability.</td></tr><tr><td><strong>Punong</strong> <strong>Barangay</strong></td><td>4</td><td>Executive users validating the command center dashboard's utility for overall barangay governance and resource allocation.</td></tr><tr><td><strong>Barangay</strong> <strong>Secretary</strong></td><td>4</td><td>Administrative users assessing the electronic blotter's efficiency, data management, and RA 10173 compliance features.</td></tr><tr><td><strong>Lupon</strong> <strong>Members</strong></td><td>4</td><td>Officials involved in Katarungang Pambarangay proceedings, who evaluate the generated Lupon packet and redacted narrative output rather than the software interface directly.</td></tr><tr><td><strong>Barangay</strong> <strong>Tanods</strong></td><td>12</td><td>Frontline field responders tasked with testing the mobile application's usability, GPS routing, and offline SMS fallback capabilities.</td></tr><tr><td><strong>Total</strong></td><td><strong>27</strong></td><td></td></tr></tbody></table>
-<p><em>Note.</em> Because Lupon members interact with the system's generated documents rather than its operating interface, their evaluation is scoped to Functional Suitability and Interaction Capability as these apply to the generated Lupon packet, completeness of the record, legibility of the redacted narrative, and fitness for use in dispute resolution proceedings. Their responses are reported separately and are not pooled into the system-wide weighted means for characteristics they have no basis to judge. The dispatcher function described in Chapters 1 and 2 is performed by the Administrator and/or Barangay Secretary role rather than by a separate system role; this respondent group therefore evaluates the Dispatch Center interface in addition to their own primary modules.</p>
-<h3 id="s29">3.3.2 Evaluation Instrument and Validity</h3>
-<p>The primary research instrument was a structured survey questionnaire anchored on the ISO/IEC 25010:2023 Systems and Software Quality Requirements and Evaluation (SQuaRE) model. This study adopts the nine-characteristic product quality model defined in ISO/IEC 25010:2023. The 2023 revision is used rather than the 2011 edition because it introduces Safety as a top-level quality characteristic. Given that Baranguard dispatches first responders to active emergency scenes, where an incorrect route or an undelivered dispatch alert could place a Tanod in physical danger, Safety is a necessary evaluation dimension for this system and could not be assessed under the 2011 model. To ensure semantic clarity and prevent technical jargon from confounding the data, the questionnaire items were meticulously contextualized into local administrative terminology and pre-tested for clarity.</p>
-<p>The questionnaire assessed the system across the nine characteristics of the 2023 model: Functional Suitability, Performance Efficiency, Compatibility, Interaction Capability, Reliability, Security, Maintainability, Flexibility, and Safety. Because "Interaction Capability" and "Flexibility" are unfamiliar terms to non-technical respondents, questionnaire items for these characteristics were phrased in operational language (ease of use and learnability; adaptability across devices and deployment settings) while retaining the standard's definitions for analysis and reporting. Prior to full-scale deployment, the instrument underwent rigorous content validation by a panel of software engineering experts and disaster risk reduction professionals to verify that each metric accurately mapped to the operational realities of local government units.</p>
+
+<table>
+<caption><strong>Table 8.</strong> <em>Distribution of Respondents and Sample Size</em></caption>
+<thead><tr><th>Role</th><th>Count</th><th>Rationale</th></tr></thead>
+<tbody>
+<tr><td>IT Experts</td><td>3</td><td>Technical panel to evaluate security, performance and codebase maintainability.</td></tr>
+<tr><td>Punong Barangay</td><td>4</td><td>Executive users validating the dashboard, analytics and approvals views for overall barangay governance and resource allocation.</td></tr>
+<tr><td>Barangay Secretary</td><td>4</td><td>Records officers assessing incident records, confidential narrative handling, reports and RA 10173-related controls.</td></tr>
+<tr><td>Chief Tanod</td><td>4</td><td>The dispatchers of the system, evaluating the Dispatch Center, live map, rostering and the phone console.</td></tr>
+<tr><td>Barangay Tanods</td><td>12</td><td>Frontline field responders tasked with testing the mobile application's usability, GPS routing, offline capture and SMS fallback.</td></tr>
+<tr><td>Total</td><td>27</td><td></td></tr>
+</tbody></table>
+<p class="tablenote"><em>Note.</em> The dispatcher function described in Chapters 1 and 2 is performed by the Chief Tanod, who uses the Admin account, and not by a separate system role. Residents and Lupon members are not users of the system and are therefore not respondents.</p>
+
+<h3>3.3.2 Evaluation Instrument and Validity</h3>
+
+<p>The primary research instrument was a structured survey questionnaire anchored on the ISO/IEC 25010:2023 Systems and Software Quality Requirements and Evaluation (SQuaRE) model. This study adopts the nine-characteristic product quality model defined in ISO/IEC 25010:2023. The 2023 revision is used rather than the 2011 edition because it introduces Safety as a top-level quality characteristic. Given that Baranguard dispatches first responders to active emergency scenes, where an incorrect route or an undelivered dispatch alert could place a Tanod in physical danger, Safety is a necessary evaluation dimension for this system and could not be assessed under the 2011 model. To ensure semantic clarity and prevent technical jargon from confounding the data, the questionnaire items were contextualized into local administrative terminology, written in English with a Filipino version, and pre-tested for clarity.</p>
+
+<p>The questionnaire assessed the system across the nine characteristics of the 2023 model: Functional Suitability, Performance Efficiency, Compatibility, Interaction Capability, Reliability, Security, Maintainability, Flexibility, and Safety. Because "Interaction Capability" and "Flexibility" are unfamiliar terms to non-technical respondents, questionnaire items for these characteristics were phrased in operational language (ease of use and learnability; adaptability across devices and deployment settings) while retaining the standard's definitions for analysis and reporting. Separate forms were prepared for four respondent groups: tanods, the Secretary and Chief Tanod, the Punong Barangay and Kagawad, and IT practitioners and faculty, so that each group answers only the items it has a basis to judge. Prior to full-scale deployment, the instrument underwent content validation by a panel of software engineering experts and disaster risk reduction professionals to verify that each metric accurately mapped to the operational realities of local government units.</p>
+
 <p>The instrument utilized a 5-point Likert scale. Data were analyzed using the weighted mean formula:</p>
-<p><strong>X̄ = (∑fx) / N</strong></p>
-<p>Where <strong>X̄</strong> is the weighted mean, <strong>f</strong> is the frequency of responses, <strong>x</strong> is the Likert scale weight (1–5), and <strong>N</strong> is the total number of respondents. The verbal interpretation and description for each mean range are presented in Table 9.</p>
-<table><caption><strong><em>Table 9.</em></strong> <em>Likert Scale Interpretation and Mean Range Criteria</em></caption><thead><tr><th><strong>Range</strong></th><th><strong>Verbal Interpretation</strong></th><th><strong>Description</strong></th></tr></thead><tbody><tr><td>4.21 – 5.00</td><td>Strongly Agree</td><td>The system fully satisfies requirements and is highly effective</td></tr><tr><td>3.41 – 4.20</td><td>Agree</td><td>The system mostly satisfies requirements and is generally reliable</td></tr><tr><td>2.61 – 3.40</td><td>Neutral</td><td>The system partially satisfies requirements with notable gaps</td></tr><tr><td>1.81 – 2.60</td><td>Disagree</td><td>The system rarely satisfies requirements and is largely ineffective</td></tr><tr><td>1.00 – 1.80</td><td>Strongly Disagree</td><td>The system does not satisfy requirements</td></tr></tbody></table>
-<h3 id="s30">3.3.3 PII Masking Validation Methodology</h3>
-<p>To measure the performance of the redaction control that supports the system's privacy safeguards, a specific testing methodology was applied to the locally hosted Llama-SEA-LION-v3.5-8B-R redaction module.</p>
-<p><strong>Test dataset.</strong> The NLP engine was tested against a synthetic benchmarking dataset of 350 mock incident narratives containing pre-tagged PII entities. Each narrative was constructed to contain multiple PII instances per document, totaling 1,248 tagged PII entities across four primary categories: Filipino full names, Sorsogon barangay-level addresses, Philippine mobile contact numbers, and birthdate/age references in mixed formats. The dataset was constructed as follows: A. <strong>PII entity distribution:</strong> Across the 350 synthetic narratives, 1,248 PII entities</p>
-<p>were distributed across four primary categories: Filipino full names (sourced from</p>
-<p>open Filipino name corpora), barangay-level addresses drawn from PhilGIS</p>
-<p>administrative boundary data for Sorsogon province, mobile contact numbers in</p>
-<p>Philippine format (0917/0918/0919 prefixes), and birthdate/age references in</p>
-<p>mixed formats (calendar, relative, and ISO). B. <strong>Narrative generation:</strong> All narratives were authored using manually written</p>
-<p>Taglish templates reviewed by a native Filipino speaker with working knowledge</p>
-<p>of Sorsognon regional dialect vocabulary, to ensure linguistic realism. No actual</p>
-<p>historical blotter records from the target barangays were used. Each narrative</p>
-<p>was reviewed by a second team member before inclusion in the test set. C. <strong>Baseline comparator:</strong> The SLM redaction performance was benchmarked</p>
-<p>against a baseline regex-only redaction filter to demonstrate the added value of</p>
-<p>the language model for context-dependent PII detection. D. <strong>Per-entity-type reporting:</strong> Precision and recall are computed and reported</p>
-<p>separately for each of the four PII entity types rather than as a single aggregate,</p>
-<p>since the regex baseline already covers two of the four categories (mobile</p>
-<p>numbers, birthdates) and the language model's contribution is best demonstrated</p>
-<p>on the two it cannot reach (names, addresses). E. <strong>Over-redaction (false positive) evaluation:</strong> In addition to missed entities, the</p>
-<p>evaluation measures the proportion of non-PII spans incorrectly replaced with a</p>
-<p>placeholder, with particular attention to public-role references, the name of a</p>
-<p>barangay official acting in an official capacity is legitimately part of the public</p>
-<p>record and should not be redacted.</p>
-<p>The objective was to evaluate the model's precision and recall in masking sensitive data without altering the core factual context of the emergency report.</p>
-<h3 id="s31">3.3.4 Acceptance Criteria</h3>
-<p>The Baranguard system was considered ready for deployment when all of the following criteria were met: 1. All user stories in the product backlog successfully pass UAT validation. 2. The system achieves a weighted mean of at least 4.21 (Strongly Agree) in the</p>
-<p>overall ISO/IEC 25010:2023 evaluation across all nine quality characteristics. 3. The SMS best-effort fallback protocol successfully transmits the encoded</p>
-<p>coordinate payload in at least <strong>19 out of 20 (95%) simulated broadband</strong></p>
-<p><strong>disconnection scenarios</strong>, across three distinct Android device models, under</p>
-<p>conditions where cellular signal strength is at or above −100 dBm. This threshold</p>
-<p>is consistent with industry-standard 95% reliability conventions in emergency</p>
-<p>communication systems, and reflects the best-effort nature of the SMS channel</p>
-<p>rather than the absolute guarantee implied by a 100% criterion. 4. The locally hosted SLM-driven PII redaction engine achieves a minimum recall of</p>
-<p>95% and precision of 90% across the 350-narrative synthetic test dataset</p>
-<p>(containing 1,248 multi-entity instances), benchmarked against the baseline</p>
-<p>regex-only filter. These thresholds are calibrated to exceed baseline NER</p>
-<p>benchmarks while acknowledging that probabilistic language models cannot</p>
-<p>guarantee zero false negatives. A 95% recall threshold ensures that at least 95%</p>
-<p>of all tagged PII entities across the multi-entity benchmark are successfully</p>
-<p>identified for redaction prior to administrative review. To mitigate the risk of false</p>
-<p>negatives and AI hallucinations, a mandatory human-in-the-loop protocol is</p>
-<p>enforced within the system's architecture: the SLM generates a draft redaction,</p>
-<p>which the barangay secretary must manually review and explicitly approve before</p>
-<p>the incident narrative is committed to the permanent, public-facing database.</p>
-<h2 id="s32">3.4 Ethical Considerations</h2>
+
+<p class="formula">X̄ = (∑fx) / N</p>
+
+<p>Where X̄ is the weighted mean, f is the frequency of responses, x is the Likert scale weight (1–5), and N is the total number of respondents. The verbal interpretation and description for each mean range are presented in Table 9.</p>
+
+<table>
+<caption><strong>Table 9.</strong> <em>Likert Scale Interpretation and Mean Range Criteria</em></caption>
+<thead><tr><th>Range</th><th>Verbal Interpretation</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>4.21 – 5.00</td><td>Strongly Agree</td><td>The system fully satisfies requirements and is highly effective</td></tr>
+<tr><td>3.41 – 4.20</td><td>Agree</td><td>The system mostly satisfies requirements and is generally reliable</td></tr>
+<tr><td>2.61 – 3.40</td><td>Neutral</td><td>The system partially satisfies requirements with notable gaps</td></tr>
+<tr><td>1.81 – 2.60</td><td>Disagree</td><td>The system rarely satisfies requirements and is largely ineffective</td></tr>
+<tr><td>1.00 – 1.80</td><td>Strongly Disagree</td><td>The system does not satisfy requirements</td></tr>
+</tbody></table>
+
+<h3>3.3.3 Test Data and Measurement Procedure</h3>
+
+<p>To keep every measurement reproducible and free of real personal data, a specific procedure was applied to the technical tests.</p>
+
+<p><strong>Test data.</strong> All technical tests used synthetic data. Automated test suites each create a disposable database and a throwaway application user, apply the full chain of numbered migrations, run against a temporary server on a spare port, and delete everything afterward, so that the real database is never touched. For measurements and demonstrations, a separate demonstration database was seeded with synthetic incidents, dispatches, GPS tracks and rosters whose coordinates were placed on real roads inside the Barangay Dao boundary. No real resident data or real blotter records from the target barangays were used.</p>
+
+<p><strong>Response-time measurement.</strong> A script logs in once as the Chief Tanod and then times successive read requests, one after another, to the dispatch, incident, GPS, summary and heatmap endpoints. It reports the median, 95th percentile and maximum in milliseconds after a stated warm-up, together with the number of requests and the machine on which it was run. Because it runs on the workstation, it measures server time without the network, and it does not measure rendering or many simultaneous users.</p>
+
+<p><strong>Delivery and synchronisation measurement.</strong> Delay figures are computed from timestamps the system already stores: the difference between the time a GPS fix was recorded on the phone and the time the server stored it, the difference between the time an incident was created offline and the time it was synchronised, and the success, duplicate and failure counts of each synchronisation batch. These figures are reported only when they come from real use of the system; figures computed from seeded data are shown as seed data and are not cited as results.</p>
+
+<p><strong>Dispatch response time.</strong> Following the definition used throughout the system, the response time of an incident is the interval from the creation of the incident record to the earliest arrival of any responder on it, counted once per incident.</p>
+
+<h3>3.3.4 Acceptance Criteria</h3>
+
+<p>The Baranguard system was considered ready for deployment when all of the following criteria were met:</p>
+<ol class="objectives">
+<li>All user stories in the product backlog successfully pass UAT validation.</li>
+<li>The system achieves a weighted mean of at least 4.21 (Strongly Agree) in the overall ISO/IEC 25010:2023 evaluation across all nine quality characteristics.</li>
+<li>The SMS best-effort fallback protocol successfully transmits the encoded coordinate payload in at least 19 out of 20 (95%) simulated broadband disconnection scenarios, across three distinct Android device models, under conditions where cellular signal strength is at or above −100 dBm. This threshold is consistent with industry-standard 95% reliability conventions in emergency communication systems, and reflects the best-effort nature of the SMS channel rather than the absolute guarantee implied by a 100% criterion.</li>
+<li>Records captured offline are synchronised to the server exactly once in at least 95% of the test batches, with every retried or conflicting batch resolved without a duplicate record.</li>
+<li>The 95th percentile response time of the key dashboard read endpoints is below two seconds on the administrative workstation.</li>
+<li>No endpoint returns a record of another barangay or a confidential narrative to a role that may not read it in the security tests.</li>
+</ol>
+
+<h2>3.4 Ethical Considerations</h2>
+
 <p>This study adhered to the following ethical guidelines throughout its development and testing phases:</p>
+
 <p><strong>Informed consent.</strong> Written consent was obtained from all 27 respondents prior to their participation in user acceptance testing and evaluation activities.</p>
-<p><strong>Data minimization and privacy (RA 10173).</strong> No actual historical resident data or real blotter records from the target barangays were used during software development, prompt configuration, or evaluation of the redaction pipeline. All testing was conducted using entirely synthetic, fabricated data generated by the research team to ensure zero risk of real-world privacy breaches. Furthermore, the locally self-hosted AI inference architecture ensures that no citizen data is ever transmitted to an external AI service provider.</p>
+
+<p><strong>Data minimization and privacy (RA 10173).</strong> No actual historical resident data or real blotter records from the target barangays were used during software development or evaluation. All testing was conducted using entirely synthetic, fabricated data generated by the research team to ensure zero risk of real-world privacy breaches. The system uses no artificial intelligence service; the only data that leaves the workstation for a third party are the origin and destination coordinates of a route request to OpenRouteService, map tiles requested from OpenStreetMap, and push notifications through Firebase Cloud Messaging, none of which carries an incident narrative.</p>
+
 <p><strong>Voluntary participation.</strong> Participation in the evaluation was completely voluntary. Respondents were informed of their right to withdraw from testing scenarios at any time without consequence.</p>
-<p>Data handling during deployment testing. Where user acceptance testing was conducted using the deployed system, all records created during testing were flagged as test data and excluded from the operational blotter. The audit log records identifiers and action statuses only and does not retain raw personal information, consistent with the record-keeping requirements of the Implementing Rules and Regulations of RA 10173.</p>
-<h1 id="s33">References</h1>
-<p class="ref">AI Research Group. (2025). Automated redaction of personally identifiable information on drug labels using optical character recognition and large language models for compliance with Thailand's Personal Data Protection Act. Applied Sciences, 15(9), 4923. https://doi.org/10.3390/app15094923</p>
+
+<p><strong>Data handling during deployment testing.</strong> Where user acceptance testing was conducted using the deployed system, all records created during testing were flagged as test data and excluded from the operational records. The audit log records identifiers and action statuses only and does not retain raw personal information, consistent with the record-keeping requirements of the Implementing Rules and Regulations of RA 10173. Confidential narratives are destroyed automatically after one year, and the retention periods for the other record types are provisional until confirmed by the barangay and the Commission on Audit.</p>
+
+<h1>4 Results and Discussion</h1>
+
+<div class="status-note"><strong>Status of this chapter.</strong> This chapter is being completed in stages. Sections 4.1 to 4.3 report results that were measured on the system as it stands. Sections 4.4 to 4.6 are prepared (tables, criteria and the instruments they will use) and are completed only after the user acceptance testing, the field measurements and the ISO/IEC 25010:2023 survey have been carried out. A cell marked <span class="pending">pending</span> has no result yet and must not be filled with an estimate.</div>
+
+<p>This chapter presents the results of the study in the order of its objectives. It first describes the system as it was developed, then reports the automated verification and performance measurements, then the reliability, user acceptance and quality evaluation results, and closes with a discussion of what the results do and do not show.</p>
+
+<h2>4.1 The System as Developed</h2>
+
+<p>The development produced one system with two client applications and a local server. The server exposes 103 API endpoints in 27 route files, stores its data in 34 database tables created by 44 numbered migrations, and runs on one administrative workstation. The web dashboard serves three roles (Admin as the seat of the Chief Tanod, Secretary and Punong Barangay) and the Android application serves the tanod, with a four-tab console for the Chief Tanod's own phone. Table 10 relates what was built to each objective of the study.</p>
+
+<table>
+<caption><strong>Table 10.</strong> <em>What Was Built for Each Objective</em></caption>
+<thead><tr><th>Objective</th><th>What was built</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>1. GIS web command center</td><td>Dispatch Center with an emergency queue and live map; Live Map of responders; Incident Management; Analytics with statistical reports and incident heatmaps; a boundary for each of the four barangays; night dispatch offers; rosters and reports for printing.</td><td>Implemented. Automated checks pass (Section 4.2). User evaluation pending.</td></tr>
+<tr><td>2. Offline-first mobile application</td><td>Android application with an encrypted SQLite store, an offline queue with idempotent synchronisation, cached map packages, background GPS, assignment, SOS, availability, accomplishment and school check-in screens.</td><td>Implemented. Synchronisation and duplicate handling verified by automated tests. Continuous background GPS with the screen locked was observed on a device. A complete offline-to-sync cycle on field devices is <span class="pending">pending</span>.</td></tr>
+<tr><td>3. SMS best-effort fallback</td><td>When the server cannot be reached, the phone sends an encrypted SOS message with the last known coordinates to the gateway phone, and a plain-text alert to one backup contact; the gateway decodes the message into a real SOS on the dashboard without creating a duplicate when the queued copy later synchronises.</td><td>Implemented. The message format and encryption were verified by cross-checking that a message built by the mobile code is decrypted by the server code. A real end-to-end message from a tanod phone through the gateway phone is <span class="pending">pending</span>.</td></tr>
+<tr><td>4. Quality evaluation</td><td>Four ISO/IEC 25010:2023 questionnaires (one per respondent group), a key informant guide, a needs questionnaire and a signed UAT scenario sheet of 92 cases.</td><td>Instruments prepared. Responses <span class="pending">pending</span>.</td></tr>
+</tbody></table>
+
+<p>Three decisions shaped the final scope. First, the system holds no electronic blotter, Katarungang Pambarangay or Lupon records, because barangays are directed to keep these in their own binders and to use the DILG BIMS as the case ledger; Baranguard complements that ledger. Second, no artificial intelligence component is included. Third, rosters, accomplishment reports and school-zone reports are printed and signed on paper, and the system does not record signatures.</p>
+
+<h2>4.2 Automated Verification Results</h2>
+
+<p>The backend was verified by 38 scripted suites. Each suite creates a disposable database and application user, applies the full migration chain, starts a temporary server, runs its checks over real HTTP requests, and removes everything afterwards. Table 11 groups the suites by the quality area they exercise.</p>
+
+<table>
+<caption><strong>Table 11.</strong> <em>Backend Automated Verification Results by Area</em></caption>
+<thead><tr><th>Area</th><th>Suites</th><th>Checks passed</th><th>Checks failed</th></tr></thead>
+<tbody>
+<tr><td>Command center, dispatch, GIS and incident handling</td><td>10</td><td>213</td><td>0</td></tr>
+<tr><td>Offline-first capture, synchronisation and devices</td><td>7</td><td>314</td><td>0</td></tr>
+<tr><td>SMS fallback and notifications</td><td>3</td><td>88</td><td>0</td></tr>
+<tr><td>Security, access control and audit</td><td>10</td><td>484</td><td>0</td></tr>
+<tr><td>Tanod workflow, rosters and reports</td><td>6</td><td>505</td><td>0</td></tr>
+<tr><td>Data retention</td><td>2</td><td>191</td><td>0</td></tr>
+<tr><td><strong>Total</strong></td><td><strong>38</strong></td><td><strong>1,795</strong></td><td><strong>0</strong></td></tr>
+</tbody></table>
+<p class="tablenote"><em>Note.</em> Counts are the checks printed by each suite when it was last run on 17 October 2026. A suite that prints only "all checks passed" without a number is counted in the Suites column and not in the Checks column. No suite reported a failed check.</p>
+
+<p>The web dashboard was verified by 734 render and unit tests that load every page in a simulated browser against a fake server, and by a wiring check of imports, stylesheet classes and typography rules, which at the time of writing reports 936 passing checks and 30 findings in stylesheets that are still being revised (undefined classes, font weights and families outside the type rules). The mobile application was verified by a static type check and lint run without errors and by 259 checks of the local database schema and its migrations. These are checks of code correctness and not measurements of user-perceived quality; they show that the specified behaviour holds, and they are the evidence for Functional Suitability and part of Security and Reliability in Section 4.6.</p>
+
+<h2>4.3 Performance Efficiency Results</h2>
+
+<p>The response time of the key read endpoints was measured as described in Section 3.3.3. The script was run on the administrative workstation itself (Intel Core i5-1235U, 8 GB RAM, Windows 11) against the demonstration database, which held 159 incidents, 134 dispatches and 3,233 GPS fixes. It issued 40 requests per endpoint one after another after 5 warm-up requests. The single login took 326.1 ms. The results are in Table 12.</p>
+
+<table>
+<caption><strong>Table 12.</strong> <em>Response Time of Key Read Endpoints (milliseconds)</em></caption>
+<thead><tr><th>Endpoint</th><th>Median</th><th>95th percentile</th><th>Maximum</th><th>Failures</th></tr></thead>
+<tbody>
+<tr><td>GET /gps/live</td><td>35.8</td><td>51.8</td><td>53.1</td><td>0</td></tr>
+<tr><td>GET /incidents</td><td>28.4</td><td>51.8</td><td>57.4</td><td>0</td></tr>
+<tr><td>GET /dispatch</td><td>36</td><td>50.1</td><td>53.8</td><td>0</td></tr>
+<tr><td>GET /reports/summary</td><td>40.7</td><td>57.5</td><td>59.5</td><td>0</td></tr>
+<tr><td>GET /reports/heatmap</td><td>32.6</td><td>47.9</td><td>66.1</td><td>0</td></tr>
+</tbody></table>
+<p class="tablenote"><em>Note.</em> Round trip from the same machine over the loopback interface, one request at a time. It measures server time without network delay and without page rendering, and does not measure many simultaneous users.</p>
+
+<p>Every endpoint answered in well under the two-second criterion of Section 3.3.4: the slowest 95th percentile was 57.5 ms. This indicates that, for one user on this hardware and a database of this size, server time is not a limiting factor for the dashboard. It does not show how the system behaves with several dispatchers at once or with a database that has grown over years of use, and it says nothing about the delay a tanod's phone adds on a mobile connection. The dashboard also refreshes by polling every 15 seconds, so the position shown on the map is at most the delivery delay plus 15 seconds old, which is why the system describes its tracking as near-real-time.</p>
+
+<h2>4.4 Reliability, Offline Capture and SMS Fallback</h2>
+
+<p>The system stores the timestamps needed to measure how long a GPS fix, an offline incident or an SOS takes to reach the server, how often a synchronisation batch succeeds, repeats or fails, and how long a responder takes to arrive. A reporting script computes these figures from the database. The figures it produced for the demonstration database were generated from seeded records, not from real use, and are therefore not reported here as results. Table 13 lists what will be reported once the system has been used by tanods in the field and the SMS fallback has been exercised with real phones.</p>
+
+<table>
+<caption><strong>Table 13.</strong> <em>Field Measurements to Be Reported</em></caption>
+<thead><tr><th>Measure</th><th>How it is computed</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>GPS fix delivery delay</td><td>Server time minus time recorded on the phone (live fixes)</td><td><span class="pending">pending</span></td></tr>
+<tr><td>Interval between fixes per tanod</td><td>Gap between consecutive fixes</td><td><span class="pending">pending</span></td></tr>
+<tr><td>Offline incident to server delay</td><td>Synchronisation time minus offline creation time</td><td><span class="pending">pending</span></td></tr>
+<tr><td>Synchronisation outcome</td><td>Share of batches that succeed, repeat or fail</td><td><span class="pending">pending</span></td></tr>
+<tr><td>SOS trigger to server delay</td><td>Server time minus trigger time, by channel (data or SMS)</td><td><span class="pending">pending</span></td></tr>
+<tr><td>SMS fallback success</td><td>Messages that become an SOS on the dashboard out of 20 simulated disconnections, on three Android models</td><td><span class="pending">pending</span> (criterion: at least 19 of 20)</td></tr>
+<tr><td>Dispatch response time</td><td>Incident creation to the earliest responder arrival, once per incident</td><td><span class="pending">pending</span></td></tr>
+</tbody></table>
+
+<h2>4.5 User Acceptance Testing Results</h2>
+
+<p>The user acceptance test uses a signed scenario sheet with one part per role. A case passes when the user completes the steps and the expected result is observed. Table 14 lists the cases and is completed from the signed sheets. The criterion adopted for the course is a pass rate of at least 90 percent with all critical defects resolved.</p>
+
+<table>
+<caption><strong>Table 14.</strong> <em>User Acceptance Test Cases and Results</em></caption>
+<thead><tr><th>Scenario part</th><th>Cases listed</th><th>Executed</th><th>Passed</th><th>Failed</th></tr></thead>
+<tbody>
+<tr><td>B. Tanod (Android)</td><td>30</td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td></tr>
+<tr><td>C. Chief Tanod (web)</td><td>23</td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td></tr>
+<tr><td>D. Chief Tanod (phone console)</td><td>7</td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td></tr>
+<tr><td>E. Secretary (web)</td><td>22</td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td></tr>
+<tr><td>F. Punong Barangay (web)</td><td>10</td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td></tr>
+<tr><td><strong>Total</strong></td><td><strong>92</strong></td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td></tr>
+</tbody></table>
+<p class="tablenote"><em>Note.</em> Pass rate = cases passed ÷ cases executed × 100. Cases executed = passed + failed.</p>
+
+<h2>4.6 ISO/IEC 25010:2023 Evaluation Results</h2>
+
+<p>The weighted mean of each of the nine characteristics is computed from the questionnaires with the formula in Section 3.3.2 and interpreted with Table 9. Each respondent group answers only the characteristics it has a basis to judge. Table 15 will hold the results. The right-hand column states what evidence besides the survey already exists for the characteristic, so that the survey result can be read against measured facts.</p>
+
+<table>
+<caption><strong>Table 15.</strong> <em>Weighted Mean per Quality Characteristic</em></caption>
+<thead><tr><th>Characteristic</th><th>Weighted mean</th><th>Interpretation</th><th>Measured evidence already available</th></tr></thead>
+<tbody>
+<tr><td>Functional Suitability</td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td>Automated suites (Table 11); UAT (Table 14)</td></tr>
+<tr><td>Performance Efficiency</td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td>Response times (Table 12)</td></tr>
+<tr><td>Compatibility</td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td>JSON over HTTPS; Android API 24 and above; two test phone models so far</td></tr>
+<tr><td>Interaction Capability</td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td>UAT completion without help (scenario sheet)</td></tr>
+<tr><td>Reliability</td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td>Offline and duplicate suites; field measures (Table 13)</td></tr>
+<tr><td>Security</td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td>Tenant, role and session suites (Table 11)</td></tr>
+<tr><td>Maintainability</td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td>Numbered migrations, test suites, decision log</td></tr>
+<tr><td>Flexibility</td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td>Four barangays on one deployment; local or tunnelled access</td></tr>
+<tr><td>Safety</td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td>SOS without a GPS fix; duplicate alert handling; safety scenarios</td></tr>
+<tr><td><strong>Overall</strong></td><td><span class="pending">pending</span></td><td><span class="pending">pending</span></td><td></td></tr>
+</tbody></table>
+
+<h2>4.7 Discussion</h2>
+
+<p><strong>Against the objectives.</strong> The first three objectives are met in the sense that each was designed and implemented and that its software behaviour is verified by automated checks. They are not yet shown to work in the conditions that motivated them. Whether the offline cycle and the SMS fallback work on field phones during a real outage, and whether tanods and officials find the system usable, are questions that only Sections 4.4 to 4.6 can answer, and those results are pending. The fourth objective is prepared, not met.</p>
+
+<p><strong>Against the literature.</strong> The reviewed systems were administrative repositories (Tosper et al., 2025; Gasmido et al., 2025), and their evaluations reported ISO 25010 means above 4.5 for record-keeping tasks. Baranguard addresses the gap those studies left: dispatch, tracking and resilient communication for responders. It follows the recommendation of New Light Technologies (2024) to treat disconnected operation as the primary mode and the finding of Omar and Van Belle (2023) that SMS is a useful but fallible alternative, which is why the fallback is described as best-effort and limited to emergency alerts.</p>
+
+<p><strong>What changed during development.</strong> The initial design included an electronic blotter with automated redaction by a local language model. The study removed both. The blotter duplicated the DILG BIMS, which barangays are required to use as the case ledger, and without a blotter to feed there was nothing for the model to redact or summarise. The removal narrows the scope but also removes a data privacy risk and a hardware demand, and it keeps Baranguard in the position of a complement to the official records. The same logic led to paper-first signing: the officials already sign paper, so the system prepares the printout and does not duplicate the signature.</p>
+
+<p><strong>Limitations and threats to validity.</strong></p>
+<ul>
+<li><em>One workstation.</em> The whole system runs on one machine. If it is off, only the SMS alert to a backup contact still works. A UPS and a backup internet line are outside this study.</li>
+<li><em>Synthetic data.</em> Every measurement so far uses synthetic records. Real data will have a different size, shape and noise.</li>
+<li><em>One cloud dependency.</em> Road routing depends on a third-party service with a daily request quota. The system degrades to a stored route or a labelled straight line, but a live road route is not guaranteed.</li>
+<li><em>Device coverage.</em> The Android application has been run on two phone models. Vendor battery policies on other models may stop background location or delay messages.</li>
+<li><em>Sample and evaluator bias.</em> The respondents are chosen purposively, and the team that built the system also administers the evaluation. The baseline is observed while the post-deployment figure is instrumented, so the comparison is indicative only.</li>
+<li><em>Unconfirmed policies.</em> Retention periods other than the one-year narrative rule are provisional until the barangay and the Commission on Audit confirm them, and the Safer School Zones annexes follow the barangay's own forms until DILG MC 2026-037 is checked.</li>
+</ul>
+
+<h2>4.8 Summary of Findings</h2>
+
+<p><span class="pending">To be completed</span> after Sections 4.4 to 4.6 have results. The findings that stand now are: the system was implemented as designed for the first three objectives; its automated checks pass; and its server response time is far below the two-second criterion for a single user on the workstation.</p>
+
+<h1>References</h1>
+
 <p class="ref">Budimir, M., Bee, E., &amp; Paul, J. (2021). Using mobile phone technologies for disaster risk management: Reflections from SHEAR. Science for Humanitarian Emergencies and Resilience. https://nora.nerc.ac.uk/id/eprint/530631/1/SHEAR_MobileTechs_v6.pdf</p>
-<p class="ref">Corradini, F., Leonesi, M., &amp; Piangerelli, M. (2025). State of the art and future directions of small language models: A systematic review. Big Data and Cognitive Computing, 9(7), 189. https://doi.org/10.3390/bdcc9070189</p>
 <p class="ref">Department of Information and Communications Technology. (2024). The Philippine government's digital transformation through DICT's e-Government initiatives. DICT Official Publications. https://dict.gov.ph</p>
-<p class="ref">Perante-Calina, L. E. (2026). Digital governance: Local governments’ transformation journey towards transparency, accountability, participation, and equity (TAPE). Paper presented at the 2026 KAPA International Conference, Busan, South Korea. https://www.soumu.go.jp/main_content/001045224.pdf</p>
 <p class="ref">Endsley, M. R. (1995). Toward a theory of situation awareness in dynamic systems. Human Factors, 37(1), 32–64. https://doi.org/10.1518/001872095779049543</p>
 <p class="ref">Gasmido, W. L. J., De Guzman, J. T., Natividad, C. J. T., Sicuan, C. K. B. L., &amp; Reyes, D. A. (2025). Digital Barangay: Ayos Lomboy's web-based management and information system. Psychology and Education: A Multidisciplinary Journal, 37(5), 424-431. https://doi.org/10.70838/pemj.370501</p>
-<p class="ref">Gravitee. (2026, April 10). How to prevent PII leaks in AI systems: Automated data redaction for LLM prompts. Gravitee Technology Blog. https://www.gravitee.io/blog/how-to-prevent-pii-leaks-in-ai-systems-automated-da ta-redaction-for-llm-prompt</p>
 <p class="ref">ISO/IEC. (2023). ISO/IEC 25010:2023, Systems and software engineering, Systems and software quality requirements and evaluation (SQuaRE), Product quality model. International Organization for Standardization.</p>
 <p class="ref">Lardera, L. P., &amp; Bagolong, S. (2026). Barangay information management system with automated mobile messaging for improved community engagement. International Journal on Science and Technology, 17(1), 1–12. https://www.ijsat.org/papers/2026/1/10412.pdf</p>
 <p class="ref">Longcop, L. B., &amp; Fuentes, H. C. (2024). Profile, problems and needs of Barangay Health Emergency Response Team in Gamay, Northern Samar. International Journal of Research and Innovation in Social Science, 8(11). https://doi.org/10.47772/IJRISS.2024.8110022</p>
 <p class="ref">MarketsandMarkets. (2024). Incident and emergency management market by solution, communication tools &amp; devices, service, vertical and region, Global forecast to 2030 [Grey literature, commercial market research report]. MarketsandMarkets Research. https://www.marketsandmarkets.com</p>
-<p class="ref">National Disaster Risk Reduction and Management Council. (2020, November 11). <em>SitRep No. 12 re preparedness measures and effects for Super Typhoon “Rolly”</em> <em>(I.N. GONI).</em> https://ndrrmc.gov.ph/attachments/article/4135/SitRep_no_12_re_STY_ROLLY_a s_of_11NOV2020.pdf</p>
-<p class="ref">National Disaster Risk Reduction and Management Council. (2023). National Disaster Risk Reduction and Management Council Annual Report 2023. NDRRMC. https://ndrrmc.gov.ph</p>
+<p class="ref">National Disaster Risk Reduction and Management Council. (2020, November 11). SitRep No. 12 re preparedness measures and effects for Super Typhoon "Rolly" (I.N. GONI). https://ndrrmc.gov.ph/attachments/article/4135/SitRep_no_12_re_STY_ROLLY_as_of_11NOV2020.pdf</p>
 <p class="ref">National Privacy Commission. (2012). Republic Act No. 10173: Data Privacy Act of 2012. Government of the Republic of the Philippines. https://www.privacy.gov.ph</p>
-<p class="ref">New Light Technologies. (2024). Building high-performance offline mobile apps for disaster zones. NLT Tech Blog. https://newlighttechnologies.com/blog/building-high-performance-offline-mobile-a pps-for-disaster-zones</p>
+<p class="ref">New Light Technologies. (2024). Building high-performance offline mobile apps for disaster zones. NLT Tech Blog. https://newlighttechnologies.com/blog/building-high-performance-offline-mobile-apps-for-disaster-zones</p>
 <p class="ref">Ng, G. C. (2025). Enhancing IT capstone programs through Agile practices: Insights from Filipino community projects. Journal of ICT in Education, 12(2), 99–123. https://doi.org/10.37134/jictie.vol12.2.7.2025</p>
-<p class="ref">Ng, R., Nguyen, T. N., Huang, Y., et al. (2025). SEA-LION: Southeast Asian Languages in One Network. Proceedings of the 14th International Joint Conference on Natural Language Processing, 512-526. https://aclanthology.org/2025.ijcnlp-long.30.pdf</p>
-<p class="ref">Omar, S., &amp; Van Belle, J.-P. (2023). When social media fails: Alternative technologies for communication in disasters. Proceedings of the 9th African Conference on Information Systems and Technology, Article 11. https://digitalcommons.kennesaw.edu/cgi/viewcontent.cgi?article=1104&amp;context= acist</p>
-<p class="ref">Omar, S., et al. (2024). From SMS to RCS: Intelligent frameworks for resilient messaging in emergency scenarios. Telecommunications Research Journal. https://www.researchgate.net/publication/401606852_FROM_SMS_TO_RCS_IN TELLIGENT_FRAMEWORKS_FOR_RESILIENT_MESSAGING_IN_EMERGEN CY_SCENARIOS</p>
+<p class="ref">Omar, S., &amp; Van Belle, J.-P. (2023). When social media fails: Alternative technologies for communication in disasters. Proceedings of the 9th African Conference on Information Systems and Technology, Article 11. https://digitalcommons.kennesaw.edu/cgi/viewcontent.cgi?article=1104&amp;context=acist</p>
+<p class="ref">Omar, S., et al. (2024). From SMS to RCS: Intelligent frameworks for resilient messaging in emergency scenarios. Telecommunications Research Journal. https://www.researchgate.net/publication/401606852_FROM_SMS_TO_RCS_INTELLIGENT_FRAMEWORKS_FOR_RESILIENT_MESSAGING_IN_EMERGENCY_SCENARIOS</p>
+<p class="ref">Perante-Calina, L. E. (2026). Digital governance: Local governments' transformation journey towards transparency, accountability, participation, and equity (TAPE). Paper presented at the 2026 KAPA International Conference, Busan, South Korea. https://www.soumu.go.jp/main_content/001045224.pdf</p>
 <p class="ref">PhilAtlas. (2024). Pilar, Sorsogon profile. Philippine Standard Geographic Code Data. https://www.philatlas.com/luzon/r05/sorsogon/pilar.html</p>
 <p class="ref">Philippine Statistics Authority. (2024). National ICT household survey (NICTHS) preliminary results. PSA Official Reports. https://psa.gov.ph</p>
 <p class="ref">Qureshi, A., Garcia-Font, V., Rifa-Pous, H., &amp; Megias, D. (2021). Collaborative and efficient privacy-preserving critical incident management system. Expert Systems with Applications, 163, Article 113727. https://doi.org/10.1016/j.eswa.2020.113727</p>
@@ -324,35 +678,53 @@ nav.toc li.l1 { font-weight:700; margin-top: 8px; }
 <p class="ref">Tosper, R., Jr., Mangalino, J., Obena, K., Simon, M., Tayag, M., &amp; Reyes, D. (2025). WebYu: A Barangay Yuson web-based information management system initiatives. Psychology and Education: A Multidisciplinary Journal, 37(5), 432-442. https://doi.org/10.70838/pemj.370502</p>
 <p class="ref">United Nations. (2015). Transforming our world: The 2030 agenda for sustainable development. UN General Assembly Resolution 70/1. https://sdgs.un.org/2030agenda</p>
 <p class="ref">Villafuerte, A. (2024). Public safety challenges faced by barangay officers and police: Towards a stronger policy framework. Journal of Interdisciplinary Perspectives, 3(1), 249–257. https://doi.org/10.69569/jip.2024.0639</p>
-<h1 id="s34">APPENDICES</h1>
-<p><strong>Appendix A:</strong> Data Flow Diagram</p>
-<figure><img src="thesis-images/p51-1.png" alt=""><figcaption id="f4"><strong>Figure A-1. DFD Level 0</strong></figcaption></figure>
-<p><em>Note:</em> This high-level context diagram defines the boundaries of the Baranguard system. It illustrates the data flows between the single system process and the four external entities: Citizens/Community, Teams/Field Responders, Dispatchers/Admin, and the Semaphore SMS Gateway, highlighting the primary inputs and outputs for emergency management.</p>
-<figure><img src="thesis-images/p52-1.png" alt=""><figcaption id="f5"><strong>Figure A-2. DFD Level 1</strong></figcaption></figure>
-<p><em>Note:</em> This diagram illustrates the system decomposition of the BARANGUARD framework into its primary sub-processes. It maps the proposed architectural data routing between these sub-processes, external entities, and localized or cloud-based data stores.</p>
-<p><strong>Appendix B</strong>: Use Case Diagram</p>
-<figure><img src="thesis-images/p53-1.png" alt=""><figcaption id="f6"><strong>Figure B-1. Use Case Diagram</strong></figcaption></figure>
-<p><em>Note:</em> This diagram specifies the functional requirements and user-role interactions within the proposed system boundary. It outlines the scope of privileges across three primary modules consisting of Mobile Operations, Web-Based Command Center, and Residency &amp; Community as mapped to their respective actors: Barangay Authority, Barangay Secretary, Dispatcher, and Responder.</p>
-<p><strong>Appendix C.</strong> Entity Relationship Diagram</p>
-<figure><img src="thesis-images/p55-1.png" alt=""><figcaption id="f7"><strong>Figure C-1. Use Case Diagram</strong></figcaption></figure>
-<p><em>Note:</em> This logical entity relationship diagram outlines the structural database schema designed for the BARANGUARD system. It defines the data persistence layer, specifying the attributes, primary/foreign key constraints, and cardinalities among core entities.</p>
-<p><strong>Appendix D:</strong> Initial Design of the Proposed System</p>
-<figure><img src="thesis-images/p56-1.png" alt=""><figcaption id="f8"><strong>Figure D-1. Baranguard Login Page</strong></figcaption></figure>
+
+<h1>APPENDICES</h1>
+
+<h2>Appendix A: Data Flow Diagram</h2>
+
+<figure><img src="manuscript-images/figA1-dfd-level0.svg" alt="Level 0 data flow diagram"><figcaption id="fA1"><strong>Figure A-1.</strong> <em>DFD Level 0</em></figcaption></figure>
+<p><em>Note:</em> This high-level context diagram defines the boundaries of the Baranguard system. It illustrates the data flows between the single system process and its six external entities: barangay staff (Chief Tanod and Secretary), tanods using the Android application, the Punong Barangay, the GSM gateway phone on the cellular network, the Firebase push service and OpenRouteService, highlighting the primary inputs and outputs for emergency management. Residents report through staff and do not use the system directly.</p>
+
+<figure><img src="manuscript-images/figA2-dfd-level1.svg" alt="Level 1 data flow diagram"><figcaption id="fA2"><strong>Figure A-2.</strong> <em>DFD Level 1</em></figcaption></figure>
+<p><em>Note:</em> This diagram illustrates the decomposition of the Baranguard system into its seven main processes: incident intake and management, dispatch and night offers, field sync, SOS and SMS fallback, tracking, routing and analytics, roster and reports, and access control and audit. It maps the data routing between these processes, the external entities and the data stores, all of which are held on the local administrative workstation.</p>
+
+<h2>Appendix B: Use Case Diagram</h2>
+
+<figure><img src="manuscript-images/figB1-use-case.svg" alt="Use case diagram"><figcaption id="fB1"><strong>Figure B-1.</strong> <em>Use Case Diagram</em></figcaption></figure>
+<p><em>Note:</em> This diagram specifies the functional requirements and user-role interactions within the system boundary. It outlines the scope of privileges across three groups of use cases, the web command center, records and reports, and mobile operations, as mapped to their respective actors: the Chief Tanod, the Barangay Secretary, the Punong Barangay and the Tanod.</p>
+
+<h2>Appendix C: Entity Relationship Diagram</h2>
+
+<figure><img src="manuscript-images/figC1-erd.svg" alt="Entity relationship diagram"><figcaption id="fC1"><strong>Figure C-1.</strong> <em>Entity Relationship Diagram</em></figcaption></figure>
+<p><em>Note:</em> This entity relationship diagram outlines the structure of the Baranguard database as built, drawn from the declared foreign keys of the running schema. It shows 19 of its 34 tables, the core of the incident, dispatch, responder, roster and school-zone data, with their primary keys, foreign keys and cardinalities. The remaining tables hold sessions, notifications, settings, retention and synchronisation data.</p>
+
+<h2>Appendix D: Design of the System as Built</h2>
+
+<figure><img src="manuscript-images/figD1-login.png" alt="Login page"><figcaption id="fD1"><strong>Figure D-1.</strong> <em>Baranguard Login Page</em></figcaption></figure>
 <p><em>Note:</em> The login page serves as the secure entry point of the Baranguard system, allowing authorized users to access the platform through credential verification. It ensures secure and role-based access to system features and services.</p>
-<figure><img src="thesis-images/p57-1.png" alt=""><figcaption id="f9"><strong>Figure D-2. Baranguard Admin Dashboard</strong></figcaption></figure>
-<p><em>Note:</em> The admin dashboard serves as the central interface for managing and monitoring the Baranguard system. It provides administrators with access to incident reports, responder tracking, system analytics, and other essential emergency management functions.</p>
-<figure><img src="thesis-images/p57-2.png" alt=""><figcaption id="f10"><strong>Figure D-3. Baranguard Dispatch Center</strong></figcaption></figure>
-<p><em>Note:</em> The Dispatch Center allows authorized personnel to manage and coordinate emergency response activities, including incident monitoring and responder dispatching.</p>
-<figure><img src="thesis-images/p58-1.png" alt=""><figcaption id="f11"><strong>Figure D-4. GIS Map Live Tracking</strong></figcaption></figure>
-<p><em>Note:</em> The GIS Map Live Tracking page provides real-time location monitoring of responders and incidents using an interactive geographic map for improved emergency coordination.</p>
-<figure><img src="thesis-images/p58-2.png" alt=""><figcaption id="f12"><strong>Figure D-5. Baranguard Electronic Blotter</strong></figcaption></figure>
-<p><em>Note:</em> The Electronic Blotter allows authorized users to record, manage, and review incident reports digitally. It also integrates an AI assistant to support report summarization and incident-related tasks.</p>
-<figure><img src="thesis-images/p59-1.png" alt=""><figcaption id="f13"><strong>Figure D-6. Tanod Mobile Application Home Page</strong></figcaption></figure>
+
+<figure><img src="manuscript-images/figD2-admin-dashboard.png" alt="Admin dashboard"><figcaption id="fD2"><strong>Figure D-2.</strong> <em>Baranguard Admin Dashboard</em></figcaption></figure>
+<p><em>Note:</em> The admin dashboard serves as the central interface for monitoring the barangay's operations. It provides the Chief Tanod with the count of pending and reopened incidents, the incident trend, the incident types, the number of tanods on duty and the average response time. The data shown are synthetic demonstration data.</p>
+
+<figure><img src="manuscript-images/figD3-dispatch-center.png" alt="Dispatch Center"><figcaption id="fD3"><strong>Figure D-3.</strong> <em>Baranguard Dispatch Center</em></figcaption></figure>
+<p><em>Note:</em> The Dispatch Center allows the Chief Tanod to coordinate emergency response: the emergency queue lists pending, reopened and dispatched incidents, and the live map shows the tanods, incidents, SOS alerts and community landmarks inside the barangay boundary.</p>
+
+<figure><img src="manuscript-images/figD4-gis-live-tracking.png" alt="Live map"><figcaption id="fD4"><strong>Figure D-4.</strong> <em>GIS Map Live Tracking</em></figcaption></figure>
+<p><em>Note:</em> The Live Map page provides near-real-time location monitoring of responders and incidents on an interactive geographic map, with the age of each responder's last position and a live activity feed.</p>
+
+<figure><img src="manuscript-images/figD5-incident-management.png" alt="Incident Management"><figcaption id="fD5"><strong>Figure D-5.</strong> <em>Baranguard Incident Management</em></figcaption></figure>
+<p><em>Note:</em> Incident Management allows authorized staff to search, log and review incident records, and shows for each incident its type, location, priority, status, assigned responder and the channel through which it was reported. It does not hold the barangay's official blotter, which stays in the barangay's binders and in the DILG BIMS.</p>
+
+<figure><img src="manuscript-images/figD6-tanod-home.png" alt="Tanod mobile home page"><figcaption id="fD6"><strong>Figure D-6.</strong> <em>Tanod Mobile Application Home Page</em></figcaption></figure>
 <p><em>Note:</em> The Tanod Mobile Application Home Page serves as the main interface for field responders, providing quick access to emergency reporting, incident updates, and essential response features for efficient field operations.</p>
-<figure><img src="thesis-images/p60-1.png" alt=""><figcaption id="f14"><strong>Figure D-7. Tanod Mobile Application Log</strong></figcaption></figure>
-<p><em>Note:</em> The Tanod Mobile Application Log serves as a digital record-keeping tool that tracks the real-time activities and incident reports submitted by barangay tanods during their patrols. It centralizes field data to ensure accountability and provides administrators with an organized history of community safety efforts</p>
-<figure><img src="thesis-images/p61-1.png" alt=""><figcaption id="f15"><strong>Figure D-8. Tanod Mobile Application Assignments</strong></figcaption></figure>
-<p><em>Note:</em> The Tanod Mobile Application Assignments is a dispatch tool that enables administrators to track responders via GPS and assign tasks with precise routing. It allows tanods to receive and view their emergency assignments directly on their mobile devices, ensuring coordinated and accountable field operations. The module replaces manual coordination to accelerate response times during critical incidents.</p>
+
+<figure><img src="manuscript-images/figD7-tanod-log.png" alt="Tanod mobile log"><figcaption id="fD7"><strong>Figure D-7.</strong> <em>Tanod Mobile Application Log</em></figcaption></figure>
+<p><em>Note:</em> The Tanod Mobile Application Log serves as a digital record-keeping tool that tracks the real-time activities and incident reports submitted by barangay tanods during their patrols. It centralizes field data to ensure accountability and provides administrators with an organized history of community safety efforts.</p>
+
+<figure><img src="manuscript-images/figD8-tanod-assignments.png" alt="Tanod mobile assignments"><figcaption id="fD8"><strong>Figure D-8.</strong> <em>Tanod Mobile Application Assignments</em></figcaption></figure>
+<p><em>Note:</em> The Tanod Mobile Application Assignments is a dispatch tool that enables the Chief Tanod to assign tasks with precise routing and allows tanods to receive and view their emergency assignments directly on their mobile devices, ensuring coordinated and accountable field operations.</p>
+
 </main>
 </div>
 <script>

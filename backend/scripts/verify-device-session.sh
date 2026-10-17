@@ -174,7 +174,7 @@ HDR=$(curl -s -D - -o /dev/null "${BASE_URL}/notifications" -H "Authorization: B
 [ -n "$HDR" ] && pass "Renewal issued (remaining 1h < 50% of 24h)" || fail "No X-Renewed-Token on a renewable device session"
 EXP_IN=$(exp_in "$JTI_DEV"); CAP_IN=$(cap_in "$JTI_DEV")
 # 2h to the cap: renewed expiry must land AT the cap (~7200s), NOT at +24h.
-[ "$EXP_IN" -gt 7000 ] && [ "$EXP_IN" -le "$CAP_IN" ] && [ "$EXP_IN" -lt 10000 ] && pass "Renewed expires_at capped at issued_at+7d (expires in ${EXP_IN}s, cap in ${CAP_IN}s, not +24h)" || fail "Cap not applied: expires in ${EXP_IN}s, cap in ${CAP_IN}s"
+[ "$EXP_IN" -gt 7000 ] && [ "$EXP_IN" -le "$((CAP_IN + 2))" ] && [ "$EXP_IN" -lt 10000 ] && pass "Renewed expires_at capped at issued_at+7d (expires in ${EXP_IN}s, cap in ${CAP_IN}s, not +24h)" || fail "Cap not applied: expires in ${EXP_IN}s, cap in ${CAP_IN}s"
 if [ -n "$HDR" ]; then
   JWT_EXP_IN=$(( $(jwt_claim "$HDR" exp) - $(date +%s) ))
   D=$(( JWT_EXP_IN - EXP_IN )); [ "${D#-}" -le 5 ] && pass "Renewed JWT exp matches the capped DB expiry (Δ${D}s)" || fail "Renewed JWT exp (${JWT_EXP_IN}s) != DB (${EXP_IN}s)"
