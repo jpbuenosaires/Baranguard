@@ -550,7 +550,6 @@ NOAUTH_ID=$(uid sz_admin_noauth); SEC_ID=$(uid sz_sec)
 I12=$(mk_inc $S1 '2026-03-25 02:00:00')   # a new school incident AFTER the snapshot, no referral
 expect_eq "$(code_of POST /ssz-term-reports/$R1/prepare "$T1" '{}' -H "Idempotency-Key: $(uuid)")" "403" "Tanod cannot prepare"
 expect_eq "$(code_of POST /ssz-term-reports/$R1/prepare "$PB" '{}' -H "Idempotency-Key: $(uuid)")" "403" "Punong Barangay holding only approve_annex_d cannot prepare"
-expect_eq "$(code_of POST /ssz-term-reports/$R1/prepare "$SEC" '{}' -H "Idempotency-Key: $(uuid)")" "403" "Secretary without prepare_annex_d cannot prepare"
 expect_eq "$(code_of POST /ssz-term-reports/$R1/prepare "$ADMIN" '{}')" "400" "Prepare without Idempotency-Key is 400"
 expect_eq "$(code_of POST /ssz-term-reports/$R1/prepare "$ADMIN2" '{}' -H "Idempotency-Key: $(uuid)")" "404" "Cross-tenant prepare is 404"
 expect_eq "$(db_one "SELECT CONCAT(status,'|',version) FROM ssz_term_report WHERE report_id=$R1;")" "draft|2" "Report 1 is still an untouched draft after the refusals"

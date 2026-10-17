@@ -225,7 +225,9 @@ final class UsersController
             'created_at' => $row['created_at'],
             'last_login_at' => $row['last_login_at'],
             'official_title' => $row['official_title'] ?? null,
-            'approval_authority' => $authority === '' ? [] : array_values(array_intersect(ApprovalAuthority::ALL, explode(',', $authority))),
+            'approval_authority' => in_array($row['role'], ['admin', 'secretary'], true)
+                ? ApprovalAuthority::ALL
+                : ($authority === '' ? [] : array_values(array_intersect(ApprovalAuthority::ALL, explode(',', $authority)))),
         ];
     }
 
