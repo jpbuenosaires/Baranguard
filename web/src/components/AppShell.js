@@ -95,6 +95,186 @@ function isCurrentlyDark() {
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
+// --- Alert sound mute preference ---
+function isAlertMuted() {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem('baranguard_alerts_muted') === 'true';
+  } catch {
+    return false;
+  }
+}
+function setAlertMuted(muted) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('baranguard_alerts_muted', String(muted));
+    }
+  } catch {
+    // fallback
+  }
+}
+
+// --- Recent searches in local storage ---
+function getRecentSearches() {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('baranguard_recent_searches') : null;
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+function addRecentSearch(item) {
+  try {
+    const list = getRecentSearches().filter((x) => x.label !== item.label);
+    list.unshift(item);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('baranguard_recent_searches', JSON.stringify(list.slice(0, 5)));
+    }
+  } catch {
+    // fallback
+  }
+}
+function clearRecentSearches() {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('baranguard_recent_searches');
+    }
+  } catch {
+    // fallback
+  }
+}
+
+// --- Keyboard Shortcuts Modal Dialog ---
+function openKeyboardShortcutsModal() {
+  if (typeof document === 'undefined') return;
+  if (document.querySelector('.keyboard-shortcuts-backdrop')) return;
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop keyboard-shortcuts-backdrop';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-card keyboard-shortcuts-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'shortcuts-modal-title');
+
+  const mHeader = document.createElement('div');
+  mHeader.className = 'keyboard-shortcuts-header';
+
+  const mTitle = document.createElement('h3');
+  mTitle.id = 'shortcuts-modal-title';
+  mTitle.className = 'keyboard-shortcuts-title';
+  mTitle.innerHTML = `${icons.keyboard(18)}<span>Keyboard Shortcuts</span>`;
+
+  const mClose = document.createElement('button');
+  mClose.type = 'button';
+  mClose.className = 'icon-btn keyboard-shortcuts-close';
+  mClose.setAttribute('aria-label', 'Close shortcuts cheat sheet');
+  mClose.innerHTML = icons.x(16);
+  mClose.addEventListener('click', () => backdrop.remove());
+
+  mHeader.append(mTitle, mClose);
+
+  const mBody = document.createElement('div');
+  mBody.className = 'keyboard-shortcuts-body';
+
+  const isMacPlatform = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.userAgent || '');
+  const ctrlLabel = isMacPlatform ? '⌘' : 'Ctrl';
+
+  const shortcutSections = [
+    {
+      title: 'Search & Navigation',
+      shortcuts: [
+        { keys: [ctrlLabel, 'K'], desc: 'Open global search and quick jump palette' },
+        { keys: ['?'], desc: 'Open keyboard shortcuts cheat sheet' },
+        { keys: ['Esc'], desc: 'Close active search, modal dialog, or popover menu' },
+        { keys: ['↓', '↑'], desc: 'Navigate search results and menu items' },
+        { keys: ['Enter'], desc: 'Select or activate highlighted item' },
+      ],
+    },
+    {
+      title: 'Accessibility & Controls',
+      shortcuts: [
+        { keys: ['Tab'], desc: 'Cycle focus through interactive elements' },
+        { keys: ['Shift', 'Tab'], desc: 'Cycle focus backwards' },
+        { keys: ['Space'], desc: 'Activate buttons and toggles' },
+      ],
+    },
+  ];
+
+  for (const section of shortcutSections) {
+    const secEl = document.createElement('div');
+    secEl.className = 'keyboard-shortcuts-section';
+
+    const secTitle = document.createElement('div');
+    secTitle.className = 'keyboard-shortcuts-section-title';
+    secTitle.textContent = section.title;
+    secEl.appendChild(secTitle);
+
+    for (const item of section.shortcuts) {
+      const row = document.createElement('div');
+      row.className = 'keyboard-shortcuts-row';
+
+      const desc = document.createElement('span');
+      desc.className = 'keyboard-shortcuts-desc';
+      desc.textContent = item.desc;
+
+      const keysWrap = document.createElement('div');
+      keysWrap.className = 'keyboard-shortcuts-keys';
+      for (const k of item.keys) {
+        const kbd = document.createElement('kbd');
+        kbd.className = 'keyboard-shortcuts-key';
+        kbd.textContent = k;
+        keysWrap.appendChild(kbd);
+      }
+
+      row.append(desc, keysWrap);
+      secEl.appendChild(row);
+    }
+
+    mBody.appendChild(secEl);
+  }
+
+  const mFooter = document.createElement('div');
+  mFooter.className = 'keyboard-shortcuts-footer';
+
+  const hint = document.createElement('span');
+  hint.textContent = 'Press Esc or click outside to dismiss';
+
+  const gotItBtn = document.createElement('button');
+  gotItBtn.type = 'button';
+  gotItBtn.className = 'btn btn--secondary';
+  gotItBtn.textContent = 'Got it';
+  gotItBtn.addEventListener('click', () => backdrop.remove());
+
+  mFooter.append(hint, gotItBtn);
+
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  });
+
+  modal.append(mHeader, mBody, mFooter);
+  backdrop.appendChild(modal);
+  document.body.appendChild(backdrop);
+}
+
+let activeQuestionHandlerAttached = false;
+function ensureGlobalShortcuts() {
+  if (activeQuestionHandlerAttached || typeof window === 'undefined') return;
+  activeQuestionHandlerAttached = true;
+  window.addEventListener('keydown', (e) => {
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const activeEl = document.activeElement;
+      const tag = activeEl?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || activeEl?.isContentEditable) {
+        return;
+      }
+      e.preventDefault();
+      openKeyboardShortcutsModal();
+    }
+  });
+}
+
+
 // AppShell() runs fresh on every page navigation (main.js's boot() re-
 // renders from scratch) — a document-level listener added *inside*
 // AppShell() would pile up one per navigation and never get removed
@@ -183,17 +363,17 @@ const NAV_ITEMS = [
   // happen there, and the Approvals page deep-links to it.
   { key: 'personnel', label: 'Personnel', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.users, group: 'Personnel' },
 
-  // 2026-10-07: the four Admin-only operational screens live under ONE
-  // collapsible "System Tools" menu instead of four separate sidebar rows
-  // (`menu` marks membership; reach is unchanged — PAGE_ROLES in main.js
-  // still gates every one of them to Admin). Settings stays a normal item.
+  // 2026-10-07 grouped these under a collapsible "System Tools" menu; 2026-10-17 they are plain
+  // top-level rows again (the `menu` support below is kept but unused). PAGE_ROLES in main.js
+  // still gates every one of them to Admin.
   // §9 W14 — Admin only, explicitly.
-  { key: 'sms-log', label: 'SMS Monitor', roles: ['admin'], icon: icons.messageSquare, group: 'System', menu: SYSTEM_TOOLS_MENU },
+  { key: 'sms-log', label: 'SMS Monitor', roles: ['admin'], icon: icons.messageSquare, group: 'System' },
   // §9 W17 / W20 — Admin-only operational screens.
-  { key: 'audit-log', label: 'Audit Log', roles: ['admin'], icon: icons.shield, group: 'System', menu: SYSTEM_TOOLS_MENU },
-  { key: 'service-health', label: 'Service Health', roles: ['admin'], icon: icons.activity, group: 'System', menu: SYSTEM_TOOLS_MENU },
+  { key: 'audit-log', label: 'Audit Log', roles: ['admin'], icon: icons.shield, group: 'System' },
+  { key: 'service-health', label: 'Service Health', roles: ['admin'], icon: icons.activity, group: 'System' },
   // §D/W18 — Admin only, built as a deliberate Sprint 8 exception.
-  { key: 'map-packages', label: 'Map Packages', roles: ['admin'], icon: icons.map, group: 'System', menu: SYSTEM_TOOLS_MENU },
+  // 2026-10-17: no sidebar row. It is opened from Settings > Map Packages; the route and role gate stay.
+  { key: 'map-packages', label: 'Map Packages', roles: ['admin'], icon: icons.map, group: 'Settings', hidden: true },
   { key: 'settings', label: 'Settings', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.settings, group: 'System' },
 ];
 const NAV_COUNTS_POLL_MS = 60000; // Not time-critical — see ReportsController::navCounts()'s own doc.
@@ -355,7 +535,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
     navItem.addEventListener('click', () => { closeDrawer(); navigate(item.key); });
     return navItem;
   };
-  for (const item of NAV_ITEMS.filter((i) => i.roles.includes(user.role))) {
+  for (const item of NAV_ITEMS.filter((i) => i.roles.includes(user.role) && !i.hidden)) {
     appendGroupLabel(item.group);
     if (!item.menu) {
       nav.appendChild(buildNavButton(item));
@@ -647,7 +827,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
 
   // Build role-gated Quick Jump targets (screens + deep-linked tabs)
   const quickJumpTargets = [
-    ...NAV_ITEMS.filter((item) => item.roles.includes(user.role)).map((item) => ({
+    ...NAV_ITEMS.filter((item) => item.roles.includes(user.role) && !item.hidden).map((item) => ({
       page: item.key,
       param: undefined,
       label: item.label,
