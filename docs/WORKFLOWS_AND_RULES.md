@@ -30,7 +30,7 @@ Baranguard serves **4 end-user personas** (the anonymous citizen form was retire
 * **Core Function:** Day-to-day dispatch command, tanod tracking, roster drafting, user provisioning, system health, and Annex D report preparation.
 
 ### Complete Navigation Reach (12 sidebar pages + a 4-page "System Tools" group = 16 pages)
-`dashboard`, `dispatch`, `incident-management`, `gis`, `citizen-inbox` (legacy reports only), `approvals`, `accomplishment-reports`, `referrals`, `school-zones`, `analytics`, `personnel`, `settings`, plus **System Tools** (one grouped menu holding `sms-log`, `audit-log`, `service-health`, `map-packages`). No separate technical-admin role exists: the barangay officials operate these themselves. `settings` is unchanged.
+`dashboard`, `dispatch`, `incident-management`, `gis`, `approvals`, `accomplishment-reports`, `referrals`, `school-zones`, `analytics`, `personnel`, `settings`, plus **System Tools** (one grouped menu holding `sms-log`, `audit-log`, `service-health`, `map-packages`). No separate technical-admin role exists: the barangay officials operate these themselves. `settings` is unchanged.
 
 ### Operational Flow
 
@@ -82,7 +82,7 @@ flowchart TD
 * **Core Function:** Statutory records custodian (RA 7160 §394c), confidential narrative reviewer, incident lifecycle governor, Safer School Zones administrator, walk-in incident logging, draft rosters and swap review, and paper-approval recording.
 
 ### Complete Navigation Reach (8 Sidebar Items)
-`incident-management`, `citizen-inbox` (legacy), `approvals`, `accomplishment-reports`, `referrals`, `school-zones`, `personnel`, `settings`.  
+`incident-management`, `approvals`, `accomplishment-reports`, `referrals`, `school-zones`, `personnel`, `settings`.  
 *(Excluded by `PAGE_ROLES`: `dashboard`, `dispatch`, `gis`, `analytics`, `sms-log`, `audit-log`, `service-health`, `map-packages`)*
 
 ### Operational Flow
@@ -103,9 +103,6 @@ flowchart TD
 
     IncMgmt --> LogWalkIn["Log Walk-in Incident (report channel: tanod-alerted / walk-in / SMS / other)"]
     OpenDetail --> LinkRelated["Link Related Incident (no status change; finalize as duplicate after dispatch closes)"]
-
-    Login --> CitInbox["Citizen Reports Inbox (legacy rows only)"]
-    CitInbox --> ConvertCit["Convert Legacy Citizen Report to Official Incident"]
 
     Login --> SSZ["Safer School Zones Hub"]
     SSZ --> AnnexB["Schools Tab: Maintain Annex B School Inventory"]
@@ -134,7 +131,7 @@ flowchart TD
 
 ### Complete Navigation Reach (9 Sidebar Items)
 `dashboard`, `gis`, `approvals`, `accomplishment-reports`, `referrals`, `school-zones`, `analytics`, `personnel`, `settings`.  
-*(Excluded by `PAGE_ROLES`: `dispatch`, `incident-management`, `citizen-inbox`, `sms-log`, `audit-log`, `service-health`, `map-packages`)*
+*(Excluded by `PAGE_ROLES`: `dispatch`, `incident-management`, `sms-log`, `audit-log`, `service-health`, `map-packages`)*
 
 ### Operational Flow
 
@@ -241,7 +238,7 @@ Every state machine in Baranguard is strictly validated on the backend. The foll
 
 ```mermaid
 stateDiagram-v2
-    [*] --> pending : Reported by a Tanod, or logged by the Secretary/Admin (walk-in, SMS, other; legacy citizen reports are converted)
+    [*] --> pending : Reported by a Tanod, or logged by the Secretary/Admin (walk-in, SMS, other)
     pending --> dispatched : Admin creates dispatch assignment
     dispatched --> pending : All active dispatches cancelled
     dispatched --> resolved : Admin resolves (Requires ALL dispatches completed/cancelled)
@@ -452,7 +449,7 @@ stateDiagram-v2
 55. The workstation serves four fixed barangays in Pilar, Sorsogon, and expanding tenant coverage requires schema migrations.
 
 ### XI. Review-Decision Additions (2026-10-07)
-56. The anonymous public citizen report form no longer exists; walk-ins are logged by the Secretary or Admin and every incident records a report channel from a fixed list (tanod-alerted, walk-in, SMS, other).
+56. The anonymous public citizen report form no longer exists, and since 2026-10-17 neither does the Citizen Reports inbox (screen, routes and nav item removed; old `citizen_report` rows are kept until their retention date and nothing creates new ones). Resident self-reporting by SMS is future work, not built; walk-ins are logged by the Secretary or Admin and every incident records a report channel from a fixed list (tanod-alerted, walk-in, SMS, other).
 57. A dispatch offer goes to active, on-duty tanods with no active dispatch who hold a published shift covering the current time; if none qualifies, it goes to such on-duty tanods whose own availability covers the current time (Rule 77). Its alert shows only incident type, barangay and time.
 58. Accepting a dispatch offer is online-only, never queued; the first accept the server records wins, all other recipients are released, and an Admin can still assign additional responders.
 59. An offer nobody accepts within 180 seconds re-broadcasts (up to three rounds) and alerts the Admins, then stays escalated with spaced Admin reminders until someone assigns or cancels.

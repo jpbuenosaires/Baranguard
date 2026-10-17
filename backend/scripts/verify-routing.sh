@@ -218,6 +218,10 @@ step "8. Real ORS block — only runs with a real key in backend/.env"
 REAL_ORS_KEY=$(grep -E '^ORS_API_KEY=' "$BACKEND_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2-)
 if [ -z "$REAL_ORS_KEY" ]; then
   skip "No real ORS_API_KEY found in backend/.env — real-route assertions skipped, not failed"
+elif ORS_PROBE=$(curl -s -m 20 -X POST "https://api.openrouteservice.org/v2/directions/driving-car/geojson" -H "Content-Type: application/json" -H "Authorization: $REAL_ORS_KEY" -d '{"coordinates":[[123.670203,12.918905],[123.672552,12.921617]]}'); echo "$ORS_PROBE" | grep -qiE 'quota|rate limit|unauthori|forbidden|"error"'; then
+  # the key is set but ORS itself refuses it (free-tier daily quota is easy to burn with repeated runs): not our bug
+  skip "ORS refused a direct probe ($(echo "$ORS_PROBE" | tr -d '
+' | cut -c1-60)) — real-route assertions skipped, not failed"
 else
   export ORS_API_KEY="$REAL_ORS_KEY"
   "$PHP_BIN" -S "127.0.0.1:${API_PORT}" -t "$BACKEND_DIR/public" >"$BACKEND_DIR/scripts/.routing-server.log" 2>&1 &

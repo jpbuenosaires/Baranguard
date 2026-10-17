@@ -71,8 +71,13 @@
 }
 
 .approvals-kpi-item.is-active {
-  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+  background: var(--color-surface);
   box-shadow: inset 0 -2px 0 var(--color-primary);
+}
+
+.approvals-kpi-item.is-active .command-kpi__label {
+  color: var(--color-primary);
+  font-weight: 700;
 }
 
 .approvals-kpi-item:focus-visible {
@@ -196,16 +201,89 @@
 }
 
 .approvals-toolbar-right {
+  flex: 0 0 auto;
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .approvals-sort-controls {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-wrap: nowrap;
   padding-left: 0;
   border-left: none;
+}
+
+.citizen-sort-select {
+  min-width: 0;
+  flex: 0 1 auto;
+  height: var(--control-height, 2.25rem);
+  min-height: var(--control-height, 2.25rem);
+  padding: 0 1.85rem 0 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.citizen-sort-select:focus-visible {
+  border-color: var(--color-primary);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+.citizen-sort-dir-group {
+  display: inline-flex;
+  flex: 0 0 auto; /* never squeeze the Desc/Asc pair: overflow:hidden would clip Asc */
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  height: var(--control-height, 2.25rem);
+  box-sizing: border-box;
+}
+
+.citizen-sort-dir-btn {
+  height: 100%;
+  padding: 0 0.65rem;
+  border: none;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.citizen-sort-dir-btn:first-child {
+  border-right: 1px solid var(--color-border);
+}
+
+.citizen-sort-dir-btn:hover {
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
+  color: var(--color-text-primary);
+}
+
+.citizen-sort-dir-btn.is-active {
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
 /* ==========================================================================
