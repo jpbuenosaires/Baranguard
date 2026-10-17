@@ -52,3 +52,13 @@ Method: every screen and tab was opened in headless Chrome at 1440 x 900 as the 
 4. Row actions, badge case, wording (A6, D1, D2, D4).
 
 Not verified: dark theme, screens narrower than 1440 px, the Annex C-1 and Annex D tables, and the Tanod mobile app.
+
+## F. Status after the first pass (commit d41c0ac)
+
+Done: A1 to A6 (one flat primary, one radius and height, same map toolbar, labelled buttons, "Print preview" wording), B5 (SMS Monitor icon, Dashboard chip removed), B6 (help button above the pagination), B7 (top bar keeps clock and breadcrumbs), C2 and C3 (chips and selected state), C5 ("Clear filters"), D1 (sentence-case badges), D4 (subtitles), part of D2 (Incident rows say "View"), part of D3 (banners share a shape), part of C1 (Analytics tabs have icons), part of C4 (native date inputs share the control style).
+
+Not done, and why:
+- B1 header actions on Approvals, Referral Log and Accomplishment Reports: needs a decision on what to export or print there.
+- B2 summary numbers in four places, B3 search width and position, B4 the Sort control: these need a shared toolbar component and edits to each page, best done page by page.
+- C4 replacing native date inputs with the shared DateRangePicker: changes behaviour and tests.
+- D2 on the other tables (Users, Schools, Accomplishment) and D3 banner markup.
