@@ -43,7 +43,6 @@ const ACCOUNT_SECTIONS = [
 const SYSTEM_SECTIONS = [
   { key: 'general', label: 'General', subLabel: 'Municipal & jurisdiction branding', icon: icons.shield },
   { key: 'sos-fallback', label: 'SOS Fallback', subLabel: 'Backup contact for total-outage SOS', icon: icons.alertTriangle },
-  { key: 'map-packages', label: 'Map Packages', subLabel: 'Offline maps for tanod phones', icon: icons.map },
 ];
 // SMS Gateway tab REMOVED 2026-09-23 when Semaphore was replaced by a local
 // GSM gateway (explicit user decision — cost). That transport has no cloud
@@ -170,40 +169,11 @@ export function renderSettingsPage(root, user, onLoggedOut, navigate) {
     } else if (activeSection === 'sos-fallback') {
       panel.appendChild(buildLoadingCard('SOS Fallback'));
       loadSystemSettingsInto(panel, buildSosFallbackCard);
-    } else if (activeSection === 'map-packages') {
-      panel.appendChild(buildMapPackagesCard(navigate));
     }
   }
   renderPanel();
 
   layout.append(rail, panel);
-}
-
-function buildMapPackagesCard(navigate) {
-  const card = document.createElement('div');
-  card.className = 'settings-card';
-  const headerEl = document.createElement('div');
-  headerEl.className = 'settings-card__header';
-  headerEl.innerHTML = `
-    <div class="settings-card__title-wrap">
-      <span class="settings-card__icon">${icons.map(20)}</span>
-      <div>
-        <h3 class="settings-card__title">Map Packages</h3>
-        <p class="settings-card__subtitle">The offline map file that tanod phones download at sign-in, so roads and landmarks show without a signal</p>
-      </div>
-    </div>
-  `;
-  const bodyEl = document.createElement('div');
-  bodyEl.className = 'settings-card__body';
-  const open = document.createElement('button');
-  open.type = 'button';
-  open.className = 'primary';
-  open.textContent = 'Open Map Packages';
-  open.style.alignSelf = 'flex-start';
-  open.addEventListener('click', () => navigate('map-packages'));
-  bodyEl.appendChild(open);
-  card.append(headerEl, bodyEl);
-  return card;
 }
 
 function buildLoadingCard(label) {
