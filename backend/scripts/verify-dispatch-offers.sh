@@ -606,12 +606,6 @@ expect_code "NIGHT: tanod-created incident (mobile path)" 201
 TINC=$(jget "$BODY" incident_id)
 expect_eq "  forced report_channel tanod_alerted (Wave 1B intact)" "$(db_one "SELECT report_channel FROM incident WHERE incident_id=$TINC;")" "tanod_alerted"
 expect_eq "  an offer was opened" "$(db_one "SELECT COUNT(*) FROM dispatch_offer WHERE incident_id=$TINC;")" "1"
-db_run "INSERT INTO citizen_report (barangay_id,description,submitted_at) VALUES (1,'$SECRET walk-in',UTC_TIMESTAMP());"
-CRID=$(db_one "SELECT report_id FROM citizen_report ORDER BY report_id DESC LIMIT 1;")
-api POST "/citizen-reports/$CRID/convert" "$SEC_T" '{"incident_type":"theft"}' -H "Idempotency-Key: $(uuid)"
-expect_code "NIGHT: convert citizen report" 200
-CINC=$(jget "$BODY" incident_id)
-expect_eq "  an offer was opened for the converted incident" "$(db_one "SELECT COUNT(*) FROM dispatch_offer WHERE incident_id=$CINC;")" "1"
 BASE_URL="$DAY_URL"
 api POST "/incidents" "$T2_T" "{\"incident_type\":\"fire\",\"raw_narrative\":\"x\",\"client_event_id\":\"$(uuid)\"}" -H "$(dev $T2)"
 DINC=$(jget "$BODY" incident_id)

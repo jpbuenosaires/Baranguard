@@ -387,7 +387,6 @@ export async function getNavCounts() {
   const json = await request('GET', '/reports/nav-counts', { auth: true });
   return {
     pendingIncidents: json.pending_incidents,
-    unconvertedCitizenReports: json.unconverted_citizen_reports,
     pendingSwapRequests: json.pending_swap_requests,
   };
 }
@@ -827,43 +826,6 @@ export async function updateProfile(userId, { fullName, contactNumber } = {}) {
     if (session) writeSession({ ...session, user: { ...session.user, fullName } });
   }
   return { userId: json.user_id, updated: json.updated };
-}
-
-// --- Citizen reports (W16 inbox; the public submit form was removed 2026-10-07) ---------------------------
-
-/** GET /citizen-reports (W16 inbox — list only, no convert action yet). */
-export async function getCitizenReports({ status, page, limit } = {}) {
-  const json = await request('GET', '/citizen-reports', { query: { status, page, limit }, auth: true });
-  return {
-    items: json.items.map((row) => ({
-      reportId: row.report_id,
-      description: row.description,
-      contactNumber: row.contact_number,
-      latitude: row.latitude,
-      longitude: row.longitude,
-      submittedAt: row.submitted_at,
-      incidentId: row.incident_id,
-      incidentDisplayId: row.incident_display_id ?? null,
-    })),
-    page: json.page,
-    limit: json.limit,
-    total: json.total,
-  };
-}
-
-/**
- * POST /citizen-reports/:id/convert (2026-09-05) — creates an incident
- * from an unconverted report. `incidentType` is required (no
- * citizen-report equivalent to infer it from); `priority` optional,
- * defaults to 'normal' server-side. Idempotent: calling this again on an
- * already-converted report returns the same result rather than erroring.
- */
-export async function convertCitizenReport(reportId, { incidentType, priority } = {}) {
-  const json = await request('POST', `/citizen-reports/${reportId}/convert`, {
-    body: { incident_type: incidentType, priority },
-    auth: true,
-  });
-  return { incidentId: json.incident_id, citizenReportId: json.citizen_report_id, convertedAt: json.converted_at };
 }
 
 // --- Shifts (W11 Scheduler, W12 Swap Requests) ------------------------------

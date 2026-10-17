@@ -78,3 +78,6 @@ eval-kit/**/evaluation-log-*.txt
 backend/fixtures/*.checkpoint.json
 backend/fixtures/evaluation-results-*.txt
 backend/fixtures/evaluation-log-*.txt
+
+# Dev auto-login credentials (created by Dev Login.bat)
+web/dev-login.local.json

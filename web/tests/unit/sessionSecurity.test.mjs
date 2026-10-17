@@ -204,11 +204,11 @@ describe('X-02: back to sign-in with a message, then back to the same screen', (
   test('a 401 mid-session shows the expiry notice; the same user returns to the same screen', async () => {
     signIn('secretary');
     const { root } = await bootMain();
-    const target = navButton(/citizen reports/i);
+    const target = navButton(/^approvals/i);
     assert.ok(target, 'nav item not found');
     click(target);
     await settle();
-    assert.match(text($('.page-header__title', root)), /Citizen Reports/);
+    assert.match(text($('.page-header__title', root)), /Approvals/);
 
     api.fail('GET', '/incidents', 401, 'UNAUTHORIZED', 'Invalid or expired token.');
     await client.getIncidents().catch(() => {});
@@ -219,13 +219,13 @@ describe('X-02: back to sign-in with a message, then back to the same screen', (
     api.overrides.length = 0;
 
     await signInViaForm(root, 'secretary.dao');
-    assert.match(text($('.page-header__title', root)), /Citizen Reports/, 'did not return to the previous screen');
+    assert.match(text($('.page-header__title', root)), /Approvals/, 'did not return to the previous screen');
   });
 
   test('a DIFFERENT user signing in lands on their own default page, not the previous screen', async () => {
     signIn('secretary');
     const { root } = await bootMain();
-    click(navButton(/citizen reports/i));
+    click(navButton(/^approvals/i));
     await settle();
     api.fail('GET', '/incidents', 401, 'UNAUTHORIZED', 'Invalid or expired token.');
     await client.getIncidents().catch(() => {});

@@ -44,15 +44,6 @@ describe('Wave 2 operations pages', () => {
     assert.doesNotMatch(body, /Top Hotspot|GPS-verified/);
   });
 
-  test('Reports "Review Inbox" goes to the real citizen-inbox route', async () => {
-    const ctx = mountPage(renderAnalyticsPage, { role: 'admin' });
-    await settle();
-    const btn = buttonByText(/Review Inbox/i, ctx.root);
-    assert.ok(btn, 'Review Inbox button missing for Admin');
-    click(btn);
-    assert.deepEqual(ctx.navigations.at(-1), { page: 'citizen-inbox', param: undefined });
-  });
-
   test('Dashboard recent-incident status is a plain label, never the raw code', async () => {
     mountPage(renderAdminDashboardPage, { role: 'admin' });
     await settle();

@@ -432,7 +432,6 @@ final class ReportsController
 
         $pendingIncidents = (int) self::countWhere($pdo, 'incident', "barangay_id = :b AND status IN ('pending', 'reopened')", ['b' => $barangayId]);
         // reopened counts: the Dispatch Center queue lists it with pending, so the badge must match.
-        $unconvertedCitizenReports = (int) self::countWhere($pdo, 'citizen_report', 'barangay_id = :b AND converted_at IS NULL', ['b' => $barangayId]);
         // shift_swap_request has no barangay_id of its own — scoped via the
         // shift it targets, same join every other swap-request query in
         // this codebase already uses.
@@ -444,7 +443,6 @@ final class ReportsController
         );
         Http::send(200, [
             'pending_incidents' => $pendingIncidents,
-            'unconverted_citizen_reports' => $unconvertedCitizenReports,
             'pending_swap_requests' => $pendingSwapRequests,
         ]);
     }

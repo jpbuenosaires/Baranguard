@@ -240,34 +240,22 @@ export function renderApprovalsPage(root, user, onLoggedOut, navigate) {
     // Build Option D Unified Command Card
     const commandCard = h('div', 'unified-table-card approvals-command-card');
 
-    // 1. Top Interactive KPI Filter Strip (replaces redundant duplicate chip bar)
+    // 1. Top Interactive Queue Tab Strip
     const kpiStrip = h('div', 'command-card-kpis approvals-kpi-strip');
     const kpiItemsMap = new Map();
     const kpiCountRefs = new Map();
 
-    if (groups.length > 1) {
-      const totalKpi = buildKpiItem({
-        id: 'all',
-        label: 'Total Waiting',
-        tone: 'warning',
-        iconFn: icons.clock || icons.checkCircle,
-        isActive: true,
-        onClick: () => setQueueFilter('all'),
-      });
-      kpiStrip.appendChild(totalKpi.el);
-      kpiItemsMap.set('all', totalKpi.el);
-      kpiCountRefs.set('all', totalKpi.valueEl);
-    }
+    activeQueueFilter = groups[0]?.id || 'all';
 
     for (const g of groups) {
-      const isSingleGroup = groups.length === 1;
+      const isCurrent = g.id === activeQueueFilter;
       const kpi = buildKpiItem({
         id: g.id,
         label: g.kpiLabel,
         tone: g.tone,
         iconFn: g.icon,
-        isActive: isSingleGroup,
-        onClick: () => setQueueFilter(isSingleGroup ? 'all' : g.id),
+        isActive: isCurrent,
+        onClick: () => setQueueFilter(g.id),
       });
       kpiStrip.appendChild(kpi.el);
       kpiItemsMap.set(g.id, kpi.el);
@@ -365,24 +353,15 @@ export function renderApprovalsPage(root, user, onLoggedOut, navigate) {
     body.appendChild(commandCard);
 
     function syncAllCounts() {
-      let grandTotal = 0;
       for (const g of groups) {
         const c = counts.get(g.id) ?? 0;
-        grandTotal += c;
         const kpiEl = kpiCountRefs.get(g.id);
         if (kpiEl) kpiEl.textContent = String(c);
       }
-      const totalKpiEl = kpiCountRefs.get('all');
-      if (totalKpiEl) totalKpiEl.textContent = String(grandTotal);
     }
 
     function setQueueFilter(filterId) {
-      // Clicking an already-active specific queue tile toggles back to 'all'
-      if (filterId !== 'all' && activeQueueFilter === filterId && groups.length > 1) {
-        activeQueueFilter = 'all';
-      } else {
-        activeQueueFilter = filterId;
-      }
+      activeQueueFilter = filterId;
       for (const [id, el] of kpiItemsMap.entries()) {
         const isCurrent = id === activeQueueFilter;
         el.classList.toggle('is-active', isCurrent);

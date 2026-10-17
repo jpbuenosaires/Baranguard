@@ -84,7 +84,7 @@ describe('Settings behaviour', () => {
   });
 
   test('the default landing page only offers screens this role can open', async () => {
-    const SECRETARY_PAGES = ['incident-management', 'citizen-inbox', 'settings', 'approvals'];
+    const SECRETARY_PAGES = ['incident-management', 'settings', 'approvals'];
     mountPage(renderSettingsPage, { role: 'secretary' });
     await settle();
     await openSection('Appearance')();
@@ -93,8 +93,8 @@ describe('Settings behaviour', () => {
     assert.ok(select, 'no landing-page picker');
     const offered = [...select.options].map((o) => o.value).filter(Boolean);
     assert.deepEqual(offered.filter((v) => !SECRETARY_PAGES.includes(v)), [], 'offers a page main.js would refuse');
-    type(select, 'citizen-inbox');
+    type(select, 'approvals');
     await settle();
-    assert.equal(window.localStorage.getItem(DEFAULT_PAGE_KEY), 'citizen-inbox');
+    assert.equal(window.localStorage.getItem(DEFAULT_PAGE_KEY), 'approvals');
   });
 });

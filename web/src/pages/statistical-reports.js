@@ -26,7 +26,7 @@
  * kebab-case filename per §4 (pages/routes convention).
  */
 
-import { getReportsSummary, exportReport, downloadReportExport, getCitizenReports, getBarangays, ApiClientError } from '../api/apiClient.js';
+import { getReportsSummary, exportReport, downloadReportExport, getBarangays, ApiClientError } from '../api/apiClient.js';
 import { showToast } from '../components/Toast.js';
 import { KpiCard, KpiHeroCard } from '../components/KpiCard.js';
 import { LineChart } from '../components/LineChart.js';
@@ -538,7 +538,6 @@ export function renderReportsTab(container, pageHeader, user, navigate) {
       const summary = await getReportsSummary({ dateFrom, dateTo });
       latestSummary = summary;
       renderReport(body, summary, user.role, navigate);
-      if (user.role === 'admin') loadCitizenReportsConversion(body, navigate);
     } catch (err) {
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong generating the report.';
       renderError(body, message, () => load(dateFrom, dateTo));
@@ -712,26 +711,6 @@ function renderReport(container, summary, role, navigate) {
     renderIncidentTypeDonutCard(summary.byIncidentType)
   );
 
-  let citizenCard = null;
-  if (role === 'admin') {
-    citizenCard = document.createElement('div');
-    citizenCard.className = 'card dashboard-row citizen-reports-card';
-    citizenCard.setAttribute('data-citizen-card', '');
-    citizenCard.appendChild(cardHeader(
-      'Citizen Reports Intake & Conversion',
-      'Citizen submission pipeline & triage efficiency (All time)',
-      icons.messageSquare,
-      'Conversion tracking from citizen submissions into formalized incidents — not scoped to the date range above.',
-      navigate ? { label: 'Review Inbox', onClick: () => navigate('citizen-inbox') } : null
-    ));
-    const citizenHost = document.createElement('div');
-    citizenHost.setAttribute('data-citizen-conversion-host', '');
-    citizenHost.style.display = 'flex';
-    citizenHost.style.flexDirection = 'column';
-    citizenHost.style.flex = '1';
-    citizenHost.appendChild(Object.assign(document.createElement('div'), { className: 'skeleton skeleton--block' }));
-    citizenCard.append(citizenHost);
-  }
 
   const analyticsGrid = document.createElement('div');
   analyticsGrid.className = 'two-col-grid dashboard-row';
@@ -767,129 +746,7 @@ function renderReport(container, summary, role, navigate) {
   analyticsGrid.append(byHourCard, responseTimeCard);
 
   container.append(kpiGrid, insightsCard, trendCard, breakdownGrid);
-  if (citizenCard) container.appendChild(citizenCard);
   container.appendChild(analyticsGrid);
-}
-
-/**
- * `GET /citizen-reports` has no "converted" status filter (only
- * "unconverted", §6/CitizenReportsController::index()) — so conversion
- * count is derived from two cheap `limit:1` calls (only `.total` is
- * used from each) rather than fetching every report just to count them.
- */
-async function loadCitizenReportsConversion(container, navigate) {
-  const host = container.querySelector('[data-citizen-conversion-host]');
-  if (!host) return;
-  const card = container.querySelector('[data-citizen-card]');
-  try {
-    const [allResult, unconvertedResult] = await Promise.all([
-      getCitizenReports({ limit: 1 }),
-      getCitizenReports({ status: 'unconverted', limit: 1 }),
-    ]);
-    const totalReports = allResult.total;
-    const unconverted = unconvertedResult.total;
-    const converted = Math.max(0, totalReports - unconverted);
-
-    if (card) {
-      const headerTitle = card.querySelector('.card-header__title');
-      if (headerTitle && !headerTitle.querySelector('.card-header__chip')) {
-        const chipEl = document.createElement('span');
-        chipEl.className = `card-header__chip ${unconverted > 0 ? 'card-header__chip--warning' : ''}`;
-        chipEl.textContent = unconverted > 0 ? `${unconverted} Pending` : `${totalReports} Total`;
-        const tip = headerTitle.querySelector('.tooltip-wrap');
-        if (tip) {
-          headerTitle.insertBefore(chipEl, tip);
-        } else {
-          headerTitle.appendChild(chipEl);
-        }
-      }
-    }
-
-    renderCitizenConversion(host, { totalReports, converted, unconverted });
-  } catch {
-    host.innerHTML = '<p class="note">Could not load citizen report data.</p>';
-  }
-}
-
-function renderCitizenConversion(host, { totalReports, converted, unconverted }) {
-  host.innerHTML = '';
-  if (totalReports === 0) {
-    host.innerHTML = '<p class="note">No citizen reports submitted yet.</p>';
-    return;
-  }
-  const convertedPct = Math.round((converted / totalReports) * 100);
-  const unconvertedPct = totalReports > 0 ? Math.round((unconverted / totalReports) * 100) : 0;
-
-  const container = document.createElement('div');
-  container.className = 'citizen-conversion-body';
-  container.style.display = 'flex';
-  container.style.flexDirection = 'column';
-  container.style.gap = 'var(--spacing-sm)';
-
-  // Conversion Efficiency Hero Banner
-  const heroBanner = document.createElement('div');
-  heroBanner.className = 'conversion-hero-banner';
-  heroBanner.innerHTML = `
-    <div class="conversion-hero-banner__left">
-      <span class="conversion-hero-banner__badge ${convertedPct >= 50 ? 'conversion-hero-banner__badge--success' : 'conversion-hero-banner__badge--warning'}" aria-hidden="true">
-        ${icons.trendingUp(16)}
-      </span>
-      <div class="conversion-hero-banner__text">
-        <span class="conversion-hero-banner__title">Intake Conversion Efficiency</span>
-        <span class="conversion-hero-banner__caption">${converted} of ${totalReports} citizen submissions formalized into incidents</span>
-      </div>
-    </div>
-    <div class="conversion-hero-banner__right">
-      <span class="conversion-hero-banner__val">${convertedPct}%</span>
-      <span class="conversion-hero-banner__rate-label">Formalized</span>
-    </div>
-  `;
-  container.appendChild(heroBanner);
-
-  // Multi-Segment Proportional Pipeline Bar
-  const pipelineBar = document.createElement('div');
-  pipelineBar.className = 'pipeline-stacked-bar';
-  pipelineBar.setAttribute('aria-hidden', 'true');
-  if (converted > 0) {
-    const seg = document.createElement('div');
-    const pct = ((converted / totalReports) * 100).toFixed(1);
-    seg.className = 'pipeline-stacked-segment pipeline-stacked-segment--resolved';
-    seg.style.width = `${pct}%`;
-    seg.title = `Converted: ${converted} (${convertedPct}%)`;
-    pipelineBar.appendChild(seg);
-  }
-  if (unconverted > 0) {
-    const seg = document.createElement('div');
-    const pct = ((unconverted / totalReports) * 100).toFixed(1);
-    seg.className = 'pipeline-stacked-segment pipeline-stacked-segment--pending';
-    seg.style.width = `${pct}%`;
-    seg.title = `Awaiting Review: ${unconverted} (${unconvertedPct}%)`;
-    pipelineBar.appendChild(seg);
-  }
-  container.appendChild(pipelineBar);
-
-  // Clean Dual Operational Summary Footer (Direct & Non-Redundant)
-  const footer = document.createElement('div');
-  footer.className = 'category-summary-footer';
-  footer.innerHTML = `
-    <div class="category-summary-tile">
-      <span class="category-summary-tile__val">
-        <span class="summary-tile-pip" style="background:var(--color-warning);" aria-hidden="true"></span>
-        ${unconverted} Awaiting Review
-      </span>
-      <span class="category-summary-tile__sub">${unconvertedPct}% pending operational triage</span>
-    </div>
-    <div class="category-summary-tile">
-      <span class="category-summary-tile__val">
-        <span class="summary-tile-pip" style="background:var(--color-success);" aria-hidden="true"></span>
-        ${converted} Formalized
-      </span>
-      <span class="category-summary-tile__sub">${convertedPct}% converted to active incident record</span>
-    </div>
-  `;
-  container.appendChild(footer);
-
-  host.appendChild(container);
 }
 
 function renderIncidentTypeDonutCard(counts) {

@@ -92,3 +92,58 @@ describe('Live Map: stale data and SOS wording (audit 2026-10-09)', () => {
     assert.match(body, /New SOS alert from .* - no location available, call the tanod/);
   });
 });
+
+describe('Live Map: Roster Search & Filter Tabs', () => {
+  afterEach(() => cleanup());
+
+  test('search input filters personnel by name and badge code reactively', async () => {
+    const ctx = mountPage(renderGisLiveTrackingPage, { role: 'admin' });
+    await settle();
+
+    const searchInput = ctx.root.querySelector('.gis-search-input');
+    const clearBtn = ctx.root.querySelector('.gis-search-clear');
+    assert.ok(searchInput, 'search input should exist');
+    assert.equal(clearBtn.hidden, true, 'clear button should be hidden initially');
+
+    // Type "Jose" to filter
+    searchInput.value = 'Jose';
+    searchInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+    await settle();
+
+    const names = Array.from(ctx.root.querySelectorAll('.gis-personnel-card__name')).map((el) => text(el));
+    assert.ok(names.some((n) => n.includes('Jose Reyes')), 'Jose Reyes should be shown');
+    assert.ok(!names.some((n) => n.includes('Maria Dela Cruz')), 'Maria Dela Cruz should be filtered out');
+    assert.equal(clearBtn.hidden, false, 'clear button should now be visible');
+
+    // Click clear button
+    clearBtn.click();
+    await settle();
+
+    assert.equal(searchInput.value, '');
+    assert.equal(clearBtn.hidden, true);
+    const restoredNames = Array.from(ctx.root.querySelectorAll('.gis-personnel-card__name')).map((el) => text(el));
+    assert.ok(restoredNames.some((n) => n.includes('Maria Dela Cruz')), 'Maria Dela Cruz restored after clear');
+  });
+
+  test('status filter tabs filter roster and show correct count badges', async () => {
+    const ctx = mountPage(renderGisLiveTrackingPage, { role: 'admin' });
+    await settle();
+
+    const tabs = ctx.root.querySelectorAll('.gis-filter-tab');
+    assert.equal(tabs.length, 4, 'should render 4 filter tabs: all, available, dispatched, stale');
+
+    const allTab = ctx.root.querySelector('.gis-filter-tab[data-filter="all"]');
+    const availableTab = ctx.root.querySelector('.gis-filter-tab[data-filter="available"]');
+    assert.ok(allTab.classList.contains('is-active'));
+    assert.equal(allTab.getAttribute('aria-selected'), 'true');
+
+    // Click "On duty" tab
+    availableTab.click();
+    await settle();
+
+    assert.ok(!allTab.classList.contains('is-active'));
+    assert.ok(availableTab.classList.contains('is-active'));
+    assert.equal(availableTab.getAttribute('aria-selected'), 'true');
+  });
+});
+

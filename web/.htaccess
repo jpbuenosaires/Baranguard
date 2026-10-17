@@ -54,3 +54,12 @@
   Header always set Referrer-Policy "strict-origin-when-cross-origin"
   Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-gA/fxCfWHvh7MsJpv1eaZVjCJhDea02wCbQIq4ngrb8=' 'sha256-BHETkcds8WCsm1C291F1vriN3F7brUBtJzdHbYowptI=' 'unsafe-hashes' 'sha256-jHF5hTIlMDyGZRAsNK0HO/WFYrwPvI2I1q0o1xKKB6I='; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://tile.openstreetmap.org; media-src 'self' blob:; connect-src 'self' https://api.baranguardph.win http://*:8081 http://localhost:* http://127.0.0.1:* https://tile.openstreetmap.org; worker-src 'self' blob:; child-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 </IfModule>
+
+# Dev auto-login credentials (see Dev Login.bat / main.js devAutoLogin): only
+# ever served to a localhost Host header. The tunnel forwards the public Host,
+# so it gets a 403 even though cloudflared connects from this machine.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)(:[0-9]+)?$ [NC]
+  RewriteRule ^dev-login\.local\.json$ - [F,L]
+</IfModule>

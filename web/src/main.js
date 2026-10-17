@@ -15,7 +15,7 @@
  * is a separate static page, not a route of this app.)
  */
 
-import { getSession, logout, onSessionExpired, SESSION_EXPIRED_MESSAGE } from './api/apiClient.js';
+import { getSession, logout, login, onSessionExpired, SESSION_EXPIRED_MESSAGE } from './api/apiClient.js';
 import { showToast } from './components/Toast.js';
 import { renderLoginPage } from './pages/login.js';
 import { renderAdminDashboardPage } from './pages/admin-dashboard.js';
@@ -24,7 +24,6 @@ import { renderIncidentManagementPage } from './pages/incident-management.js';
 import { renderGisLiveTrackingPage } from './pages/gis-live-tracking.js';
 import { renderAnalyticsPage } from './pages/analytics.js';
 import { renderSettingsPage } from './pages/settings.js';
-import { renderCitizenReportsInboxPage } from './pages/citizen-reports-inbox.js';
 import { renderPersonnelPage } from './pages/personnel.js';
 import { renderIncidentDetailPage } from './pages/incident-detail.js';
 import { renderSmsMonitorPage } from './pages/sms-monitor.js';
@@ -48,7 +47,6 @@ const PAGE_ROLES = {
   // into one tabbed screen — see pages/analytics.js. Same role pair both
   // already had, so (unlike `personnel` below) no per-tab role gating.
   analytics: ['admin', 'punong_barangay'],
-  'citizen-inbox': ['admin', 'secretary'],
   // 2026-09-05 merge of W10-W12 (User Management/Scheduler/Swap Requests)
   // into one tabbed screen — see pages/personnel.js. Role list is the
   // union of the three; personnel.js gates individual tabs below that.
@@ -264,8 +262,6 @@ function boot(currentPage, param, { notice } = {}) {
   } else if (page === 'analytics') {
     const handle = renderAnalyticsPage(root, session.user, onLoggedOut, navigate);
     activeStop = handle?.stop ?? null;
-  } else if (page === 'citizen-inbox') {
-    renderCitizenReportsInboxPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'personnel') {
     renderPersonnelPage(root, session.user, onLoggedOut, navigate, param);
   } else if (page === 'sms-log') {
@@ -374,4 +370,26 @@ function renderUnavailable(root, user) {
   root.appendChild(page);
 }
 
-boot();
+/**
+ * Dev convenience, localhost only: when `Dev Login.bat` opened the page with
+ * `?dev_login=1` (remembered in localStorage; `?dev_login=0` turns it off),
+ * sign in with the gitignored `web/dev-login.local.json` before the first
+ * screen so a reload while editing the UI never lands on the sign-in page.
+ * Never runs on any other hostname, and Apache refuses that file for them.
+ */
+async function devAutoLogin() {
+  const host = location.hostname;
+  if (host !== 'localhost' && host !== '127.0.0.1') return;
+  try {
+    const flag = new URLSearchParams(location.search).get('dev_login');
+    if (flag === '1') localStorage.setItem('bg_dev_login', '1');
+    if (flag === '0') localStorage.removeItem('bg_dev_login');
+    if (localStorage.getItem('bg_dev_login') !== '1' || getSession()) return;
+    const res = await fetch('dev-login.local.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const { username, password } = await res.json();
+    await login(username, password);
+  } catch { /* any failure falls through to the normal sign-in page */ }
+}
+
+devAutoLogin().finally(() => boot());
