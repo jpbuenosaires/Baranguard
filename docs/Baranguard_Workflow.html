@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baranguard Workflow</title>
+<style>
+:root {
+  --bg: #f5f7fb; --panel: #ffffff; --ink: #14202e; --muted: #546274; --line: #c9d2de; --accent: #1d4ed8; --accent-soft: #e3ebff;
+  --lane-a: #ffffff; --lane-b: #f0f4fa; --node: #ffffff; --node-stroke: #5b6b80; --edge: #5b6b80; --dim: .22;
+  --c-resident: #fff1dc; --c-chief: #e0ecff; --c-secretary: #e6f6ea; --c-pb: #f1e8fb; --c-tanod: #fde7e7; --c-gsm: #e8f3f3; --c-system: #eef0f3;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1520; --panel: #151f2d; --ink: #e8eef6; --muted: #9db0c6; --line: #2a3a4f; --accent: #7aa2ff; --accent-soft: #1d2d4d;
+    --lane-a: #151f2d; --lane-b: #111a27; --node: #1b283a; --node-stroke: #8da2bc; --edge: #8da2bc;
+    --c-resident: #3a2f1c; --c-chief: #1d2f52; --c-secretary: #1c3a28; --c-pb: #33244d; --c-tanod: #4a2424; --c-gsm: #1d3a3a; --c-system: #263140;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1520; --panel: #151f2d; --ink: #e8eef6; --muted: #9db0c6; --line: #2a3a4f; --accent: #7aa2ff; --accent-soft: #1d2d4d;
+  --lane-a: #151f2d; --lane-b: #111a27; --node: #1b283a; --node-stroke: #8da2bc; --edge: #8da2bc;
+  --c-resident: #3a2f1c; --c-chief: #1d2f52; --c-secretary: #1c3a28; --c-pb: #33244d; --c-tanod: #4a2424; --c-gsm: #1d3a3a; --c-system: #263140;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, "Segoe UI", Arial, sans-serif; }
+header { padding: 20px 16px 8px; max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 1.5rem; margin: 0 0 4px; }
+header p { margin: 0; color: var(--muted); max-width: 70ch; }
+.bar { max-width: 1200px; margin: 12px auto 0; padding: 0 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button[aria-selected="true"], button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:focus-visible, .node:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.spacer { flex: 1; }
+.wrap { max-width: 1200px; margin: 12px auto 0; padding: 0 16px; }
+.diagram { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: auto; }
+.diagram svg { display: block; }
+.diagram.fit svg { width: 100%; height: auto; }
+.lane-bg-a { fill: var(--lane-a); } .lane-bg-b { fill: var(--lane-b); }
+.lane-label { font-size: 12px; font-weight: 700; fill: var(--ink); }
+.lane-sub { font-size: 10px; fill: var(--muted); }
+.node rect, .node polygon { stroke: var(--node-stroke); stroke-width: 1.4; transition: stroke .15s, stroke-width .15s; }
+.node text { font-size: 12px; fill: var(--ink); pointer-events: none; }
+.node { cursor: pointer; transition: opacity .15s; }
+.badge circle { fill: var(--accent); } .badge text { fill: #fff; font-size: 11px; font-weight: 700; text-anchor: middle; }
+.edge { fill: none; stroke: var(--edge); stroke-width: 1.5; transition: opacity .15s, stroke .15s; }
+.edge.dash { stroke-dasharray: 6 4; }
+.edge-label { font-size: 11px; fill: var(--ink); paint-order: stroke; stroke: var(--panel); stroke-width: 4px; }
+.dim .node, .dim .edge, .dim .edge-label { opacity: var(--dim); }
+.dim .node.hot, .dim .edge.hot, .dim .edge-label.hot { opacity: 1; }
+.node.sel rect, .node.sel polygon { stroke: var(--accent); stroke-width: 3; }
+.edge.hot { stroke: var(--accent); stroke-width: 2.4; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 0; font-size: 12px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--node-stroke); display: inline-block; }
+.steps { margin: 18px 0 40px; padding: 0; list-style: none; display: grid; gap: 10px; }
+.step { background: var(--panel); border: 1px solid var(--line); border-left: 5px solid var(--line); border-radius: 10px; padding: 12px 14px; cursor: pointer; display: grid; grid-template-columns: 34px 1fr; gap: 12px; }
+.step:hover { border-color: var(--accent); }
+.step.sel { border-color: var(--accent); background: var(--accent-soft); border-left-color: var(--accent); }
+.step .n { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; display: grid; place-items: center; font-size: 14px; }
+.step h3 { margin: 0 0 2px; font-size: 1rem; }
+.step p { margin: 4px 0 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); background: var(--bg); }
+.hint { font-size: 13px; color: var(--muted); }
+@media print { .bar, .hint { display: none; } .diagram { overflow: visible; } .diagram svg { width: 100%; height: auto; } .step { break-inside: avoid; } body { background: #fff; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Baranguard workflow</h1>
+  <p id="intro">How a report becomes a response, how an SOS still gets through without data, and how rosters and reports are prepared. Click any numbered step, in the diagram or in the list below it, to follow it.</p>
+</header>
+<div class="bar">
+  <div class="tabs" role="tablist" aria-label="Workflow"></div>
+  <span class="spacer"></span>
+  <button id="prev" title="Previous step (left arrow)">&larr; Previous</button>
+  <button id="next" title="Next step (right arrow)">Next &rarr;</button>
+  <button id="fit" aria-pressed="false" title="Fit the whole diagram to the screen width">Fit to screen</button>
+  <button id="theme" title="Switch light and dark">Theme</button>
+  <button id="print" title="Print or save as PDF">Print</button>
+</div>
+<div class="wrap">
+  <div class="diagram" id="diagram"></div>
+  <div class="legend" id="legend"></div>
+  <p class="hint" id="hint">Tip: use the left and right arrow keys to walk through the steps. Dashed lines are things that happen later or on a side path.</p>
+  <ol class="steps" id="steps"></ol>
+</div>
+
+<script>
+const LANES = {
+  resident:  { name: 'Resident',        sub: 'reports through staff', color: 'var(--c-resident)' },
+  tanod:     { name: 'Tanod',           sub: 'Android app',           color: 'var(--c-tanod)' },
+  chief:     { name: 'Chief Tanod',     sub: 'Admin, web or phone',   color: 'var(--c-chief)' },
+  secretary: { name: 'Secretary',       sub: 'records custodian',     color: 'var(--c-secretary)' },
+  pb:        { name: 'Punong Barangay', sub: 'or an authorized official', color: 'var(--c-pb)' },
+  gsm:       { name: 'GSM gateway phone', sub: 'own SIM',             color: 'var(--c-gsm)' },
+  system:    { name: 'Baranguard system', sub: 'server on the workstation', color: 'var(--c-system)' },
+};
+const LANE_ORDER = ['resident', 'tanod', 'chief', 'secretary', 'pb', 'gsm', 'system'];
+
+// type: start | proc | dec | end. lane, col place the node. next: [target id, label?, {dash, mode}]
+const FLOWS = [
+{
+  id: 'overview', tab: 'Overview', title: 'The whole system in one line',
+  intro: 'The main chain from a report to oversight, with the two things that make Baranguard different: tanods keep working offline, and an SOS still gets through by SMS.',
+  nodes: [
+    { id: 'o1', lane: 'resident', col: 0, type: 'start', label: 'Resident reports an incident', title: 'A resident reports',
+      text: 'A resident reports in person, by phone call, by Facebook message or by SMS. Residents do not use the system themselves: the barangay logs the report and records which channel it came by.', chips: ['Channel recorded', 'No public form'],
+      next: [['o2']] },
+    { id: 'o2', lane: 'chief', col: 1, type: 'proc', label: 'Staff log the incident', title: 'Staff log the incident',
+      text: 'The Chief Tanod or the Secretary fills in the Log an Incident form: type, priority, report channel, the landmark, an optional complainant name and the description. A tanod in the field can log one from the phone.', chips: ['FR-01', 'Web or phone'],
+      next: [['o3']] },
+    { id: 'o3', lane: 'system', col: 2, type: 'proc', label: 'System stores it as Pending with a code', title: 'The system stores it',
+      text: 'The server checks the role and the barangay, gives the incident a code of the form INC-YYYY-NNN and stores it as Pending. The narrative is kept in its own protected column and never leaves the system.', chips: ['BR-01', 'BR-07', 'Raw narrative stays inside'],
+      next: [['o4']] },
+    { id: 'o4', lane: 'chief', col: 3, type: 'proc', label: 'Chief Tanod dispatches a tanod', title: 'Dispatch',
+      text: 'By day the Chief Tanod assigns a rostered, on-duty tanod. At night (18:00 to 06:00) the system offers the incident to the on-duty tanods in rounds and the first to accept is assigned.', chips: ['FR-03', 'BR-03', 'BR-04'],
+      next: [['o5']] },
+    { id: 'o5', lane: 'tanod', col: 4, type: 'proc', label: 'Tanod responds, with route and GPS', title: 'The tanod responds',
+      text: 'The tanod receives a push alert and an SMS, gets a road route, shares position while on duty, marks arrival, and records evidence and any referral to PNP, BFP or EMS. Every record is saved on the phone first and sent when a connection exists.', chips: ['FR-02', 'FR-04', 'Offline-first'],
+      next: [['o7']] },
+    { id: 'o6', lane: 'tanod', col: 2, type: 'proc', label: 'In danger: tanod raises an SOS', title: 'SOS on a side path',
+      text: 'A tanod in danger presses SOS. With data it goes straight to the server. Without data the phone sends an encrypted SMS with the last known position to the gateway phone, so the Chief Tanod still sees it. See the SOS flow for the detail.', chips: ['FR-05', 'BR-06'],
+      next: [['o3', 'SOS', { dash: true }]] },
+    { id: 'o7', lane: 'chief', col: 5, type: 'proc', label: 'Chief Tanod resolves the incident', title: 'Resolve',
+      text: 'The Chief Tanod resolves the incident. A pending or reopened incident that needed no dispatch can be resolved only with a written reason.', chips: ['BR-08'],
+      next: [['o8']] },
+    { id: 'o8', lane: 'secretary', col: 6, type: 'proc', label: 'Secretary keeps the record', title: 'Records custody',
+      text: 'The Secretary is the records custodian. Only the Secretary marks an incident duplicate, invalid, cancelled or reopened; a duplicate is linked and never deleted. The Secretary and the Chief Tanod are the only ones who read the narrative.', chips: ['BR-09', 'RA 7160 custody'],
+      next: [['o9']] },
+    { id: 'o9', lane: 'secretary', col: 7, type: 'proc', label: 'Rosters and reports prepared and signed on paper', title: 'Rosters and reports',
+      text: 'Rosters, monthly accomplishment reports and school-zone annexes are prepared by the system, printed and signed on paper. The system does not record signatures. See the roster and report flow.', chips: ['FR-07', 'FR-08', 'FR-09', 'Paper first'],
+      next: [['o10']] },
+    { id: 'o10', lane: 'pb', col: 8, type: 'end', label: 'Punong Barangay oversees', title: 'Oversight',
+      text: 'The Punong Barangay sees the dashboard, live map, analytics and heatmap, the approvals queue and the printed reports. There is no list of cases: oversight is by counts and trends.', chips: ['FR-06', 'Read only'],
+      next: [] },
+  ],
+},
+{
+  id: 'incident', tab: 'A. Incident to resolution', title: 'From a report to a resolved incident',
+  intro: 'The main transaction, including what happens when the phone has no connection and the day and night ways of choosing a tanod.',
+  nodes: [
+    { id: 'a1', lane: 'resident', col: 0, type: 'start', label: 'Resident reports an incident', title: 'Report received',
+      text: 'A resident reports in person, by phone call, by Facebook message or by SMS, or a tanod on patrol sees something. The report reaches a person, never the system directly.', chips: ['Walk-in', 'Phone call', 'Facebook', 'SMS'],
+      next: [['a2'], ['a3']] },
+    { id: 'a2', lane: 'chief', col: 1, type: 'proc', label: 'Staff log it on the web form', title: 'Logged on the web',
+      text: 'The Chief Tanod or the Secretary opens Log an Incident, chooses the type, priority and report channel, types the landmark, and describes the incident. The form is sent with a unique key so a repeated click cannot create two records.', chips: ['FR-01', 'Idempotency key'],
+      next: [['a6']] },
+    { id: 'a3', lane: 'tanod', col: 1, type: 'proc', label: 'Or a tanod logs it in the app', title: 'Logged on the phone',
+      text: 'A tanod logs the incident in the Android app. The record is written to the phone\'s encrypted SQLite store before the screen is left, so closing the app or losing the signal cannot lose it.', chips: ['Rule 7', 'Encrypted storage'],
+      next: [['a4']] },
+    { id: 'a4', lane: 'tanod', col: 2, type: 'dec', label: 'Server reachable?', title: 'Is there a connection?',
+      text: 'The app tries to send the record. It is never marked as synced until the server confirms it.', chips: ['Offline-first'],
+      next: [['a6', 'Yes', { mode: 'vh' }], ['a5', 'No']] },
+    { id: 'a5', lane: 'tanod', col: 3, type: 'proc', label: 'Waits in the offline queue', title: 'Offline queue',
+      text: 'The record stays in the queue, marked as not yet synchronised, and is sent with its own event identifier and the device identifier when the connection returns. A repeated send returns the original record, so no duplicate is ever created.', chips: ['BR-05', 'client_event_id'],
+      next: [['a6', 'Reconnected']] },
+    { id: 'a6', lane: 'system', col: 4, type: 'proc', label: 'Validate, assign code, store as Pending', title: 'The server stores it',
+      text: 'The server checks the role and barangay, gives the incident its code INC-YYYY-NNN (numbered per barangay and year, never reused) and stores it as Pending. The narrative goes to its own protected column.', chips: ['BR-01', 'BR-07'],
+      next: [['a7']] },
+    { id: 'a7', lane: 'system', col: 5, type: 'dec', label: 'Night? 18:00 to 06:00', title: 'Day or night?',
+      text: 'Manila time decides how a tanod is chosen. Between 18:00 and 06:00 the system runs a dispatch offer. At other times the Chief Tanod assigns directly.', chips: ['BR-04'],
+      next: [['a8', 'Day'], ['a9', 'Night', { mode: 'straight' }]] },
+    { id: 'a8', lane: 'chief', col: 6, type: 'proc', label: 'Chief Tanod assigns a rostered tanod', title: 'Assigned by day',
+      text: 'In the Dispatch Center the Chief Tanod picks an on-duty tanod. The system refuses a tanod who is already assigned, needs a published shift covering the time (or an override reason), and keeps each tanod within 12 scheduled hours a day. More than one tanod may respond to one incident.', chips: ['FR-03', 'BR-02', 'BR-03'],
+      next: [['a10']] },
+    { id: 'a9', lane: 'system', col: 6, type: 'proc', label: 'Offer to on-duty tanods in rounds', title: 'Offered at night',
+      text: 'The system sends the incident to the on-duty tanods. Each round lasts 180 seconds, there are three rounds, and the first tanod to accept is assigned. Accepting needs a connection. After the third round the Admin receives reminders. If no rostered tanod qualifies, on-duty tanods whose availability covers the time are used.', chips: ['BR-04', 'First accept wins', 'Sweeper job'],
+      next: [['a10']] },
+    { id: 'a10', lane: 'system', col: 7, type: 'proc', label: 'Push and SMS to the tanod; Dispatched', title: 'The tanod is alerted',
+      text: 'The tanod gets a push alert and an SMS with the incident code. The incident becomes Dispatched. The message never carries the narrative.', chips: ['No narrative in alerts', 'FCM', 'GSM gateway'],
+      next: [['a11']] },
+    { id: 'a11', lane: 'tanod', col: 8, type: 'proc', label: 'Route, GPS, en route, arrived', title: 'The tanod responds',
+      text: 'The tanod receives a road route from OpenRouteService, which is reused for 90 seconds and 40 metres to save the daily quota, and shares GPS while on duty. The tanod marks en route and arrived. The earliest arrival ends the response time of the incident.', chips: ['FR-04', 'BR-10', 'Response time'],
+      next: [['a12']] },
+    { id: 'a12', lane: 'tanod', col: 9, type: 'proc', label: 'Evidence, notes and referral', title: 'On scene',
+      text: 'The tanod photographs evidence, adds notes and, when the matter is too large, records a referral to PNP, BFP, EMS or an official. A referral records the handoff only; it does not change the incident status.', chips: ['Evidence upload', 'Referral log'],
+      next: [['a13']] },
+    { id: 'a13', lane: 'chief', col: 10, type: 'proc', label: 'Chief Tanod resolves it', title: 'Resolved',
+      text: 'The Chief Tanod resolves a dispatched incident. An incident that needed no dispatch can be resolved only with a reason of 1 to 255 characters. The reason stays on the record and is never copied into the audit log.', chips: ['BR-08'],
+      next: [['a14']] },
+    { id: 'a14', lane: 'secretary', col: 11, type: 'proc', label: 'Secretary reviews the record', title: 'Records custody',
+      text: 'The Secretary may mark the record duplicate, invalid, cancelled or reopened. A duplicate is linked to the original and nothing is deleted. A closed incident can be left only by reopening it.', chips: ['BR-09'],
+      next: [['a15']] },
+    { id: 'a15', lane: 'system', col: 12, type: 'proc', label: 'Audit entry; narrative destroyed after one year', title: 'Audit and retention',
+      text: 'Every action is written to the audit log with identifiers and statuses only. The narrative is permanently destroyed after one year unless a legal hold stops it.', chips: ['BR-12', 'BR-14'],
+      next: [['a16']] },
+    { id: 'a16', lane: 'pb', col: 12, type: 'end', label: 'Punong Barangay sees counts and trends', title: 'Oversight',
+      text: 'The Punong Barangay reads the dashboard, analytics, heatmap and response time, with no list of cases.', chips: ['FR-06', 'Read only'],
+      next: [] },
+  ],
+},
+{
+  id: 'sos', tab: 'B. SOS without data', title: 'An SOS that still gets through',
+  intro: 'What the tanod phone does when the data connection is gone, and how the server avoids a duplicate when the same SOS later arrives again.',
+  nodes: [
+    { id: 'b1', lane: 'tanod', col: 0, type: 'start', label: 'Tanod presses SOS', title: 'SOS pressed',
+      text: 'The tanod presses the emergency button. The app takes the live GPS position if there is one, otherwise the last known position.', chips: ['FR-05'],
+      next: [['b2']] },
+    { id: 'b2', lane: 'tanod', col: 1, type: 'dec', label: 'Data connection available?', title: 'Is there data?',
+      text: 'The phone checks whether it can reach the server over the data connection.', chips: ['Best effort'],
+      next: [['b3', 'Yes', { mode: 'vh' }], ['b4', 'No']] },
+    { id: 'b3', lane: 'system', col: 2, type: 'proc', label: 'SOS sent with live position', title: 'Sent over data',
+      text: 'The app sends the SOS to the server with its own event identifier. The server never refuses an SOS for a missing fix: it uses the live position, else the last known position labelled as such, else stores it with no location.', chips: ['BR-06', 'location_source'],
+      next: [['b6']] },
+    { id: 'b4', lane: 'tanod', col: 2, type: 'proc', label: 'Encrypted SMS to the gateway, plain SMS to a contact', title: 'Sent by SMS',
+      text: 'The phone sends an encrypted SMS with the last known position to the gateway phone, and a plain-text alert to one backup contact. The SMS goes over the phone\'s own SIM and needs only cellular signal. Delivery is best effort and not guaranteed.', chips: ['Encrypted envelope', 'Backup contact', 'Limit: carrier delivery'],
+      next: [['b5'], ['b9', 'Later', { dash: true }]] },
+    { id: 'b5', lane: 'gsm', col: 3, type: 'proc', label: 'Gateway phone receives the SMS', title: 'Gateway phone',
+      text: 'The gateway phone, which has its own SIM and is attached to the workstation by USB, receives the message. The ingest daemon on the workstation reads it.', chips: ['sms-gateway', 'Ingest daemon'],
+      next: [['b6']] },
+    { id: 'b6', lane: 'system', col: 4, type: 'proc', label: 'Verify, decrypt, create one SOS', title: 'The server creates the SOS',
+      text: 'The server decrypts and verifies the envelope, rejects a replay, and creates the SOS. An SOS that arrives twice, by SMS and later by data, is matched by its event identifier and stored once.', chips: ['BR-05', 'Replay protected', 'No duplicate'],
+      next: [['b7']] },
+    { id: 'b7', lane: 'system', col: 5, type: 'proc', label: 'Dashboard raises the SOS alert', title: 'Alert on the dashboard',
+      text: 'The dashboard shows an SOS bar on every screen for the Chief Tanod. The SOS shows its location as live, last known or no fix, and how old it is.', chips: ['Honest location label'],
+      next: [['b8'], ['b10']] },
+    { id: 'b8', lane: 'chief', col: 6, type: 'end', label: 'Chief Tanod acknowledges, then resolves', title: 'Acknowledge and resolve',
+      text: 'The Chief Tanod acknowledges the SOS, sends help, and resolves it after. Resolve is offered only after acknowledge, on the web and on the phone console.', chips: ['Admin only'],
+      next: [] },
+    { id: 'b9', lane: 'tanod', col: 4, type: 'proc', label: 'Queued copy syncs when data returns', title: 'The queued copy',
+      text: 'The SOS was also saved in the phone\'s offline queue. When the data connection returns it is sent with the same event identifier.', chips: ['Offline queue'],
+      next: [['b6', 'Same event id', { dash: true }]] },
+    { id: 'b10', lane: 'pb', col: 6, type: 'end', label: 'Punong Barangay can see the alert', title: 'Oversight',
+      text: 'The Punong Barangay can view the SOS list, read only.', chips: ['Read only'],
+      next: [] },
+  ],
+},
+{
+  id: 'roster', tab: 'C. Roster and reports', title: 'Rosters and monthly reports, signed on paper',
+  intro: 'How a tanod\'s availability becomes a published roster, and how daily work becomes the monthly accomplishment report that is printed and signed.',
+  nodes: [
+    { id: 'c1', lane: 'tanod', col: 0, type: 'start', label: 'Tanod gives availability (optional)', title: 'Availability',
+      text: 'A tanod may state the days and hours they are available. It is optional: a tanod who gave none can still be scheduled. The tanod may change it at any time.', chips: ['FR-07', 'Optional'],
+      next: [['c2']] },
+    { id: 'c2', lane: 'chief', col: 1, type: 'proc', label: 'Builds draft shifts on the week grid', title: 'Draft shifts',
+      text: 'The Chief Tanod or the Secretary adds standard shifts on the week grid, drags to move them, or copies last week. Availability shows as given and is never approved or revised by the web.', chips: ['Week grid', 'Copy last week'],
+      next: [['c3']] },
+    { id: 'c3', lane: 'system', col: 2, type: 'proc', label: 'Checks limits; saves as draft', title: 'Limits and drafts',
+      text: 'The system refuses a shift that puts a tanod over 12 hours in a Manila day, warns when a tanod is scheduled outside the given availability, and saves the shift as a draft. Tanods never see drafts.', chips: ['BR-03', '12 h per day'],
+      next: [['c4']] },
+    { id: 'c4', lane: 'secretary', col: 3, type: 'proc', label: 'Prints the schedule; signed on paper', title: 'Print and sign',
+      text: 'The schedule is printed on A4 and signed on paper. The system does not record the signature: the signed paper is the approval.', chips: ['Paper first', 'A4'],
+      next: [['c5']] },
+    { id: 'c5', lane: 'pb', col: 4, type: 'proc', label: 'Official with roster authority publishes', title: 'Publish',
+      text: 'An official who holds the approve-roster authority, given by the Admin, publishes the week. Approval authority is a separate attribute and not a role.', chips: ['approve_roster', 'Segregation of duties'],
+      next: [['c6']] },
+    { id: 'c6', lane: 'system', col: 5, type: 'proc', label: 'Published; each tanod is notified', title: 'Roster published',
+      text: 'Each tanod with a newly published shift receives one push notification. A tanod sees only published shifts. A later change to a published shift sends it back to draft.', chips: ['roster_published'],
+      next: [['c7']] },
+    { id: 'c7', lane: 'tanod', col: 6, type: 'proc', label: 'Encodes accomplishment entries', title: 'Daily entries',
+      text: 'After each duty the tanod records the date, the work done and the hours confirmed. The date may not be in the future or more than 62 days back. Entries can be made offline.', chips: ['FR-08', 'BR-11'],
+      next: [['c8']] },
+    { id: 'c8', lane: 'system', col: 7, type: 'proc', label: 'Suggests hours; flags large differences', title: 'Suggested hours',
+      text: 'The system computes the hours from the tanod\'s duty status and stores them beside the confirmed hours. An entry that differs by more than 30 minutes is flagged for the reviewer.', chips: ['duration_flag'],
+      next: [['c9']] },
+    { id: 'c9', lane: 'tanod', col: 8, type: 'proc', label: 'Submits the month (online)', title: 'Submit the month',
+      text: 'At month end the tanod submits the report. This step needs a connection. The report becomes Prepared and its entries are locked.', chips: ['Online only', 'Prepared = locked'],
+      next: [['c10']] },
+    { id: 'c10', lane: 'secretary', col: 9, type: 'proc', label: 'Prints it for signing, or returns it', title: 'Print, sign or return',
+      text: 'The Secretary or an official with note or approve authority prints the report for the paper signature. If something is wrong it can be returned to the tanod with a reason, which reopens the entries.', chips: ['Return with reason', 'Print A4'],
+      next: [['c11', 'Returned', { dash: true }], ['c12', 'Signed']] },
+    { id: 'c11', lane: 'tanod', col: 9, type: 'proc', label: 'Tanod corrects and submits again', title: 'Correct and resubmit',
+      text: 'The tanod corrects the entries and submits the month again. The tanod is notified of the return by a push message that carries the month and the outcome only.', chips: ['report_update'],
+      next: [['c9', '', { dash: true, mode: 'vh' }]] },
+    { id: 'c12', lane: 'pb', col: 10, type: 'end', label: 'Filed on paper; counted in analytics', title: 'Filed',
+      text: 'The signed paper is filed by the barangay. The Punong Barangay sees the reports in the approvals queue. No retention purge exists yet for these tables; the period is provisional.', chips: ['Retention provisional'],
+      next: [] },
+  ],
+},
+{
+  id: 'school', tab: 'D. School zones and referrals', title: 'Safer School Zones and referrals',
+  intro: 'How a tanod\'s school check-ins and referrals become the annex printouts, without turning the system into a case registry.',
+  nodes: [
+    { id: 'd1', lane: 'secretary', col: 0, type: 'start', label: 'Secretary encodes the school inventory', title: 'School inventory (Annex B)',
+      text: 'The Secretary adds each school with its classification and focal person. Schools are never deleted; they are deactivated. No student data is stored.', chips: ['FR-09', 'Annex B'],
+      next: [['d2']] },
+    { id: 'd2', lane: 'tanod', col: 1, type: 'proc', label: 'Tanod checks in and out at the school', title: 'Check-in',
+      text: 'On school-zone duty the tanod checks in and out in the app, offline if needed. The time in must not be more than 5 minutes in the future or more than 62 days back. No coordinates are stored.', chips: ['No coordinates', 'Offline'],
+      next: [['d3']] },
+    { id: 'd3', lane: 'tanod', col: 2, type: 'proc', label: 'Links the school to an incident (C-1)', title: 'Incident near a school',
+      text: 'When an incident happens near a school the school is linked and a short, non-identifying summary is written for the C-1 report. It is kept apart from the confidential narrative.', chips: ['C-1', 'Non-identifying'],
+      next: [['d4']] },
+    { id: 'd4', lane: 'chief', col: 3, type: 'proc', label: 'Refers a large matter to PNP, BFP or EMS', title: 'Referral',
+      text: 'A matter too large for a tanod is referred to PNP, BFP, ambulance or EMS, an official, or another office. The referral log records the date, the office and the agency\'s reference number only: no names, no narrative.', chips: ['Referral log', 'Delegation only'],
+      next: [['d5']] },
+    { id: 'd5', lane: 'system', col: 4, type: 'proc', label: 'Counts the term data for Annex D', title: 'Live counts',
+      text: 'The system counts incidents, check-ins and referrals for the school term from stored records, within a span of up to 366 days. Ambulance or EMS referrals count as other agencies unless a setting maps them to DOH.', chips: ['Annex D', 'Live counts'],
+      next: [['d6']] },
+    { id: 'd6', lane: 'secretary', col: 5, type: 'proc', label: 'Prints the annexes; signed on paper', title: 'Print the annexes',
+      text: 'The Secretary prepares the term report, prints Annexes B, C-1 and D with a signature page, and marks it submitted after filing. The printouts carry a Draft layout notice, because the circular\'s own text was not available when they were made.', chips: ['Draft layout', 'Paper first'],
+      next: [['d7']] },
+    { id: 'd7', lane: 'pb', col: 6, type: 'end', label: 'Punong Barangay reads the results', title: 'Oversight',
+      text: 'The Punong Barangay can read the school zones and the referral log. The log is a delegation view with no case content, so Baranguard stays a complement to the DILG BIMS, which remains the case ledger.', chips: ['Read only', 'Complements DILG BIMS'],
+      next: [] },
+  ],
+},
+];
+
+const COLW = 190, ROWH = 112, LEFT = 150, TOP = 14, NW = 164, NH = 66;
+let flowIdx = 0, selected = null, order = [];
+const $ = (s) => document.querySelector(s);
+const NS = 'http://www.w3.org/2000/svg';
+const el = (n, a = {}, p) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; };
+
+function wrap(t, n) { const out = []; let cur = ''; for (const w of t.split(' ')) { if ((cur + ' ' + w).trim().length > n) { out.push(cur); cur = w; } else cur = (cur + ' ' + w).trim(); } if (cur) out.push(cur); return out; }
+
+function build() {
+  const f = FLOWS[flowIdx];
+  const byId = Object.fromEntries(f.nodes.map((n, i) => [n.id, Object.assign(n, { num: 0 })]));
+  // numbering follows the reading order: column, then lane
+  order = f.nodes.map((n, i) => [n, i]).sort((a, b) => a[0].col - b[0].col || a[1] - b[1]).map((x) => x[0]);
+  order.forEach((n, i) => { n.num = i + 1; });
+  const lanes = LANE_ORDER.filter((l) => f.nodes.some((n) => n.lane === l));
+  const laneY = Object.fromEntries(lanes.map((l, i) => [l, TOP + i * ROWH + ROWH / 2]));
+  const maxCol = Math.max(...f.nodes.map((n) => n.col));
+  const W = LEFT + (maxCol + 1) * COLW + 20, H = TOP * 2 + lanes.length * ROWH;
+  const cx = (n) => LEFT + n.col * COLW + COLW / 2, cy = (n) => laneY[n.lane];
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'group', 'aria-label': f.title });
+  const defs = el('defs', {}, svg);
+  const m = el('marker', { id: 'ar', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' }, defs);
+  el('path', { d: 'M0,0 L10,5 L0,10 z', fill: 'var(--edge)' }, m);
+  lanes.forEach((l, i) => {
+    el('rect', { x: 0, y: TOP + i * ROWH, width: W, height: ROWH, class: i % 2 ? 'lane-bg-b' : 'lane-bg-a' }, svg);
+    el('rect', { x: 0, y: TOP + i * ROWH, width: 8, height: ROWH, fill: LANES[l].color, stroke: 'var(--node-stroke)', 'stroke-width': .5 }, svg);
+    const t = el('text', { x: 18, y: laneY[l] - 4, class: 'lane-label' }, svg); t.textContent = LANES[l].name;
+    const s = el('text', { x: 18, y: laneY[l] + 11, class: 'lane-sub' }, svg); s.textContent = LANES[l].sub;
+  });
+  const gE = el('g', {}, svg), gN = el('g', {}, svg);
+  const edges = [];
+  f.nodes.forEach((n) => (n.next || []).forEach(([to, label, opt]) => {
+    const t = byId[to]; if (!t) return;
+    const o = opt || {};
+    const x1 = cx(n), y1 = cy(n), x2 = cx(t), y2 = cy(t);
+    const hw = (n.type === 'dec' ? 80 : NW / 2), th = (t.type === 'dec' ? 80 : NW / 2);
+    const hh = (n.type === 'dec' ? 38 : NH / 2), tth = (t.type === 'dec' ? 38 : NH / 2);
+    let pts, lx, ly;
+    if (o.mode === 'vh') { // leave the bottom or top, then enter from the left or right
+      const up = y2 < y1; const sy = y1 + (up ? -hh : hh);
+      if (x2 >= x1 || y2 !== y1) { pts = [[x1, sy], [x1, y2], [x2 + (x2 > x1 ? -th : th), y2]]; }
+      lx = x1; ly = (sy + y2) / 2;
+      if (x2 < x1) pts = [[x1, sy], [x1, y2 + (up ? tth : -tth) * 0], [x2 + th, y2]];
+    } else if (y1 === y2) {
+      const dir = x2 > x1 ? 1 : -1; pts = [[x1 + dir * hw, y1], [x2 - dir * th, y2]]; lx = (x1 + x2) / 2; ly = y1 - 8;
+    } else if (x1 === x2) {
+      const dir = y2 > y1 ? 1 : -1; pts = [[x1, y1 + dir * hh], [x2, y2 - dir * tth]]; lx = x1 + 6; ly = (y1 + y2) / 2;
+    } else {
+      const dir = x2 > x1 ? 1 : -1; const mx = x2 > x1 ? (x1 + hw + x2 - th) / 2 : (x1 - hw + x2 + th) / 2;
+      pts = [[x1 + dir * hw, y1], [mx, y1], [mx, y2], [x2 - dir * th, y2]]; lx = mx; ly = (y1 + y2) / 2;
+    }
+    const p = el('polyline', { points: pts.map((q) => q.join(',')).join(' '), class: 'edge' + (o.dash ? ' dash' : ''), 'marker-end': 'url(#ar)' }, gE);
+    let lab = null;
+    if (label) { lab = el('text', { x: lx, y: ly, 'text-anchor': 'middle', class: 'edge-label' }, gE); lab.textContent = label; }
+    edges.push({ from: n.id, to, p, lab });
+  }));
+  const nodeEls = {};
+  f.nodes.forEach((n) => {
+    const g = el('g', { class: 'node', tabindex: 0, role: 'button', 'aria-label': `Step ${n.num}: ${n.title}`, 'data-id': n.id }, gN);
+    const x = cx(n), y = cy(n);
+    const fill = LANES[n.lane].color;
+    if (n.type === 'dec') {
+      el('polygon', { points: `${x},${y - 38} ${x + 80},${y} ${x},${y + 38} ${x - 80},${y}`, fill }, g);
+    } else {
+      el('rect', { x: x - NW / 2, y: y - NH / 2, width: NW, height: NH, rx: n.type === 'proc' ? 8 : NH / 2, fill }, g);
+    }
+    const lines = wrap(n.label, n.type === 'dec' ? 18 : 25).slice(0, 4);
+    lines.forEach((ln, i) => { const t = el('text', { x, y: y + 4 + (i - (lines.length - 1) / 2) * 14, 'text-anchor': 'middle' }, g); t.textContent = ln; });
+    const b = el('g', { class: 'badge' }, g);
+    const bx = n.type === 'dec' ? x - 62 : x - NW / 2 + 2, by = n.type === 'dec' ? y - 24 : y - NH / 2 + 2;
+    el('circle', { cx: bx, cy: by, r: 11 }, b); const bt = el('text', { x: bx, y: by + 4 }, b); bt.textContent = n.num;
+    g.addEventListener('click', () => select(n.id));
+    g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(n.id); } });
+    nodeEls[n.id] = g;
+  });
+  $('#diagram').innerHTML = ''; $('#diagram').appendChild(svg);
+  build.state = { svg, edges, nodeEls, byId };
+  $('#intro').textContent = f.intro;
+  // legend
+  $('#legend').innerHTML = lanes.map((l) => `<span><i style="background:${LANES[l].color}"></i>${LANES[l].name}</span>`).join('') + '<span>Rounded box = step &nbsp; Diamond = decision &nbsp; Pill = start or end</span>';
+  // steps list
+  $('#steps').innerHTML = '';
+  order.forEach((n) => {
+    const li = document.createElement('li'); li.className = 'step'; li.id = 's-' + n.id; li.tabIndex = 0;
+    li.innerHTML = `<div class="n">${n.num}</div><div><h3>${n.title} <span class="hint">· ${LANES[n.lane].name}</span></h3><p>${n.text}</p><div class="chips">${(n.chips || []).map((c) => `<span class="chip">${c}</span>`).join('')}</div></div>`;
+    li.addEventListener('click', () => select(n.id));
+    li.addEventListener('keydown', (e) => { if (e.key === 'Enter') select(n.id); });
+    $('#steps').appendChild(li);
+  });
+  select(null);
+}
+
+function select(id) {
+  selected = id;
+  const { svg, edges, nodeEls, byId } = build.state;
+  document.querySelectorAll('.step').forEach((s) => s.classList.toggle('sel', s.id === 's-' + id));
+  $('#diagram').classList.toggle('dim', !!id);
+  Object.entries(nodeEls).forEach(([k, g]) => g.classList.remove('sel', 'hot'));
+  edges.forEach((e) => { e.p.classList.remove('hot'); e.lab && e.lab.classList.remove('hot'); });
+  if (!id) return;
+  nodeEls[id].classList.add('sel', 'hot');
+  edges.forEach((e) => {
+    if (e.from === id || e.to === id) {
+      e.p.classList.add('hot'); e.lab && e.lab.classList.add('hot');
+      nodeEls[e.from].classList.add('hot'); nodeEls[e.to].classList.add('hot');
+    }
+  });
+  const li = document.getElementById('s-' + id); li && li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  const g = nodeEls[id].getBoundingClientRect(), d = $('#diagram');
+  const r = d.getBoundingClientRect();
+  if (g.left < r.left || g.right > r.right) d.scrollBy({ left: g.left - r.left - r.width / 2 + g.width / 2, behavior: 'smooth' });
+}
+
+function step(dir) {
+  if (!order.length) return;
+  const i = selected ? order.findIndex((n) => n.id === selected) : (dir > 0 ? -1 : order.length);
+  const j = Math.min(order.length - 1, Math.max(0, i + dir));
+  select(order[j].id);
+}
+
+function tabs() {
+  const t = document.querySelector('.tabs');
+  FLOWS.forEach((f, i) => {
+    const b = document.createElement('button'); b.role = 'tab'; b.textContent = f.tab; b.setAttribute('aria-selected', i === flowIdx);
+    b.addEventListener('click', () => { flowIdx = i; t.querySelectorAll('button').forEach((x, k) => x.setAttribute('aria-selected', k === i)); build(); try { history.replaceState(null, '', '#' + f.id); } catch (e) {} });
+    t.appendChild(b);
+  });
+}
+$('#prev').onclick = () => step(-1); $('#next').onclick = () => step(1);
+$('#fit').onclick = (e) => { const on = $('#diagram').classList.toggle('fit'); e.target.setAttribute('aria-pressed', on); e.target.classList.toggle('on', on); };
+$('#print').onclick = () => window.print();
+$('#theme').onclick = () => { const r = document.documentElement; const dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; r.dataset.theme = dark ? 'light' : 'dark'; };
+document.addEventListener('keydown', (e) => { if (e.target.closest('button')) return; if (e.key === 'ArrowRight') step(1); if (e.key === 'ArrowLeft') step(-1); if (e.key === 'Escape') select(null); });
+const h = location.hash.slice(1); const hi = FLOWS.findIndex((f) => f.id === h); if (hi >= 0) flowIdx = hi;
+tabs(); document.querySelectorAll('.tabs button').forEach((b, k) => b.setAttribute('aria-selected', k === flowIdx)); build();
+</script>
+</body>
+</html>
