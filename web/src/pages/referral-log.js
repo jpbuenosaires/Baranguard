@@ -24,12 +24,12 @@ const PAGE_SIZE = 25;
 const PRIMARY_AGENCIES = new Set(['pnp', 'bfp', 'ambulance_ems']);
 
 const COLUMNS = [
-  { key: 'incident', label: 'Incident Case', sortable: true },
-  { key: 'type', label: 'Incident Type', sortable: true },
-  { key: 'to', label: 'Referred Agency / Office', sortable: true },
-  { key: 'when', label: 'Referred At (Manila Time)', sortable: true },
-  { key: 'ref', label: 'Reference No.', sortable: true },
-  { key: 'action', label: 'Action', align: 'right' },
+  { key: 'incident', label: 'Incident Case', sortable: true, width: '20%' },
+  { key: 'type', label: 'Incident Type', sortable: true, width: '13%' },
+  { key: 'to', label: 'Referred Agency / Office', sortable: true, width: '21%' },
+  { key: 'when', label: 'Referred At (Manila Time)', sortable: true, width: '20%' },
+  { key: 'ref', label: 'Reference No.', sortable: true, width: '12%' },
+  { key: 'action', label: 'Action', align: 'right', width: '14%' },
 ];
 
 function typeLabel(value) {

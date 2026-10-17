@@ -379,15 +379,15 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       }
 
       const columns = [
-        { key: 'name', label: 'School & Classification' },
-        { key: 'address', label: 'Location & Remarks' },
-        { key: 'focal', label: 'SSZ Focal Person & Contact' },
+        { key: 'name', label: 'School & Classification', width: '32%' },
+        { key: 'address', label: 'Location & Remarks', width: '28%' },
+        { key: 'focal', label: 'SSZ Focal Person & Contact', width: '24%' },
       ];
       if (filterStatus === 'all') {
-        columns.push({ key: 'status', label: 'Status' });
+        columns.push({ key: 'status', label: 'Status', width: '9%' });
       }
       if (canEdit || canViewGis) {
-        columns.push({ key: 'actions', label: 'Actions', align: 'right' });
+        columns.push({ key: 'actions', label: 'Actions', align: 'right', width: '10%' });
       }
 
       tableHost.appendChild(DataTable({
@@ -1103,10 +1103,10 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
       }
       tableHost.appendChild(DataTable({
         columns: [
-          { key: 'incident', label: 'School & Incident Summary', sortable: true },
-          { key: 'when_who', label: 'Reported & Personnel', sortable: true },
-          { key: 'action_referral', label: 'Action Taken & Escalation', sortable: true },
-          { key: 'action', label: 'Action', align: 'right' },
+          { key: 'incident', label: 'School & Incident Summary', sortable: true, width: '34%' },
+          { key: 'when_who', label: 'Reported & Personnel', sortable: true, width: '22%' },
+          { key: 'action_referral', label: 'Action Taken & Escalation', sortable: true, width: '28%' },
+          { key: 'action', label: 'Action', align: 'right', width: '16%' },
         ],
         rows: slice,
         rowKey: (i) => i.incidentId,

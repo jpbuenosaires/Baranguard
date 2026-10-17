@@ -32,13 +32,13 @@ const ROLE_LABELS = {
 const CREATABLE_ROLES = ['admin', 'secretary', 'tanod', 'punong_barangay'];
 
 const COLUMNS = [
-  { key: 'user', label: 'User', width: '24%' },
+  { key: 'user', label: 'User', width: '22%' },
   { key: 'role', label: 'Role', width: '16%' },
-  { key: 'contactNumber', label: 'Contact', width: '12%' },
-  { key: 'status', label: 'Status', width: '10%' },
+  { key: 'contactNumber', label: 'Contact', width: '11%' },
+  { key: 'status', label: 'Status', width: '13%' },
   { key: 'lastLoginAt', label: 'Last Login', width: '14%' },
   { key: 'createdAt', label: 'Created', width: '10%' },
-  { key: 'actions', label: 'Actions', align: 'right', width: '14%' },
+  { key: 'actions', label: 'Actions', align: 'right', width: '15%' },
 ];
 
 /**

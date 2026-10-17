@@ -60,7 +60,7 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
 
   const pageHeader = PageHeader({
     title: 'Personnel',
-    subtitle: 'Accounts, approval authority, the duty roster, and swap requests in one place',
+    subtitle: 'Accounts, the duty roster, and swap requests in one place',
     icon: icons.users,
   });
   header.appendChild(pageHeader.el);
