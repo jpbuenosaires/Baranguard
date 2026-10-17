@@ -10,6 +10,8 @@ export const REPORT_CHANNEL_OPTIONS = [
   { value: 'tanod_alerted', label: 'Tanod alerted' },
   { value: 'walk_in', label: 'Walk-in' },
   { value: 'sms', label: 'SMS' },
+  { value: 'phone_call', label: 'Phone call' },
+  { value: 'facebook', label: 'Facebook message' },
   { value: 'other', label: 'Other' },
 ];
 
