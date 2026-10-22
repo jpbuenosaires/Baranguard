@@ -1094,7 +1094,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   }
 
   /**
-   * Narratives are deleted 90 days after an incident is logged (retention
+   * Narratives are deleted 365 days after an incident is logged (retention
    * job). GET /incidents/:id does not say whether this one was purged, so an
    * old record reads as removed and a recent one as not recorded.
    */
@@ -1102,8 +1102,8 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     const raw = detail.createdAt;
     const created = raw ? new Date(/[zZ]|[+-][0-9]{2}:?[0-9]{2}$/.test(String(raw)) ? raw : `${String(raw).replace(' ', 'T')}Z`) : null;
     const ageDays = created && !Number.isNaN(created.getTime()) ? (Date.now() - created.getTime()) / 86400000 : 0;
-    return ageDays > 90
-      ? 'The confidential narrative was removed after the 90-day retention period.'
+    return ageDays > 365
+      ? 'The confidential narrative was removed after the 365-day retention period.'
       : 'No narrative recorded for this incident.';
   }
 

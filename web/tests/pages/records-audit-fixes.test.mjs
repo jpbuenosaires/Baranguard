@@ -173,11 +173,11 @@ describe('Incident detail: honest wording', () => {
     assert.match(body, /Recording Officer\s*Not recorded/);
   });
 
-  test('a Secretary opening an incident older than 90 days with no narrative is told it was removed by retention', async () => {
-    withDetailOverride(903, (b) => ({ ...b, raw_narrative: null, created_at: '2026-01-02 08:00:00' }));
+  test('a Secretary opening an incident older than 365 days with no narrative is told it was removed by retention', async () => {
+    withDetailOverride(903, (b) => ({ ...b, raw_narrative: null, created_at: '2025-01-02 08:00:00' }));
     const ctx = mountPage(renderIncidentDetailPage, { role: 'secretary', param: 903 });
     await settle();
-    assert.match(text(ctx.root), /The confidential narrative was removed after the 90-day retention period/);
+    assert.match(text(ctx.root), /The confidential narrative was removed after the 365-day retention period/);
     assert.doesNotMatch(text(ctx.root), /No narrative recorded yet/);
   });
 
@@ -186,7 +186,7 @@ describe('Incident detail: honest wording', () => {
     const ctx = mountPage(renderIncidentDetailPage, { role: 'secretary', param: 901 });
     await settle();
     assert.match(text(ctx.root), /No narrative recorded\./);
-    assert.doesNotMatch(text(ctx.root), /removed after the 90-day/);
+    assert.doesNotMatch(text(ctx.root), /removed after the 365-day/);
   });
 
   test('the resolved card no longer claims permanent statutory retention', async () => {

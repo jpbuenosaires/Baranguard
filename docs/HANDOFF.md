@@ -12,7 +12,7 @@ weekly limit are all gone. **Kept:** the 12 h/day scheduled-hours cap (422
 `DAILY_HOURS_EXCEEDED`), the plain weekly "Hours" total in the week grid, and
 old `fatigue_flag_acknowledged` audit rows. `verify-scheduler-fatigue.sh` is now
 `verify-scheduler.sh`. Anywhere below that mentions fatigue flags, the Fatigue
-tab or `verify-scheduler-fatigue.sh` is history. Routes: 105 across 28 files.
+tab or `verify-scheduler-fatigue.sh` is history. Routes: 103 across 27 files (`php backend/scripts/count-routes.php`, 2026-10-23).
 Details and measured results: `backend/DEVLOG.md` 2026-10-13 (1).
 
 **Replaced-in-place snapshot, not a log** — rewrite fresh each session,
@@ -387,7 +387,7 @@ php backend/scripts/verify-json-contracts.php
 php backend/scripts/verify-auth-lockout-revocation.php
 bash backend/scripts/verify-b2-pentest-remaining-resources.sh
 bash backend/scripts/verify-sprint7-pentest-incidents.sh
-bash backend/scripts/verify-scheduler-fatigue.sh
+bash backend/scripts/verify-scheduler.sh
 
 # Build + install the mobile Tanod app onto a connected Android device.
 # VITE_API_BASE_URL MUST be set explicitly: mobile/.env.local exists on
