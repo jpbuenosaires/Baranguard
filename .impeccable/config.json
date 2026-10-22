@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "oversized-h1",
+        "value": "*",
+        "files": [
+          "docs/chapter4-instruments/07-facilitator-session-guide.html"
+        ],
+        "createdAt": "2026-10-18T20:42:31.181Z",
+        "reason": "Agent triage: h1 is 17pt on an A4 print form, matching sibling forms 06; not a hero headline. User has not reviewed."
+      },
+      {
+        "rule": "overused-font",
+        "value": "*",
+        "files": [
+          "docs/chapter4-instruments/07-facilitator-session-guide.html"
+        ],
+        "createdAt": "2026-10-18T20:42:31.546Z",
+        "reason": "Agent triage: Georgia/Arial deliberately match the existing printed evaluation forms (06); print document, not a branded UI. User has not reviewed."
+      }
+    ]
+  }
+}
