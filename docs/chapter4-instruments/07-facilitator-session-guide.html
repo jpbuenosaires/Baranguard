@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BG-EV-02-G: Facilitator session guide (UAT and evaluation)</title>
+<style>
+@page{size:A4;margin:16mm 14mm;@top-left{content:"Baranguard - Facilitator session guide";font:8.5pt Georgia,serif}@top-right{content:"Bicol University, IT 124";font:8.5pt Georgia,serif}@bottom-center{content:"Page " counter(page);font:9pt Georgia,serif}}
+*{box-sizing:border-box}
+body{font-family:Georgia,"Times New Roman",Times,serif;font-size:11pt;line-height:1.35;color:#000;background:#ddd;margin:0}
+.doc{background:#fff;max-width:210mm;margin:6mm auto;padding:14mm 16mm;box-shadow:0 0 4px #888}
+.bar{position:sticky;top:0;z-index:30;background:#fff;border-bottom:2px solid #000;padding:6px 10px;font-family:Arial,Helvetica,sans-serif;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.bar b{font-size:15px}.bar .sp{flex:1}
+.bar button{font:13px Arial,sans-serif;border:1px solid #000;background:#fff;border-radius:6px;padding:5px 10px;cursor:pointer}
+.bar button:hover{background:#eee}
+.runhead{font-size:8.5pt;border-bottom:.5pt solid #000;display:flex;justify-content:space-between;padding-bottom:1mm;margin-bottom:5mm;gap:8mm}
+h1{font-size:17pt;text-align:center;margin:2mm 0 1mm}
+h2{font-size:13pt;border-bottom:1.2pt solid #000;margin:6mm 0 3mm;padding-bottom:1mm;break-after:avoid}
+h3{font-size:11.5pt;margin:5mm 0 1mm;break-after:avoid}
+.sub{text-align:center;margin:0 0 4mm}
+p{margin:1.6mm 0}
+table{border-collapse:collapse;width:100%;margin:2mm 0}
+th,td{border:.7pt solid #000;padding:1.6mm 2mm;vertical-align:top;font-size:10pt;text-align:left}
+th{background:#e8e8e8}
+tr{break-inside:avoid}
+thead{display:table-header-group}
+td.c,th.c{width:15mm;text-align:center;white-space:nowrap}
+.fil{font-style:italic;font-size:8.8pt;color:#222;margin-top:.8mm}
+.box{border:1pt solid #000;padding:2.5mm 3mm;margin:3mm 0;break-inside:avoid}
+.note{border:1pt dashed #000;background:#f4f4f4;padding:2.5mm 3mm;margin:3mm 0;font-size:10pt;break-inside:avoid}
+.say{border-left:3pt solid #000;padding:1mm 3mm;margin:2mm 0;background:#fafafa;break-inside:avoid}
+.fl{display:inline-block;border-bottom:.7pt solid #000;min-width:55mm;min-height:4.5mm;vertical-align:bottom}
+.fl.s{min-width:30mm}
+.row{margin:2mm 0}
+.small{font-size:9.5pt}
+ol,ul{margin:1mm 0 1mm 5mm;padding-left:4mm}
+li{margin:1mm 0}
+.part{page-break-before:always;break-before:page}
+input[type=checkbox]{width:4.2mm;height:4.2mm;vertical-align:-.8mm;margin:0 1mm 0 0;appearance:none;-webkit-appearance:none;border:.8pt solid #000;background:#fff;cursor:pointer}
+input:checked{background:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+[contenteditable]:focus{outline:2px solid #8a3b22;outline-offset:1px}
+td[contenteditable]{min-height:7mm}
+@media print{
+  body{background:#fff;font-size:10.5pt;line-height:1.32}
+  .bar{display:none!important}
+  .doc{box-shadow:none;margin:0;padding:0;max-width:none}
+  .runhead{display:none}
+}
+</style></head><body>
+<div class="bar"><b>Baranguard: Facilitator session guide</b><span class="sp"></span><button type="button" onclick="window.print()">Print this guide</button></div>
+<div class="doc">
+<div class="runhead"><span>Form BG-EV-02-G &mdash; Facilitator session guide &mdash; PROPONENTS ONLY</span><span>Baranguard &mdash; BSIT Capstone, Bicol University (IT 124)</span></div>
+<h1>Facilitator Guide: Running a UAT and Evaluation Session</h1>
+<p class="sub"><strong>Form BG-EV-02-G</strong> &mdash; for the proponents only. Do not give this guide to testers or evaluators.<br>Use it with the forms BG-UAT-02-A to D (tasks) and BG-EV-02-A to D (ratings) in <i>06-evaluation-and-uat-documents.html</i>. Sampling, SUS scoring and the tally sheets stay in that file, in the tab <i>Facilitator guide and tally</i>.</p>
+
+<div class="box"><b>Your job in one sentence.</b> Set the stage, stay quiet, time the tasks, and write everything down. <b>The tester marks Pass or Fail</b> (standard UAT practice); you record the evidence. <b>You do not help, hint, or touch the phone or keyboard.</b> The tester must be a real user of that role. A member of the development team is never the tester.</div>
+
+<h2>1. The session at a glance</h2>
+<table><thead><tr><th class="c">Step</th><th>What happens</th><th>Form used</th></tr></thead><tbody>
+<tr><td class="c">1</td><td>Prepare the room, devices and demo data (section 2).</td><td>this guide</td></tr>
+<tr><td class="c">2</td><td>Welcome and consent. Give the account password separately.</td><td>UAT form, Part A</td></tr>
+<tr><td class="c">3</td><td><b>Core tasks</b> (shaded rows): the tester does them and marks Pass or Fail; you time and record.</td><td>UAT form, Part B</td></tr>
+<tr><td class="c">4</td><td>Optional tasks, only if there is time.</td><td>UAT form, Part B</td></tr>
+<tr><td class="c">5</td><td>Tester answers the short satisfaction questions and SUS in the UAT form.</td><td>UAT form, later parts</td></tr>
+<tr><td class="c">6</td><td>Hand over the matching evaluation form. About 10 to 15 minutes.</td><td>BG-EV-02 (same role)</td></tr>
+<tr><td class="c">7</td><td>Close the session, collect forms, log defects, reset data (section 7).</td><td>defect log</td></tr>
+</tbody></table>
+<p class="small">Length of one session, from your pilot (section 8): <span class="fl s" contenteditable="true"></span> minutes. Do not promise a length to testers until the pilot gives it.</p>
+
+<h2>2. Before the session</h2>
+<h3>Room and people</h3>
+<p class="row"><input type="checkbox"> A quiet place, with the tester sitting at the device and you sitting beside and slightly behind.</p>
+<p class="row"><input type="checkbox"> One facilitator. A second person may help with a stopwatch or the web side, but is not the tester.</p>
+<p class="row"><input type="checkbox"> Printed: the UAT form and the evaluation form of the tester&#39;s role, a pen, a stopwatch or phone timer, the defect log.</p>
+<h3>Data and system</h3>
+<p class="row"><input type="checkbox"> <b>Reset the demo data before each tester</b>: double-click <i>Reset UAT Data.bat</i> (about one minute). <b>Start within 9 hours of the reset</b>, or the shift-based tasks fail for a data reason and not a defect.</p>
+<p class="row"><input type="checkbox"> Confirm you are on the demonstration setup with pretend data. No live barangay record is used. Tick this on the form cover.</p>
+<p class="row"><input type="checkbox"> Web dashboard opens and you are signed in on your own facilitator screen (Admin account) to watch and to trigger things.</p>
+<p class="row"><input type="checkbox"> Test account for the tester&#39;s role works. Write the password on a separate slip, never on a form.</p>
+<p class="row"><input type="checkbox"> Phone tasks: charged Android phone with the app installed, signed out, location on, mobile data or Wi-Fi on. Know how to toggle airplane mode and location quickly.</p>
+<p class="row"><input type="checkbox"> Write on the cover: system build, device and operating system, date, your name, tester code (for example UAT-01, no real name), start time.</p>
+
+<h3>What you must set up for each role</h3>
+<table><thead><tr><th>Role / form</th><th>Core tasks</th><th>You must have ready before the tester starts</th></tr></thead><tbody>
+<tr><td><b>Tanod</b><br>BG-UAT-02-A</td><td>14<br>T-01, T-02, T-06 to T-12, T-14, T-15, T-17, T-18, T-N1</td><td>
+<ul>
+<li>Tanod test account with a <b>published shift covering the session time</b>.</li>
+<li>A pending incident you can assign to this tanod from <i>Dispatch Center</i> (for T-09).</li>
+<li>A second pending incident to open a <b>dispatch offer</b> with &ldquo;Broadcast to on-duty tanods&rdquo; (T-14, T-15). The tester must be On Duty with no active dispatch at that moment.</li>
+<li>At least one school added under <i>Safer School Zones</i> so the phone can download the school list (T-19, T-26).</li>
+<li>For T-08, the gateway phone connected to the workstation, and both the gateway number and a backup contact number set in Settings. Without a backup contact the SOS is only saved on the phone, which is a different expected result.</li>
+<li>Your web screen open on <i>Dispatch Center</i> to confirm the PRIORITY ALERT for T-06.</li>
+</ul></td></tr>
+<tr><td><b>Chief Tanod, web</b><br>BG-UAT-02-B</td><td>10<br>A-01 to A-05, A-07, A-09, A-11, A-16, A-N2</td><td>
+<ul>
+<li>Pending incidents; on-duty tanods <b>with</b> and <b>without</b> a published shift covering now; one tanod already responding to another incident (A-05).</li>
+<li>A dispatched incident whose dispatches are all completed (A-11).</li>
+<li>A pending tanod swap request on a published shift (A-16).</li>
+<li>For optional A-18: ask the Secretary account to reopen a resolved or invalid incident first.</li>
+</ul></td></tr>
+<tr><td><b>Chief Tanod, phone console</b><br>BG-UAT-02-B</td><td>5<br>C-01 to C-04, C-N1</td><td>
+<ul>
+<li>Admin test account on the Android app.</li>
+<li>An <b>active SOS</b> raised from a tanod phone or the demo data (C-02): only an active SOS shows Acknowledge.</li>
+<li>An open incident and at least one assigned dispatch (C-03, C-04).</li>
+</ul></td></tr>
+<tr><td><b>Secretary</b><br>BG-UAT-02-C</td><td>9<br>S-01, S-02, S-03, S-06, S-08, S-14, S-15, S-N1, S-N2</td><td>
+<ul>
+<li>An incident with a closed dispatch (S-06) and a different incident to mark invalid (S-08).</li>
+<li>A <b>prepared</b> tanod accomplishment report with a flagged duration (S-14, S-15).</li>
+</ul></td></tr>
+<tr><td><b>Punong Barangay</b><br>BG-UAT-02-D</td><td>8<br>P-01 to P-06, P-N1, P-N2</td><td>
+<ul>
+<li>Recent incidents on the dashboard (P-03) and demo data to read figures against (P-02).</li>
+<li>Shifts awaiting publish in the Approvals inbox (P-05) and a <b>prepared</b> accomplishment report (P-06).</li>
+</ul></td></tr>
+</tbody></table>
+<p class="small">Task lists above are copied from the UAT forms. If a form is edited later, the form wins; update this table.</p>
+
+<section class="part"><h2>3. Welcome and consent (say the same to everyone)</h2>
+<div class="say"><b>Say:</b> &ldquo;We are testing the system, not you. If something is hard, the system needs fixing. You can stop any time. Please do the steps yourself. I will only watch and write.&rdquo;<div class="fil">&ldquo;Ang sistema ang sinusubok namin, hindi kayo. Kung may mahirap, ang sistema ang aayusin. Maaari kayong huminto anumang oras. Kayo mismo ang gagawa; manonood at magsusulat lang ako.&rdquo;</div></div>
+<ol>
+<li>Explain in plain words: pretend data only, no real personal data is typed, about how long it takes (from your pilot).</li>
+<li>Read the <b>consent and privacy</b> paragraph on the UAT form. Taking part is the tester&#39;s choice; they may stop or withdraw consent any time (Data Privacy Act, RA 10173).</li>
+<li>The tester ticks and signs. The name appears <b>only on the signature page</b>, never in the report. Everywhere else use the tester code.</li>
+<li>Give the account password on a separate slip. Take it back after the session.</li>
+<li>Ask the tester to say aloud what they are thinking. You write it in Remarks; you do not answer.</li>
+</ol>
+
+<h2>4. Running the tasks</h2>
+<h3>For every task</h3>
+<ol>
+<li>Read the task aloud (English, or the Filipino line beside it). Start the stopwatch when the tester begins.</li>
+<li>Watch. Do not point, hint or say &ldquo;try the other tab&rdquo;. If asked for help, say: <i>&ldquo;Do what you think is right.&rdquo;</i> and count it.</li>
+<li>Stop the stopwatch when the tester says they are done or when the result appears. Write the <b>seconds</b>.</li>
+<li>Ask the tester to compare the screen with <b>What should happen</b> (word for word where text is quoted) and to <b>tick Pass or Fail themselves</b>.</li>
+<li>Check the tick is on the right row. Do not change it. If what you saw differs from what the tester ticked, write that in Remarks; do not argue.</li>
+<li>For a Fail, write what happened in Remarks (the tester&#39;s words) and give a Defect ID (section 5).</li>
+<li>Add 1 to <b>Errors or help</b> every time the tester makes an error or asks you for help. A mistake that the tester notices and fixes alone still counts as an error.</li>
+</ol>
+
+<h3>Marking rules</h3>
+<table><thead><tr><th>Situation</th><th>What you write</th></tr></thead><tbody>
+<tr><td>Screen matches &ldquo;What should happen&rdquo;</td><td>The tester ticks <b>Pass</b>. Remind them once that Pass means the expected result is seen, not &ldquo;close enough&rdquo;.</td></tr>
+<tr><td>Different result, step cannot be done, or an error shows</td><td>The tester ticks <b>Fail</b>; you write Remarks and the Defect ID.</td></tr>
+<tr><td>Task not tried (time, device problem)</td><td>Leave both boxes empty and write why.</td></tr>
+<tr><td>Task depends on an earlier failed task</td><td><b>Fail</b> and write &ldquo;blocked&rdquo;.</td></tr>
+<tr><td>Negative checks (T-N1, A-N2, C-N1, S-N1, S-N2, P-N1, P-N2)</td><td>Pass means the system <b>correctly refused or hid</b> the thing. Read the expected result carefully before marking.</td></tr>
+<tr><td>Failure caused by your setup, not the system (stale data, missing shift, wrong account)</td><td>Fix the setup, tell the tester it was yours, and <b>redo the task</b>. Write &ldquo;setup, redone&rdquo; in Remarks. This is not a defect.</td></tr>
+</tbody></table>
+
+<h3>Things only you can do during a task</h3>
+<table><thead><tr><th class="c">Task</th><th>Your action</th></tr></thead><tbody>
+<tr><td class="c">T-06</td><td>Look at the web Dispatch Center and confirm a PRIORITY ALERT for the SOS appears. Tell the tester only after you have checked.</td></tr>
+<tr><td class="c">T-07</td><td>After the tester turns location off and sends the SOS, you may check the Chief Tanod SOS tab shows &ldquo;Last known position (not live)&rdquo; or &ldquo;No location&rdquo;.</td></tr>
+<tr><td class="c">T-08</td><td>The tester turns off mobile data and Wi-Fi but keeps the SIM signal on. Do <b>not</b> use airplane mode: it also switches off the SIM, so no text can be sent. Check whether a backup contact number is set, so you know which expected result applies. Confirm the SOS appears on the web Dispatch Center, then, after the connection returns, that the stored SOS arrives once only.</td></tr>
+<tr><td class="c">T-09</td><td>Assign the pending incident to the tester&#39;s tanod from the web Dispatch Center <b>before</b> the tester opens the Dispatches tab.</td></tr>
+<tr><td class="c">T-14</td><td>Broadcast the offer from the web (&ldquo;Broadcast to on-duty tanods&rdquo;) only when the tester is On Duty and has no active dispatch.</td></tr>
+<tr><td class="c">T-15</td><td>The tester should be the first to accept. If you also accept from another account first, the expected result changes to &ldquo;Another tanod already responded.&rdquo; &mdash; do that only as a deliberate second run.</td></tr>
+<tr><td class="c">T-18</td><td>Look at the web incident list and confirm the report appears <b>once</b>, with no duplicate.</td></tr>
+<tr><td class="c">A-18</td><td>Ask the Secretary account to reopen the incident first; then let the tester find it in the Dispatch Center queue.</td></tr>
+</tbody></table>
+
+<h3>If something goes wrong</h3>
+<ul>
+<li><b>App or page freezes:</b> wait one minute and note it as a possible defect. If it does not recover, restart once, write &ldquo;restarted&rdquo;, and continue.</li>
+<li><b>Phone has no signal where it should:</b> some tasks need a connection. Move to where there is one, or write the task as not tried.</li>
+<li><b>Tester is stuck for more than a few minutes:</b> ask them to mark Fail, write what they tried, and move on. Do not teach the answer.</li>
+<li><b>Tester is upset or tired:</b> offer a break or end the session. Their consent allows it. Never press them.</li>
+<li><b>You notice real personal data on screen:</b> stop, close it, and tell the lead proponent. Only pretend data should ever be present.</li>
+</ul></section>
+
+<section class="part"><h2>5. Defects</h2>
+<p>Every Fail goes in the defect log with a Defect ID that is also written in the task&#39;s Remarks. One defect per row.</p>
+<table><thead><tr><th>Severity</th><th>Meaning</th><th>Examples from the tasks</th></tr></thead><tbody>
+<tr><td><b>Critical</b></td><td>An emergency or safety function is lost or wrong, data is shown to the wrong role, or the system cannot be used.</td><td>SOS not sent (T-06 to T-08, C-02); a role sees a page it must not see (P-N1, S-N1); a dispatch cannot be assigned (A-03).</td></tr>
+<tr><td><b>Major</b></td><td>A needed function fails or gives a wrong result, but there is a way around it.</td><td>Offline report does not sync (T-18); wrong figures on the dashboard (P-02).</td></tr>
+<tr><td><b>Minor</b></td><td>A wording, layout or convenience problem that does not stop the task.</td><td>A button label differs from the form; spacing.</td></tr>
+</tbody></table>
+<div class="box"><b>Standard for acceptance:</b> a pass rate of at least <b>90 percent</b> and <b>no critical defect still open</b>. Pass rate = passed &divide; (passed + failed) &times; 100. Failed tasks are fixed and then <b>run again</b>; record the retest. Report both the first-run and the final result in Chapter 4. Count only the final result of each task after retests for the standard, and never delete the first-run mark.</div>
+<p class="small">Do not argue with the tester about a mark or about whether something is a defect. Write what they said and what you saw. The proponents decide severity after the session.</p>
+
+<h2>6. Evaluation form (ratings)</h2>
+<ol>
+<li>Give the evaluation form of the <b>same role</b>: Tanod BG-EV-02-A, Chief Tanod and Secretary BG-EV-02-B, Punong Barangay BG-EV-02-C, IT practitioner or faculty BG-EV-02-D.</li>
+<li>Read the &ldquo;How to answer&rdquo; box. One idea per statement; choose one box in each row; no right or wrong answers; <b>N/A</b> if not seen or not used.</li>
+<li>Give a <b>respondent code</b> (not a name) and write it on the form.</li>
+<li>Stay near but do not look over the tester&#39;s shoulder. You may explain a word, but never say what to choose.</li>
+<li>For Group D, show the evidence listed beside each statement. Tick <i>Seen</i> only for what was shown. Statements that cannot be shown in a session are marked <i>developer-verified</i> by you.</li>
+<li>Write &ldquo;Reviewed by facilitator&rdquo; and your name when you have checked that no row is left blank by mistake. Do not change any answer.</li>
+</ol>
+<p class="small">Scoring: SUS and the weighted-mean tally are in <i>06-evaluation-and-uat-documents.html</i>, tab <i>Facilitator guide and tally</i>, sections 3 and 4. Score the phone app and the web dashboard separately. Never pool them.</p>
+
+<h2>7. After the session</h2>
+<p class="row"><input type="checkbox"> Thank the tester. <i>Maraming salamat po.</i> Tell them the results will be reported by code, not by name.</p>
+<p class="row"><input type="checkbox"> Collect the UAT form and the evaluation form. Check the cover, the tester code, the consent signature, and that the Pass/Fail column has no accidental blank.</p>
+<p class="row"><input type="checkbox"> Take back the password slip. Sign out of every test account on every device. Remove saved passwords.</p>
+<p class="row"><input type="checkbox"> Copy the Defect IDs into the defect log. Rate severity with the team the same day. Acceptance is signed by the business owner (the barangay official) in the sign-off part of the UAT form, not by the facilitator.</p>
+<p class="row"><input type="checkbox"> Enter the marks into the tally sheets (and the SUS table) within a day, while you still remember context.</p>
+<p class="row"><input type="checkbox"> Store the paper forms in a locked place. The name appears only on the signature page, so keep that page apart from the answer pages.</p>
+<p class="row"><input type="checkbox"> Run <i>Reset UAT Data.bat</i> before the next tester.</p>
+<p class="row"><input type="checkbox"> Run failed tasks again after the fix and record the retest.</p>
+
+<h2>8. Pilot and readiness (do this once, before the real sessions)</h2>
+<p class="row"><input type="checkbox"> The Filipino lines were reviewed by a Filipino or Bikol speaking faculty member. Name: <span class="fl" contenteditable="true"></span> Date: <span class="fl s" contenteditable="true"></span></p>
+<p class="row"><input type="checkbox"> Pilot done with 2 people who are not on the team and are not study tanods. Minutes for the tanod core tasks: <span class="fl s" contenteditable="true"></span> Which words confused them: <span class="fl" contenteditable="true"></span></p>
+<p class="row"><input type="checkbox"> Wording fixed after the pilot, and the changes shown to the adviser.</p>
+<p class="row"><input type="checkbox"> SMS end to end (tanod phone, gateway phone, dashboard) tested on real phones. <b>Until this passes, call the SMS fallback &ldquo;implemented, not yet device-verified&rdquo;</b>, and T-08 should be reported with that wording.</p>
+<p class="row"><input type="checkbox"> Sample numbers (planned 40 tanods, 4 Chief Tanods, 4 Secretaries, 4 Captains, 5 Group D) agreed with the adviser.</p>
+
+<h2>9. Quick card: do and do not</h2>
+<table><thead><tr><th>Do</th><th>Do not</th></tr></thead><tbody>
+<tr><td>
+<ul>
+<li>Say the same welcome every time.</li>
+<li>Time every task and count every error or help request.</li>
+<li>Write what you see, in the tester&#39;s own words.</li>
+<li>Redo a task if the failure was your setup.</li>
+<li>Keep passwords off the forms.</li>
+</ul></td><td>
+<ul>
+<li>Touch the phone or keyboard during a task.</li>
+<li>Hint, point, or explain where a button is.</li>
+<li>Tick Pass or Fail for the tester.</li>
+<li>Let a team member act as tester or evaluator.</li>
+<li>Use or type real citizen, incident or personal data.</li>
+<li>Change a tester&#39;s mark or answer, or write a name outside the signature page.</li>
+</ul></td></tr>
+</tbody></table>
+<div class="note">Open items that affect what you may report: the Filipino text is an unvalidated working translation until reviewed; the SMS fallback is not device-verified until the field test passes; the sample-size reasoning needs a citation in the manuscript (this kit supplies none).</div>
+</section>
+</div>
+</body></html>

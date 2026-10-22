@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BG-EV-02 Plain-Language Evaluation and Test Kit - Baranguard</title>
+<style>
+@page { size: A4; margin: 16mm 15mm; @bottom-center { content: "BG-EV-02 - Page " counter(page); font: 9pt Arial, sans-serif; } }
+*{box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;font-size:11.5pt;line-height:1.4;color:#000;background:#fff;margin:0}
+.wrap{max-width:210mm;margin:0 auto;padding:0 4mm}
+h1{font-size:19pt;text-align:center;margin:2mm 0 1mm}
+h2{font-size:14pt;border-bottom:1.5pt solid #000;margin:7mm 0 3mm;padding-bottom:1mm;break-after:avoid}
+h3{font-size:12pt;margin:5mm 0 1.5mm;break-after:avoid}
+p{margin:1.5mm 0}
+.sub{text-align:center;margin:0 0 3mm}
+.fil{font-style:italic;font-size:.88em;color:#222}
+.iso{font-weight:normal;font-size:.8em;color:#444}
+table{border-collapse:collapse;width:100%;margin:2mm 0}
+th,td{border:.7pt solid #000;padding:1.7mm 2mm;vertical-align:top;font-size:10.5pt}
+th{background:#e8e8e8;text-align:left}
+tr{break-inside:avoid}
+td.c,th.c{width:15mm;text-align:center;white-space:nowrap}
+td.w,th.w{width:13mm;text-align:center;font-size:9pt}
+td.s,th.s{width:11mm;text-align:center;padding:1.7mm 0}
+td.n,th.n{width:19mm;text-align:center}
+td.e,th.e{width:42mm;font-size:9.5pt}
+table.tech td,table.tech th{font-size:9.5pt}
+.box{border:1pt solid #000;padding:2.5mm 3mm;margin:3mm 0}
+.fac{border:2pt solid #000;padding:2mm 3mm;margin:3mm 0;font-weight:bold;text-align:center;background:#f2f2f2}
+.pb{break-before:page}
+ul,ol{margin:1.5mm 0 1.5mm 6mm;padding-left:4mm}
+li{margin:.8mm 0}
+.line{border-bottom:.7pt solid #000;height:7mm}
+.small{font-size:9.5pt}
+</style></head><body><div class="wrap">
+
+<h1>Plain-Language Evaluation and Test Kit</h1>
+<p class="sub"><b>Form BG-EV-02</b> &middot; Baranguard: An Offline-First Barangay Intelligence and Emergency Dispatch System<br>Pilot barangays: Dao, Binanuahan, Marifosque and Banuyo, Pilar, Sorsogon</p>
+<p class="small fil">The Filipino lines are a plain-language working draft and are not yet validated. A Filipino or Bikol speaking faculty member must review them before use. Reviewer: ____________________ Date: ____________. The English line comes first and is the version of record.</p>
+
+<div class="box"><b>What is in this kit.</b>
+<ul>
+<li><b>Pages for evaluators:</b> Part 1 (consent), Part 2 (about you), Part 3 (rating, 26 short statements), Part 4 (ease-of-use scale) and Part 5 (your comments). Tanods, Secretaries, Chief Tanods and Captains answer these.</li>
+<li><b>Appendix G (Group D only):</b> technical statements for IT practitioners and faculty, each with evidence to ask for.</li>
+<li><b>Facilitator kit (do not hand out):</b> sample plan, session steps, the UAT core tasks with time and error columns, pass rates, retest log, field test, measured-evidence log and tally sheet.</li>
+</ul>
+<span class="fil">Ang mga bahagi para sa evaluator ay Part 1 hanggang 5. Ang Appendix G ay para lamang sa mga eksperto sa IT. Ang facilitator kit ay hindi ibinibigay sa evaluator.</span></div>
+
+<h2>Part 1. Consent <span class="fil">Pahintulot</span></h2>
+<p>This is a school project of Bicol University. We want to know how well the Baranguard system works for you. <b>Taking part is your choice.</b> You may skip any question or stop at any time, and nothing bad will happen.</p>
+<p class="fil">Proyekto ito ng Bicol University. Gusto naming malaman kung gaano kahusay gumagana ang Baranguard para sa inyo. Kayo ang magpapasya kung sasali. Maaari ninyong laktawan ang anumang tanong o huminto anumang oras.</p>
+<ul>
+<li>We write your <b>role and a code</b> (like E-014), not your name. Your name appears only on the signature line below.</li>
+<li>Only <b>pretend data</b> is used. No real incident, person or tanod record is shown.</li>
+<li>Under the Data Privacy Act (RA 10173) you may ask to see or fix your answers, or take back your consent, anytime.</li>
+<li>Signed forms are kept by the proponents. The signature page is kept apart from your answers. Keep period: [to be stated by the proponents]. Questions: [name and contact of the proponents or adviser].</li>
+</ul>
+<p class="fil">Code at tungkulin lang ang isusulat, hindi ang pangalan. Peke lang ang datos. May karapatan kayong tingnan, ipaayos o bawiin ang inyong sagot.</p>
+<p>&#9744; I read this and I agree to take part. <span class="fil">Nabasa ko ito at pumapayag akong sumali.</span></p>
+<p>Signature over printed name: ______________________________ &nbsp; Date: ______________</p>
+
+<h2>Part 2. About you <span class="fil">Tungkol sa inyo</span></h2>
+<table>
+<tr><td style="width:55mm">Your code (the facilitator fills this in)</td><td></td></tr>
+<tr><td>Barangay</td><td>&#9744; Dao &nbsp; &#9744; Binanuahan &nbsp; &#9744; Marifosque &nbsp; &#9744; Banuyo &nbsp; &#9744; Not applicable</td></tr>
+<tr><td>Your role</td><td>&#9744; Tanod &nbsp; &#9744; Chief Tanod &nbsp; &#9744; Secretary &nbsp; &#9744; Punong Barangay (Captain) &nbsp; &#9744; IT practitioner or faculty (Group D)</td></tr>
+<tr><td>What you used today</td><td>&#9744; Phone app &nbsp; &#9744; Web dashboard &nbsp; &#9744; Both</td></tr>
+<tr><td>Years in this kind of work</td><td></td></tr>
+<tr><td>Device used (phone model or computer and browser)</td><td></td></tr>
+<tr><td>Date</td><td></td></tr>
+</table>
+<p>&#9744; I am not a member of the team that made Baranguard. <span class="fil">Hindi ako kasapi ng grupong gumawa ng Baranguard.</span></p>
+
+<h2 class="pb">Part 3. Your rating <span class="fil">Ang inyong marka</span></h2>
+<div class="box"><b>How to answer.</b> First, do the short tasks with the facilitator. Then mark <b>one box</b> in each row. There are no right or wrong answers. Rate what you saw. Mark <b>N/A</b> if you did not see or use it.<br><span class="fil">Gawin muna ang maikling gawain kasama ang facilitator. Pagkatapos, magmarka ng isang kahon sa bawat hilera. Walang tama o maling sagot. Markahan ang N/A kung hindi ninyo nakita o nagamit.</span>
+<table style="margin-top:2mm">
+<tr><th class="s">5</th><th class="s">4</th><th class="s">3</th><th class="s">2</th><th class="s">1</th><th class="s">N/A</th></tr>
+<tr><td class="s">Very good<div class="fil">Napakahusay</div></td><td class="s">Good<div class="fil">Mahusay</div></td><td class="s">Okay<div class="fil">Katamtaman</div></td><td class="s">Not good<div class="fil">Hindi maganda</div></td><td class="s">Bad<div class="fil">Masama</div></td><td class="s">Did not use<div class="fil">Hindi nagamit</div></td></tr>
+</table>
+<b>For</b> column: <b>All</b> = everyone; <b>Phone</b> = if you used the phone app; <b>Web</b> = if you used the web dashboard. Mark N/A if it is not for what you used.</div>
+
+<h3>A. Does it do what I need? <span class="fil">A. Ginagawa ba nito ang kailangan ko?</span> <span class="iso">(Functional Suitability)</span></h3>
+<table class="rate">
+<tr><th class="c">No.</th><th class="w">For</th><th>Statement <span class="fil">Pahayag</span></th><th class="s">5</th><th class="s">4</th><th class="s">3</th><th class="s">2</th><th class="s">1</th><th class="s">N/A</th></tr>
+<tr><td class="c">FS-1</td><td class="w">All</td><td>It has the tools I need for my work.<div class="fil">Nasa sistema ang mga kailangan ko sa trabaho.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">FS-2</td><td class="w">All</td><td>When I send out a tanod, the right incident and place show up.<div class="fil">Kapag nagpadala ako ng tanod, tama ang insidente at lugar na lumalabas.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">FS-3</td><td class="w">All</td><td>The incident I write down is saved correctly.<div class="fil">Tama ang pagkaka-save ng insidenteng isinulat ko.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">FS-4</td><td class="w">Web</td><td>The duty schedule goes from draft to approved the way our barangay does it.<div class="fil">Ang iskedyul ng duty ay mula draft hanggang aprubado, tulad ng ginagawa sa barangay namin.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">FS-5</td><td class="w">Web</td><td>The monthly report is ready to print and sign on paper, the way we do it.<div class="fil">Handa nang i-print at pirmahan sa papel ang buwanang ulat, tulad ng nakagawian namin.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">FS-6</td><td class="w">All</td><td>Referrals and school check-ins fit how we really work.<div class="fil">Akma sa totoong trabaho namin ang referral at school check-in.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">FS-7</td><td class="w">All</td><td>I can finish a task without extra steps that I do not need.<div class="fil">Natatapos ko ang gawain nang walang dagdag na hakbang na hindi ko kailangan.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">FS-8</td><td class="w">All</td><td>The map, lists and reports show everything I need to decide.<div class="fil">Kumpleto ang ipinapakita ng mapa, listahan at ulat para makapagpasya ako.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+</table>
+
+<h3>B. Is it quick? <span class="fil">B. Mabilis ba ito?</span> <span class="iso">(Performance Efficiency)</span></h3>
+<table class="rate">
+<tr><th class="c">No.</th><th class="w">For</th><th>Statement <span class="fil">Pahayag</span></th><th class="s">5</th><th class="s">4</th><th class="s">3</th><th class="s">2</th><th class="s">1</th><th class="s">N/A</th></tr>
+<tr><td class="c">PE-1</td><td class="w">All</td><td>Screens open quickly, and saving or sending is quick.<div class="fil">Mabilis magbukas ang mga screen, at mabilis mag-save o magpadala.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">PE-2</td><td class="w">All</td><td>I see new tanod positions and new assignments fast enough for an emergency.<div class="fil">Mabilis kong nakikita ang bagong lokasyon ng tanod at bagong assignment, sapat para sa emergency.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">PE-3</td><td class="w">All</td><td>It still works when the signal is weak.<div class="fil">Gumagana pa rin ito kahit mahina ang signal.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">PE-4</td><td class="w">Phone</td><td>With no signal, I can still write my reports. They are saved on the phone.<div class="fil">Kahit walang signal, nakakasulat pa rin ako ng ulat. Nase-save ito sa telepono.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">PE-5</td><td class="w">Phone</td><td>When the signal comes back, my saved reports are sent quickly.<div class="fil">Pagbalik ng signal, mabilis na naipapadala ang mga na-save kong ulat.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+</table>
+
+<h3>C. Can I trust it? <span class="fil">C. Mapagkakatiwalaan ba ito?</span> <span class="iso">(Reliability and Safety)</span></h3>
+<table class="rate">
+<tr><th class="c">No.</th><th class="w">For</th><th>Statement <span class="fil">Pahayag</span></th><th class="s">5</th><th class="s">4</th><th class="s">3</th><th class="s">2</th><th class="s">1</th><th class="s">N/A</th></tr>
+<tr><td class="c">RE-1</td><td class="w">All</td><td>It was ready to use every time I needed it today.<div class="fil">Handa itong gamitin tuwing kailangan ko ito ngayon.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">RE-2</td><td class="w">All</td><td>If the app closes or the phone restarts, I do not lose what I typed.<div class="fil">Kapag nagsara ang app o nag-restart ang telepono, hindi nawawala ang isinulat ko.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">RE-3</td><td class="w">Phone</td><td>With no internet, my SOS is sent by text message to my backup number.<div class="fil">Kapag walang internet, napapadala ang SOS ko sa pamamagitan ng text sa backup number ko.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">RE-4</td><td class="w">All</td><td>My report is not sent twice when the signal is bad.<div class="fil">Hindi nadodoble ang ulat ko kapag mahina ang signal.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">RE-5</td><td class="w">All</td><td>It tells me honestly if something was sent, is still waiting, or failed.<div class="fil">Sinasabi nito nang totoo kung ang isang bagay ay naipadala, naghihintay pa, o pumalya.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">RE-6</td><td class="w">Phone</td><td>My SOS still goes out even when the phone cannot find my location.<div class="fil">Lumalabas pa rin ang SOS ko kahit hindi mahanap ng telepono ang lokasyon ko.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">RE-7</td><td class="w">Phone</td><td>If my SOS may not have gone through, the app warns me.<div class="fil">Binabalaan ako ng app kung baka hindi nakarating ang SOS ko.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+</table>
+
+<h3>D. Is it easy to use? <span class="fil">D. Madali ba itong gamitin?</span> <span class="iso">(Interaction Capability (usability))</span></h3>
+<table class="rate">
+<tr><th class="c">No.</th><th class="w">For</th><th>Statement <span class="fil">Pahayag</span></th><th class="s">5</th><th class="s">4</th><th class="s">3</th><th class="s">2</th><th class="s">1</th><th class="s">N/A</th></tr>
+<tr><td class="c">IC-1</td><td class="w">All</td><td>I understand what each part of the screen is for.<div class="fil">Naiintindihan ko kung para saan ang bawat bahagi ng screen.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">IC-2</td><td class="w">All</td><td>It is easy to learn, even the first time.<div class="fil">Madali itong matutunan, kahit unang beses.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">IC-3</td><td class="w">All</td><td>The buttons and forms are easy to use.<div class="fil">Madaling gamitin ang mga button at form.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">IC-4</td><td class="w">All</td><td>It asks me to confirm before something important, so I make fewer mistakes.<div class="fil">Humihingi ito ng kumpirmasyon bago ang mahalagang gawain, kaya kaunti ang pagkakamali ko.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">IC-5</td><td class="w">All</td><td>The words, messages and colors on the screen are clear.<div class="fil">Malinaw ang mga salita, mensahe at kulay sa screen.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">IC-6</td><td class="w">All</td><td>I can read it on a small screen and in bright light.<div class="fil">Nababasa ko ito sa maliit na screen at kahit maliwanag ang paligid.</div></td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+</table>
+
+<h2 class="pb">Part 4. How easy was it overall? <span class="fil">Gaano ito kadali sa kabuuan?</span></h2>
+<p>Fill in one sheet for each thing you used (phone app or web dashboard). 1 = Strongly disagree, 2 = Disagree, 3 = Not sure, 4 = Agree, 5 = Strongly agree.</p>
+<p class="fil">Isang sheet para sa bawat ginamit (phone app o web dashboard). 1 = Lubos na hindi sang-ayon, 2 = Hindi sang-ayon, 3 = Hindi sigurado, 4 = Sang-ayon, 5 = Lubos na sang-ayon.</p>
+<p>I am rating: &#9744; Phone app &nbsp; &#9744; Web dashboard</p>
+<table class="rate">
+<tr><th class="c">No.</th><th>Statement <span class="fil">Pahayag</span></th><th class="s">1</th><th class="s">2</th><th class="s">3</th><th class="s">4</th><th class="s">5</th></tr>
+<tr><td class="c">S1</td><td>I think I would like to use this system often.<div class="fil">Sa palagay ko, madalas kong gagamitin ang sistemang ito.</div></td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">S2</td><td>I found the system more complicated than it needs to be.<div class="fil">Para sa akin, mas komplikado ang sistema kaysa sa kailangan.</div></td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">S3</td><td>I thought the system was easy to use.<div class="fil">Madali para sa akin ang gamitin ang sistema.</div></td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">S4</td><td>I think I would need a technical person to help me use it.<div class="fil">Sa palagay ko, kakailanganin ko ng taong may alam sa teknikal para magamit ito.</div></td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">S5</td><td>The different parts of the system fit together well.<div class="fil">Bagay na bagay sa isa’t isa ang iba’t ibang bahagi ng sistema.</div></td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">S6</td><td>I thought there were too many parts that did not match each other.<div class="fil">Sa tingin ko, maraming bahagi ng sistema na hindi magkatugma.</div></td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">S7</td><td>I think most people would learn to use this system very quickly.<div class="fil">Sa palagay ko, mabilis itong matututunan ng karamihan.</div></td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">S8</td><td>I found the system very awkward to use.<div class="fil">Nahirapan akong gamitin ang sistema; hindi ito komportable.</div></td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">S9</td><td>I felt very confident using the system.<div class="fil">Panatag ako sa paggamit ng sistema.</div></td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">S10</td><td>I needed to learn a lot of things before I could start using it.<div class="fil">Maraming kailangan kong aralin bago ko ito nasimulang gamitin.</div></td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="s">&#9744;</td></tr>
+</table>
+<p class="small"><b>Facilitator scoring.</b> Odd items: score minus 1. Even items: 5 minus score. Add the ten numbers and multiply by 2.5 (0 to 100). Report the mean and the standard deviation per role. Score the phone app and the web dashboard separately and never pool them. Compare with the published average (about 68) and cite the source in the manuscript.</p>
+
+<h2>Part 5. Your comments <span class="fil">Ang inyong komento</span></h2>
+<p>What was <b>easy</b>? <span class="fil">Ano ang naging madali?</span></p><div class="line"></div><div class="line"></div>
+<p>What was <b>hard or confusing</b>? <span class="fil">Ano ang mahirap o nakalito?</span></p><div class="line"></div><div class="line"></div>
+<p>Would you use this in your barangay work? &#9744; Yes &nbsp; &#9744; Maybe &nbsp; &#9744; No &nbsp; Why? <span class="fil">Gagamitin ba ninyo ito sa trabaho sa barangay? Bakit?</span></p><div class="line"></div>
+<p class="fil">Maraming salamat po sa inyong oras.</p>
+
+<h2 class="pb">Appendix G. Technical statements (Group D only)</h2>
+<div class="fac">GROUP D ONLY: IT PRACTITIONERS AND FACULTY. Group D also answers Parts 1 to 5 above.</div>
+<p>Rate only what you were shown. Each statement has <b>one idea</b>. In the <b>Seen</b> column tick the box if the facilitator showed you the evidence. If it was not shown, leave Seen empty and mark N/A. Statements that cannot be shown in a session are marked <i>developer-verified</i> in the facilitator log, and you may skip them. Scale: 5 Excellent, 4 Very Satisfactory, 3 Satisfactory, 2 Fair, 1 Poor.</p>
+
+<h3>Security</h3>
+<table class="rate tech">
+<tr><th class="c">No.</th><th>Statement</th><th class="e">Evidence you can ask to see</th><th class="s">Seen</th><th class="s">5</th><th class="s">4</th><th class="s">3</th><th class="s">2</th><th class="s">1</th><th class="s">N/A</th></tr>
+<tr><td class="c">SE-1</td><td>Only the Secretary and the Chief Tanod (on the web) can read the private incident story (narrative). The phone console and the Punong Barangay cannot.</td><td class="e">Open an incident as Secretary, Chief Tanod and Captain.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SE-2</td><td>Every time the private story is opened, the audit log records it.</td><td class="e">Open one, then show the Audit Log screen.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SE-3</td><td>Push notifications and SMS never contain the private story.</td><td class="e">Show a notification and an SMS text.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SE-4</td><td>Each role can reach only its own screens and records.</td><td class="e">UAT negative checks T-N1, A-N2, S-N1, P-N1.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SE-5</td><td>Sign-in locks after five wrong tries.</td><td class="e">Demo, or script verify-auth-lockout-revocation.php.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SE-6</td><td>A session ends after logout, suspension or deactivation.</td><td class="e">Suspended account tanod.olayvar; same script.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SE-7</td><td>The audit log records who did what, when and to which record.</td><td class="e">Show the Audit Log screen.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SE-8</td><td>The audit log holds no private story, password or token.</td><td class="e">Show sample audit rows.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SE-9</td><td>A request for another barangay’s record is answered as not found.</td><td class="e">Script verify-sprint7-pentest-incidents.sh output.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SE-10</td><td>The database on the phone is encrypted.</td><td class="e">Show the documentation and the code reference.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SE-11</td><td>Old private stories are deleted after a fixed time.</td><td class="e">Show the retention setting and verify-sprint7-retention.sh.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SE-12</td><td>Database backups are encrypted and a restore test has been done.</td><td class="e">Show restore-drill.sh output.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+</table>
+
+<h3>Maintainability</h3>
+<table class="rate tech">
+<tr><th class="c">No.</th><th>Statement</th><th class="e">Evidence you can ask to see</th><th class="s">Seen</th><th class="s">5</th><th class="s">4</th><th class="s">3</th><th class="s">2</th><th class="s">1</th><th class="s">N/A</th></tr>
+<tr><td class="c">MA-1</td><td>The system is built in separate parts (server, web, phone app, SMS gateway app).</td><td class="e">Show the folder layout.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">MA-2</td><td>Shared code is reused instead of copied.</td><td class="e">Show one shared service or helper.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">MA-3</td><td>Decisions and faults can be traced in the development log.</td><td class="e">Open backend/DEVLOG.md.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">MA-4</td><td>Database changes are added as new numbered migrations, never by editing old ones.</td><td class="e">Show the migrations folder.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">MA-5</td><td>Tests and check scripts can be run again at any time.</td><td class="e">Run npm test and one verify script.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">MA-6</td><td>The written guides are complete enough for another developer to continue.</td><td class="e">Open docs/SETUP.md and docs/REFERENCE.md.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+</table>
+
+<h3>Flexibility</h3>
+<table class="rate tech">
+<tr><th class="c">No.</th><th>Statement</th><th class="e">Evidence you can ask to see</th><th class="s">Seen</th><th class="s">5</th><th class="s">4</th><th class="s">3</th><th class="s">2</th><th class="s">1</th><th class="s">N/A</th></tr>
+<tr><td class="c">FX-1</td><td>It can be installed on a new Windows computer by following the setup guide.</td><td class="e">Timed clean-install trial (see the evidence log).</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">FX-2</td><td>Another barangay can be added with reasonable effort.</td><td class="e">Show how the four barangays are stored.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">FX-3</td><td>It works on other browsers and other Android phones.</td><td class="e">Browser and phone table (evidence log).</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">FX-4</td><td>Outside services (SMS gateway, push, routing) are kept in separate parts, so one can be replaced.</td><td class="e">Show the service folder.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+</table>
+
+<h3>Compatibility</h3>
+<table class="rate tech">
+<tr><th class="c">No.</th><th>Statement</th><th class="e">Evidence you can ask to see</th><th class="s">Seen</th><th class="s">5</th><th class="s">4</th><th class="s">3</th><th class="s">2</th><th class="s">1</th><th class="s">N/A</th></tr>
+<tr><td class="c">CO-1</td><td>It runs beside other software on the same computer without problems.</td><td class="e">Show the separate ports in the setup guide.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">CO-2</td><td>It sends and receives correctly with the SMS gateway phone.</td><td class="e">Send and receive one test SMS.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">CO-3</td><td>It sends push notifications correctly through Firebase (FCM).</td><td class="e">Send one test push to a phone.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">CO-4</td><td>It shows a clear status and keeps working when the routing service is down.</td><td class="e">Switch the routing key off and open a dispatch.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+</table>
+
+<h3>Safety</h3>
+<table class="rate tech">
+<tr><th class="c">No.</th><th>Statement</th><th class="e">Evidence you can ask to see</th><th class="s">Seen</th><th class="s">5</th><th class="s">4</th><th class="s">3</th><th class="s">2</th><th class="s">1</th><th class="s">N/A</th></tr>
+<tr><td class="c">SA-1</td><td>An SOS is kept on the phone and retried until the server confirms it.</td><td class="e">Raise an SOS in airplane mode, then reconnect.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SA-2</td><td>If the server is down, the SOS can still reach a person by SMS.</td><td class="e">Show the SMS fallback result.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SA-3</td><td>When nobody accepts a night dispatch offer, it is offered again in rounds.</td><td class="e">Broadcast an offer and let it expire.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SA-4</td><td>After the rounds, the Chief Tanod is alerted and reminders repeat.</td><td class="e">Same test; show the alert.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SA-5</td><td>The SOS screen says plainly when no backup number is set or when the SMS failed.</td><td class="e">Clear the backup number and open the SOS screen.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+<tr><td class="c">SA-6</td><td>The documentation states the limits (for example, the workstation must stay on).</td><td class="e">Open the limits section of the docs.</td><td class="s">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s ">&#9744;</td><td class="s">&#9744;</td></tr>
+</table>
+<p>Overall comment: <div class="line"></div><div class="line"></div></p>
+
+<h2 class="pb">Facilitator kit</h2>
+<div class="fac">FOR THE FACILITATOR AND PROPONENTS ONLY. DO NOT HAND OUT.</div>
+
+<h3>F1. Who will evaluate (sample plan)</h3>
+<table>
+<tr><th>Role</th><th class="n">Per barangay</th><th class="n">Dao</th><th class="n">Binanuahan</th><th class="n">Marifosque</th><th class="n">Banuyo</th><th class="n">Total</th></tr>
+<tr><td>Tanod</td><td class="n">10</td><td class="n">10</td><td class="n">10</td><td class="n">10</td><td class="n">10</td><td class="n"><b>40</b></td></tr>
+<tr><td>Punong Barangay (Captain)</td><td class="n">1</td><td class="n">1</td><td class="n">1</td><td class="n">1</td><td class="n">1</td><td class="n"><b>4</b></td></tr>
+<tr><td>Secretary</td><td class="n">1</td><td class="n">1</td><td class="n">1</td><td class="n">1</td><td class="n">1</td><td class="n"><b>4</b></td></tr>
+<tr><td>Chief Tanod</td><td class="n">1</td><td class="n">1</td><td class="n">1</td><td class="n">1</td><td class="n">1</td><td class="n"><b>4</b></td></tr>
+<tr><th>End users</th><th class="n">13</th><th class="n">13</th><th class="n">13</th><th class="n">13</th><th class="n">13</th><th class="n">52</th></tr>
+<tr><td>Group D (IT practitioners and faculty, not tied to a barangay)</td><td class="n">-</td><td class="n" colspan="4">5 in total</td><td class="n"><b>5</b></td></tr>
+<tr><th>All evaluators</th><th class="n"></th><th class="n" colspan="4"></th><th class="n">57</th></tr>
+</table>
+<ul>
+<li><b>Reporting rule.</b> Report n, mean and standard deviation for each role and for all end users. The Captains, Secretaries and Chief Tanods (n = 12 together) are also shown as one group called "officials", because n = 4 per role is too small to stand alone. State the small n as a limitation. Give the reason for these numbers in the manuscript with a source; do not leave it unexplained.</li>
+<li><b>The tester must be the real role.</b> A member of the development team never acts as a tester or an evaluator.</li>
+</ul>
+
+<h3>F2. Session steps (about one visit per barangay)</h3>
+<ol>
+<li><b>Pilot first.</b> Run the whole session once with 2 people who are not on the team (not tanods from the study). Time it. Ask what words confused them and fix those words before the real sessions.</li>
+<li><b>Reset the demo data before each tester</b> (double-click <i>Reset UAT Data.bat</i>, about one minute). Start the session within 9 hours of the reset, or the shift-based tasks fail for a data reason and not a defect.</li>
+<li><b>Say the same welcome to everyone</b> (read aloud, in English or Filipino): "We are testing the system, not you. If something is hard, the system needs fixing. You can stop any time. Please do the steps yourself. I will only watch and write."<br><span class="fil">"Ang sistema ang sinusubok namin, hindi kayo. Kung may mahirap, ang sistema ang aayusin. Maaari kayong huminto anumang oras. Kayo mismo ang gagawa; manonood at magsusulat lang ako."</span></li>
+<li>Consent and Part 2, then the <b>core tasks</b> for the tester's role (F3), then Parts 3, 4 and 5. Give the account password separately; never write it on a form.</li>
+<li>Write the seconds taken and the number of errors or help requests for each task. Do not help unless the tester asks; each help counts as one.</li>
+<li>If a task fails, write a Defect ID and log it in the defect log of <i>04-uat-signoff.html</i> (Part H). Use the severity words of that form (Critical, Major, Minor).</li>
+</ol>
+
+<h3 class="pb">F3. UAT core tasks, with time and error columns</h3>
+<p>These are the core tasks taken from <i>04-uat-signoff.html</i>: 46 of its 93 scenarios. The IDs are the same, so the full form can still be used for any task that is not here. Run the others when time allows (optional). Pass means the result on screen matches the expected result in the full form.</p>
+
+<h3>Tanod (Android app) - Part B <span class="iso">(account tanod.reyes; 14 core of 30 scenarios)</span></h3>
+<table class="rate">
+<tr><th class="c">ID</th><th>Task in plain words</th><th class="s">Pass</th><th class="s">Fail</th><th class="n">Seconds</th><th class="n">Errors or help asked</th><th>Notes / Defect ID</th></tr>
+<tr><td class="c">T-01</td><td>Log in on the phone.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">T-02</td><td>Tap Go On Duty.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">T-06</td><td>Send an SOS while online.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">T-07</td><td>Send an SOS with the phone location turned off.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">T-08</td><td>Send an SOS in airplane mode.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">T-09</td><td>Open the assignment the Chief Tanod gave you.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">T-10</td><td>Tap Start Navigation and Go En Route.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">T-11</td><td>Tap Mark Arrived.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">T-12</td><td>Tap Mark as Completed and confirm.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">T-14</td><td>Read a night dispatch offer.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">T-15</td><td>Tap Accept call.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">T-17</td><td>File a report in airplane mode.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">T-18</td><td>Turn airplane mode off. The report arrives once.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">T-N1</td><td>A tanod cannot use the web dashboard.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+</table>
+
+<h3>Chief Tanod (web dashboard) - Part C <span class="iso">(account admin.dao; 10 core of 23 scenarios)</span></h3>
+<table class="rate">
+<tr><th class="c">ID</th><th>Task in plain words</th><th class="s">Pass</th><th class="s">Fail</th><th class="n">Seconds</th><th class="n">Errors or help asked</th><th>Notes / Defect ID</th></tr>
+<tr><td class="c">A-01</td><td>Log in on the web dashboard.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">A-02</td><td>Open the Dashboard and the Live Map.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">A-03</td><td>Send an on-duty tanod to a pending incident.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">A-04</td><td>Send a tanod who has no published shift (a reason is required).</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">A-05</td><td>Try to send a tanod who is already busy.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">A-07</td><td>Cancel a responder (a reason is required).</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">A-09</td><td>Broadcast an incident to on-duty tanods.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">A-11</td><td>Resolve an incident whose dispatches are done.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">A-16</td><td>Approve a swap request.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">A-N2</td><td>The Chief Tanod cannot mark incidents duplicate or invalid.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+</table>
+
+<h3>Chief Tanod (phone console) - Part D <span class="iso">(account admin.dao; 5 core of 8 scenarios)</span></h3>
+<table class="rate">
+<tr><th class="c">ID</th><th>Task in plain words</th><th class="s">Pass</th><th class="s">Fail</th><th class="n">Seconds</th><th class="n">Errors or help asked</th><th>Notes / Defect ID</th></tr>
+<tr><td class="c">C-01</td><td>Log in on the phone console.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">C-02</td><td>Acknowledge and resolve an SOS.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">C-03</td><td>Assign more responders to an incident.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">C-04</td><td>Cancel a dispatch (a reason is required).</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">C-N1</td><td>The phone console has no user management or reports.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+</table>
+
+<h3>Secretary (web dashboard) - Part E <span class="iso">(account secretary.dao; 9 core of 22 scenarios)</span></h3>
+<table class="rate">
+<tr><th class="c">ID</th><th>Task in plain words</th><th class="s">Pass</th><th class="s">Fail</th><th class="n">Seconds</th><th class="n">Errors or help asked</th><th>Notes / Defect ID</th></tr>
+<tr><td class="c">S-01</td><td>Log in on the web dashboard.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">S-02</td><td>Create a new incident.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">S-03</td><td>Read an incident’s private story.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">S-06</td><td>Mark an incident as duplicate.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">S-08</td><td>Mark an incident invalid, then reopen it.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">S-14</td><td>Open an accomplishment report with a flagged time.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">S-15</td><td>Return a report to the tanod with a reason.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">S-N1</td><td>The Secretary cannot open the Dispatch Center, Live Map or Audit Log.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">S-N2</td><td>The Secretary cannot resolve an incident.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+</table>
+
+<h3>Punong Barangay / Captain (web dashboard) - Part F <span class="iso">(account punong.dao; 8 core of 10 scenarios)</span></h3>
+<table class="rate">
+<tr><th class="c">ID</th><th>Task in plain words</th><th class="s">Pass</th><th class="s">Fail</th><th class="n">Seconds</th><th class="n">Errors or help asked</th><th>Notes / Defect ID</th></tr>
+<tr><td class="c">P-01</td><td>Log in on the web dashboard.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">P-02</td><td>Read the main figures and the Pending Approvals card.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">P-03</td><td>Open a recent incident (read only).</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">P-04</td><td>Open the Live Map and Analytics.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">P-05</td><td>Review and publish a duty schedule.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">P-06</td><td>Open and print a prepared accomplishment report.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">P-N1</td><td>The Captain cannot open the Dispatch Center or the Audit Log.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td class="c">P-N2</td><td>The Captain cannot send out a tanod or change an incident.</td><td class="s">&#9744;</td><td class="s">&#9744;</td><td class="n"></td><td class="n"></td><td></td></tr>
+</table>
+
+<h3 class="pb">F4. UAT results, standard and retest log</h3>
+<p><b>Course standard:</b> a pass rate of at least 90 percent and no critical defect still open. Pass rate = passed / (passed + failed) x 100. Report it for each role and overall.</p>
+<table class="rate">
+<tr><th>Role</th><th class="n">Core cases</th><th class="n">Executed</th><th class="n">Passed</th><th class="n">Failed</th><th class="n">Pass rate</th><th class="n">Critical open</th></tr>
+<tr><td>Tanod (Android app) - Part B</td><td class="n">14</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td>Chief Tanod (web dashboard) - Part C</td><td class="n">10</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td>Chief Tanod (phone console) - Part D</td><td class="n">5</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td>Secretary (web dashboard) - Part E</td><td class="n">9</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td>Punong Barangay / Captain (web dashboard) - Part F</td><td class="n">8</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><th>Total (all core cases)</th><th class="n">46</th><th class="n"></th><th class="n"></th><th class="n"></th><th class="n"></th><th class="n"></th></tr>
+</table>
+<p>Result against the standard: &#9744; Met &nbsp; &#9744; Not met &nbsp; &nbsp; Decision: &#9744; Accepted &nbsp; &#9744; Accepted with conditions &nbsp; &#9744; Not accepted</p>
+<h3>Retest log (every failed task is run again after its fix)</h3>
+<table>
+<tr><th class="c">Task ID</th><th class="n">Defect ID</th><th class="n">Severity</th><th>What failed</th><th class="n">Fixed on</th><th class="n">Retest Pass / Fail</th><th class="n">Retest date</th></tr>
+<tr><td class="c">&nbsp;</td><td class="n"></td><td class="n"></td><td></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td class="c">&nbsp;</td><td class="n"></td><td class="n"></td><td></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td class="c">&nbsp;</td><td class="n"></td><td class="n"></td><td></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td class="c">&nbsp;</td><td class="n"></td><td class="n"></td><td></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td class="c">&nbsp;</td><td class="n"></td><td class="n"></td><td></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td class="c">&nbsp;</td><td class="n"></td><td class="n"></td><td></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td class="c">&nbsp;</td><td class="n"></td><td class="n"></td><td></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td class="c">&nbsp;</td><td class="n"></td><td class="n"></td><td></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+
+</table>
+
+<h3 class="pb">F5. Field test: weak or no signal (do this once, outside the demo room)</h3>
+<table>
+<tr><th>Check</th><th class="n">Phone model</th><th class="n">Signal (none / weak)</th><th class="n">Result</th><th>What happened</th></tr>
+<tr><td>Write a report with no signal, close the app, reopen it: the report is still there.</td><td class="n"></td><td class="n"></td><td class="n">&#9744; Pass &#9744; Fail</td><td></td></tr>
+<tr><td>Signal returns: the report arrives once (no copy).</td><td class="n"></td><td class="n"></td><td class="n">&#9744; Pass &#9744; Fail</td><td></td></tr>
+<tr><td>SOS with no internet: the text message to the backup number is sent.</td><td class="n"></td><td class="n"></td><td class="n">&#9744; Pass &#9744; Fail</td><td></td></tr>
+<tr><td>SOS with no internet: the gateway phone creates the SOS on the dashboard.</td><td class="n"></td><td class="n"></td><td class="n">&#9744; Pass &#9744; Fail</td><td></td></tr>
+<tr><td>SOS with the phone location off: it is still sent.</td><td class="n"></td><td class="n"></td><td class="n">&#9744; Pass &#9744; Fail</td><td></td></tr>
+</table>
+
+<h3>F6. Measured-evidence log (real numbers; do not write a number you did not measure)</h3>
+<table>
+<tr><th>What to measure</th><th>How</th><th class="n">Times (n)</th><th class="n">Result</th><th class="n">Date</th><th class="n">Raw file</th></tr>
+<tr><td>Screen/data load time (median and 95th percentile)</td><td>node backend/scripts/measure-api-latency.mjs</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td>Phone position delay and how often it updates</td><td>php backend/scripts/metrics-report.php</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td>Saved-report send success and copies after retry</td><td>php backend/scripts/metrics-report.php (sync log)</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td>Dispatch response time (incident created to arrival)</td><td>Reports screen compared with the seed manifest</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td>SOS delivery time and SMS fallback outcome</td><td>SOS matrix below</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td>Battery use per on-duty hour</td><td>adb shell dumpsys batterystats</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td>Time to install on a clean Windows computer</td><td>Stopwatch with docs/SETUP.md</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+<tr><td>Browsers and Android versions tried</td><td>List each one with Pass / Fail</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+</table>
+<h3>SOS matrix (each row at least 3 tries)</h3>
+<table>
+<tr><th>Case</th><th class="n">Tries</th><th class="n">Reached dashboard</th><th class="n">Seconds (median)</th><th class="n">SMS sent</th><th>Notes</th></tr>
+<tr><td>Online, location on</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td>Online, location off</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td>Offline, location on</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td>Offline, location off</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td>No SIM or airplane mode</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td></td></tr>
+<tr><td>Backup number wrong or empty</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td></td></tr>
+</table>
+
+<h3 class="pb">F7. Tally sheet and old-to-new item map</h3>
+<p><b>Mean</b> = sum of the scores / number of ratings for that item group (do not count N/A). <b>SD</b> = standard deviation of the item scores. Fill in one table for each of the four groups (Functional Suitability, Performance Efficiency, Reliability and Safety, Interaction Capability), and one for Appendix G.</p>
+<table>
+<tr><th>Group</th><th class="n">n</th><th class="n">FS Mean</th><th class="n">FS SD</th><th class="n">PE Mean</th><th class="n">PE SD</th><th class="n">RE Mean</th><th class="n">RE SD</th><th class="n">IC Mean</th><th class="n">IC SD</th></tr>
+<tr><td>Tanods</td><td class="n">40</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr><tr><td>Captains</td><td class="n">4</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr><tr><td>Secretaries</td><td class="n">4</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr><tr><td>Chief Tanods</td><td class="n">4</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr><tr><td>Officials (Captains + Secretaries + Chief Tanods)</td><td class="n">12</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr><tr><td>All end users</td><td class="n">52</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr><tr><td>Group D</td><td class="n">5</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td></tr>
+</table>
+<p class="small">Meaning of the mean (same bands as the earlier forms): 4.21 to 5.00 Excellent; 3.41 to 4.20 Very Satisfactory; 2.61 to 3.40 Satisfactory; 1.81 to 2.60 Fair; 1.00 to 1.80 Poor. SUS: report separately for the phone app and the web dashboard.</p>
+<h3>Where each old item went</h3>
+<p class="small">The earlier forms (03a to 03d) used the codes below. This form splits or rewrites them so that each statement has one idea. Use this table to carry old tallies across.</p>
+<table>
+<tr><th class="c">Old</th><th>New item(s)</th><th class="c">Old</th><th>New item(s)</th></tr>
+<tr><td class="c">FS1</td><td>FS-1</td><td class="c">SE3</td><td>SE-5, SE-6</td></tr>
+<tr><td class="c">FS2</td><td>FS-2, FS-3</td><td class="c">SE4</td><td>SE-7, SE-8</td></tr>
+<tr><td class="c">FS3</td><td>FS-4, FS-5</td><td class="c">SE5</td><td>SE-9</td></tr>
+<tr><td class="c">FS4</td><td>FS-6</td><td class="c">SE6</td><td>SE-10, SE-11, SE-12</td></tr>
+<tr><td class="c">FS5</td><td>FS-7</td><td class="c">MA1</td><td>MA-1</td></tr>
+<tr><td class="c">FS6</td><td>FS-8</td><td class="c">MA2</td><td>MA-2</td></tr>
+<tr><td class="c">PE1</td><td>PE-1</td><td class="c">MA3</td><td>MA-3</td></tr>
+<tr><td class="c">PE2</td><td>PE-2</td><td class="c">MA4</td><td>MA-4</td></tr>
+<tr><td class="c">PE3</td><td>PE-3</td><td class="c">MA5</td><td>MA-5</td></tr>
+<tr><td class="c">PE4</td><td>PE-4</td><td class="c">MA6</td><td>MA-6</td></tr>
+<tr><td class="c">PE5</td><td>PE-5, RE-5</td><td class="c">FX1</td><td>FX-1</td></tr>
+<tr><td class="c">RE1</td><td>RE-1</td><td class="c">FX2</td><td>FX-2</td></tr>
+<tr><td class="c">RE2</td><td>RE-2</td><td class="c">FX3</td><td>FX-3</td></tr>
+<tr><td class="c">RE3</td><td>RE-3</td><td class="c">FX4</td><td>FX-4</td></tr>
+<tr><td class="c">RE4</td><td>RE-4</td><td class="c">CO1</td><td>CO-1</td></tr>
+<tr><td class="c">RE5</td><td>RE-5</td><td class="c">CO2</td><td>CO-2</td></tr>
+<tr><td class="c">IC1</td><td>IC-1</td><td class="c">CO3</td><td>CO-3</td></tr>
+<tr><td class="c">IC2</td><td>IC-2</td><td class="c">CO4</td><td>CO-4</td></tr>
+<tr><td class="c">IC3</td><td>IC-3</td><td class="c">SA1</td><td>RE-6</td></tr>
+<tr><td class="c">IC4</td><td>IC-4</td><td class="c">SA2</td><td>RE-7</td></tr>
+<tr><td class="c">IC5</td><td>IC-5</td><td class="c">SA3</td><td>SA-1, SA-2</td></tr>
+<tr><td class="c">IC6</td><td>IC-6</td><td class="c">SA4</td><td>SA-3, SA-4</td></tr>
+<tr><td class="c">SE1</td><td>SE-1, SE-2, SE-3</td><td class="c">SA5</td><td>SA-5, SA-6</td></tr>
+<tr><td class="c">SE2</td><td>SE-4</td><td class="c"></td><td></td></tr>
+</table>
+
+<h3>Items you should know about</h3>
+<ul class="small">
+<li>26 end-user statements replace the earlier 22. Each is shorter and has one idea, so the list is longer but quicker to answer.</li>
+<li>The Safety wording that an end user can judge (the SOS still goes out without a location; the app warns when an SOS may not have gone through) is now in Part 3, group C. The remaining technical safety items are in Appendix G.</li>
+<li>The Filipino lines need a faculty review before the sessions.</li>
+</ul>
+
+</div></body></html>
