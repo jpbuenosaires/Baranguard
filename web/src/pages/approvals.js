@@ -230,7 +230,7 @@ export function renderApprovalsPage(root, user, onLoggedOut, navigate) {
       showEmpty(
         body,
         'Nothing waiting for you',
-        'Your account holds no approval authority. An Admin can assign one under Personnel > Users.',
+        'Nothing in your role is waiting for approval right now.',
       );
       return;
     }

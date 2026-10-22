@@ -360,7 +360,7 @@ function buildProfileCard(user, onFullNameSaved) {
   const roleDesc = user.role === 'admin'
     ? 'Full administrative control, operator accounts, and system configuration'
     : user.role === 'secretary'
-      ? 'Blotter records management, citizen triage, and roster maintenance'
+      ? 'Incident records custody, referrals, school-zone reports, and roster maintenance'
       : user.role === 'punong_barangay'
         ? 'Executive supervision, incident approvals, and statistical reporting'
         : 'Field patrol dispatch and incident response telemetry';

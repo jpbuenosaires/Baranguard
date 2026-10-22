@@ -1,7 +1,7 @@
 # Baranguard
 
 Barangay Intelligence and Emergency Dispatch System — offline-first,
-cloud-assisted incident reporting and emergency dispatch platform for four
+locally hosted incident reporting and emergency dispatch platform for four
 barangays (Dao, Binanuahan, Marifosque, Banuyo) in Pilar, Sorsogon,
 Philippines. IT capstone project, Bicol University.
 
@@ -35,14 +35,23 @@ auto-loaded — see `CLAUDE.md` for when to open each):
 ## Folder structure
 
 ```
-/backend    PHP 8.2 + Node.js — routes, controllers, models, middleware,
-            services (sms/ai/sync), config, migrations
+/backend    PHP 8.2 (Node.js is CLI tooling only) — routes, controllers,
+            models, middleware, services (sms/sync), config, migrations
 /web        Vanilla JS + plain CSS — dispatcher/admin command center
-/mobile     Ionic 8.8.5 + Capacitor 8.0 — tanod operations app (Android)
-/ai         Prompt templates + synthetic PII test data (Sprint 6)
+/mobile     Ionic React 9 + Capacitor 8.5 — tanod operations app (Android)
+/sms-gateway  Android app that sends SMS over its own SIM
 /docs       All planning docs, DEVLOG.md, /evidence (screenshots/test logs)
 ```
 
-See `Baranguard_Naming_Conventions.md` for the full annotated tree and
-naming rules (snake_case DB/API, camelCase JS, the apiClient/apiService
-boundary rule, etc.).
+The Electronic Blotter and the local-AI pipeline were removed in
+migration 0029 (see `docs/REFERENCE.md` §1); Baranguard complements DILG
+BIMSS and does not replace it.
+
+## Documentation
+
+The planned software documentation set (what exists, what is missing, and
+the standards it follows) is in
+[`docs/SOFTWARE_DOCS_PLAN.md`](docs/SOFTWARE_DOCS_PLAN.md). Also see
+[`CHANGELOG.md`](CHANGELOG.md), [`SECURITY.md`](SECURITY.md),
+[`docs/RISK_REGISTER.md`](docs/RISK_REGISTER.md) and
+[`docs/DEFECT_LOG.md`](docs/DEFECT_LOG.md).

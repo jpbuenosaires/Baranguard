@@ -394,6 +394,8 @@ attempt to become `sent`.
 
 ## 7. Role & Permission Matrix
 
+> **Superseded in part (noted 2026-10-23).** The table below predates migrations 0029-0045. Where it differs, `docs/REFERENCE.md` §3 and `docs/WORKFLOWS_AND_RULES.md` Rules 80, 89 and 96 win: the web Admin may also read the raw narrative and party fields (amended 2026-10-13); the Secretary is a back-up dispatcher (may dispatch, cancel, resolve and handle SOS on the web); fatigue flags, the citizen-report inbox, AI and in-app note/approve no longer exist.
+
 **Legend:** ✓ Full access · R = Read-only/redacted · ✗ No access · — not a role.
 Every ✓/R action is limited to the caller's own barangay unless the
 endpoint is public intake. "own/assigned" means the server checks the

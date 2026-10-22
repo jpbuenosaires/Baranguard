@@ -56,10 +56,10 @@ const INCIDENT_TYPE_LABELS = {
 // who needs them to brief a responding Tanod. Everyone else is told plainly that they are restricted.
 const RESTRICTED_TO_SECRETARY = 'Restricted to the Barangay Secretary and the Chief Tanod';
 const NOT_AVAILABLE_FOR_ROLE = 'Not available for your role';
-// Raw narratives are deleted by the retention job 90 days after creation
+// Raw narratives are deleted by the retention job one year (365 days) after creation
 // (RetentionService; Rule 10 constant). GET /incidents/:id does not return
 // raw_narrative_purged_at, so age is the only signal the screen has.
-const NARRATIVE_RETENTION_DAYS = 90;
+const NARRATIVE_RETENTION_DAYS = 365;
 
 /** Parses the API's UTC timestamps ('YYYY-MM-DD HH:MM:SS' or ISO) into a Date, or null. */
 function parseApiDate(value) {
@@ -948,7 +948,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
   }
 
   /**
-   * Empty-narrative wording for the Secretary. Raw narratives are deleted 90
+   * Empty-narrative wording for the Secretary. Raw narratives are deleted 365
    * days after the incident is logged, and the API does not say whether this
    * one was purged, so an old record is described honestly as "removed" and a
    * recent one as "not recorded".
