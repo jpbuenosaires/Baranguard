@@ -847,7 +847,7 @@ code { font-size: .92em; }
 <img src="manuscript-images/m09-referral-log.png" alt="Referral Log">
 </figure>
 
-<p>The Tanod Mobile Application is presented in Appendix A, Figures A-1 to A-3. A tanod sees a home screen with the duty status and the emergency button, a log of the incidents and records captured, and the assignments received. The tanod saves every record to the phone before leaving the screen, the record stays in an offline queue marked as not yet synchronized, and it is sent with its own event identifier when the connection returns, so a repeated send returns the original record and never creates a second one. When the data connection is lost, the SOS button sends an encrypted SMS with the last known position to the gateway phone, and a plain message to one backup contact. The Chief Tanod's phone console also has a Log an incident form for reports that arrive by phone call or Facebook message when the Chief Tanod is away from the desk: it is saved on the phone first and sent when there is a connection. These screens implement FR-01, FR-02 and FR-05 and address problem P4.</p>
+<p>The Tanod Mobile Application is presented in Appendix A, Figures A-1 and A-2. A tanod sees a home screen with the duty status and the emergency button and a form for reporting an incident; the dispatch list and assignment screens are still to be captured on a phone. The tanod saves every record to the phone before leaving the screen, the record stays in an offline queue marked as not yet synchronized, and it is sent with its own event identifier when the connection returns, so a repeated send returns the original record and never creates a second one. When the data connection is lost, the SOS button sends an encrypted SMS with the last known position to the gateway phone, and a plain message to one backup contact. The Chief Tanod's phone console also has a Log an incident form for reports that arrive by phone call or Facebook message when the Chief Tanod is away from the desk: it is saved on the phone first and sent when there is a connection. These screens implement FR-01, FR-02 and FR-05 and address problem P4.</p>
 
 <h3>4.3.5 Business Rules and Key Algorithms</h3>
 
@@ -1150,25 +1150,19 @@ code { font-size: .92em; }
 
 <h2>Appendix A: Tanod Mobile Application</h2>
 
-<p>The three screens below are the Android application screens as originally supplied. They are presented in Section 4.3.4 as the tanod's side of the walkthrough.</p>
+<p>The two screens below were captured from the application's own code (Ionic React build) running in a phone-sized browser window against the simulated Dao test data. They are not photographs of a handset, so the phone's status bar and the native features (encrypted SQLite store, background GPS, SMS) are absent. The earlier screens in this appendix were design mockups that showed buttons the application does not have, and they were removed. The dispatch list, assignment and route screens are pending a capture on a phone with the workstation reachable, and must replace this note once the device test day is done.</p>
 
 <figure>
-<figcaption id="fA1"><strong>Figure A-1.</strong> <em>Tanod Mobile Application Home Page</em></figcaption>
-<img src="manuscript-images/figD6-tanod-home.png" alt="Tanod mobile home page">
+<figcaption id="fA1"><strong>Figure A-1.</strong> <em>Tanod Mobile Application Home Screen</em></figcaption>
+<img src="manuscript-images/figA1-tanod-home.png" alt="Tanod mobile home screen">
 </figure>
-<p><em>Note:</em> The Tanod Mobile Application Home Page serves as the main interface for field responders, providing quick access to emergency reporting, incident updates, and essential response features for efficient field operations.</p>
+<p><em>Note:</em> The home screen shows the tanod's name, barangay and duty status with the Go on duty control, the state of active dispatches, the Police (911) and MDRRMO (160) numbers, and the Report incident and Emergency SOS buttons above the Home, Dispatches, Report, Map and Profile tabs.</p>
 
 <figure>
-<figcaption id="fA2"><strong>Figure A-2.</strong> <em>Tanod Mobile Application Log</em></figcaption>
-<img src="manuscript-images/figD7-tanod-log.png" alt="Tanod mobile log">
+<figcaption id="fA2"><strong>Figure A-2.</strong> <em>Tanod Mobile Application: Report Incident</em></figcaption>
+<img src="manuscript-images/figA2-tanod-report.png" alt="Tanod mobile report incident form">
 </figure>
-<p><em>Note:</em> The Tanod Mobile Application Log serves as a digital record-keeping tool that tracks the real-time activities and incident reports submitted by barangay tanods during their patrols. It centralizes field data to ensure accountability and provides administrators with an organized history of community safety efforts.</p>
-
-<figure>
-<figcaption id="fA3"><strong>Figure A-3.</strong> <em>Tanod Mobile Application Assignments</em></figcaption>
-<img src="manuscript-images/figD8-tanod-assignments.png" alt="Tanod mobile assignments">
-</figure>
-<p><em>Note:</em> The Tanod Mobile Application Assignments is a dispatch tool that enables the Chief Tanod to assign tasks with precise routing and allows tanods to receive and view their emergency assignments directly on their mobile devices, ensuring coordinated and accountable field operations.</p>
+<p><em>Note:</em> The report form asks for the incident type, an optional location by current GPS or a point chosen on the map, and a description of what happened (required). The line under the Submit report button states that the record is saved on the phone and sent when the phone is online.</p>
 
 <h2>Appendix B: Data Dictionary</h2>
 
