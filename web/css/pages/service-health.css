@@ -86,6 +86,27 @@
   animation: healthSpin 0.75s linear infinite;
 }
 
+.health-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  padding: var(--spacing-2xs) var(--spacing-sm-md);
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  border-radius: var(--radius-md, 0.5rem);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.health-export-btn:hover {
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
 @keyframes healthSpin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -181,9 +202,413 @@
   color: var(--color-text-secondary);
 }
 
+.health-hero-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs, 0.5rem);
+  margin-top: 0.625rem;
+  flex-wrap: wrap;
+}
+
+.health-hero-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3125rem 0.6875rem;
+  border-radius: var(--radius-md, 0.5rem);
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.health-hero-action-btn--primary {
+  background: var(--color-critical-solid, #DC2626);
+  color: #fff;
+  border: 1px solid transparent;
+}
+
+.health-hero-action-btn--primary:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 2px 4px rgba(220, 38, 38, 0.25);
+}
+
+.health-hero-action-btn--ghost {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+}
+
+.health-hero-action-btn--ghost:hover {
+  background: var(--color-bg);
+  border-color: var(--color-text-tertiary);
+}
+
 /* ==========================================================================
-   3. Interactive Health StatStrip
+   3. Interactive Health StatStrip / Telemetry Ticker
    ========================================================================== */
+
+.health-page-container .stat-card-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: var(--spacing-sm, 0.625rem);
+  width: 100%;
+}
+
+.health-page-container .stat-card {
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md, 8px);
+  min-height: auto;
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
+  cursor: pointer;
+}
+
+.health-page-container .stat-card:hover {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 3%, var(--color-surface));
+}
+
+.health-page-container .stat-card.is-active {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+.health-page-container .stat-card .stat-card__value {
+  font-size: 1rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  line-height: 1.2;
+}
+
+.health-page-container .stat-card .stat-card__label {
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-top: 0.15rem;
+}
+
+@media (max-width: 1100px) {
+  .health-page-container .stat-card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .health-page-container .stat-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .health-page-container .stat-card-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Subsystems Filter & Search Toolbar */
+.health-subsystems-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.625rem;
+  margin-bottom: 0.625rem;
+  width: 100%;
+}
+
+.health-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.health-domain-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+  border: none;
+  padding: 4px 2px;
+  min-height: 44px;
+  height: auto;
+  box-sizing: border-box;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.health-domain-pills::-webkit-scrollbar {
+  display: none;
+}
+
+.health-domain-pill {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: 0 14px;
+  height: 36px;
+  box-sizing: border-box;
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  border-radius: var(--radius-lg, 10px);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.health-domain-pill:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 3%, var(--color-surface));
+}
+
+.health-domain-pill.is-active {
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1.5px var(--color-primary), 0 2px 5px rgba(29, 78, 216, 0.16);
+  font-weight: 700;
+}
+
+.health-domain-pill-count {
+  font-size: var(--font-size-label, 0.6875rem);
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+.health-domain-pill.is-active .health-domain-pill-count {
+  background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.health-filter-clear-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px dashed color-mix(in srgb, var(--color-primary) 60%, var(--color-border));
+  background: var(--color-surface);
+  color: var(--color-primary);
+  padding: 0 12px;
+  height: 36px;
+  box-sizing: border-box;
+  border-radius: var(--radius-lg, 10px);
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.health-filter-clear-chip:hover {
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+  border-color: var(--color-primary);
+}
+
+.health-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+
+.health-results-badge {
+  font-size: var(--font-size-xs, 0.75rem);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  padding: 0 0.25rem;
+  user-select: none;
+}
+
+.health-results-badge strong {
+  color: var(--color-text-primary);
+}
+
+.health-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 320px;
+  min-width: 220px;
+  max-width: 380px;
+  flex: 0 1 320px;
+}
+
+.health-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+}
+
+.health-search-input {
+  width: 100%;
+  height: 36px;
+  box-sizing: border-box;
+  padding: 0 2rem 0 2.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs, 0.75rem);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.health-search-input::-webkit-search-cancel-button,
+.health-search-input::-webkit-search-decoration,
+.health-search-input::-webkit-search-results-button,
+.health-search-input::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none !important;
+}
+
+.health-search-input:focus {
+  background: var(--color-surface);
+  border-color: var(--color-primary);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.health-search-kbd {
+  position: absolute;
+  right: 0.625rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 5px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  font-family: monospace;
+  color: var(--color-text-tertiary);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.health-search-clear {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: var(--spacing-3xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+}
+
+.health-search-clear:hover {
+  color: var(--color-text-primary);
+  background: var(--color-row-active-bg);
+}
+
+.health-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 10px);
+  padding: 3px;
+  height: 36px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.health-view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  padding: 4px 9px;
+  height: 28px;
+  box-sizing: border-box;
+  border-radius: var(--radius-md, 8px);
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.health-view-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.health-view-btn.is-active {
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  color: var(--color-primary);
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+@media (max-width: 960px) {
+  .health-subsystems-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.625rem;
+  }
+
+  .health-toolbar-left {
+    width: 100%;
+    overflow-x: auto;
+    padding: 4px 0;
+  }
+
+  .health-toolbar-right {
+    width: 100%;
+    justify-content: space-between;
+    margin-left: 0;
+  }
+
+  .health-search-wrap {
+    flex: 1;
+    min-width: 160px;
+    max-width: none;
+  }
+}
 
 /* ==========================================================================
    4. Categorized Subsystem Cards & Domains
@@ -363,6 +788,314 @@
   font-weight: 600;
 }
 
+.health-card-meta-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.health-service-card__latency {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--font-size-label, 0.6875rem);
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm, 4px);
+  background: color-mix(in srgb, var(--color-text-tertiary) 10%, transparent);
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.health-service-card__latency.is-fast {
+  background: color-mix(in srgb, var(--color-success-text) 12%, transparent);
+  color: var(--color-success-text);
+}
+
+.health-service-card__latency.is-slow {
+  background: color-mix(in srgb, var(--color-warning-text) 14%, transparent);
+  color: var(--color-warning-text);
+}
+
+.health-card-reprobe-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  font-size: var(--font-size-label, 0.6875rem);
+  font-weight: 600;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.health-card-reprobe-btn:hover {
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.health-card-reprobe-btn.is-probing {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.health-services-empty {
+  padding: var(--spacing-xl) var(--spacing-md);
+  text-align: center;
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  color: var(--color-text-secondary);
+  width: 100%;
+}
+
+.health-services-empty h4 {
+  margin: 0;
+  font-size: var(--font-size-md, 1rem);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.health-services-empty p {
+  margin: 0;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-secondary);
+}
+
+.health-empty-icon {
+  color: var(--color-text-tertiary);
+}
+
+.health-clear-filters-btn {
+  margin-top: var(--spacing-xs);
+  padding: 0.375rem 0.875rem;
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  border-radius: var(--radius-md, 6px);
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   4b. High-Density Matrix Table View & Helpers
+   ========================================================================== */
+
+.health-matrix-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: var(--radius-lg, 0.75rem);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.health-matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-xs, 0.8125rem);
+  text-align: left;
+}
+
+.health-matrix-table th {
+  padding: 0.625rem 0.875rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.health-matrix-table .health-matrix-row {
+  display: table-row !important;
+  flex-direction: initial !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.health-matrix-table .health-matrix-row:last-child {
+  border-bottom: none;
+}
+
+.health-matrix-table .health-matrix-row:hover {
+  background-color: color-mix(in srgb, var(--color-primary) 4%, var(--color-surface));
+}
+
+.health-matrix-table .health-matrix-row:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.health-matrix-table .health-matrix-row.health-service-card--unhealthy {
+  background-color: color-mix(in srgb, var(--color-critical) 5%, var(--color-surface));
+}
+
+.health-matrix-table .health-matrix-row.health-service-card--unhealthy:hover {
+  background-color: color-mix(in srgb, var(--color-critical) 9%, var(--color-surface));
+}
+
+.health-matrix-table td {
+  padding: 0.625rem 0.875rem;
+  vertical-align: middle;
+}
+
+.health-td-status {
+  width: 130px;
+  white-space: nowrap;
+}
+
+.health-td-service {
+  min-width: 220px;
+}
+
+.health-td-service-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.health-matrix-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  border-radius: var(--radius-md, 6px);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.health-matrix-title {
+  display: block;
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.health-matrix-desc {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+  margin-top: 1px;
+  max-width: 340px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.health-td-domain {
+  width: 150px;
+  white-space: nowrap;
+}
+
+.health-matrix-domain-tag {
+  display: inline-flex;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-text-tertiary) 12%, transparent);
+  color: var(--color-text-secondary);
+}
+
+.health-td-probe {
+  min-width: 180px;
+}
+
+.health-matrix-probe-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.health-matrix-probe-type {
+  font-size: 0.75rem;
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.health-matrix-probe-code {
+  font-family: monospace;
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary);
+}
+
+.health-td-telemetry {
+  width: 110px;
+  white-space: nowrap;
+}
+
+.health-telemetry-setting {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+}
+
+.health-td-actions {
+  width: 200px;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.health-matrix-actions-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.health-matrix-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.health-matrix-action-btn:hover {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  border-color: var(--color-primary);
+}
+
+.health-card-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.health-search-mark {
+  background-color: color-mix(in srgb, var(--color-warning) 30%, transparent);
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+  font-weight: 700;
+}
+
 /* ==========================================================================
    5. Disaster Recovery & Continuity Hub
    ========================================================================== */
@@ -455,6 +1188,120 @@
   line-height: 1.45;
   color: var(--color-text-secondary);
   margin: 0;
+}
+
+.health-terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--spacing-2xs);
+  margin-bottom: var(--spacing-3xs);
+}
+
+.health-terminal-os-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  padding: 2px;
+  gap: 2px;
+}
+
+.health-terminal-os-btn {
+  border: none;
+  background: transparent;
+  padding: 2px 7px;
+  font-size: var(--font-size-label, 0.6875rem);
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  border-radius: var(--radius-xs, 3px);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.health-terminal-os-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.health-terminal-os-btn.is-active {
+  background: var(--color-surface);
+  color: var(--color-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.health-btn-dr-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-top: auto;
+  align-self: flex-start;
+  text-decoration: none;
+}
+
+.health-btn-dr-action:hover {
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.health-dr-channel-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: var(--spacing-sm) var(--spacing-sm-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 0.5rem);
+  font-size: var(--font-size-label);
+  margin-top: auto;
+}
+
+.health-dr-channel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.health-dr-channel-name {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: var(--color-text-primary);
+  font-weight: 600;
+  font-size: var(--font-size-label, 0.6875rem);
+}
+
+.health-dr-channel-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 600;
+  font-size: 0.625rem;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm, 4px);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.health-dr-channel-policy {
+  margin: var(--spacing-3xs) 0 0 0;
+  padding-top: var(--spacing-xs);
+  border-top: 1px dashed var(--color-divider);
+  font-size: var(--font-size-label, 0.6875rem);
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
 }
 
 .health-terminal-box {
@@ -712,11 +1559,67 @@
   box-shadow: var(--shadow-card);
 }
 
+.health-history-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-2xs);
+  flex-wrap: wrap;
+}
+
 .health-history__heading {
-  margin: 0 0 var(--spacing-2xs);
+  margin: 0;
   font-size: var(--font-size-md);
   font-weight: 700;
   color: var(--color-text-primary);
+}
+
+.health-history-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 2px;
+}
+
+.health-history-filter-btn {
+  border: none;
+  background: transparent;
+  padding: 3px 8px;
+  font-size: var(--font-size-label, 0.6875rem);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-xs, 4px);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.health-history-filter-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.health-history-filter-btn.is-active {
+  background: var(--color-surface);
+  color: var(--color-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.health-history-filter-count {
+  font-size: 0.625rem;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text-tertiary) 15%, transparent);
+}
+
+.health-history-filter-btn.is-active .health-history-filter-count {
+  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  color: var(--color-primary);
 }
 
 /* The sampling caveat. Deliberately normal-weight secondary text rather
@@ -732,35 +1635,124 @@
 .health-history__list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0.25rem 0 0.25rem 0.5rem;
   display: flex;
   flex-direction: column;
-  max-height: 26rem;
+  max-height: 28rem;
   overflow-y: auto;
+  position: relative;
+}
+
+/* Continuous vertical timeline stem track */
+.health-history__list::before {
+  content: '';
+  position: absolute;
+  top: 1rem;
+  bottom: 1rem;
+  left: 1.05rem;
+  width: 2px;
+  background: color-mix(in srgb, var(--color-border) 80%, var(--color-text-tertiary) 20%);
+  z-index: 1;
 }
 
 .health-history__item {
+  position: relative;
   display: flex;
   gap: var(--spacing-md);
-  align-items: baseline;
-  padding: var(--spacing-sm) 0;
-  border-top: 1px solid var(--color-divider);
+  align-items: center;
+  padding: 0.625rem 0 0.625rem 1.75rem;
   font-size: var(--font-size-sm);
+  margin-left: 0.5rem;
+  border-left: none;
+  z-index: 2;
 }
-.health-history__item:first-child { border-top: none; }
+
+.health-timeline-dot {
+  position: absolute;
+  left: 0.125rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-text-tertiary);
+  box-shadow: 0 0 0 3px var(--color-surface);
+  z-index: 3;
+}
+  border-radius: 50%;
+  background: var(--color-text-tertiary);
+  box-shadow: 0 0 0 3px var(--color-surface);
+}
+
+.health-history__item--degraded .health-timeline-dot {
+  background: var(--color-critical);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-critical) 20%, var(--color-surface));
+}
+
+.health-history__item--recovered .health-timeline-dot {
+  background: var(--color-success-text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-success-text) 20%, var(--color-surface));
+}
 
 .health-history__when {
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-tertiary);
-  min-width: 12rem;
+  min-width: 11.5rem;
   white-space: nowrap;
+  font-size: var(--font-size-xs, 0.75rem);
   font-weight: 500;
 }
 
 .health-history__what {
   color: var(--color-text-primary);
   min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+
+.health-transition-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm, 4px);
+  font-size: var(--font-size-label, 0.6875rem);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-text-tertiary) 10%, transparent);
+  color: var(--color-text-secondary);
+}
+
+.health-transition-badge--degraded {
+  background: color-mix(in srgb, var(--color-critical) 12%, transparent);
+  color: var(--color-critical);
+  border: 1px solid color-mix(in srgb, var(--color-critical) 20%, transparent);
+}
+
+.health-transition-badge--recovered {
+  background: color-mix(in srgb, var(--color-success-text) 12%, transparent);
+  color: var(--color-success-text);
+  border: 1px solid color-mix(in srgb, var(--color-success-text) 20%, transparent);
+}
+
+.health-transition-badge__arrow {
+  color: var(--color-text-tertiary);
+  font-size: 0.75rem;
+}
+
+.health-outage-duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--font-size-label, 0.6875rem);
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-warning-text) 12%, transparent);
+  color: var(--color-warning-text);
+  border: 1px solid color-mix(in srgb, var(--color-warning-text) 25%, transparent);
 }
 
 /* A change INTO a degraded state is what an operator scans for; a
@@ -778,7 +1770,9 @@
 @media (max-width: 480px) {
   .health-history__item {
     flex-direction: column;
+    align-items: flex-start;
     gap: var(--spacing-3xs);
+    padding-left: 1.25rem;
   }
   .health-history__when {
     min-width: auto;

@@ -452,12 +452,68 @@
   gap: var(--spacing-2xs);
 }
 
+.shift-presets-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+}
+
 .shift-presets-label {
   font-size: var(--font-size-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--color-text-secondary);
+}
+
+.shift-preset-date-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.shift-date-pill {
+  border: none;
+  background: transparent;
+  padding: 2px 7px;
+  font-size: var(--font-size-label, 0.75rem);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.3;
+}
+
+.shift-date-pill:hover {
+  color: var(--color-text-primary);
+}
+
+.shift-date-pill.is-active {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+
+.shift-date-picker-mini {
+  border: none;
+  background: transparent;
+  font-size: var(--font-size-label, 0.75rem);
+  color: var(--color-text-secondary);
+  padding: 1px 2px;
+  height: 20px;
+  max-width: 90px;
+  cursor: pointer;
+}
+
+.shift-date-picker-mini:focus-visible {
+  outline: 1px solid var(--color-primary);
+  border-radius: var(--radius-xs);
 }
 
 .shift-presets-row {
@@ -502,20 +558,23 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .swap-cell-meta {
   display: flex;
   align-items: center;
-  gap: var(--spacing-2xs);
+  gap: var(--spacing-xs, 6px);
   margin-bottom: 0.125rem;
+  flex-wrap: wrap;
 }
 
 .swap-flow-cell {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  flex-wrap: nowrap;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .swap-party {
@@ -622,6 +681,134 @@
   max-width: fit-content;
   display: inline-block;
   line-height: 1.35;
+}
+
+/* Swap Urgency Badges */
+.swap-urgency-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm, 6px);
+  font-size: var(--font-size-label, 0.75rem);
+  font-weight: 700;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.swap-urgency-pill--active {
+  background: var(--tint-success-bg, rgba(16, 185, 129, 0.12));
+  color: var(--color-success, #10b981);
+  border: 1px solid var(--color-success, #10b981);
+}
+
+.swap-urgency-pill--active::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success, #10b981);
+  animation: shift-pulse 1.8s infinite;
+}
+
+.swap-urgency-pill--past {
+  background: var(--tint-warning-bg, rgba(245, 158, 11, 0.12));
+  color: var(--color-warning-text, #b45309);
+  border: 1px solid var(--color-warning, #f59e0b);
+}
+
+.swap-urgency-pill--completed {
+  background: color-mix(in srgb, var(--color-text-primary) 6%, transparent);
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-border);
+}
+
+.swap-urgency-pill--upcoming {
+  background: var(--tint-info-bg, rgba(37, 99, 235, 0.1));
+  color: var(--color-info-text, #1d4ed8);
+  border: 1px solid var(--color-border-blue, rgba(37, 99, 235, 0.3));
+}
+
+/* Covering Tanod Conflict Badges */
+.swap-conflict-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--font-size-label, 0.75rem);
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius-xs, 4px);
+  line-height: 1.2;
+}
+
+.swap-conflict-badge--danger {
+  background: var(--tint-critical-bg, #fee2e2);
+  color: var(--color-critical-text, #b91c1c);
+  border: 1px solid var(--color-critical, #ef4444);
+}
+
+.swap-conflict-badge--warning {
+  background: var(--tint-warning-bg, #fef3c7);
+  color: var(--color-warning-text, #b45309);
+  border: 1px solid var(--color-warning, #f59e0b);
+}
+
+.swap-conflict-badge--ok {
+  background: var(--tint-success-bg, rgba(16, 185, 129, 0.08));
+  color: var(--color-success, #059669);
+  border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
+}
+
+/* Batch Approve Action Button */
+.swap-batch-approve-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 0.75rem;
+  font-size: var(--font-size-xs, 0.75rem);
+  font-weight: 600;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+/* Date Scope Toggle Filter */
+.swap-time-toggle {
+  display: inline-flex;
+  align-items: center;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 2px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.swap-time-btn {
+  border: none;
+  background: transparent;
+  padding: 3px 8px;
+  font-size: var(--font-size-label, 0.75rem);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-xs, 4px);
+  cursor: pointer;
+  line-height: 1.3;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.swap-time-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.swap-time-btn.is-active {
+  background: var(--color-surface);
+  color: var(--color-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 /* --- Focus Rings ---------------------------------------------------------- */

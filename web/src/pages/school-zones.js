@@ -44,7 +44,7 @@ import {
 import {
   h, escapeHtml, mountPageFrame, buildTabBar, showLoading, showError, showEmpty, card, field,
   selectOf, statusPill, formatDateOnly, formatManilaDateTime, actionErrorMessage,
-  loadLetterhead, letterheadHtml, applyPrintOrientation, SSZ_PURSUANT_HTML,
+  loadLetterhead, letterheadHtml, applyPrintOrientation, SSZ_PURSUANT_HTML, SSZ_DRAFT_LAYOUT_NOTICE,
   signatureBlockHtml, printedByLabel,
   formatSchoolCode, formatAnnexDCode, formatIncidentCode,
 } from '../services/tanodWorkflowUi.js';
@@ -127,6 +127,8 @@ export function renderSchoolZonesPage(root, user, onLoggedOut, navigate, param) 
     icon: icons.shield,
   });
 
+  const draftNotice = h('p', 'note', SSZ_DRAFT_LAYOUT_NOTICE);
+  container.appendChild(draftNotice);
   const body = h('div', 'tw-ssz');
   container.appendChild(body);
 
@@ -2093,7 +2095,8 @@ function buildAnnexBHtml(schools, lh) {
     </tr>`).join('');
   const titleBlock = `
     <p class="tw-print__title">ANNEX &ldquo;B&rdquo; &ndash; SAFER SCHOOL ZONES INVENTORY</p>
-    <p class="tw-print__subtitle">${SSZ_PURSUANT_HTML}</p>`;
+    <p class="tw-print__subtitle">${SSZ_PURSUANT_HTML}</p>
+    <p class="tw-print__note-line">${SSZ_DRAFT_LAYOUT_NOTICE}</p>`;
   return `
     <div class="tw-print tw-print--wide">
       ${safeLetterheadHtml(lh, { office: true })}
@@ -2156,6 +2159,7 @@ function buildAnnexC1Html(rows, lh, meta = {}) {
       ${safeLetterheadHtml(lh, { office: true })}
       <p class="tw-print__title">ANNEX C-1 &ndash; PORMULARYO NG ULAT SA INSIDENTE SA SAFER SCHOOL ZONES</p>
       <p class="tw-print__subtitle">${SSZ_PURSUANT_HTML}</p>
+      <p class="tw-print__note-line">${SSZ_DRAFT_LAYOUT_NOTICE}</p>
       ${metaLine}
       <p class="tw-print__intro">Itala ang mga insidente o panganib na nangyari sa, o may direktang epekto sa, <i>school zone</i>. Panatilihing batay sa katotohanan, maikli, at hindi para sa imbestigasyon o pagtukoy ng pananagutan.</p>
       <table class="tw-print__table tw-print__table--c1">
@@ -2210,6 +2214,7 @@ function buildAnnexDHtml(report, lh) {
       ${letterheadD}
       ${titleD}
       <p class="tw-print__subtitle">${SSZ_PURSUANT_HTML}</p>
+      <p class="tw-print__note-line">${SSZ_DRAFT_LAYOUT_NOTICE}</p>
       <p class="tw-print__note-line">To be submitted to the Office of the Mayor, copy furnished the concerned C/MLGOO or DILG City Director, on or before the applicable deadline prescribed under DILG Memorandum Circular No. 2026-037</p>
 
       <table class="tw-print__table tw-print__table--term">

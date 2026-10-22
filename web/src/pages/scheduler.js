@@ -36,15 +36,57 @@ import { avatarInitials } from '../components/Avatar.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { openPrintPreviewModal } from '../components/PrintPreviewModal.js';
 
-const SCHEDULE_COLUMNS = [
-  { key: 'select', label: 'Select' },
-  { key: 'approval', label: 'Roster' },
-  { key: 'status', label: 'Status' },
-  { key: 'tanod', label: 'Assigned Tanod' },
-  { key: 'zone', label: 'Patrol Zone' },
-  { key: 'timeRange', label: 'Schedule & Duration' },
-  { key: 'actions', label: 'Actions', align: 'right' },
-];
+function getScheduleColumns(tanods = []) {
+  return [
+    { key: 'select', label: 'Select', width: '48px' },
+    {
+      key: 'approval',
+      label: 'Roster',
+      width: '100px',
+      sortable: true,
+      sortValue: (s) => (s.approvalStatus === 'draft' ? 0 : 1),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      width: '110px',
+      sortable: true,
+      sortValue: (s) => {
+        const now = Date.now();
+        const start = new Date(s.startAt).getTime();
+        const end = new Date(s.endAt).getTime();
+        return (now >= start && now <= end) ? 0 : (now < start ? 1 : 2);
+      },
+    },
+    {
+      key: 'tanod',
+      label: 'Assigned Tanod',
+      width: '24%',
+      sortable: true,
+      sortValue: (s) => {
+        const t = tanods.find((x) => x.userId === s.userId);
+        return (t ? t.fullName : (s.userId ? `Tanod #${s.userId}` : 'Unassigned')).toLowerCase();
+      },
+    },
+    {
+      key: 'zone',
+      label: 'Patrol Zone',
+      width: '18%',
+      sortable: true,
+      sortValue: (s) => (s.patrolZone || '').toLowerCase(),
+    },
+    {
+      key: 'timeRange',
+      label: 'Schedule & Duration',
+      width: '26%',
+      sortable: true,
+      sortValue: (s) => new Date(s.startAt).getTime(),
+    },
+    { key: 'actions', label: 'Actions', align: 'right', width: '90px' },
+  ];
+}
+
+const SCHEDULE_COLUMNS = getScheduleColumns();
 
 // GET /shifts and GET /availability cap a page at 100; the grid needs every
 // row to place a week and check hours, so pages are walked up to this many.
@@ -117,6 +159,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   let viewMode = searchQuery ? 'list' : 'week';
   let weekStart = weekStartOf(manilaToday());
   let activePreset = 'morning';
+  let currentSort = { key: 'timeRange', direction: 'desc' };
   // Draft shifts ticked for publishing (contract §3: POST /shifts/publish).
   const selectedShiftIds = new Set();
   let publishWarnings = [];
@@ -793,7 +836,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     await load();
   }
 
-  let shiftCountMap = { all: 0, active: 0, upcoming: 0, completed: 0 };
+  let shiftCountMap = { all: 0, drafts: 0, active: 0, upcoming: 0, completed: 0 };
   const statusChipBtns = [];
 
   function renderStatStrip() {
@@ -802,8 +845,10 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     let activeNow = 0;
     let upcoming = 0;
     let completed = 0;
+    let drafts = 0;
 
     shifts.forEach((s) => {
+      if (s.approvalStatus === 'draft') drafts++;
       const start = new Date(s.startAt).getTime();
       const end = new Date(s.endAt).getTime();
       if (now >= start && now <= end) activeNow++;
@@ -813,6 +858,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
 
     shiftCountMap = {
       all: shifts.length,
+      drafts,
       active: activeNow,
       upcoming,
       completed,
@@ -820,6 +866,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
 
     const statConfigs = [
       { id: 'all', label: 'Total Shifts', count: shifts.length, title: 'Show all shifts' },
+      { id: 'drafts', label: 'Drafts', count: drafts, tone: 'warning', title: 'Filter: Draft Shifts' },
       { id: 'active', label: 'Active Now', count: activeNow, tone: 'success', title: 'Filter: Active Now' },
       { id: 'upcoming', label: 'Upcoming', count: upcoming, tone: 'info', title: 'Filter: Upcoming' },
       { id: 'completed', label: 'Completed', count: completed, title: 'Filter: Completed' },
@@ -891,6 +938,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
 
   const statusOptions = [
     { id: 'all', label: 'All Shifts' },
+    { id: 'drafts', label: 'Drafts', tone: 'warning' },
     { id: 'active', label: 'Active Now', tone: 'success' },
     { id: 'upcoming', label: 'Upcoming', tone: 'info' },
     { id: 'completed', label: 'Completed' },
@@ -935,7 +983,11 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       const end = new Date(s.endAt).getTime();
       const status = (now >= start && now <= end) ? 'active' : (now < start ? 'upcoming' : 'completed');
 
-      if (selectedStatus !== 'all' && status !== selectedStatus) return false;
+      if (selectedStatus === 'drafts') {
+        if (s.approvalStatus !== 'draft') return false;
+      } else if (selectedStatus !== 'all' && status !== selectedStatus) {
+        return false;
+      }
 
       if (searchQuery) {
         const tanod = tanods.find((t) => t.userId === s.userId);
@@ -944,7 +996,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
         if (!name.includes(searchQuery) && !zone.includes(searchQuery)) return false;
       }
       return true;
-    });
+    }).sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime());
   }
 
   function buildPublishBar() {
@@ -1069,12 +1121,16 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     const filtered = getFilteredShifts();
 
     const table = DataTable({
-      columns: SCHEDULE_COLUMNS,
+      columns: getScheduleColumns(tanods),
       rows: filtered,
       rowKey: (row) => row.shiftId,
       caption: 'Shift Schedule',
       emptyIcon: icons.calendar,
       emptyMessage: (searchQuery || selectedStatus !== 'all') ? 'No shifts match your filter.' : 'No shifts scheduled yet.',
+      initialSort: currentSort,
+      onSortChange: (nextSort) => {
+        currentSort = nextSort;
+      },
       renderCell: (shift, key) => {
         switch (key) {
           case 'select': {
@@ -1271,12 +1327,65 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
   errorBox.hidden = true;
 
   // Preset Buttons
+  // Preset Buttons with Target Date Selector
   const presetsWrap = document.createElement('div');
   presetsWrap.className = 'shift-presets-wrap';
 
+  const presetsHeader = document.createElement('div');
+  presetsHeader.className = 'shift-presets-header';
+
   const presetsLabel = document.createElement('label');
   presetsLabel.className = 'shift-presets-label';
-  presetsLabel.textContent = 'Quick Presets (Today)';
+  presetsLabel.textContent = 'Quick Presets';
+
+  let presetTargetDate = new Date();
+
+  const dateToggleWrap = document.createElement('div');
+  dateToggleWrap.className = 'shift-preset-date-wrap';
+
+  const todayBtn = document.createElement('button');
+  todayBtn.type = 'button';
+  todayBtn.className = 'shift-date-pill is-active';
+  todayBtn.textContent = 'Today';
+  todayBtn.setAttribute('aria-label', 'Preset for today');
+
+  const tomorrowBtn = document.createElement('button');
+  tomorrowBtn.type = 'button';
+  tomorrowBtn.className = 'shift-date-pill';
+  tomorrowBtn.textContent = 'Tomorrow';
+  tomorrowBtn.setAttribute('aria-label', 'Preset for tomorrow');
+
+  const customDateInput = document.createElement('input');
+  customDateInput.type = 'date';
+  customDateInput.className = 'shift-date-picker-mini';
+  customDateInput.setAttribute('aria-label', 'Custom preset date');
+  customDateInput.title = 'Select custom date for presets';
+
+  todayBtn.addEventListener('click', () => {
+    presetTargetDate = new Date();
+    todayBtn.classList.add('is-active');
+    tomorrowBtn.classList.remove('is-active');
+    customDateInput.value = '';
+  });
+
+  tomorrowBtn.addEventListener('click', () => {
+    presetTargetDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    tomorrowBtn.classList.add('is-active');
+    todayBtn.classList.remove('is-active');
+    customDateInput.value = '';
+  });
+
+  customDateInput.addEventListener('change', () => {
+    if (customDateInput.value) {
+      const [cy, cm, cd] = customDateInput.value.split('-').map(Number);
+      presetTargetDate = new Date(cy, cm - 1, cd);
+      todayBtn.classList.remove('is-active');
+      tomorrowBtn.classList.remove('is-active');
+    }
+  });
+
+  dateToggleWrap.append(todayBtn, tomorrowBtn, customDateInput);
+  presetsHeader.append(presetsLabel, dateToggleWrap);
 
   const presetsRow = document.createElement('div');
   presetsRow.className = 'shift-presets-row';
@@ -1293,12 +1402,12 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
     btn.className = 'shift-preset-btn';
     btn.innerHTML = `${p.label}<small>${p.hours}</small>`;
     btn.addEventListener('click', () => {
-      applyPreset(p.type, startInput, endInput);
+      applyPreset(p.type, startInput, endInput, presetTargetDate);
     });
     presetsRow.appendChild(btn);
   });
 
-  presetsWrap.append(presetsLabel, presetsRow);
+  presetsWrap.append(presetsHeader, presetsRow);
 
   // Tanod Select
   const tanodLabel = document.createElement('label');
@@ -1421,11 +1530,11 @@ function buildNewShiftForm(tanods, onCreated, shifts = []) {
   return card;
 }
 
-function applyPreset(type, startInput, endInput) {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
+function applyPreset(type, startInput, endInput, targetDate = new Date()) {
+  const base = new Date(targetDate);
+  const y = base.getFullYear();
+  const m = String(base.getMonth() + 1).padStart(2, '0');
+  const d = String(base.getDate()).padStart(2, '0');
 
   if (type === 'morning') {
     startInput.value = `${y}-${m}-${d}T06:00`;
@@ -1435,7 +1544,7 @@ function applyPreset(type, startInput, endInput) {
     endInput.value = `${y}-${m}-${d}T22:00`;
   } else if (type === 'night') {
     startInput.value = `${y}-${m}-${d}T22:00`;
-    const nextDay = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const nextDay = new Date(base.getTime() + 24 * 60 * 60 * 1000);
     const ndY = nextDay.getFullYear();
     const ndM = String(nextDay.getMonth() + 1).padStart(2, '0');
     const ndD = String(nextDay.getDate()).padStart(2, '0');

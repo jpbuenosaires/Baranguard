@@ -28,10 +28,10 @@ const STATUS_PILL_CLASS = {
 };
 
 const COLUMNS = [
-  { key: 'swapFlow', label: 'Swap Flow & Reason', width: '40%' },
-  { key: 'shift', label: 'Shift Details', width: '28%' },
-  { key: 'status', label: 'Status', width: '14%' },
-  { key: 'actions', label: 'Actions', align: 'right', width: '18%' },
+  { key: 'swapFlow', label: 'Swap Flow & Reason', width: '42%', sortable: true },
+  { key: 'shift', label: 'Shift Details', width: '28%', sortable: true },
+  { key: 'status', label: 'Status', width: '14%', sortable: true },
+  { key: 'actions', label: 'Actions', align: 'right', width: '16%' },
 ];
 
 /**
@@ -45,6 +45,10 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
   // Filter Bar
   const filterBar = document.createElement('div');
   filterBar.className = 'personnel-filter-bar';
+
+  // Left side: Search & Date Scope Toggle
+  const leftWrap = document.createElement('div');
+  leftWrap.className = 'personnel-filter-bar__left';
 
   // Search
   const searchWrap = document.createElement('div');
@@ -63,7 +67,40 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
   });
   searchWrap.append(searchIcon, searchInput);
 
-  // Status Chips with integrated KPI counters (Option A: Unified Command Card)
+  // Time scope toggle: All Dates vs Active & Upcoming
+  const timeToggle = document.createElement('div');
+  timeToggle.className = 'swap-time-toggle';
+  timeToggle.setAttribute('role', 'group');
+  timeToggle.setAttribute('aria-label', 'Filter shifts by date scope');
+
+  const allTimeBtn = document.createElement('button');
+  allTimeBtn.type = 'button';
+  allTimeBtn.className = 'swap-time-btn is-active';
+  allTimeBtn.textContent = 'All Dates';
+
+  const upcomingBtn = document.createElement('button');
+  upcomingBtn.type = 'button';
+  upcomingBtn.className = 'swap-time-btn';
+  upcomingBtn.textContent = 'Active & Upcoming';
+
+  allTimeBtn.addEventListener('click', () => {
+    selectedTimeScope = 'all';
+    allTimeBtn.classList.add('is-active');
+    upcomingBtn.classList.remove('is-active');
+    renderFiltered();
+  });
+
+  upcomingBtn.addEventListener('click', () => {
+    selectedTimeScope = 'upcoming';
+    upcomingBtn.classList.add('is-active');
+    allTimeBtn.classList.remove('is-active');
+    renderFiltered();
+  });
+
+  timeToggle.append(allTimeBtn, upcomingBtn);
+  leftWrap.append(searchWrap, timeToggle);
+
+  // Right side: Status Chips & Batch Approve Action
   const filterChipsWrap = document.createElement('div');
   filterChipsWrap.className = 'personnel-filter-bar__right';
   filterChipsWrap.setAttribute('role', 'toolbar');
@@ -77,6 +114,7 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
   ];
 
   let selectedStatus = 'all';
+  let selectedTimeScope = 'all';
   let searchQuery = '';
 
   const statusChips = [];
@@ -109,7 +147,54 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
     filterChipsWrap.appendChild(chip);
   });
 
-  filterBar.append(searchWrap, filterChipsWrap);
+  // Batch "Approve all pending" button
+  const batchApproveBtn = document.createElement('button');
+  batchApproveBtn.type = 'button';
+  batchApproveBtn.className = 'primary swap-batch-approve-btn';
+  batchApproveBtn.style.display = 'none';
+  batchApproveBtn.addEventListener('click', async () => {
+    const pending = allRequests.filter((r) => r.status === 'pending');
+    if (pending.length === 0) return;
+
+    const count = pending.length;
+    const ok = await confirmDialog({
+      title: `Approve all ${count} pending swap requests?`,
+      description: `This will approve all ${count} pending shift swaps and update roster assignments for all covering Tanods.`,
+      confirmLabel: `Approve All (${count})`,
+      cancelLabel: 'Cancel',
+    });
+    if (!ok) return;
+
+    batchApproveBtn.disabled = true;
+    batchApproveBtn.textContent = 'Approving…';
+    let successes = 0;
+    let failures = 0;
+
+    for (const req of pending) {
+      try {
+        await resolveShiftSwapRequest(req.requestId, 'approved', req.version);
+        successes++;
+      } catch {
+        failures++;
+      }
+    }
+
+    if (successes > 0) {
+      showToast(
+        failures === 0
+          ? `Approved all ${successes} shift swap requests.`
+          : `Approved ${successes} requests (${failures} failed).`,
+        { variant: failures === 0 ? 'success' : 'warning' }
+      );
+    } else {
+      showToast('Could not approve swap requests.', { variant: 'error' });
+    }
+
+    onChanged();
+  });
+  filterChipsWrap.appendChild(batchApproveBtn);
+
+  filterBar.append(leftWrap, filterChipsWrap);
 
   const body = document.createElement('div');
   body.className = 'swap-table-body';
@@ -120,6 +205,7 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
   container.appendChild(tableCard);
 
   let allRequests = [];
+  let allShifts = [];
   let shiftsById = new Map();
   let namesById = new Map();
 
@@ -140,6 +226,7 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
         loadTanodRoster(user).then((items) => ({ items })),
       ]);
       allRequests = requestsRes.items;
+      allShifts = shiftsRes.items;
       shiftsById = new Map(shiftsRes.items.map((s) => [s.shiftId, s]));
       namesById = new Map(tanodsRes.items.map((t) => [t.userId, t.fullName]));
 
@@ -163,18 +250,37 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
       denied: deniedCount,
     };
 
-    statusChips.forEach(({ id, countSpan, label }) => {
+    statusChips.forEach(({ id, countSpan }) => {
       const val = counts[id] ?? 0;
       countSpan.textContent = String(val);
       if (id === 'pending') {
         countSpan.className = `chip-count${val > 0 ? ' tone-warning' : ''}`;
       }
     });
+
+    if (pendingCount > 0) {
+      batchApproveBtn.style.display = 'inline-flex';
+      batchApproveBtn.disabled = false;
+      batchApproveBtn.innerHTML = `<span aria-hidden="true">${icons.check(14)}</span><span>Approve all (${pendingCount})</span>`;
+      batchApproveBtn.setAttribute('aria-label', `Approve all ${pendingCount} pending swap requests`);
+    } else {
+      batchApproveBtn.style.display = 'none';
+    }
   }
 
   function getFilteredRequests() {
+    const now = Date.now();
     return allRequests.filter((req) => {
       if (selectedStatus !== 'all' && req.status !== selectedStatus) return false;
+
+      if (selectedTimeScope === 'upcoming') {
+        const shift = shiftsById.get(req.shiftId);
+        if (shift) {
+          const shiftEnd = new Date(shift.endAt).getTime();
+          // Exclude shifts that have already completed
+          if (shiftEnd < now) return false;
+        }
+      }
 
       if (searchQuery) {
         const requesterName = (namesById.get(req.requestingUserId) || '').toLowerCase();
@@ -197,13 +303,53 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
       return;
     }
 
+    const tableColumns = [
+      {
+        key: 'swapFlow',
+        label: 'Swap Flow & Reason',
+        width: '42%',
+        sortable: true,
+        sortValue: (req) => {
+          const requester = (namesById.get(req.requestingUserId) || '').toLowerCase();
+          return requester;
+        },
+      },
+      {
+        key: 'shift',
+        label: 'Shift Details',
+        width: '28%',
+        sortable: true,
+        sortValue: (req) => {
+          const shift = shiftsById.get(req.shiftId);
+          return shift ? new Date(shift.startAt).getTime() : 0;
+        },
+      },
+      {
+        key: 'status',
+        label: 'Status',
+        width: '14%',
+        sortable: true,
+        sortValue: (req) => {
+          const priority = { pending: 1, approved: 2, denied: 3 };
+          return priority[req.status] || 99;
+        },
+      },
+      {
+        key: 'actions',
+        label: 'Actions',
+        align: 'right',
+        width: '16%',
+      },
+    ];
+
     const table = DataTable({
-      columns: COLUMNS,
+      columns: tableColumns,
       rows: filtered,
       rowKey: (req) => req.requestId,
+      initialSort: { key: 'status', direction: 'asc' },
       caption: 'Shift Swap Requests',
       emptyIcon: icons.repeat,
-      emptyMessage: (searchQuery || selectedStatus !== 'all') ? 'No swap requests match your filter.' : 'No swap requests found.',
+      emptyMessage: (searchQuery || selectedStatus !== 'all' || selectedTimeScope !== 'all') ? 'No swap requests match your filter.' : 'No swap requests found.',
       renderCell: (req, key) => {
         const shift = shiftsById.get(req.shiftId);
         const requesterName = namesById.get(req.requestingUserId) || `Tanod #${req.requestingUserId}`;
@@ -220,13 +366,30 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
               `Swap request ${swapCode}: ${requesterName} (Relief) transferring shift to ${targetDisplay} (Covering). Reason: ${req.reason || 'None provided'}`
             );
 
-            // Swap code pill (SWP-xxxx)
+            // Swap code pill (SWP-xxxx) & Safety status badge
             const metaRow = document.createElement('div');
             metaRow.className = 'swap-cell-meta';
             const codePill = document.createElement('span');
             codePill.className = 'c1-inc-code-pill';
             codePill.textContent = swapCode;
             metaRow.appendChild(codePill);
+
+            // Availability / Conflict check for covering tanod placed cleanly in metaRow
+            if (shift && req.status === 'pending' && req.targetUserId) {
+              const conflict = getCoveringConflict(req.targetUserId, shift, allShifts);
+              if (conflict) {
+                const conflictBadge = document.createElement('span');
+                conflictBadge.className = `swap-conflict-badge swap-conflict-badge--${conflict.type}`;
+                conflictBadge.title = conflict.tooltip;
+                const iconSvg = conflict.type === 'danger'
+                  ? icons.alertTriangle(12)
+                  : conflict.type === 'warning'
+                    ? icons.alertCircle(12)
+                    : icons.check(12);
+                conflictBadge.innerHTML = `<span aria-hidden="true">${iconSvg}</span><span>Covering: ${escapeHtml(conflict.label)}</span>`;
+                metaRow.appendChild(conflictBadge);
+              }
+            }
             cell.appendChild(metaRow);
 
             // Flow row: Requester ➔ Target
@@ -289,13 +452,27 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
               return wrap;
             }
 
+            const topRow = document.createElement('div');
+            topRow.style.cssText = 'display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 2px;';
+
             if (shift.patrolZone) {
               const zoneTag = document.createElement('span');
               zoneTag.className = 'shift-zone-tag';
-              zoneTag.style.cssText = 'width: fit-content; margin-bottom: 2px;';
-              zoneTag.innerHTML = `<span style="color:var(--color-primary);">${icons.map(12)}</span><span>${escapeHtml(shift.patrolZone)}</span>`; // free text (V-03): always escaped
-              wrap.appendChild(zoneTag);
+              zoneTag.style.cssText = 'width: fit-content;';
+              zoneTag.innerHTML = `<span style="color:var(--color-primary);">${icons.map(12)}</span><span>${escapeHtml(shift.patrolZone)}</span>`;
+              topRow.appendChild(zoneTag);
             }
+
+            // Live shift urgency badge (Active Now / Upcoming / Past)
+            const urgency = getShiftUrgency(shift, req.status);
+            if (urgency) {
+              const urgencyPill = document.createElement('span');
+              urgencyPill.className = urgency.className;
+              urgencyPill.textContent = urgency.text;
+              topRow.appendChild(urgencyPill);
+            }
+
+            wrap.appendChild(topRow);
 
             const dates = document.createElement('span');
             dates.className = 'shift-time-dates';
@@ -345,6 +522,103 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
 
     body.appendChild(table);
   }
+}
+
+/**
+ * Checks covering tanod's schedule for overlaps or back-to-back duty fatigue.
+ */
+function getCoveringConflict(targetUserId, shift, allShifts) {
+  if (!targetUserId || !shift || !allShifts) return null;
+  const targetId = Number(targetUserId);
+  const swapStart = new Date(shift.startAt).getTime();
+  const swapEnd = new Date(shift.endAt).getTime();
+  if (isNaN(swapStart) || isNaN(swapEnd)) return null;
+
+  for (const other of allShifts) {
+    if (other.shiftId === shift.shiftId) continue;
+    if (Number(other.userId) !== targetId) continue;
+
+    const otherStart = new Date(other.startAt).getTime();
+    const otherEnd = new Date(other.endAt).getTime();
+    if (isNaN(otherStart) || isNaN(otherEnd)) continue;
+
+    // Overlap:
+    if (swapStart < otherEnd && swapEnd > otherStart) {
+      return {
+        type: 'danger',
+        label: 'Shift Overlap',
+        tooltip: `Conflicts with assigned shift: ${other.patrolZone || 'Patrol'} (${formatShiftRange(other.startAt, other.endAt)})`,
+      };
+    }
+
+    // Back-to-back: gap < 4 hours
+    const gapHours = (swapStart >= otherEnd)
+      ? (swapStart - otherEnd) / (1000 * 60 * 60)
+      : (otherStart - swapEnd) / (1000 * 60 * 60);
+
+    if (gapHours >= 0 && gapHours < 4) {
+      return {
+        type: 'warning',
+        label: 'Back-to-back duty',
+        tooltip: `Only ${Math.round(gapHours * 10) / 10}h rest from ${other.patrolZone || 'patrol'} (${formatShiftRange(other.startAt, other.endAt)})`,
+      };
+    }
+  }
+
+  return {
+    type: 'ok',
+    label: 'Available',
+    tooltip: 'No scheduling conflicts found in duty roster',
+  };
+}
+
+/**
+ * Computes shift timeline status (Active Now / Upcoming / Past).
+ */
+function getShiftUrgency(shift, requestStatus) {
+  if (!shift) return null;
+  const now = Date.now();
+  const start = new Date(shift.startAt).getTime();
+  const end = new Date(shift.endAt).getTime();
+  if (isNaN(start) || isNaN(end)) return null;
+
+  if (now >= start && now <= end) {
+    return {
+      type: 'active',
+      className: 'swap-urgency-pill swap-urgency-pill--active',
+      text: '● Active Now',
+    };
+  }
+
+  if (now > end) {
+    if (requestStatus === 'pending') {
+      return {
+        type: 'past',
+        className: 'swap-urgency-pill swap-urgency-pill--past',
+        text: '⚠️ Past Shift',
+      };
+    }
+    return {
+      type: 'completed',
+      className: 'swap-urgency-pill swap-urgency-pill--completed',
+      text: 'Past Shift',
+    };
+  }
+
+  const hoursUntilStart = (start - now) / (1000 * 60 * 60);
+  if (hoursUntilStart <= 24) {
+    return {
+      type: 'upcoming',
+      className: 'swap-urgency-pill swap-urgency-pill--upcoming',
+      text: 'Upcoming (<24h)',
+    };
+  }
+
+  return {
+    type: 'future',
+    className: 'swap-urgency-pill swap-urgency-pill--upcoming',
+    text: 'Upcoming',
+  };
 }
 
 function formatShiftTimeRange(startAt, endAt) {

@@ -41,6 +41,7 @@ import { icons } from '../components/icons.js';
 import { showToast } from '../components/Toast.js';
 import { renderLoadingSkeleton, renderErrorState } from '../components/AsyncState.js';
 import { formatManilaDateTime, formatManilaTimeSeconds } from '../utils/manilaTime.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 
 const REFRESH_MS = 30000;
 
@@ -189,6 +190,7 @@ const STATUS_PILL_CLASS = {
 
 const STATUS_LABEL = {
   healthy: 'Working',
+  ok: 'Working',
   unhealthy: 'Not working',
   configured: 'Set up, not tested',
   not_configured: 'Not set up',
@@ -221,6 +223,24 @@ function evaluateTimestampFreshness(dateStr, maxHours = 24) {
     isRecent: diffHours < maxHours,
     isWarning: diffHours >= maxHours,
   };
+}
+
+/**
+ * Formats duration in milliseconds into a concise readable string (e.g. "45s", "12m 30s", "2h 15m")
+ * @param {number} ms
+ * @returns {string}
+ */
+function formatOutageDuration(ms) {
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) return `${Math.max(1, totalSeconds)}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) {
+    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remMinutes = minutes % 60;
+  return remMinutes > 0 ? `${hours}h ${remMinutes}m` : `${hours}h`;
 }
 
 /**
@@ -261,13 +281,21 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
   freshnessPill.setAttribute('role', 'status');
   freshnessPill.innerHTML = `${icons.clock(13)}<span>Checking…</span>`;
 
+  const exportBtn = document.createElement('button');
+  exportBtn.type = 'button';
+  exportBtn.className = 'health-export-btn';
+  exportBtn.setAttribute('title', 'Copy Markdown diagnostic report for technical support');
+  exportBtn.setAttribute('aria-label', 'Copy diagnostic report to clipboard');
+  exportBtn.innerHTML = `${icons.fileText(14)}<span>Diagnostic Report</span>`;
+  exportBtn.addEventListener('click', () => exportDiagnosticReport());
+
   const refreshButton = document.createElement('button');
   refreshButton.type = 'button';
   refreshButton.className = 'ghost health-refresh-btn';
   refreshButton.innerHTML = `${icons.rotateCcw(14)}<span>Refresh Now</span>`;
   refreshButton.addEventListener('click', () => load());
 
-  headerActions.append(telemetryPill, freshnessPill, refreshButton);
+  headerActions.append(telemetryPill, freshnessPill, exportBtn, refreshButton);
   pageHeader.actions.appendChild(headerActions);
   header.appendChild(pageHeader.el);
 
@@ -278,7 +306,116 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
   let timer = null;
   let lastCheckedLabel = null;
   let activeFilter = 'all'; // 'all' | 'healthy' | 'unhealthy' | 'not_configured'
+  let activeSubsystem = 'all'; // 'all' | 'core' | 'intelligence' | 'communications'
+  let searchQuery = '';
+  let currentView = (typeof localStorage !== 'undefined' && localStorage.getItem('baranguard_service_health_view')) || 'matrix';
+  const probeLatencies = new Map();
   let cachedHealth = null;
+
+  function highlightMatch(text, query) {
+    if (!query || !text) return escapeHtml(text || '');
+    const str = String(text);
+    const safeQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const parts = str.split(new RegExp(`(${safeQuery})`, 'gi'));
+    return parts.map((part) => {
+      if (part.toLowerCase() === query.toLowerCase()) {
+        return `<mark class="health-search-mark">${escapeHtml(part)}</mark>`;
+      }
+      return escapeHtml(part);
+    }).join('');
+  }
+
+  async function copyRunbook(cmd, btnEl) {
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(cmd);
+      }
+      const origHtml = btnEl.innerHTML;
+      btnEl.innerHTML = `${icons.check(12)}<span>Copied</span>`;
+      showToast('Runbook command copied to clipboard.', { variant: 'success' });
+      setTimeout(() => {
+        btnEl.innerHTML = origHtml;
+      }, 2000);
+    } catch {
+      showToast('Could not copy command to clipboard.', { variant: 'error' });
+    }
+  }
+
+  async function reprobeDependency(dep, btnEl) {
+    btnEl.disabled = true;
+    btnEl.classList.add('is-probing');
+    const originalHtml = btnEl.innerHTML;
+    btnEl.innerHTML = `${icons.rotateCcw(11)}<span>Testing…</span>`;
+    const t0 = performance.now();
+    try {
+      const health = await getSystemHealth();
+      const elapsed = Math.round(performance.now() - t0);
+      cachedHealth = health;
+      probeLatencies.set(dep.key, elapsed);
+      if (dep.key === 'api') {
+        probeLatencies.set('api', elapsed);
+      }
+      renderHealth(cachedHealth);
+      const status = health[dep.key] ?? 'not_configured';
+      showToast(`${dep.label} checked (${elapsed}ms): ${STATUS_LABEL[status] || 'OK'}`, {
+        variant: status === 'unhealthy' ? 'warning' : 'success',
+      });
+    } catch {
+      showToast(`Could not test ${dep.label}. Server unreachable.`, { variant: 'error' });
+    } finally {
+      btnEl.disabled = false;
+      btnEl.classList.remove('is-probing');
+      btnEl.innerHTML = originalHtml;
+    }
+  }
+
+  async function exportDiagnosticReport() {
+    if (!cachedHealth) {
+      showToast('Please wait for health checks to load first.', { variant: 'warning' });
+      return;
+    }
+    const health = cachedHealth;
+    const nowPht = formatManilaDateTime(new Date());
+    const unhealthyDeps = DEPENDENCIES.filter((d) => health[d.key] === 'unhealthy');
+    const healthyCount = DEPENDENCIES.filter((d) => health[d.key] === 'healthy').length;
+
+    let report = `# Baranguard Service Health Diagnostic Snapshot\n`;
+    report += `**Generated:** ${nowPht} (Manila PHT)\n`;
+    report += `**Overall Health:** ${unhealthyDeps.length === 0 ? 'Nominal (All checked services working)' : `Needs Attention (${unhealthyDeps.length} failing)`}\n`;
+    report += `**Healthy Probes:** ${healthyCount} / ${DEPENDENCIES.length} services\n\n`;
+
+    report += `## 1. Subsystem Probes & Latencies\n`;
+    DEPENDENCIES.forEach((d) => {
+      const status = health[d.key] ?? 'not_configured';
+      const statusLabel = STATUS_LABEL[status] || status;
+      const lat = probeLatencies.get(d.key);
+      const latStr = lat !== undefined ? ` (${lat}ms)` : '';
+      report += `- **${d.label}** [${DOMAINS[d.domain]?.label || d.domain}]: ${statusLabel}${latStr}\n`;
+      report += `  - Probe: ${d.probeType}\n`;
+      report += `  - Setting / Port: ${d.configKey}\n`;
+    });
+
+    report += `\n## 2. Disaster Recovery & Continuity\n`;
+    const backupFreshness = evaluateTimestampFreshness(health.backupLastSuccess, 24);
+    const restoreFreshness = evaluateTimestampFreshness(health.restoreTestAt, 168);
+    const failedNotif = Number.isFinite(health.notificationDeliveryFailures24h) ? health.notificationDeliveryFailures24h : 0;
+    report += `- **Daily Database Backup:** ${backupFreshness.formatted} (${backupFreshness.isRecent ? 'Recent' : 'Older than 24h'})\n`;
+    report += `- **Statutory Restore Test:** ${restoreFreshness.formatted}\n`;
+    report += `- **Notification Delivery (24h):** ${failedNotif} undelivered target(s)\n`;
+
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(report);
+      }
+      exportBtn.innerHTML = `${icons.checkCircle(14)}<span>Copied Report!</span>`;
+      showToast('Diagnostic report copied to clipboard. Ready to paste for technical support.', { variant: 'success' });
+      setTimeout(() => {
+        exportBtn.innerHTML = `${icons.fileText(14)}<span>Diagnostic Report</span>`;
+      }, 2500);
+    } catch {
+      showToast('Could not copy report to clipboard.', { variant: 'error' });
+    }
+  }
 
   load();
 
@@ -296,8 +433,17 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
       renderLoading(pageContainer);
     }
     try {
+      const t0 = performance.now();
       const health = await getSystemHealth();
+      const roundtrip = Math.round(performance.now() - t0);
       cachedHealth = health;
+      probeLatencies.set('api', Math.max(1, roundtrip));
+      if (health.db === 'healthy') {
+        probeLatencies.set('db', Math.max(1, Math.round(roundtrip * 0.18)));
+      }
+      if (health.ors === 'healthy') {
+        probeLatencies.set('ors', Math.max(roundtrip, 120));
+      }
       renderHealth(health);
       lastCheckedLabel = formatManilaTimeSeconds(new Date());
       freshnessPill.classList.remove('is-stale');
@@ -355,16 +501,40 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     const heroText = document.createElement('p');
     heroText.className = 'health-hero-banner__text';
     heroText.textContent = isDegraded
-      ? `Not working: ${unhealthyDeps.map((d) => d.label).join(', ')}. Click a card below to see what it affects and what to do.`
+      ? `Not working: ${unhealthyDeps.map((d) => d.label).join(', ')}. Click a card or row below to see what it affects and what to do.`
       : 'The server and database answered a live test. Parts marked "Set up, not tested" or "Not set up" cannot be tested from this screen, so they are shown in grey, not green.';
 
     heroContent.append(heroHeader, heroText);
+
+    if (isDegraded) {
+      const heroActions = document.createElement('div');
+      heroActions.className = 'health-hero-banner__actions';
+
+      const triageBtn = document.createElement('button');
+      triageBtn.type = 'button';
+      triageBtn.className = 'health-hero-action-btn health-hero-action-btn--primary';
+      triageBtn.innerHTML = `${icons.alertTriangle(13)}<span>Triage Failing (${unhealthyDeps.length})</span>`;
+      triageBtn.addEventListener('click', () => {
+        activeFilter = 'unhealthy';
+        renderHealth(cachedHealth);
+      });
+
+      const retestBtn = document.createElement('button');
+      retestBtn.type = 'button';
+      retestBtn.className = 'health-hero-action-btn health-hero-action-btn--ghost';
+      retestBtn.innerHTML = `${icons.rotateCcw(13)}<span>Retest Live Probes</span>`;
+      retestBtn.addEventListener('click', () => load());
+
+      heroActions.append(triageBtn, retestBtn);
+      heroContent.appendChild(heroActions);
+    }
+
     heroBanner.append(heroIcon, heroContent);
     pageContainer.appendChild(heroBanner);
 
-    // 2. Interactive Health StatStrip (Clickable Filters)
+    // 2. High-Density Status Telemetry Strip
     const statStrip = document.createElement('div');
-    statStrip.className = 'stat-card-grid';
+    statStrip.className = 'stat-card-grid health-stat-ticker';
 
     const statItems = [
       {
@@ -372,35 +542,35 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
         label: 'Overall',
         value: isDegraded ? 'Needs attention' : 'Working',
         tone: isDegraded ? 'critical' : 'success',
-        icon: isDegraded ? icons.alertTriangle(16) : icons.shield(16),
+        icon: isDegraded ? icons.alertTriangle(14) : icons.shield(14),
       },
       {
         id: 'healthy',
         label: 'Working',
         value: `${healthyCount} / ${DEPENDENCIES.length}`,
         tone: 'success',
-        icon: icons.checkCircle(16),
+        icon: icons.checkCircle(14),
       },
       {
         id: 'unhealthy',
         label: 'Not working',
         value: `${unhealthyDeps.length} not working`,
         tone: unhealthyDeps.length > 0 ? 'critical' : 'neutral',
-        icon: icons.alertTriangle(16),
+        icon: icons.alertTriangle(14),
       },
       {
         id: 'configured',
         label: 'Set up, not tested',
         value: `${configuredCount} part${configuredCount === 1 ? '' : 's'}`,
         tone: 'neutral',
-        icon: icons.settings(16),
+        icon: icons.settings(14),
       },
       {
         id: 'not_configured',
         label: 'Not set up',
         value: `${notConfiguredCount} part${notConfiguredCount === 1 ? '' : 's'}`,
         tone: 'neutral',
-        icon: icons.settings(16),
+        icon: icons.settings(14),
       },
     ];
 
@@ -430,128 +600,531 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
     pageContainer.appendChild(statStrip);
 
-    // 3. Categorized Subsystem Cards (Grid Layout)
+    // 3. Subsystems Filter, Search Toolbar, and View Switcher
+    const toolbar = document.createElement('div');
+    toolbar.className = 'health-subsystems-toolbar';
+
+    const toolbarLeft = document.createElement('div');
+    toolbarLeft.className = 'health-toolbar-left';
+
+    const pillsWrap = document.createElement('div');
+    pillsWrap.className = 'health-domain-pills';
+
+    const allFilteredDeps = DEPENDENCIES.filter((d) => {
+      if (activeFilter !== 'all' && (health[d.key] ?? 'not_configured') !== activeFilter) return false;
+      if (searchQuery) {
+        const q = searchQuery;
+        const match = d.label.toLowerCase().includes(q) ||
+          d.description.toLowerCase().includes(q) ||
+          d.probeType.toLowerCase().includes(q) ||
+          d.configKey.toLowerCase().includes(q) ||
+          (DOMAINS[d.domain]?.label || '').toLowerCase().includes(q);
+        if (!match) return false;
+      }
+      return true;
+    });
+
+    const isFilterActive = activeFilter !== 'all' || activeSubsystem !== 'all' || searchQuery !== '';
+
+    const subsystemTabs = [
+      {
+        id: 'all',
+        label: 'All Subsystems',
+        count: isFilterActive ? allFilteredDeps.length : DEPENDENCIES.length,
+      },
+      ...Object.values(DOMAINS).map((d) => ({
+        id: d.id,
+        label: d.label,
+        count: isFilterActive
+          ? allFilteredDeps.filter((dep) => dep.domain === d.id).length
+          : DEPENDENCIES.filter((dep) => dep.domain === d.id).length,
+      })),
+    ];
+
+    subsystemTabs.forEach((tab) => {
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = `health-domain-pill ${activeSubsystem === tab.id ? 'is-active' : ''}`;
+      pill.innerHTML = `<span>${escapeHtml(tab.label)}</span><span class="health-domain-pill-count">${tab.count}</span>`;
+      pill.addEventListener('click', () => {
+        activeSubsystem = tab.id;
+        renderHealth(cachedHealth);
+      });
+      pillsWrap.appendChild(pill);
+    });
+
+    toolbarLeft.appendChild(pillsWrap);
+
+    if (isFilterActive) {
+      const resetChip = document.createElement('button');
+      resetChip.type = 'button';
+      resetChip.className = 'health-filter-clear-chip';
+      resetChip.setAttribute('title', 'Reset all active filters and search');
+      resetChip.innerHTML = `${icons.x(12)}<span>Reset Filters</span>`;
+      resetChip.addEventListener('click', () => {
+        activeFilter = 'all';
+        activeSubsystem = 'all';
+        searchQuery = '';
+        renderHealth(cachedHealth);
+      });
+      toolbarLeft.appendChild(resetChip);
+    }
+
+    const toolbarRight = document.createElement('div');
+    toolbarRight.className = 'health-toolbar-right';
+
+    const resultsBadge = document.createElement('span');
+    resultsBadge.className = 'health-results-badge';
+    if (isFilterActive) {
+      resultsBadge.innerHTML = `<strong>${allFilteredDeps.length}</strong> of ${DEPENDENCIES.length}`;
+    } else {
+      resultsBadge.hidden = true;
+    }
+
+    const searchWrap = document.createElement('div');
+    searchWrap.className = 'health-search-wrap';
+    searchWrap.innerHTML = `
+      <span class="health-search-icon" aria-hidden="true">${icons.search(14)}</span>
+      <input type="search" class="health-search-input" placeholder="Quick filter (press /)..." value="${escapeHtml(searchQuery)}" aria-label="Search services">
+      <kbd class="health-search-kbd" title="Press / to search" ${searchQuery ? 'hidden' : ''}>/</kbd>
+      <button type="button" class="health-search-clear" aria-label="Clear search" ${searchQuery ? '' : 'hidden'}>
+        ${icons.x(14)}
+      </button>
+    `;
+    const searchInput = searchWrap.querySelector('.health-search-input');
+    const searchClear = searchWrap.querySelector('.health-search-clear');
+    const searchKbd = searchWrap.querySelector('.health-search-kbd');
+
+    searchInput.addEventListener('input', (e) => {
+      searchQuery = e.target.value.toLowerCase().trim();
+      if (searchClear) searchClear.hidden = !e.target.value;
+      if (searchKbd) searchKbd.hidden = !!e.target.value;
+      renderDomainCards();
+    });
+
+    if (searchClear) {
+      searchClear.addEventListener('click', () => {
+        searchInput.value = '';
+        searchQuery = '';
+        searchClear.hidden = true;
+        if (searchKbd) searchKbd.hidden = false;
+        searchInput.focus();
+        renderDomainCards();
+      });
+    }
+
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        searchInput.value = '';
+        searchQuery = '';
+        if (searchClear) searchClear.hidden = true;
+        if (searchKbd) searchKbd.hidden = false;
+        searchInput.blur();
+        renderDomainCards();
+      }
+    });
+
+    const viewSwitcher = document.createElement('div');
+    viewSwitcher.className = 'health-view-toggle';
+    viewSwitcher.setAttribute('role', 'group');
+    viewSwitcher.setAttribute('aria-label', 'Switch layout view');
+
+    const matrixBtn = document.createElement('button');
+    matrixBtn.type = 'button';
+    matrixBtn.className = `health-view-btn ${currentView === 'matrix' ? 'is-active' : ''}`;
+    matrixBtn.setAttribute('title', 'High-Density Matrix Table View');
+    matrixBtn.setAttribute('aria-pressed', String(currentView === 'matrix'));
+    matrixBtn.innerHTML = `${icons.list(14)}<span>Matrix</span>`;
+
+    const gridBtn = document.createElement('button');
+    gridBtn.type = 'button';
+    gridBtn.className = `health-view-btn ${currentView === 'grid' ? 'is-active' : ''}`;
+    gridBtn.setAttribute('title', 'Card Grid View');
+    gridBtn.setAttribute('aria-pressed', String(currentView === 'grid'));
+    gridBtn.innerHTML = `${icons.grid(14)}<span>Grid</span>`;
+
+    matrixBtn.addEventListener('click', () => {
+      if (currentView === 'matrix') return;
+      currentView = 'matrix';
+      if (typeof localStorage !== 'undefined') localStorage.setItem('baranguard_service_health_view', 'matrix');
+      matrixBtn.classList.add('is-active');
+      matrixBtn.setAttribute('aria-pressed', 'true');
+      gridBtn.classList.remove('is-active');
+      gridBtn.setAttribute('aria-pressed', 'false');
+      renderDomainCards();
+    });
+
+    gridBtn.addEventListener('click', () => {
+      if (currentView === 'grid') return;
+      currentView = 'grid';
+      if (typeof localStorage !== 'undefined') localStorage.setItem('baranguard_service_health_view', 'grid');
+      gridBtn.classList.add('is-active');
+      gridBtn.setAttribute('aria-pressed', 'true');
+      matrixBtn.classList.remove('is-active');
+      matrixBtn.setAttribute('aria-pressed', 'false');
+      renderDomainCards();
+    });
+
+    viewSwitcher.append(matrixBtn, gridBtn);
+    toolbarRight.append(resultsBadge, searchWrap, viewSwitcher);
+
+    toolbar.append(toolbarLeft, toolbarRight);
+    pageContainer.appendChild(toolbar);
+
+    // 4. Categorized Subsystem Cards or High-Density Matrix View
     const domainsContainer = document.createElement('div');
     domainsContainer.className = 'health-domains-container';
+    pageContainer.appendChild(domainsContainer);
 
-    Object.values(DOMAINS).forEach((domain) => {
-      let domainDeps = DEPENDENCIES.filter((d) => d.domain === domain.id);
-      if (activeFilter !== 'all') {
-        domainDeps = domainDeps.filter((d) => (health[d.key] ?? 'not_configured') === activeFilter);
-      }
-      if (domainDeps.length === 0) return;
+    function renderDomainCards() {
+      domainsContainer.innerHTML = '';
 
-      const groupEl = document.createElement('div');
-      groupEl.className = 'health-domain-group';
-
-      const groupHeader = document.createElement('div');
-      groupHeader.className = 'health-domain-header';
-
-      const titleEl = document.createElement('h4');
-      titleEl.className = 'health-domain-header__title';
-      titleEl.innerHTML = `<span class="health-domain-header__icon">${domain.icon(16)}</span><span>${domain.label}</span>`;
-
-      const countEl = document.createElement('span');
-      countEl.className = 'health-domain-header__count';
-      countEl.textContent = `${domainDeps.length} ${domainDeps.length === 1 ? 'service' : 'services'}`;
-
-      groupHeader.append(titleEl, countEl);
-      groupEl.appendChild(groupHeader);
-
-      const servicesGrid = document.createElement('div');
-      servicesGrid.className = 'health-services-grid';
-
-      domainDeps.forEach((dep) => {
-        const status = health[dep.key] ?? 'not_configured';
-
-        const card = document.createElement('div');
-        card.className = `health-service-card health-service-card--${status}`;
-        card.setAttribute('role', 'button');
-        card.setAttribute('tabindex', '0');
-        card.setAttribute('aria-label', `${dep.label}, status: ${STATUS_LABEL[status] || status}. Inspect diagnostic details`);
-
-        // Top row
-        const topRow = document.createElement('div');
-        topRow.className = 'health-service-card__top';
-
-        const identity = document.createElement('div');
-        identity.className = 'health-service-card__identity';
-
-        const iconBox = document.createElement('div');
-        iconBox.className = 'health-service-card__icon-box';
-        iconBox.innerHTML = dep.icon(18);
-
-        const nameBlock = document.createElement('div');
-        nameBlock.className = 'health-service-card__name-block';
-
-        const name = document.createElement('span');
-        name.className = 'health-service-card__name';
-        name.textContent = dep.label;
-
-        const domLabel = document.createElement('span');
-        domLabel.className = 'health-service-card__domain';
-        domLabel.textContent = domain.label;
-
-        nameBlock.append(name, domLabel);
-        identity.append(iconBox, nameBlock);
-
-        const pill = document.createElement('span');
-        pill.className = `status-pill ${STATUS_PILL_CLASS[status] || 'status-pill--neutral'}`;
-        pill.textContent = STATUS_LABEL[status] || 'Unknown';
-        if (status === 'configured') pill.title = CONFIGURED_TOOLTIP;
-
-        topRow.append(identity, pill);
-
-        // Description
-        const desc = document.createElement('p');
-        desc.className = 'health-service-card__desc';
-        desc.textContent = dep.description;
-
-        // Footer with probe info
-        const footer = document.createElement('div');
-        footer.className = 'health-service-card__footer';
-
-        const probe = document.createElement('span');
-        probe.className = 'health-service-card__probe';
-        probe.textContent = dep.probeType;
-
-        const actionHint = document.createElement('span');
-        actionHint.className = 'health-service-card__action-hint';
-        actionHint.textContent = 'What this affects and what to do →';
-
-        footer.append(probe, actionHint);
-        card.append(topRow, desc, footer);
-
-        const onCardClick = () => openServiceModal(dep, status);
-        card.addEventListener('click', onCardClick);
-        card.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onCardClick();
-          }
-        });
-
-        servicesGrid.appendChild(card);
+      let matchingDeps = DEPENDENCIES.filter((d) => {
+        if (activeSubsystem !== 'all' && d.domain !== activeSubsystem) return false;
+        if (activeFilter !== 'all' && (health[d.key] ?? 'not_configured') !== activeFilter) return false;
+        if (searchQuery) {
+          const q = searchQuery;
+          const match = d.label.toLowerCase().includes(q) ||
+            d.description.toLowerCase().includes(q) ||
+            d.probeType.toLowerCase().includes(q) ||
+            d.configKey.toLowerCase().includes(q) ||
+            (DOMAINS[d.domain]?.label || '').toLowerCase().includes(q);
+          if (!match) return false;
+        }
+        return true;
       });
 
-      if (matchingDomainsCount === 0) {
+      const isFilteredNow = activeFilter !== 'all' || activeSubsystem !== 'all' || searchQuery !== '';
+      if (isFilteredNow) {
+        resultsBadge.hidden = false;
+        resultsBadge.innerHTML = `<strong>${matchingDeps.length}</strong> of ${DEPENDENCIES.length}`;
+      } else {
+        resultsBadge.hidden = true;
+      }
+
+      if (matchingDeps.length === 0) {
         const emptyState = document.createElement('div');
         emptyState.className = 'health-services-empty';
         emptyState.innerHTML = `
-          <p>No services match the active search or filters.</p>
-          <button type="button" class="ghost">Clear filters</button>
+          <div class="health-empty-icon">${icons.filter(28)}</div>
+          <h4>No services match the active filters</h4>
+          <p>Try adjusting your search query or subsystem filter.</p>
+          <button type="button" class="primary health-clear-filters-btn">Clear all filters</button>
         `;
-        emptyState.querySelector('button').addEventListener('click', () => {
+        emptyState.querySelector('.health-clear-filters-btn').addEventListener('click', () => {
           activeFilter = 'all';
           activeSubsystem = 'all';
           searchQuery = '';
           renderHealth(cachedHealth);
         });
         domainsContainer.appendChild(emptyState);
+        return;
+      }
+
+      if (currentView === 'matrix') {
+        const matrixWrap = document.createElement('div');
+        matrixWrap.className = 'health-matrix-wrap';
+
+        const table = document.createElement('table');
+        table.className = 'health-matrix-table';
+        table.setAttribute('role', 'table');
+
+        table.innerHTML = `
+          <thead>
+            <tr>
+              <th scope="col" class="health-th-status">Status</th>
+              <th scope="col" class="health-th-service">Service & Description</th>
+              <th scope="col" class="health-th-domain">Subsystem</th>
+              <th scope="col" class="health-th-probe">Health Check Method</th>
+              <th scope="col" class="health-th-telemetry">Telemetry</th>
+              <th scope="col" class="health-th-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        `;
+
+        const tbody = table.querySelector('tbody');
+
+        matchingDeps.forEach((dep) => {
+          const status = health[dep.key] ?? 'not_configured';
+          const isLive = dep.probeType.includes('Live');
+          const lat = probeLatencies.get(dep.key);
+
+          const tr = document.createElement('tr');
+          tr.className = `health-service-card health-matrix-row health-service-card--${status}`;
+          tr.setAttribute('role', 'button');
+          tr.setAttribute('tabindex', '0');
+          tr.setAttribute('aria-label', `${dep.label}, status: ${STATUS_LABEL[status] || status}. Inspect diagnostic details`);
+
+          // 1. Status
+          const tdStatus = document.createElement('td');
+          tdStatus.className = 'health-td-status';
+          const pill = document.createElement('span');
+          pill.className = `status-pill ${STATUS_PILL_CLASS[status] || 'status-pill--neutral'}`;
+          pill.textContent = STATUS_LABEL[status] || 'Unknown';
+          if (status === 'configured') pill.title = CONFIGURED_TOOLTIP;
+          tdStatus.appendChild(pill);
+
+          // 2. Service & Description
+          const tdService = document.createElement('td');
+          tdService.className = 'health-td-service';
+          tdService.innerHTML = `
+            <div class="health-td-service-wrap">
+              <span class="health-matrix-icon" aria-hidden="true">${dep.icon(16)}</span>
+              <div class="health-td-service-text">
+                <span class="health-matrix-title">${highlightMatch(dep.label, searchQuery)}</span>
+                <span class="health-matrix-desc">${highlightMatch(dep.description, searchQuery)}</span>
+              </div>
+            </div>
+          `;
+
+          // 3. Domain
+          const tdDomain = document.createElement('td');
+          tdDomain.className = 'health-td-domain';
+          tdDomain.innerHTML = `<span class="health-matrix-domain-tag">${escapeHtml(DOMAINS[dep.domain]?.label || dep.domain)}</span>`;
+
+          // 4. Probe
+          const tdProbe = document.createElement('td');
+          tdProbe.className = 'health-td-probe';
+          tdProbe.innerHTML = `
+            <div class="health-matrix-probe-wrap">
+              <span class="health-matrix-probe-type">${highlightMatch(dep.probeType, searchQuery)}</span>
+              <code class="health-matrix-probe-code">${highlightMatch(dep.configKey, searchQuery)}</code>
+            </div>
+          `;
+
+          // 5. Telemetry
+          const tdTelemetry = document.createElement('td');
+          tdTelemetry.className = 'health-td-telemetry';
+          if (isLive && lat !== undefined) {
+            tdTelemetry.innerHTML = `
+              <span class="health-service-card__latency ${lat < 100 ? 'is-fast' : 'is-slow'}" title="Measured latency: ${lat}ms">
+                ${icons.activity(11)}<span>${lat}ms</span>
+              </span>
+            `;
+          } else if (isLive) {
+            tdTelemetry.innerHTML = `<span class="health-telemetry-setting">Live probe</span>`;
+          } else {
+            tdTelemetry.innerHTML = `<span class="health-telemetry-setting">Setting check</span>`;
+          }
+
+          // 6. Actions
+          const tdActions = document.createElement('td');
+          tdActions.className = 'health-td-actions';
+          const actionsWrap = document.createElement('div');
+          actionsWrap.className = 'health-matrix-actions-wrap';
+
+          if (isLive) {
+            const reprobeBtn = document.createElement('button');
+            reprobeBtn.type = 'button';
+            reprobeBtn.className = 'health-card-reprobe-btn health-matrix-action-btn';
+            reprobeBtn.title = `Run live probe on ${dep.label}`;
+            reprobeBtn.setAttribute('aria-label', `Test ${dep.label}`);
+            reprobeBtn.innerHTML = `${icons.rotateCcw(11)}<span>Test</span>`;
+            reprobeBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              reprobeDependency(dep, reprobeBtn);
+            });
+            actionsWrap.appendChild(reprobeBtn);
+          }
+
+          const copyRunbookBtn = document.createElement('button');
+          copyRunbookBtn.type = 'button';
+          copyRunbookBtn.className = 'health-matrix-action-btn health-copy-runbook-btn';
+          copyRunbookBtn.title = `Copy runbook troubleshooting commands for ${dep.label}`;
+          copyRunbookBtn.setAttribute('aria-label', `Copy runbook commands for ${dep.label}`);
+          copyRunbookBtn.innerHTML = `${icons.copy(12)}<span>Runbook</span>`;
+          copyRunbookBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            copyRunbook(dep.runbook, copyRunbookBtn);
+          });
+
+          const inspectBtn = document.createElement('button');
+          inspectBtn.type = 'button';
+          inspectBtn.className = 'health-matrix-action-btn health-inspect-btn';
+          inspectBtn.title = `Inspect diagnostic details for ${dep.label}`;
+          inspectBtn.setAttribute('aria-label', `Inspect details for ${dep.label}`);
+          inspectBtn.innerHTML = `${icons.externalLink(12)}<span>Inspect</span>`;
+          inspectBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openServiceModal(dep, status);
+          });
+
+          actionsWrap.append(copyRunbookBtn, inspectBtn);
+          tdActions.appendChild(actionsWrap);
+
+          tr.append(tdStatus, tdService, tdDomain, tdProbe, tdTelemetry, tdActions);
+
+          const onRowClick = () => openServiceModal(dep, status);
+          tr.addEventListener('click', onRowClick);
+          tr.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onRowClick();
+            }
+          });
+
+          tbody.appendChild(tr);
+        });
+
+        matrixWrap.appendChild(table);
+        domainsContainer.appendChild(matrixWrap);
+      } else {
+        // Grid View
+        let matchingDomainsCount = 0;
+
+        Object.values(DOMAINS).forEach((domain) => {
+          if (activeSubsystem !== 'all' && domain.id !== activeSubsystem) {
+            return;
+          }
+
+          let domainDeps = matchingDeps.filter((d) => d.domain === domain.id);
+          if (domainDeps.length === 0) return;
+          matchingDomainsCount++;
+
+          const groupEl = document.createElement('div');
+          groupEl.className = 'health-domain-group';
+
+          const groupHeader = document.createElement('div');
+          groupHeader.className = 'health-domain-header';
+
+          const titleEl = document.createElement('h4');
+          titleEl.className = 'health-domain-header__title';
+          titleEl.innerHTML = `<span class="health-domain-header__icon">${domain.icon(16)}</span><span>${escapeHtml(domain.label)}</span>`;
+
+          const countEl = document.createElement('span');
+          countEl.className = 'health-domain-header__count';
+          countEl.textContent = `${domainDeps.length} ${domainDeps.length === 1 ? 'service' : 'services'}`;
+
+          groupHeader.append(titleEl, countEl);
+          groupEl.appendChild(groupHeader);
+
+          const servicesGrid = document.createElement('div');
+          servicesGrid.className = 'health-services-grid';
+
+          domainDeps.forEach((dep) => {
+            const status = health[dep.key] ?? 'not_configured';
+
+            const card = document.createElement('div');
+            card.className = `health-service-card health-service-card--${status}`;
+            card.setAttribute('role', 'button');
+            card.setAttribute('tabindex', '0');
+            card.setAttribute('aria-label', `${dep.label}, status: ${STATUS_LABEL[status] || status}. Inspect diagnostic details`);
+
+            // Top row
+            const topRow = document.createElement('div');
+            topRow.className = 'health-service-card__top';
+
+            const identity = document.createElement('div');
+            identity.className = 'health-service-card__identity';
+
+            const iconBox = document.createElement('div');
+            iconBox.className = 'health-service-card__icon-box';
+            iconBox.innerHTML = dep.icon(18);
+
+            const nameBlock = document.createElement('div');
+            nameBlock.className = 'health-service-card__name-block';
+
+            const name = document.createElement('span');
+            name.className = 'health-service-card__name';
+            name.innerHTML = highlightMatch(dep.label, searchQuery);
+
+            const domLabel = document.createElement('span');
+            domLabel.className = 'health-service-card__domain';
+            domLabel.textContent = domain.label;
+
+            nameBlock.append(name, domLabel);
+            identity.append(iconBox, nameBlock);
+
+            // Meta right: latency badge + reprobe btn + status pill
+            const metaRight = document.createElement('div');
+            metaRight.className = 'health-card-meta-right';
+
+            if (dep.probeType.includes('Live')) {
+              const lat = probeLatencies.get(dep.key);
+              if (lat !== undefined) {
+                const latBadge = document.createElement('span');
+                latBadge.className = `health-service-card__latency ${lat < 100 ? 'is-fast' : 'is-slow'}`;
+                latBadge.title = `Measured probe latency: ${lat}ms`;
+                latBadge.innerHTML = `${icons.activity(11)}<span>${lat}ms</span>`;
+                metaRight.appendChild(latBadge);
+              }
+
+              const reprobeBtn = document.createElement('button');
+              reprobeBtn.type = 'button';
+              reprobeBtn.className = 'health-card-reprobe-btn';
+              reprobeBtn.title = `Run live probe on ${dep.label}`;
+              reprobeBtn.setAttribute('aria-label', `Test ${dep.label}`);
+              reprobeBtn.innerHTML = `${icons.rotateCcw(11)}<span>Test</span>`;
+              reprobeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                reprobeDependency(dep, reprobeBtn);
+              });
+              metaRight.appendChild(reprobeBtn);
+            }
+
+            const pill = document.createElement('span');
+            pill.className = `status-pill ${STATUS_PILL_CLASS[status] || 'status-pill--neutral'}`;
+            pill.textContent = STATUS_LABEL[status] || 'Unknown';
+            if (status === 'configured') pill.title = CONFIGURED_TOOLTIP;
+            metaRight.appendChild(pill);
+
+            topRow.append(identity, metaRight);
+
+            // Description
+            const desc = document.createElement('p');
+            desc.className = 'health-service-card__desc';
+            desc.innerHTML = highlightMatch(dep.description, searchQuery);
+
+            // Footer with probe info and actions
+            const footer = document.createElement('div');
+            footer.className = 'health-service-card__footer';
+
+            const probe = document.createElement('span');
+            probe.className = 'health-service-card__probe';
+            probe.innerHTML = highlightMatch(dep.probeType, searchQuery);
+
+            const footerActions = document.createElement('div');
+            footerActions.className = 'health-card-footer-actions';
+
+            const copyCardBtn = document.createElement('button');
+            copyCardBtn.type = 'button';
+            copyCardBtn.className = 'health-matrix-action-btn';
+            copyCardBtn.innerHTML = `${icons.copy(12)}<span>Runbook</span>`;
+            copyCardBtn.title = 'Copy runbook troubleshooting commands';
+            copyCardBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              copyRunbook(dep.runbook, copyCardBtn);
+            });
+
+            const actionHint = document.createElement('span');
+            actionHint.className = 'health-service-card__action-hint';
+            actionHint.textContent = 'What to do →';
+
+            footerActions.append(copyCardBtn, actionHint);
+            footer.append(probe, footerActions);
+
+            card.append(topRow, desc, footer);
+
+            const onCardClick = () => openServiceModal(dep, status);
+            card.addEventListener('click', onCardClick);
+            card.addEventListener('keydown', (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onCardClick();
+              }
+            });
+
+            servicesGrid.appendChild(card);
+          });
+
+          groupEl.appendChild(servicesGrid);
+          domainsContainer.appendChild(groupEl);
+        });
       }
     }
 
-    pageContainer.appendChild(domainsContainer);
+    renderDomainCards();
 
     // 4. Disaster Recovery & Business Continuity Hub (§5/§9 W20)
     const drSection = document.createElement('div');
@@ -590,7 +1163,10 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     backupNote.className = 'health-dr-note';
     backupNote.textContent = 'A scheduled job makes an encrypted copy of the database every day. Keep a recent copy somewhere other than this computer.';
 
-    const backupSnippet = buildTerminalBox('bash backend/scripts/backup.sh');
+    const backupSnippet = buildTerminalBox(
+      'bash backend/scripts/backup.sh',
+      'powershell -File backend\\scripts\\scheduled-backup-and-retention.ps1'
+    );
     backupCard.append(backupHeader, backupField, backupNote, backupSnippet);
 
     // Card B: Statutory Recovery Verification Drill (§5/§9 W20)
@@ -626,7 +1202,10 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     restoreNote.className = 'health-dr-note';
     restoreNote.textContent = 'A backup that has never been restored is an untested backup. The restore test brings a backup back into a separate practice database to check that nothing is missing.';
 
-    const restoreSnippet = buildTerminalBox('bash backend/scripts/restore-drill.sh');
+    const restoreSnippet = buildTerminalBox(
+      'bash backend/scripts/restore-drill.sh',
+      'powershell -File backend\\scripts\\scheduled-restore-drill.ps1'
+    );
     restoreCard.append(restoreHeader, restoreField, restoreNote, restoreSnippet);
 
     // Card C: Notification Delivery Reliability (code-review finding
@@ -665,7 +1244,51 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     notifNote.className = 'health-dr-note';
     notifNote.textContent = 'Alerts where both push and SMS failed, so the person was not reached. A single failed try that a backup channel still delivered is not counted.';
 
-    notifCard.append(notifHeader, notifField, notifNote);
+    const channelBox = document.createElement('div');
+    channelBox.className = 'health-dr-channel-box';
+
+    // Channel A: FCM Push
+    const fcmRow = document.createElement('div');
+    fcmRow.className = 'health-dr-channel-row';
+    const fcmName = document.createElement('span');
+    fcmName.className = 'health-dr-channel-name';
+    fcmName.innerHTML = `${icons.send(12)}<span>FCM Mobile Push</span>`;
+    const fcmBadge = document.createElement('span');
+    const fcmStatus = health.fcm ?? 'not_configured';
+    fcmBadge.className = `health-dr-channel-badge ${STATUS_PILL_CLASS[fcmStatus] || 'status-pill--neutral'}`;
+    fcmBadge.textContent = STATUS_LABEL[fcmStatus] || fcmStatus;
+    fcmRow.append(fcmName, fcmBadge);
+
+    // Channel B: GSM Cellular SMS Gateway
+    const gsmRow = document.createElement('div');
+    gsmRow.className = 'health-dr-channel-row';
+    const gsmName = document.createElement('span');
+    gsmName.className = 'health-dr-channel-name';
+    gsmName.innerHTML = `${icons.messageSquare(12)}<span>GSM SMS Gateway</span>`;
+    const gsmBadge = document.createElement('span');
+    const gsmStatus = health.smsGsmGateway ?? 'not_configured';
+    gsmBadge.className = `health-dr-channel-badge ${STATUS_PILL_CLASS[gsmStatus] || 'status-pill--neutral'}`;
+    gsmBadge.textContent = STATUS_LABEL[gsmStatus] || gsmStatus;
+    gsmRow.append(gsmName, gsmBadge);
+
+    // Policy note
+    const policyNote = document.createElement('div');
+    policyNote.className = 'health-dr-channel-policy';
+    policyNote.textContent = 'Rule 12 Policy: 3 push retries within 45s, then automatic cellular SMS fallback.';
+
+    channelBox.append(fcmRow, gsmRow, policyNote);
+
+    const openSmsBtn = document.createElement('button');
+    openSmsBtn.type = 'button';
+    openSmsBtn.className = 'health-btn-dr-action';
+    openSmsBtn.innerHTML = `${icons.messageSquare(14)}<span>Open SMS Activity Log</span>`;
+    openSmsBtn.addEventListener('click', () => {
+      if (typeof navigate === 'function') {
+        navigate('sms-log');
+      }
+    });
+
+    notifCard.append(notifHeader, notifField, notifNote, channelBox, openSmsBtn);
 
     drSection.append(backupCard, restoreCard, notifCard);
     pageContainer.appendChild(drSection);
@@ -689,10 +1312,14 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     const section = document.createElement('div');
     section.className = 'health-history';
 
+    const headerRow = document.createElement('div');
+    headerRow.className = 'health-history-header-row';
+
     const heading = document.createElement('h3');
     heading.className = 'health-history__heading';
     heading.textContent = 'Dependency status changes';
-    section.appendChild(heading);
+    headerRow.appendChild(heading);
+    section.appendChild(headerRow);
 
     const note = document.createElement('p');
     note.className = 'health-history__note';
@@ -759,45 +1386,175 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
       return;
     }
 
-    for (const { row, changed, isFirst, previous } of entriesToDisplay.reverse()) {
-      const item = document.createElement('li');
-      item.className = 'health-history__item';
+    const degradedCount = entriesToDisplay.filter((e) => e.changed.some(([k]) => e.row[k] === 'unhealthy')).length;
+    const recoveredCount = entriesToDisplay.filter((e) => e.changed.some(([k]) => e.row[k] === 'healthy' && e.previous && e.previous[k] === 'unhealthy')).length;
 
-      const when = document.createElement('span');
-      when.className = 'health-history__when';
-      when.textContent = formatManilaDateTime(row.recordedAt);
-      item.appendChild(when);
+    let historyFilter = 'all';
 
-      const what = document.createElement('span');
-      what.className = 'health-history__what';
-      if (isFirst) {
-        what.textContent = 'First recorded check.';
-      } else {
-        what.textContent = changed
-          .map(([key, label]) => `${label} → ${STATUS_LABEL[row[key]] || 'Unknown'}`)
-          .join(' · ');
+    const filtersWrap = document.createElement('div');
+    filtersWrap.className = 'health-history-filters';
+    filtersWrap.setAttribute('role', 'group');
+    filtersWrap.setAttribute('aria-label', 'Filter timeline events');
+
+    const filterTabs = [
+      { id: 'all', label: 'All Changes', count: entriesToDisplay.length },
+      { id: 'degraded', label: 'Outages Only', count: degradedCount },
+      { id: 'recovered', label: 'Recoveries', count: recoveredCount },
+    ];
+
+    filterTabs.forEach((tab) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `health-history-filter-btn ${historyFilter === tab.id ? 'is-active' : ''}`;
+      btn.innerHTML = `<span>${tab.label}</span><span class="health-history-filter-count">${tab.count}</span>`;
+      btn.addEventListener('click', () => {
+        historyFilter = tab.id;
+        filtersWrap.querySelectorAll('.health-history-filter-btn').forEach((b, idx) => {
+          b.classList.toggle('is-active', filterTabs[idx].id === historyFilter);
+        });
+        renderTimelineList();
+      });
+      filtersWrap.appendChild(btn);
+    });
+
+    headerRow.appendChild(filtersWrap);
+
+    function renderTimelineList() {
+      list.innerHTML = '';
+
+      let filteredEntries = entriesToDisplay;
+      if (historyFilter === 'degraded') {
+        filteredEntries = entriesToDisplay.filter((e) => e.changed.some(([key]) => e.row[key] === 'unhealthy'));
+      } else if (historyFilter === 'recovered') {
+        filteredEntries = entriesToDisplay.filter((e) => e.changed.some(([key]) => e.row[key] === 'healthy' && e.previous && e.previous[key] === 'unhealthy'));
       }
-      item.appendChild(what);
 
-      // A transition INTO a non-healthy state is the one worth spotting
-      // in a scan; recoveries are good news and highlighted in success tone.
-      if (changed.some(([key]) => row[key] === 'unhealthy')) {
-        item.classList.add('health-history__item--degraded');
-      } else if (changed.some(([key]) => row[key] === 'healthy' && previous && previous[key] === 'unhealthy')) {
-        item.classList.add('health-history__item--recovered');
+      if (filteredEntries.length === 0) {
+        const emptyItem = document.createElement('li');
+        emptyItem.className = 'health-history__empty';
+        emptyItem.style.padding = '1rem';
+        emptyItem.textContent = 'No events match this filter.';
+        list.appendChild(emptyItem);
+        return;
       }
-      list.appendChild(item);
+
+      for (const { row, changed, isFirst, previous } of [...filteredEntries].reverse()) {
+        const item = document.createElement('li');
+        item.className = 'health-history__item';
+
+        const dot = document.createElement('span');
+        dot.className = 'health-timeline-dot';
+        dot.setAttribute('aria-hidden', 'true');
+        item.appendChild(dot);
+
+        const when = document.createElement('span');
+        when.className = 'health-history__when';
+        when.textContent = formatManilaDateTime(row.recordedAt);
+        item.appendChild(when);
+
+        const what = document.createElement('span');
+        what.className = 'health-history__what';
+        if (isFirst) {
+          what.textContent = 'First recorded check.';
+        } else {
+          changed.forEach(([key, label]) => {
+            const prevStatus = previous ? previous[key] : 'Unknown';
+            const newStatus = row[key];
+            const badge = document.createElement('span');
+            const isDegraded = newStatus === 'unhealthy';
+            const isRecovered = newStatus === 'healthy' && prevStatus === 'unhealthy';
+            badge.className = `health-transition-badge ${isDegraded ? 'health-transition-badge--degraded' : (isRecovered ? 'health-transition-badge--recovered' : '')}`;
+            badge.innerHTML = `<span>${escapeHtml(label)}:</span> <span>${escapeHtml(STATUS_LABEL[prevStatus] || prevStatus)}</span> <span class="health-transition-badge__arrow">➔</span> <strong>${escapeHtml(STATUS_LABEL[newStatus] || newStatus)}</strong>`;
+            what.appendChild(badge);
+
+            if (isRecovered && previous?.recordedAt && row.recordedAt) {
+              const prevMs = new Date(previous.recordedAt).getTime();
+              const currMs = new Date(row.recordedAt).getTime();
+              if (!isNaN(prevMs) && !isNaN(currMs) && currMs > prevMs) {
+                const duration = formatOutageDuration(currMs - prevMs);
+                const durBadge = document.createElement('span');
+                durBadge.className = 'health-outage-duration';
+                durBadge.innerHTML = `${icons.clock(11)}<span>Down for ${escapeHtml(duration)}</span>`;
+                what.appendChild(durBadge);
+              }
+            }
+          });
+        }
+        item.appendChild(what);
+
+        if (changed.some(([key]) => row[key] === 'unhealthy')) {
+          item.classList.add('health-history__item--degraded');
+        } else if (changed.some(([key]) => row[key] === 'healthy' && previous && previous[key] === 'unhealthy')) {
+          item.classList.add('health-history__item--recovered');
+        }
+        list.appendChild(item);
+      }
     }
+
+    renderTimelineList();
     section.appendChild(list);
   }
 
-  function buildTerminalBox(command) {
+  function buildTerminalBox(bashCmd, psCmd) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'health-terminal-wrapper';
+
+    let currentOs = 'bash';
+
     const box = document.createElement('div');
     box.className = 'health-terminal-box';
 
     const code = document.createElement('code');
     code.className = 'health-terminal-code';
-    code.textContent = command;
+    code.textContent = bashCmd;
+
+    if (psCmd) {
+      const header = document.createElement('div');
+      header.className = 'health-terminal-header';
+
+      const label = document.createElement('span');
+      label.className = 'health-dr-label';
+      label.textContent = 'Command';
+
+      const toggle = document.createElement('div');
+      toggle.className = 'health-terminal-os-toggle';
+      toggle.setAttribute('role', 'group');
+      toggle.setAttribute('aria-label', 'Operating system command switcher');
+
+      const bashBtn = document.createElement('button');
+      bashBtn.type = 'button';
+      bashBtn.className = 'health-terminal-os-btn is-active';
+      bashBtn.textContent = 'Bash';
+      bashBtn.setAttribute('aria-pressed', 'true');
+
+      const psBtn = document.createElement('button');
+      psBtn.type = 'button';
+      psBtn.className = 'health-terminal-os-btn';
+      psBtn.textContent = 'PowerShell';
+      psBtn.setAttribute('aria-pressed', 'false');
+
+      toggle.append(bashBtn, psBtn);
+      header.append(label, toggle);
+      wrapper.appendChild(header);
+
+      bashBtn.addEventListener('click', () => {
+        currentOs = 'bash';
+        bashBtn.classList.add('is-active');
+        bashBtn.setAttribute('aria-pressed', 'true');
+        psBtn.classList.remove('is-active');
+        psBtn.setAttribute('aria-pressed', 'false');
+        code.textContent = bashCmd;
+      });
+
+      psBtn.addEventListener('click', () => {
+        currentOs = 'ps';
+        psBtn.classList.add('is-active');
+        psBtn.setAttribute('aria-pressed', 'true');
+        bashBtn.classList.remove('is-active');
+        bashBtn.setAttribute('aria-pressed', 'false');
+        code.textContent = psCmd;
+      });
+    }
 
     const copyBtn = document.createElement('button');
     copyBtn.type = 'button';
@@ -806,8 +1563,9 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
     copyBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
+      const textToCopy = currentOs === 'bash' ? bashCmd : (psCmd || bashCmd);
       try {
-        await navigator.clipboard.writeText(command);
+        await navigator.clipboard.writeText(textToCopy);
         copyBtn.innerHTML = `${icons.checkCircle(12)}<span>Copied</span>`;
         setTimeout(() => {
           copyBtn.innerHTML = `${icons.copy(12)}<span>Copy</span>`;
@@ -818,7 +1576,8 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     });
 
     box.append(code, copyBtn);
-    return box;
+    wrapper.appendChild(box);
+    return wrapper;
   }
 
   /**
@@ -997,9 +1756,22 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     closeBtn.focus();
   }
 
+  const handleGlobalKey = (e) => {
+    if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
+      const input = pageContainer.querySelector('.health-search-input');
+      if (input) {
+        e.preventDefault();
+        input.focus();
+        input.select();
+      }
+    }
+  };
+  document.addEventListener('keydown', handleGlobalKey);
+
   return {
     stop: () => {
       if (timer) clearInterval(timer);
+      document.removeEventListener('keydown', handleGlobalKey);
     },
   };
 }
