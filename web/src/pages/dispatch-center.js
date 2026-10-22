@@ -191,6 +191,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   let mapCardEl = null;
   let mapViewportEl = null;
   let mapSummaryPillEl = null;
+  let filterChipBadges = {};
   let legendCardEl = null;
   let drawerEl = null;
   let activeDrawerIncidentId = null;
@@ -605,10 +606,11 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const fullscreenBtn = document.createElement('button');
       fullscreenBtn.type = 'button';
       fullscreenBtn.className = 'btn-fullscreen';
-      fullscreenBtn.innerHTML = `<span>Full Screen</span>`;
+      fullscreenBtn.title = 'Toggle full screen map view';
+      fullscreenBtn.innerHTML = `${icons.maximize(14)} <span>Full Screen</span>`;
       fullscreenBtn.addEventListener('click', () => {
         const isFull = mapCardEl.classList.toggle('is-fullscreen');
-        fullscreenBtn.innerHTML = `<span>${isFull ? 'Exit Full Screen' : 'Full Screen'}</span>`;
+        fullscreenBtn.innerHTML = `${icons.maximize(14)} <span>${isFull ? 'Exit Full Screen' : 'Full Screen'}</span>`;
         liveMap?.resize();
       });
 
@@ -627,12 +629,26 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       let activeFilterId = 'all';
       const chipButtons = [];
 
+      filterChipBadges = {};
+
       for (const def of filterDefs) {
         const chip = document.createElement('button');
         chip.type = 'button';
         chip.className = `dispatch-map-filter-chip${def.id === activeFilterId ? ' is-active' : ''}`;
-        chip.textContent = def.label;
+        chip.dataset.filter = def.id;
         chip.setAttribute('aria-pressed', String(def.id === activeFilterId));
+
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'dispatch-map-filter-chip__label';
+        labelSpan.textContent = def.label;
+
+        const countBadge = document.createElement('span');
+        countBadge.className = `dispatch-map-filter-chip__count dispatch-map-filter-chip__count--${def.id}`;
+        countBadge.textContent = '0';
+        filterChipBadges[def.id] = countBadge;
+
+        chip.append(labelSpan, countBadge);
+
         chip.addEventListener('click', () => {
           activeFilterId = def.id;
           for (const btn of chipButtons) {
@@ -646,8 +662,12 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         quickFiltersWrap.appendChild(chip);
       }
 
-      mapActions.append(mapSearchInput, labelToggleBtn, fitAllBtn, gisJumpBtn, fullscreenBtn);
-      mapHeader.append(mapTitleWrap, quickFiltersWrap, mapActions);
+      const mapButtonsWrap = document.createElement('div');
+      mapButtonsWrap.className = 'dispatch-map-header__btn-group';
+      mapButtonsWrap.append(labelToggleBtn, fitAllBtn, gisJumpBtn, fullscreenBtn);
+
+      mapActions.append(mapSearchInput, quickFiltersWrap, mapButtonsWrap);
+      mapHeader.append(mapTitleWrap, mapActions);
 
       mapViewportEl = document.createElement('div');
       mapViewportEl.className = 'dispatch-map-viewport';
@@ -925,6 +945,22 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
 
     if (mapSummaryPillEl) {
       mapSummaryPillEl.textContent = `${availMapCount + dispMapCount} Tanods · ${incMapCount} Incidents`;
+    }
+
+    // Update Quick Filter Chip Badges
+    const validMapIncidents = mapIncidents.filter((i) => i.latitude != null && i.longitude != null);
+    const filterBadgeCounts = {
+      all: validMapIncidents.length,
+      critical: validMapIncidents.filter((i) => (i.priority || '').toLowerCase() === 'critical').length,
+      pending: validMapIncidents.filter((i) => i.status === 'pending').length,
+      dispatched: validMapIncidents.filter((i) => i.status === 'dispatched').length,
+    };
+    for (const [key, count] of Object.entries(filterBadgeCounts)) {
+      const badge = filterChipBadges[key];
+      if (badge) {
+        badge.textContent = String(count);
+        badge.classList.toggle('has-items', count > 0);
+      }
     }
 
     renderInteractiveLegend(availMapCount, dispMapCount, incMapCount, sosMapCount);

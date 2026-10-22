@@ -814,6 +814,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   searchClearBtn.addEventListener('click', () => {
     searchInput.value = '';
     searchClearBtn.hidden = true;
+    searchKbd.hidden = false;
     searchInput.focus();
     renderQuickJumpPalette();
   });
@@ -909,6 +910,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
       searchResults.hidden = true;
       searchInput.value = '';
       searchClearBtn.hidden = true;
+      searchKbd.hidden = false;
       addRecentSearch({ label: target.label, page: target.page, param: target.param });
       navigate(target.page, target.param);
     });
@@ -951,6 +953,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
           searchResults.hidden = true;
           searchInput.value = '';
           searchClearBtn.hidden = true;
+          searchKbd.hidden = false;
           navigate(r.page, r.param);
         });
         recList.appendChild(chip);
@@ -1003,7 +1006,9 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   let searchDebounceHandle = null;
   searchInput.addEventListener('input', () => {
     clearTimeout(searchDebounceHandle);
-    searchClearBtn.hidden = searchInput.value.length === 0;
+    const hasText = searchInput.value.length > 0;
+    searchClearBtn.hidden = !hasText;
+    searchKbd.hidden = hasText;
     const q = searchInput.value.trim();
     if (q.length < 2) {
       searchResults.hidden = true;
@@ -1088,6 +1093,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
           searchResults.hidden = true;
           searchInput.value = '';
           searchClearBtn.hidden = true;
+          searchKbd.hidden = false;
           addRecentSearch({ label: `#${item.incidentId} — ${typeLabel}`, page: 'incident-detail', param: item.incidentId });
           // incident-detail takes the id and is the app's only per-incident
           // detail view, so a search result opens the incident itself.

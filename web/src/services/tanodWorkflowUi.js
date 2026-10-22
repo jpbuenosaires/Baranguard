@@ -335,6 +335,9 @@ export function signatureBlockHtml(caption, name, title) {
 /** Fixed pursuant-to line printed under the SSZ annex titles (text taken from the user's own forms). */
 export const SSZ_PURSUANT_HTML = '<b>[Pursuant to</b> DILG Memorandum Circular No. <u>2026-037</u> dated <u>June 25, 2026</u> - SAFER SCHOOL ZONES (SSZ) UNDER THE SAFER CITIES AND SAFER COMMUNITIES INITIATIVE<b>]</b>';
 
+/** DILG MC 2026-037's own annex layouts were not readable, so B, C-1 and D follow the barangay's forms (Rule 88). */
+export const SSZ_DRAFT_LAYOUT_NOTICE = 'Draft layout: this annex follows the barangay\'s own form. Check it against DILG MC 2026-037 before filing.';
+
 /** Print-preview opener that also switches the sheet to landscape for wide annexes. */
 export function applyPrintOrientation(preview, orientation) {
   if (orientation === 'landscape') {

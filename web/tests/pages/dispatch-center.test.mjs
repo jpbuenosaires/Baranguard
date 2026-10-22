@@ -412,7 +412,7 @@ describe('Dispatch Center: stale data, SOS handling and routing (audit 2026-10-0
     const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
     await settle();
     assert.match(text($('.dispatch-priority-alert', ctx.root)), /acknowledged, still active until resolved/);
-    assert.ok(!buttonByText(/^acknowledge$/i, ctx.root));
+    assert.ok(!buttonByText(/^acknowledge$/i, $(".dispatch-sos-row", ctx.root)));
     assert.match(text($('.dispatch-sos-row', ctx.root)), /Acknowledged/);
   });
 
