@@ -37,7 +37,7 @@ function localIdForServer(serverDispatchId: number): string {
  * fell out of the default query window stays in the cache as history
  * rather than vanishing from a Tanod's own device.
  */
-export async function cacheDispatchesFromServer(entries: DispatchEntry[]): Promise<void> {
+async function writeDispatchesToCache(entries: DispatchEntry[]): Promise<void> {
   if (entries.length === 0) return;
   const db = await openLocalDatabase();
   const now = new Date();
@@ -100,6 +100,20 @@ export async function cacheDispatchesFromServer(entries: DispatchEntry[]): Promi
   }
   // GET /dispatch carries no display_id: fetch it in the background.
   void resolveMissingIncidentCodes();
+}
+
+// Home, Dispatches, Profile, the offer cards and the sync scheduler each
+// refresh this cache on their own, often within the same second. Every write
+// opens its own transaction on the one connection, so two overlapping calls
+// made the second begin fail and its rollback undo the first: nothing was
+// cached and "Recent history" stayed empty (2026-10-22, Realme RMX3760,
+// tanod.delacruz). Run the writes one at a time.
+let dispatchCacheQueue: Promise<unknown> = Promise.resolve();
+
+export function cacheDispatchesFromServer(entries: DispatchEntry[]): Promise<void> {
+  const run = dispatchCacheQueue.then(() => writeDispatchesToCache(entries));
+  dispatchCacheQueue = run.catch(() => undefined);
+  return run;
 }
 
 /** Non-terminal cached assignments, newest first — M5's list. */
