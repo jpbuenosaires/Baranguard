@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Text changes for Google Docs</title>
+<style>
+body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;line-height:1.4;margin:16px;max-width:1100px}
+h1{font-size:16pt} h2{font-size:12.5pt;margin-top:22px}
+table{border-collapse:collapse;width:100%}
+th,td{border:1px solid #000;padding:6px 8px;vertical-align:top;text-align:left}
+th{background:#e8e8e8}
+td.n{width:36px;text-align:center}
+</style></head><body>
+<h1>Text changes to copy into Google Docs</h1>
+<p>Each row is a find-and-replace. In Google Docs press Ctrl+H, paste the <b>Original</b> text in &ldquo;Find&rdquo; and the <b>Replacement</b> in &ldquo;Replace with&rdquo;. If the original does not match exactly, use Ctrl+F on a few key words. Edit the replacement as you like.</p>
+
+<h2>A. UAT forms (BG-UAT-02-A to D, and 04-uat-signoff): the tester marks Pass or Fail</h2>
+<p>Standard software UAT practice: the person running the test case records the result; the facilitator observes, times and logs defects. Applies to all four role forms in file 06 (the same text repeats in each).</p>
+<table><thead><tr><th class="n">#</th><th>Where</th><th>Original</th><th>Replacement</th></tr></thead><tbody>
+<tr><td class="n">1</td><td>Purpose of this form</td>
+<td>You do the task, the facilitator marks Pass or Fail, and any problem is written in the defect log.</td>
+<td>You do the task and mark Pass or Fail. The facilitator watches, times the task and logs any defect.</td></tr>
+<tr><td class="n">2</td><td>Ground rules</td>
+<td>The facilitator marks Pass only when the result on the screen matches &ldquo;What should happen&rdquo;. If not, mark Fail, write what happened in Remarks and give a Defect ID.</td>
+<td>The tester marks Pass only when the result on the screen matches &ldquo;What should happen&rdquo;. If not, the tester marks Fail and says what happened; the facilitator writes it in Remarks and gives a Defect ID. The facilitator never changes the tester&rsquo;s mark; if the facilitator saw something different, it is written in Remarks.</td></tr>
+<tr><td class="n">3</td><td>Ground rules (Filipino line)</td>
+<td>Ang tester mismo ang gagawa ng bawat hakbang. Manonood at magsusulat lang ang facilitator.</td>
+<td>Ang tester mismo ang gagawa ng bawat hakbang at siya ang magmamarka ng Pass o Fail. Manonood, magsusulat at maglalagay ng oras lang ang facilitator.</td></tr>
+<tr><td class="n">4</td><td>How to Mark the Tasks: Pass</td>
+<td>Pass: the screen shows what should happen. Tick the Pass circle.</td>
+<td>Pass: the screen shows what should happen. The tester ticks the Pass circle.</td></tr>
+<tr><td class="n">5</td><td>How to Mark the Tasks: Fail</td>
+<td>Fail: the result is different, the step cannot be done, or an error shows. Tick the Fail circle, write what happened in Remarks and give a Defect ID (also written in the defect log).</td>
+<td>Fail: the result is different, the step cannot be done, or an error shows. The tester ticks the Fail circle; the facilitator writes what happened in Remarks and gives a Defect ID (also written in the defect log).</td></tr>
+</tbody></table>
+
+<h2>B. Evaluation forms: wrong statement SE-1 (security)</h2>
+<p>Why: since the owner&rsquo;s 2026-10-13 decision the Chief Tanod (Admin) can also read the narrative on the web, and UAT task A-N1 already says so. Applies to the Group D evaluation form (06 and 05).</p>
+<table><thead><tr><th class="n">#</th><th>Where</th><th>Original</th><th>Replacement</th></tr></thead><tbody>
+<tr><td class="n">6</td><td>SE-1</td>
+<td>Only the Secretary can read the private incident story (narrative).</td>
+<td>Only the Secretary and the Chief Tanod (on the web) can read the private incident story (narrative). The phone console and the Punong Barangay cannot.</td></tr>
+</tbody></table>
+
+<h2>C. UAT task S-05 (Secretary): message text did not exist in the system</h2>
+<p>Why: the dialog asks for the incident number (for example INC-2026-048) and refuses an empty or unknown number. It never showed &ldquo;Enter a valid incident id.&rdquo;. Applies to 06 (Secretary form) and 04.</p>
+<table><thead><tr><th class="n">#</th><th>Where</th><th>Original (What should happen)</th><th>Replacement</th></tr></thead><tbody>
+<tr><td class="n">7</td><td>S-05</td>
+<td>The dialog does not accept it (&ldquo;Enter a valid incident id.&rdquo;); a linked incident is required.</td>
+<td>The dialog does not accept it. It asks for the incident number (for example INC-2026-048) and refuses an empty or unknown number; a linked incident is required.</td></tr>
+</tbody></table>
+
+<h2>D. For information: S-09 (no form change needed)</h2>
+<p>Task S-09 expects a &ldquo;Draft layout&rdquo; notice on the Annex B, C-1 and D page and printouts (Rule 88). The system did not show it, so the <b>system was changed</b>, not the form. Text now shown on the page and at the top of each printout:</p>
+<table><tbody><tr><td>Draft layout: this annex follows the barangay&rsquo;s own form. Check it against DILG MC 2026-037 before filing.</td></tr></tbody></table>
+<p>If you reword this notice in your manuscript, tell me and I will make the screen match.</p>
+</body></html>
