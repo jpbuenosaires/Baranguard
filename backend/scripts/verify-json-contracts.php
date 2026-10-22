@@ -167,7 +167,7 @@ function record(string $label, bool $ok, array $reasons): void
 // --- Log in as each role that can reach protected GET routes ---------------
 $adminToken = login($baseUrl, 'admin.dao', 'Demo@2026');
 $secretaryToken = login($baseUrl, 'secretary.dao', 'Demo@2026');
-$pbToken = login($baseUrl, 'kapitan.dao', 'Demo@2026');
+$pbToken = login($baseUrl, 'punong.dao', 'Demo@2026');
 
 if ($adminToken === null || $secretaryToken === null || $pbToken === null) {
     fwrite(STDERR, "Could not log in as one or more seeded roles — aborting.\n");

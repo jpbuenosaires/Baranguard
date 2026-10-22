@@ -84,7 +84,7 @@ final class DutyStatusController
             if (!ctype_digit($barangayIdParam)) {
                 throw new ApiError(400, 'VALIDATION_ERROR', 'barangay_id must be numeric.');
             }
-            AuthMiddleware::requireRole($identity, ['admin', 'punong_barangay']);
+            AuthMiddleware::requireRole($identity, ['admin', 'secretary', 'punong_barangay']);
             AuthMiddleware::requireTenant($identity, (int) $barangayIdParam);
             self::currentByBarangay($pdo, $identity);
             return;

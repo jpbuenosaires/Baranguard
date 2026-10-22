@@ -34,10 +34,15 @@ if (PHP_SAPI !== 'cli') {
     exit(1);
 }
 
-$opts = getopt('', ['db::', 'seed::', 'days::', 'profile::']);
+$opts = getopt('', ['db::', 'seed::', 'days::', 'profile::', 'incidents::', 'since::']);
 $dbName = (string) ($opts['db'] ?? 'baranguard_ch4');
 $seedNo = (int) ($opts['seed'] ?? 2026);
 $DAYS = max(7, min(90, (int) ($opts['days'] ?? 30)));
+// --since=YYYY-MM-DD makes the window start on that date (overrides --days); --incidents=N fixes the incident total.
+if (isset($opts['since'])) {
+    $DAYS = max(7, min(90, (int) (new DateTimeImmutable('today'))->diff(new DateTimeImmutable((string) $opts['since']))->days + 1));
+}
+$INCIDENTS = isset($opts['incidents']) ? max(30, (int) $opts['incidents']) : null;
 // Profile "uat" (database baranguard_uat) is the final-testing dataset: the same
 // simulated Dao history, plus fixtures arranged so every scenario in the UAT
 // sign-off form (docs/chapter4-instruments/04-uat-signoff.html) has the data it
@@ -117,33 +122,11 @@ function phtMoment(DateTimeImmutable $base, int $daysAgo, int $h, int $m, int $s
 }
 
 // ---- Real-geography data, lifted from the earlier Dao seed ------------------
-$LOCATIONS = [
-    ['Purok 1, near the water station', 12.9235, 123.6710],
-    ['Purok 1, sari-sari store along the seawall road', 12.9201, 123.6708],
-    ['Purok 2, backyard pens behind the chapel', 12.9231, 123.6718],
-    ['Purok 2, corner house near the sari-sari store', 12.9228, 123.6715],
-    ['Chapel courtyard, Purok 2', 12.9230, 123.6720],
-    ['Purok 3, along the barangay road', 12.9219, 123.6701],
-    ['Purok 3, beside the covered basketball court', 12.9215, 123.6733],
-    ['Purok 4, near the barangay road interior', 12.9217, 123.6740],
-    ['Purok 4, riverside', 12.9212, 123.6750],
-    ['Purok 5, riverside path near the small bridge', 12.9226, 123.6742],
-    ['Purok 5, second house from the corner', 12.9235, 123.6745],
-    ['Purok 6, near the creek crossing', 12.9202, 123.6728],
-    ['Purok 6, near the chapel', 12.9210, 123.6722],
-    ['National road, Dao junction', 12.9240, 123.6729],
-    ['National road, near the waiting shed', 12.9247, 123.6719],
-    ['National road, near the barangay boundary (Marifosque side)', 12.9238, 123.6712],
-    ['National road, near the rice fields', 12.9243, 123.6733],
-    ['Barangay hall, Dao proper', 12.9223, 123.6725],
-    ['Barangay hall perimeter wall', 12.9224, 123.6726],
-    ['Near the elementary school gate', 12.9208, 123.6716],
-    ['Road in front of the elementary school', 12.9206, 123.6714],
-    ['Waiting shed, national road', 12.9244, 123.6708],
-    ['Seawall near the Fishery Brokers\' Center', 12.9198, 123.6702],
-    ['Fish landing area beside the seawall', 12.9195, 123.6705],
-    ['Backyard near the rice paddies, boundary with Santa Fe', 12.9250, 123.6738],
-];
+// Real OSM road vertices clipped to Dao's official polygon (fixtures/dao-road-points.json), plus two landmarks.
+$LOCATIONS = [['Barangay hall, Dao proper', 12.92200, 123.67449], ['Near the elementary school gate', 12.92262, 123.67314]];
+foreach (json_decode((string) file_get_contents(dirname(__DIR__) . '/fixtures/dao-road-points.json'), true) as [$rlat, $rlng, $rlabel]) {
+    $LOCATIONS[] = [$rlabel . ', Dao', $rlat, $rlng];
+}
 
 $NAMES = [
     'Marites Obligar', 'Ronaldo Fajardo', 'Cristina Belga', 'Danilo Escobal', 'Perla Guinto',
@@ -445,7 +428,7 @@ try {
     }
 
     // ------------------------------------------------------------- incidents
-    $N = (int) round($DAYS * 5.3);
+    $N = $INCIDENTS ?? (int) round($DAYS * 5.3);
     // UAT: a deeper pending queue (every scenario that dispatches, broadcasts or reopens consumes one) and
     // five dispatched incidents (2 live + 3 whose dispatches are all completed, awaiting the Admin's resolve).
     $statusPlan = array_merge(array_fill(0, $UAT ? 12 : 4, 'pending'), array_fill(0, 5, 'dispatched'), array_fill(0, 3, 'cancelled'),
@@ -470,7 +453,7 @@ try {
         }
         [$locDesc, $lat0, $lng0] = pick($LOCATIONS);
         $specs[] = ['status' => $st, 'type' => $type, 'created' => $created, 'loc' => $locDesc,
-            'lat' => round($lat0 + mt_rand(-15, 15) / 100000, 7), 'lng' => round($lng0 + mt_rand(-15, 15) / 100000, 7)];
+            'lat' => $lat0, 'lng' => $lng0]; // exact road vertex: jitter could leave Dao's boundary
     }
     usort($specs, fn($a, $b) => $a['created'] <=> $b['created']);
 
