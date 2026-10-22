@@ -1,10 +1,8 @@
 @echo off
-title Baranguard - Reset UAT / final-evaluation data
-REM Rebuilds the simulated UAT database (baranguard_uiseed, Barangay Dao only) and points the
-REM app at it. Run it before EACH tester's session: the scenarios change the data
-REM (dispatches, resolved incidents, submitted reports), so every tester starts from the same state.
-REM Called by full path because this machine's PATH is missing the PowerShell folder.
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0backend\scripts\reset-ch4.ps1" -Profile uat -TargetDb uiseed -PointAppTo uat
+title Baranguard - Reset UAT / demo / eval data
+REM Rebuilds baranguard_uiseed (simulated Dao data, 67 incidents from Sep 1 to today). Takes 1-2 minutes.
+REM Run it before EACH tester's session: the scenarios change the data.
+"C:\Program Files\Git\bin\bash.exe" "%~dp0backend\scripts\reset-uiseed.sh"
 echo.
-echo reset-ch4.ps1 exited with code %ERRORLEVEL%.
+echo Reset exited with code %ERRORLEVEL%.
 pause
