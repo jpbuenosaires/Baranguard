@@ -1119,3 +1119,29 @@
 .incident-type-cell {
   font-weight: 500;
 }
+
+/* Weekly digest manifest (Coverage / Last generated / Status). */
+.report-manifest {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--spacing-sm-md);
+}
+.report-manifest-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.report-manifest-tile__label {
+  font-size: var(--font-size-label);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.report-manifest-tile__value {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+.report-manifest-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); }

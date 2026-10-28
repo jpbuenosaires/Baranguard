@@ -509,9 +509,9 @@
   align-items: center;
   justify-content: center;
   padding: 1px 5px;
-  font-size: 0.625rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
-  font-family: monospace;
+  font-family: var(--font-mono);
   color: var(--color-text-tertiary);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
@@ -909,7 +909,7 @@
 
 .health-matrix-table th {
   padding: 0.625rem 0.875rem;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1011,7 +1011,7 @@
   display: inline-flex;
   padding: 2px 7px;
   border-radius: var(--radius-sm, 4px);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   background: color-mix(in srgb, var(--color-text-tertiary) 12%, transparent);
   color: var(--color-text-secondary);
@@ -1034,8 +1034,8 @@
 }
 
 .health-matrix-probe-code {
-  font-family: monospace;
-  font-size: 0.6875rem;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
   color: var(--color-text-tertiary);
 }
 
@@ -1066,7 +1066,7 @@
   align-items: center;
   gap: 0.25rem;
   padding: 0.25rem 0.5rem;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   border-radius: var(--radius-sm, 4px);
   border: 1px solid var(--color-border);
@@ -1288,7 +1288,7 @@
   align-items: center;
   gap: 3px;
   font-weight: 600;
-  font-size: 0.625rem;
+  font-size: var(--font-size-label);
   padding: 1px 6px;
   border-radius: var(--radius-sm, 4px);
   text-transform: uppercase;
@@ -1611,7 +1611,7 @@
 }
 
 .health-history-filter-count {
-  font-size: 0.625rem;
+  font-size: var(--font-size-label);
   padding: 0 4px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--color-text-tertiary) 15%, transparent);

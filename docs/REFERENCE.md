@@ -240,6 +240,7 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   drop is 0041's removals). **Do not rebuild without an explicit new decision.**
 - **0044** (2026-10-17, NOT applied to any real DB) `incident.report_channel` gains `phone_call` and `facebook` (additive enum widening; down folds them into `other`). Same day, no migration: raw narrative ceiling 90 -> 365 days, the five new-table retention rules set to a provisional 365 days, tanod availability made optional (Rule 83), Safer School Zones annexes marked draft layout (Rule 88). See `WORKFLOWS_AND_RULES.md` rules 81-88.
 - **0045** (2026-10-17, applied to `baranguard_uiseed` only) `incident_referral.referred_to` gains `lupon_kp`. Same day, no other migration: the Secretary is the back-up dispatcher (Rule 89), the Chief Tanod phone console can log an incident (`POST /incidents` joins `ADMIN_DEVICE_ALLOWLIST`, local schema v10 `admin_incident_outbox`, Rule 90), one workstation per barangay (Rule 92). See `WORKFLOWS_AND_RULES.md` Part 7 and `docs/POWER_CUT_PROCEDURE.md`.
+- **2026-10-28 mobile and messaging audit fixes** (no migration; working tree, verified on disposable DBs / vitest / jsdom only, NOT device-verified; Rules 97-106 in `WORKFLOWS_AND_RULES.md` Part 8; findings in `docs/audit-2026-10-28/`). SOS control on every Tanod tab (hold 800 ms), GPS wait at most 2 s, Silent SOS option (default silent). SOS repeats every 2 min while `active` (Secretary and Punong Barangay added from round 3, max 5). FCM is data-only for `sos`, `priority_alert`, `dispatch`, `dispatch_offer`. `POST /sms/broadcast` answers `{recipient_count, queued}` (queued, 10-min duplicate guard, 100 cap). SMS statuses: `queued` / `pending` ("Sent, not confirmed") / `sent` ("Sent") / `failed`; never "Delivered". Inbound human texts stored through `POST /internal/sms/inbound-text` (7 internal handlers) under `GATEWAY_BARANGAY_ID`; STOP/TIGIL/UNSUBSCRIBE opts out. `server_time` added to `GET /dispatch-offers`. Scheduled tasks `BaranguardNotificationWorker` and `BaranguardGsmIngest`. Phone: logout cleanup and per-user local data, `allowBackup` off, cleartext only in debug builds, My Shifts offline cache, critical alert queue. Open owner decisions: names/coordinates in the SOS SMS, SOS recipients beyond the Admin (Rule 89), keystore for the native service token.
 - **0040** (2026-10-12, NOT applied to any real DB) report and roster
   notifications: `notification.notification_type` gains `report_update` and
   `roster_published`; `notification.accomplishment_report_id` (FK, SET NULL).
@@ -267,7 +268,7 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   fall back to on-duty tanods whose availability covers now when no rostered
   tanod qualifies (fixed `OfferService::FALLBACK_OVERRIDE_REASON`, audit
   `fallback`/`offer_fallback` flags); (6) the Admin device session may
-  `PATCH /tanod-sos/:id/resolve` (signed write; six device writes now).
+  `PATCH /tanod-sos/:id/resolve` (signed write; the Admin device session now has seven signed writes, see the Rule 12 amendment).
   **Availability is fixed by the tanod:** `PATCH /availability/:id` answers
   410 `AVAILABILITY_NOT_REVIEWED`, a tanod may change any period at any time,
   and shift create/edit/swap approval refuse with 422 `OUTSIDE_AVAILABILITY`
@@ -276,7 +277,7 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
 - **Rule 12 amendment:** an Admin login with a well-formed `X-Device-Id` gets a
   device session (24h sliding, 7-day cap) limited to
   `SessionPolicy::ADMIN_DEVICE_ALLOWLIST` (anything else 403
-  `DEVICE_SESSION_SCOPE`); five writes require the device header/signature. The
+  `DEVICE_SESSION_SCOPE`); seven writes require the device header/signature (SOS acknowledge, SOS resolve, `POST /dispatch`, dispatch cancel, `POST /incidents`, `POST /dispatch-offers`, dispatch-offer cancel; counted from `ADMIN_DEVICE_ALLOWLIST` 2026-10-28). The
   mobile app serves the Chief Tanod (Admin) with a 4-tab console: SOS
   acknowledge and resolve (owner decision 2026-10-14, matching the 2026-10-12 backend change and Rule 72; Resolve is offered only after Acknowledge), dispatch assign/cancel/offers, read-only incidents.
   `GET /users/directory?purpose=tanod|roster|signer` (admin|secretary) returns `{user_id, full_name,
@@ -291,7 +292,7 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   Dispatch board; paper panels; related-incident card; Secretary scheduler.
   Verification counts 2026-10-07: `verify-web-wiring.mjs` 776, `web/tests` 609,
   `verify-wave1a-dispatch-roster.sh` 145, `verify-incident-intake.sh` 124,
-  `verify-paper-approvals.sh` 271, `verify-dispatch-offers.sh` 184,
+  `verify-paper-approvals.sh` 271, `verify-dispatch-offers.sh` 193 (re-run 2026-10-08; 184 was the first count),
   `verify-retention-new-tables.sh` 131,
   `verify-sprint7-retention.sh` 89, `verify-chief-tanod-mobile.sh` 174.
 
@@ -449,7 +450,7 @@ separate from `raw_narrative`, which stays on the one-year purge);
 `offline_queue.payload_type` gained `referral`, `availability`,
 `accomplishment_entry`, `school_checkin`.
 
-**Migrations 0001–0033.** 0001–0026 are applied to both real DBs
+**Migrations 0001–0045 (45 migration files, counted in `backend/migrations` 2026-10-28; the rest of this paragraph was written at 0033 and describes 0001-0033).** 0001–0026 are applied to both real DBs
 (`baranguard`, `baranguard_uiseed`); **0029 (drops the blotter and AI
 tables) and 0030–0033 (tanod workflow) are written and verified on
 disposable DBs only — NONE of them has been run against either real DB**
@@ -490,7 +491,7 @@ an incident is an ordered cascade (`RetentionService::purgeOneIncident`).
 
 ---
 
-## 5. Endpoints (103 live `/api/v1` routes across 27 route files, all built; measured 2026-10-13)
+## 5. Endpoints (103 live `/api/v1` routes across 27 route files, all built; re-measured 2026-10-28 with `count-routes.php`: 103 / 27)
 
 Read the route tables in `backend/routes/*.php` for the authoritative
 list; controllers carry the per-endpoint contract in their class docs.
@@ -652,7 +653,7 @@ server-side, own-barangay scope only)
 **Settings** `GET/PATCH /system-settings` (Admin-only; three `general.*`
 keys + `sos_fallback.backup_contact_number` — see §7 W21;
 `sms_gateway.api_key`/`sender_name` REMOVED 2026-09-23 with Semaphore)
-**Internal only** `/internal/sms/*` (6 handlers, loopback + token gated,
+**Internal only** `/internal/sms/*` (7 handlers, incl. `inbound-text` since 2026-10-28, loopback + token gated,
 `public/internal.php`)
 
 **Response envelope:** success = the object; error =
@@ -860,7 +861,7 @@ controls that do nothing.
   uppercase via CSS while the DOM string isn't; caused false failures.
 - **Windows Firewall silently drops inbound** to a dev port unless a
   rule allows it. **Android blocks cleartext HTTP** (API 28+) — needs
-  `network_security_config.xml`. **Capacitor's `https://localhost`
+  `network_security_config.xml` (since 2026-10-28 the cleartext allowance is in the debug config only; a release APK blocks it). **Capacitor's `https://localhost`
   fetching a plain `http://` backend is a SEPARATE mixed-content block**
   (`server.androidScheme:'http'` fixes it; symptom is an opaque `Failed
   to fetch`). `ACCESS_FINE_LOCATION`/`COARSE` must be declared in the
@@ -889,7 +890,9 @@ controls that do nothing.
 
 ---
 
-## 9. Verification suites (counts measured 2026-10-01 after the tanod-workflow build; disposable DBs only)
+## 9. Verification suites (table counts measured 2026-10-01 after the tanod-workflow build; disposable DBs only)
+
+**Re-measured 2026-10-28 (docs reconciliation, run on the working tree):** `php backend/scripts/count-routes.php` 103 routes / 27 files; 45 migrations (0001-0045); 39 `backend/scripts/verify-*.sh` plus 5 `verify-*.php/.mjs` there (44), 5 in `mobile/scripts`, 1 in `web/scripts`; `node web/scripts/verify-web-wiring.mjs` 938 passed, 0 failed; `web/tests` `npm test` 736 tests, 735 passed and 1 failed in the known order-sensitive map test 'SOS markers are never clustered' (a second run showed 734/2, same test family; it passes alone); mobile `npx vitest run` 30 files, 193 tests, all passed; mobile `verify-local-schema.mjs` 266 passed, 0 failed. The older per-suite figures in the table below are historical and were not all re-run. Nothing here is device-verified.
 
 | Script | Checks |
 |---|---|

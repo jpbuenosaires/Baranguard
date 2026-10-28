@@ -1633,13 +1633,13 @@ svg.is-spinning {
   @bottom-left {
     content: var(--print-stamp, '');
     font-size: 8pt;
-    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    font-family: var(--font-base);
     color: #64748b;
   }
   @bottom-right {
     content: "Page " counter(page) " of " counter(pages);
     font-size: 8pt;
-    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    font-family: var(--font-base);
     color: #64748b;
   }
 }
@@ -1650,13 +1650,13 @@ svg.is-spinning {
   @bottom-left {
     content: var(--print-stamp, '');
     font-size: 8pt;
-    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    font-family: var(--font-base);
     color: #64748b;
   }
   @bottom-right {
     content: "Page " counter(page) " of " counter(pages);
     font-size: 8pt;
-    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    font-family: var(--font-base);
     color: #64748b;
   }
 }
@@ -1667,13 +1667,13 @@ svg.is-spinning {
   @bottom-left {
     content: var(--print-stamp, '');
     font-size: 8pt;
-    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    font-family: var(--font-base);
     color: #64748b;
   }
   @bottom-right {
     content: "Page " counter(page) " of " counter(pages);
     font-size: 8pt;
-    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    font-family: var(--font-base);
     color: #64748b;
   }
 }
@@ -1684,13 +1684,13 @@ svg.is-spinning {
   @bottom-left {
     content: var(--print-stamp, '');
     font-size: 8pt;
-    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    font-family: var(--font-base);
     color: #64748b;
   }
   @bottom-right {
     content: "Page " counter(page) " of " counter(pages);
     font-size: 8pt;
-    font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+    font-family: var(--font-base);
     color: #64748b;
   }
 }
@@ -1714,7 +1714,7 @@ svg.is-spinning {
   box-sizing: border-box;
   background: #ffffff !important;
   color: #0f172a !important;
-  font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  font-family: var(--font-base);
   font-size: 9pt;
   line-height: 1.4;
   margin: 0 auto var(--spacing-lg) auto;
@@ -1793,7 +1793,7 @@ svg.is-spinning {
 .print-sheet__doc-title,
 .print-sheet__title {
   font-size: 11pt;
-  font-weight: 800;
+  font-weight: 700;
   color: #0f172a;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1849,7 +1849,8 @@ svg.is-spinning {
 
 .print-sheet__meta-val--mono,
 .print-sheet__mono {
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-base);
+  font-variant-numeric: tabular-nums;
   font-weight: 700;
 }
 
@@ -1872,7 +1873,7 @@ svg.is-spinning {
 
 .print-sheet__kpi-val {
   font-size: 13pt;
-  font-weight: 800;
+  font-weight: 700;
   color: #0f172a;
   margin: 1mm 0 0.5mm 0;
   line-height: 1.1;
@@ -2291,3 +2292,6 @@ svg.is-spinning {
 /* Browsers default kbd/samp/code/pre to monospace; keep one typeface (the code spots set --font-mono themselves). */
 kbd, samp, code, pre { font-family: inherit; }
 
+
+.stat-card-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.text-secondary { color: var(--color-text-secondary); }

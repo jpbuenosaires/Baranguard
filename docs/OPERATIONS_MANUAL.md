@@ -86,8 +86,10 @@ powershell -ExecutionPolicy Bypass -File backend\scripts\install-scheduled-backu
 | `BaranguardRestoreDrill` | weekly Sunday 03:00 | `scheduled-restore-drill.ps1` |
 | `BaranguardDispatchOfferSweeper` | every minute | `scheduled-dispatch-offer-sweep.ps1` (night dispatch offers; without it offers never time out or escalate) |
 | `BaranguardPbDigest` | weekly Monday 06:00 | `scheduled-pb-digest.ps1` |
+| `BaranguardNotificationWorker` | every minute | `scheduled-notification-worker.ps1` (push ack timeouts, queued SMS broadcasts, repeat of an unacknowledged SOS; without it broadcasts stay `Waiting to send` and an SOS is not repeated) |
+| `BaranguardGsmIngest` | at logon | `scheduled-gsm-ingest.ps1` (inbound SMS daemon: SOS-by-SMS envelopes and human texts; holds a lock so only one runs) |
 
-The tasks run only while the user is logged on. Check them in Task Scheduler or with `Get-ScheduledTask -TaskName Baranguard*`. Logs: `backend\backups\scheduled-logs\`. The sweeper logs only when it has output. If an old `BaranguardAiWorker` task exists, remove it: `Unregister-ScheduledTask -TaskName BaranguardAiWorker -Confirm:$false`.
+After pulling the 2026-10-28 code, run the installer again so the two new tasks exist. The tasks run only while the user is logged on. Check them in Task Scheduler or with `Get-ScheduledTask -TaskName Baranguard*`. Logs: `backend\backups\scheduled-logs\`. The sweeper logs only when it has output. If an old `BaranguardAiWorker` task exists, remove it: `Unregister-ScheduledTask -TaskName BaranguardAiWorker -Confirm:$false`.
 
 ## 7. Cloudflare tunnel and the gateway phone
 
@@ -101,6 +103,10 @@ php scripts/gsm-ingest-daemon.php --status    # state and reachability
 php scripts/gsm-ingest-daemon.php --once      # one poll
 php scripts/gsm-ingest-daemon.php --daemon    # keep polling (Ctrl-C to stop)
 ```
+
+`start-baranguard.ps1` also starts the inbound daemon. Set `GATEWAY_BARANGAY_ID` in `backend/.env` (1 Dao, 2 Binanuahan, 3 Marifosque, 4 Banuyo) so inbound texts are filed under the right barangay; it may stay blank only when the database holds a single barangay (Rule 92). Inbound human texts are stored and appear in SMS Monitor, Conversations. A text of STOP, TIGIL or UNSUBSCRIBE opts the sender out of the advisory list.
+
+SMS status in SMS Monitor: **Waiting to send** (queued), **Sent, not confirmed** (the gateway phone gave no answer in time; the text may or may not have gone out, so do not simply re-send), **Sent** (the SIM accepted it), **Failed**. The system never says "Delivered": no carrier delivery report is collected.
 
 Keep the phone charged, with load on the SIM and signal. If it is down, SMS attempts are recorded as failed (not silently dropped). SOS from a tanod phone has its own SMS fallback that does not depend on the workstation.
 

@@ -83,7 +83,7 @@ At night (**18:00 up to 06:00 Manila time**) every new pending incident automati
 
 ## 5. SOS alerts
 
-An SOS alerts every on-duty tanod and every active Admin account. On the web a bar shows at the top of every page and the Dispatch Center has an SOS panel.
+An SOS alerts every on-duty tanod and every active Admin account. On the web a bar shows at the top of every page and the Dispatch Center has an SOS panel. **If nobody acknowledges it, it is sent again every 2 minutes** (up to 5 times). From the third send the Secretary and the Punong Barangay are texted as well, because they have no phone app. Acknowledge as soon as you have seen it. A tanod can raise an SOS from any tab of the phone app by holding the SOS button for about a second; by default it is a silent SOS (vibration, no siren).
 
 For each SOS you see a code, the tanod's name and a location note:
 - "Live position from the SOS."
@@ -202,7 +202,7 @@ Shows your name, "Workstation: Reachable / Not reachable", the device, a privacy
 - **Accomplishment Reports**: **Preview & print** (A4) a submitted report, or **Return to tanod** with a reason. See Secretary manual section 7.
 - **Referral Log**, **Safer School Zones**: see the Secretary manual.
 - **Analytics**: tabs Reports and Heatmap. Reports can be printed, exported to CSV or downloaded as PDF. They say "system-generated, not signed". Heatmap shows past patterns only.
-- **SMS Monitor**: activity log, conversations, broadcast and direct message. Broadcasts reach your own barangay only.
+- **SMS Monitor**: activity log, conversations, broadcast and direct message. Broadcasts reach your own barangay only. Texts people send to the gateway number now appear in **Conversations** (the list refreshes by itself). A text of STOP, TIGIL or UNSUBSCRIBE removes that number from the advisory list. A broadcast is queued and sent within a minute or so; the same text to the same audience within 10 minutes is refused as a duplicate. Message status reads **Waiting to send**, **Sent, not confirmed**, **Sent** or **Failed**. It never says Delivered, because the system gets no delivery report.
 - **Audit Log**: permanent record of actions. It cannot be edited.
 - **Service Health**: whether database, routing, SMS gateway, push and tunnel work. Grey "configured" means set up but not tested.
 - **Map Packages**: offline maps. Publishing sends the map to all tanod phones.

@@ -1406,7 +1406,7 @@
     @bottom-right {
       content: "Page " counter(page) " of " counter(pages);
       font-size: 8pt;
-      font-family: var(--font-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+      font-family: var(--font-base);
       color: #64748b;
     }
   }
@@ -1554,7 +1554,7 @@
 
   .incident-print-header__barangay {
     font-size: 13pt;
-    font-weight: 800;
+    font-weight: 700;
     color: #0f172a;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -1572,7 +1572,7 @@
 
   .incident-print-header__title {
     font-size: 11pt;
-    font-weight: 800;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: #0f172a;
@@ -1622,7 +1622,7 @@
 
   .case-hero__title.incident-id-badge {
     font-size: 13pt !important;
-    font-weight: 800 !important;
+    font-weight: 700 !important;
     color: #0f172a !important;
   }
 
@@ -1729,7 +1729,7 @@
 
   .panel-command-title {
     font-size: 8.5pt !important;
-    font-weight: 800 !important;
+    font-weight: 700 !important;
     color: #0f172a !important;
     letter-spacing: 0.05em !important;
     text-transform: uppercase !important;
@@ -2128,3 +2128,11 @@
   }
 }
 
+
+/* Empty officer tile and the "no dispatch" responders card read as quiet, not broken. */
+.meta-tile--empty { color: var(--color-text-secondary); }
+.card--quiet { box-shadow: none; background: var(--color-bg); }
+.related-incident-hint--error { color: var(--color-danger); }
+
+/* One-line variant used when the viewer cannot read the party fields. */
+.dossier-privacy-shield--compact { gap: var(--spacing-sm); padding: var(--spacing-xs) var(--spacing-sm); font-size: var(--font-size-sm); }

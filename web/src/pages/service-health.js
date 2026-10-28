@@ -534,7 +534,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
     // 2. High-Density Status Telemetry Strip
     const statStrip = document.createElement('div');
-    statStrip.className = 'stat-card-grid health-stat-ticker';
+    statStrip.className = 'stat-card-grid';
 
     const statItems = [
       {
@@ -930,7 +930,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
           const copyRunbookBtn = document.createElement('button');
           copyRunbookBtn.type = 'button';
-          copyRunbookBtn.className = 'health-matrix-action-btn health-copy-runbook-btn';
+          copyRunbookBtn.className = 'health-matrix-action-btn';
           copyRunbookBtn.title = `Copy runbook troubleshooting commands for ${dep.label}`;
           copyRunbookBtn.setAttribute('aria-label', `Copy runbook commands for ${dep.label}`);
           copyRunbookBtn.innerHTML = `${icons.copy(12)}<span>Runbook</span>`;
@@ -941,7 +941,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
           const inspectBtn = document.createElement('button');
           inspectBtn.type = 'button';
-          inspectBtn.className = 'health-matrix-action-btn health-inspect-btn';
+          inspectBtn.className = 'health-matrix-action-btn';
           inspectBtn.title = `Inspect diagnostic details for ${dep.label}`;
           inspectBtn.setAttribute('aria-label', `Inspect details for ${dep.label}`);
           inspectBtn.innerHTML = `${icons.externalLink(12)}<span>Inspect</span>`;
@@ -1497,7 +1497,6 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
   function buildTerminalBox(bashCmd, psCmd) {
     const wrapper = document.createElement('div');
-    wrapper.className = 'health-terminal-wrapper';
 
     let currentOs = 'bash';
 

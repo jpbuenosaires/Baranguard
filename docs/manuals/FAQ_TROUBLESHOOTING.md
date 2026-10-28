@@ -45,7 +45,7 @@ There was no connection. The SOS is kept and sent when you are online, and the a
 3. Go outside or near a window. Wait a minute.
 4. Turn off battery saving for the app if your phone has it.
 
-An SOS or a report can still be sent without GPS. The desk will see "no location" or your last known place.
+An SOS waits at most 2 seconds for GPS and then goes out anyway. A report can also be sent without GPS. The desk will see "no location" or your last known place.
 
 ## The route does not load
 
@@ -77,7 +77,7 @@ The app does not say "suspended". It only shows "Unable to sign in with those cr
 
 ## I was signed out suddenly
 
-A password change or a suspension signs you out. A phone session also ends after a long time: it lasts up to 24 hours of use and 7 days in total. Sign in again with signal. Saved items stay on the phone.
+A password change or a suspension signs you out. Signing out yourself stops patrol tracking and clears the previous user's lists from the phone. A phone session also ends after a long time: it lasts up to 24 hours of use and 7 days in total. Sign in again with signal. Saved items stay on the phone.
 
 ## I do not receive dispatch alerts
 
@@ -93,7 +93,7 @@ Open phone **Settings** > Apps > Baranguard > Permissions, and allow Camera and 
 
 ## I do not see my shifts
 
-Only **published** shifts show in **Profile** > **My duty shifts**. If the list is empty, the desk has not published the roster yet. Ask the Chief Tanod.
+Only **published** shifts show in **Profile** > **My duty shifts**. Offline, the last saved copy is shown with the time it was saved. If the list is empty, the desk has not published the roster yet. Ask the Chief Tanod.
 
 ## The monthly report will not submit
 

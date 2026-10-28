@@ -207,6 +207,11 @@ Tanod app from stage 2) that turns a dedicated tethered phone into the
 outbound/inbound SMS transport — no cloud SMS aggregator, no per-message
 fee. Only needed if you're testing real SMS delivery; everything else in
 this repo works with `GSM_GATEWAY_ENABLED=false` (stage 1.8's table).
+With the gateway on, also set `GATEWAY_BARANGAY_ID` (see `backend/.env.example`) and run
+`backend/scripts/install-scheduled-backup-jobs.ps1` so `BaranguardGsmIngest` (inbound daemon) and
+`BaranguardNotificationWorker` (queued broadcasts, SOS repeat) are registered. For a local-development
+APK that talks to `http://localhost:8081`, build with `CAP_LOCAL_DEV=1 npx cap sync android`; a release
+build blocks cleartext HTTP.
 
 ---
 

@@ -83,3 +83,31 @@ Not browser-verified. After the waves: `verify-web-wiring.mjs` 914/0,
 h16 59, wave1a 145, roster-accomplishment 339, paper-approvals 280,
 w2-reports 41, pentest-incidents 74, sprint4-phase2-3 73, sprint7-audit
 60 (HANDOFF, 2026-10-09 snapshot).
+
+## C. Mobile and messaging audit of 2026-10-28
+
+Source: `docs/audit-2026-10-28/` (reports 01-05) and `backend/DEVLOG.md` 2026-10-28. Fixed in the working tree the same day; verified on disposable DBs, vitest (193 tests, 30 files), `verify-local-schema.mjs` (266) and jsdom only. **None is device-verified; Gradle was not run.** IDs are the audit reports' own.
+
+| ID | Sev | Found | Status | What was found / how fixed |
+|---|---|---|---|---|
+| 03 P0-1 | P0 | 2026-10-28 | Fixed 2026-10-28 (not browser-verified) | Inbound human SMS never stored, so Conversations and unread counts were empty. Now stored via `POST /internal/sms/inbound-text` |
+| 03 P0-2 | P0 | 2026-10-28 | Fixed 2026-10-28 | Unconfirmed SMS shown as "Failed" and a sent SMS shown as "Delivered". Now `pending` = "Sent, not confirmed", `sent` = "Sent", never "Delivered" |
+| 03 P1-1/P1-2 | P1 | 2026-10-28 | Fixed 2026-10-28 | Outbound SMS and broadcast ran inside the HTTP request and could re-send. Broadcast is queued (`{recipient_count, queued}`), 10-min duplicate guard, 100 cap, worker sends |
+| 03 P1-3 | P1 | 2026-10-28 | Fixed 2026-10-28 (replay-then-500 not fixed) | Ingest daemon head-of-line blocking and silent drops. Lock, give-up and `rejected` logging added |
+| 03 P1-4 | P1 | 2026-10-28 | Fixed 2026-10-28 | Notification worker and ingest daemon never scheduled. `BaranguardNotificationWorker`, `BaranguardGsmIngest` registered by the installer; launcher starts the daemon |
+| 03 P1-5 | P1 | 2026-10-28 | Fixed in code, not device-verified | Critical alerts overwrote each other; FCM notification block bypassed the native service. Alert queue, per-alert tray ids, data-only FCM for `sos`, `priority_alert`, `dispatch`, `dispatch_offer` |
+| 03 P1-6/P1-7 | P1 | 2026-10-28 | Fixed 2026-10-28 | Dispatch/SOS texts used raw enum names and unlabelled coordinates. Readable GSM-7 text with `Ref: INC-...`; no names or coordinates in push |
+| 03 P1-8/P1-9 | P1 | 2026-10-28 | Fixed 2026-10-28 | Conversation showed the oldest 200 messages and did not refresh. Newest 200, auto-refresh |
+| 03 P1-10 | P1 | 2026-10-28 | Partly fixed | STOP/TIGIL/UNSUBSCRIBE opt-out added; no confirmation reply and no "Reply STOP" line in the broadcast text yet |
+| 04 #2 | P0 | 2026-10-28 | Fixed 2026-10-28, scope pending owner | Unacknowledged SOS went nowhere further. `SosEscalation` repeats every 2 min, Secretary and Punong Barangay from round 3, max 5 |
+| 04 #3 | P0 | 2026-10-28 | Fixed in code, not device-verified | SOS only on Home and waited up to 15 s for GPS. SOS control on every Tanod tab (hold 800 ms), GPS wait at most 2 s, Silent SOS option |
+| 04 #1 | P0 | 2026-10-28 | Fixed in code (not run after a reboot) | Background jobs not started by anything; see 03 P1-4 |
+| 04 #5 | P1 | 2026-10-28 | Fixed 2026-10-28 | My Shifts not cached; now read-only offline copy |
+| 04 #9 | P1 | 2026-10-28 | Fixed 2026-10-28 | New Incident saved with a default type and no location; no default type or barangay, GPS auto-tagged |
+| 02 P0-1, P1-1 to P1-3 | P0/P1 | 2026-10-28 | Fixed 2026-10-28 | SQLite writes not serialised; sync trigger dropped during a pass; no upload/download timeouts; calls bypassing the sync mutex. Writes serialised (`withTransaction`), follow-up sync pass, timeouts |
+| 02 P1-6, P1-8 | P1 | 2026-10-28 | Fixed 2026-10-28 | Patrol GPS service outlived logout; local data not user-scoped. Logout stops the service and scopes lists per user |
+| 02 P1-7 | P1 | 2026-10-28 | Fixed 2026-10-28 | Live Map broadcast GPS regardless of duty. Posts only on duty |
+| 02 P1-10 / 05 | P1 | 2026-10-28 | Fixed in code, not built | `allowBackup` on and cleartext allowed in release. `allowBackup` off; cleartext only in a debug config; build 11 MB to 5.8 MB, R8 on release |
+| 04 doc drift 10-16 | P3 | 2026-10-28 | Fixed 2026-10-28 (docs) | Seven doc-vs-code drifts (seven signed Admin device writes, sync order, SOS resolve wording, Rule 89, POWER_CUT_PROCEDURE ingest dependency, nav-item and check counts, mobile `noted`/`approved` mapping, which does exist in `apiService.ts`) |
+
+**Open after this pass (from the DEVLOG):** names and coordinates in the SOS SMS, native service token storage, hard-coded 911/160 numbers, SOS replay-then-500, STOP confirmation reply, phone-number masking, no notification list screen, no retry of a failed alert acknowledge, no on-duty status in the assign picker, no tanod decline of a dispatch, no cancel or swap notification. `verify-web-wiring.mjs` showed 936/32 in the DEVLOG run; re-run 2026-10-28 for this reconciliation it shows 938 passed, 0 failed.

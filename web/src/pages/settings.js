@@ -490,7 +490,8 @@ function buildPasswordCard() {
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = 'settings-pwd-toggle';
-    toggle.setAttribute('aria-label', `Show or hide ${labelText}`);
+    toggle.setAttribute('aria-label', `Show ${labelText}`);
+    toggle.setAttribute('aria-pressed', 'false');
     toggle.innerHTML = icons.eye(16);
 
     let isVisible = false;
@@ -498,6 +499,8 @@ function buildPasswordCard() {
       isVisible = !isVisible;
       input.type = isVisible ? 'text' : 'password';
       toggle.innerHTML = isVisible ? icons.eyeOff(16) : icons.eye(16);
+      toggle.setAttribute('aria-label', `${isVisible ? 'Hide' : 'Show'} ${labelText}`);
+      toggle.setAttribute('aria-pressed', String(isVisible));
     });
 
     wrap.append(input, toggle);

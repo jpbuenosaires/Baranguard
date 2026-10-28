@@ -81,7 +81,7 @@ flowchart TD
 * **Default Landing Page:** `incident-management` *(Code: `main.js` routes secretary directly here; dashboard is inaccessible to Secretary)*
 * **Core Function:** Statutory records custodian (RA 7160 §394c), confidential narrative reviewer, incident lifecycle governor, Safer School Zones administrator, walk-in incident logging, draft rosters and swap review, and paper-approval recording.
 
-### Complete Navigation Reach (8 Sidebar Items)
+### Complete Navigation Reach (7 Sidebar Items)
 `incident-management`, `approvals`, `accomplishment-reports`, `referrals`, `school-zones`, `personnel`, `settings`.  
 *(Excluded by `PAGE_ROLES`: `dashboard`, `dispatch`, `gis`, `analytics`, `sms-log`, `audit-log`, `service-health`, `map-packages`)*
 
@@ -365,7 +365,7 @@ stateDiagram-v2
     [*] --> active : Tanod confirms SOS (GPS fix or no_fix)
     active --> acknowledged : Desk Officer acknowledges SOS
     acknowledged --> resolved : Threat neutralized / Officer safe
-    active --> resolved : Direct resolution by Desk Officer
+    active --> resolved : Direct resolution by Desk Officer (web; the phone offers Resolve only after Acknowledge)
     resolved --> [*] : Closed emergency record
 ```
 
@@ -434,7 +434,7 @@ stateDiagram-v2
 
 ### IX. Mobile Offline Architecture & Sync Queue
 44. Every mobile field submission persists immediately to encrypted local SQLite storage before navigation can continue.
-45. Mobile synchronization processes queued items in strict priority: SOS alerts first, dispatch updates second, incidents third, workflow items fourth, and GPS breadcrumbs last.
+45. Mobile synchronization processes queued items in strict priority: SOS alerts first, dispatch updates second, incidents third, workflow items fourth, and GPS breadcrumbs last. *(Reconciled 2026-10-28: there are two real orders. The phone uploads sos, dispatch status, duty status, incidents, referrals, availability, accomplishment entries, school check-ins, then gps (`syncService.ts`). `POST /sync/batch` processes sos, incident, referral, gps, duty_status, dispatch_status, availability, accomplishment_entry, school_checkin within one request (`SyncController.php`); SOS is first in both and incidents precede referrals in both. The server order is the one that applies inside a single batch.)*
 46. The mobile app sends sync payloads in chunks of 50 items, the server rejects a batch above 200 items, and GPS breadcrumbs are capped at 200 points per sync pass.
 47. Duplicate sync payloads matching an existing `client_event_id` return the existing server row rather than throwing an error.
 48. Non-transient client sync rejections revert optimistic local status changes and mark the queue item as requiring attention.
@@ -538,7 +538,7 @@ Each scenario is one realistic story you can follow step by step and compare wit
 3. Two tanods tap Accept. Accepting needs a connection and is never queued. The server records the first accept as the winner and releases the other (Rule 58).
 4. The winner gets a normal dispatch. The Admin can still add more responders.
 5. Variation: nobody accepts within 180 seconds. The offer re-broadcasts and alerts the Admins, for up to three rounds, then stays `escalated` with spaced Admin reminders until someone assigns or cancels (Rule 59; reminders at +3, +6, +12 minutes, then every 30, at most 8).
-- **State:** 6. **Evidence:** `verify-dispatch-offers.sh` (193 checks). **Not demonstrated:** two truly concurrent accepts, because the test server is single-threaded.
+- **State:** 6. **Evidence:** `verify-dispatch-offers.sh` (193 checks at the 2026-10-08 re-run). **Not demonstrated:** two truly concurrent accepts, because the test server is single-threaded.
 
 ### Scenario 3. Dispatching without a published shift
 1. The Admin tries to assign a tanod who has no published shift covering the current time.
@@ -574,7 +574,8 @@ Each scenario is one realistic story you can follow step by step and compare wit
 2. Online without a GPS fix: the SOS is still accepted. It uses the tanod's last known position, or is stored with `location_source = no_fix` and no coordinates (Rule 22).
 3. No signal (or the server times out after 5 seconds): the SOS is queued locally and the phone sends a direct SMS to the cached backup contact through its own SIM (Rule 23). The app shows a badge for the SMS result (`sent_by_sms`, `sms_pending`, `sms_failed`).
 4. The Admin acknowledges (`acknowledged`) from the web or from the Chief Tanod phone console. Acknowledging does not clear the alert; only an explicit resolve does (Rule 24). The resolve can be done on the web or, after a confirmation, from the Chief Tanod phone (Rule 72).
-5. The Admin can also resolve an `active` SOS directly.
+5. On the web the Admin (or the Secretary) can resolve an `active` SOS directly. On the Chief Tanod phone, Resolve is offered only after Acknowledge (Rule 72).
+6. If nobody acknowledges, the SOS is re-sent every 2 minutes (Rule 99).
 - **State:** 7. **Evidence:** `verify-sprint4.sh`. **Device-verified once (2026-09-24):** the successful `sent_by_sms` path only; the `sms_failed` path and the no-GPS change are code-only. **UAT:** T-05 to T-08.
 
 ### Scenario 8. Roster: availability to published shift, swap and 12-hour cap
@@ -705,7 +706,7 @@ Reviewed 2026-10-08 by reading the rules against each other and against the code
 
 # Part 7: Rules from the owner's workflow review, 2026-10-17
 
-89. **The Secretary is the back-up dispatcher.** Besides the Chief Tanod (Admin), the Secretary may open the Dispatch Center, assign a tanod, cancel a dispatch, open or cancel a night offer, acknowledge and resolve an SOS, and resolve an incident, all on the web. Everything else the Secretary could not do before is unchanged: the Secretary still owns the records lifecycle and the complainant name, and still gets no phone device session (Rule 12 stands). The Admin sees contact numbers; the Secretary sees the tanod list without them. SOS and offer alerts still go to the Admin accounts only.
+89. *(2026-10-28: for SOS only, an unacknowledged alert now also reaches the Secretary and Punong Barangay from round 3, Rule 99; offers stay Admin-only.)* **The Secretary is the back-up dispatcher.** Besides the Chief Tanod (Admin), the Secretary may open the Dispatch Center, assign a tanod, cancel a dispatch, open or cancel a night offer, acknowledge and resolve an SOS, and resolve an incident, all on the web. Everything else the Secretary could not do before is unchanged: the Secretary still owns the records lifecycle and the complainant name, and still gets no phone device session (Rule 12 stands). The Admin sees contact numbers; the Secretary sees the tanod list without them. SOS and offer alerts still go to the Admin accounts only.
 90. **The Chief Tanod can log an incident from the phone**, with the report channel (phone call, Facebook, walk-in, SMS or other). The report is written to the phone's encrypted store first, sent with its own idempotency key (a signed write, `POST /incidents`), and deleted from the phone once the server confirms. The console never shows the narrative back (Rule 1). Sending happens while the app is open; there is no background job for the console.
 91. **A referral may go to the Lupon / Katarungang Pambarangay** (`lupon_kp`, migration 0045). It is a delegation record only: date, office, reference number. It counts as barangay-level in Annex D, like a barangay official or the VAW desk. The case itself stays in the barangay's binders and the DILG BIMS.
 92. **One workstation per barangay**, each with its own database and its own tunnel hostname if one is used. Dao, Binanuahan, Marifosque and Banuyo are separate deployments; the tenant separation inside the database remains as a second safeguard. Nothing in one barangay's data is visible from another's.
@@ -713,3 +714,21 @@ Reviewed 2026-10-08 by reading the rules against each other and against the code
 94. **Kept as is, by decision:** night dispatch offers are accepted online only (first accept wins, unchanged); dispatch still needs a published shift or an override reason; residents cannot report directly, staff log every report with its channel; tanods use their own mobile data, so no low-data mode or load allowance is built.
 95. **Kagawads have no account.** They sign printed reports and rosters on paper, which is already how approval works. The earlier idea of a Secretary account carrying approval authority for a Kagawad is dropped.
 96. **The Approval authority dialog is removed (2026-10-17).** There is nothing to configure: the Chief Tanod (Admin) and the Secretary hold every sign-off right by role (publish a roster, return an accomplishment report, prepare Annex D), and the preparer may also publish, return or file their own document (the Punong Barangay's signature on the paper is the check; the record keeps who prepared it and the audit log who acted). The Punong Barangay oversees and holds none; a value written into `user.approval_authority` by hand is still honoured for that role, but no screen sets it. The Users tab lost its "Title & authority" column. The columns `official_title` and `approval_authority` stay in the database (migrations are never edited). This replaces the Admin-managed authority attribute described in REFERENCE.md §3.
+
+
+---
+
+# Part 8: Rules from the 2026-10-28 mobile and messaging audit fixes
+
+Source: `docs/audit-2026-10-28/` and `backend/DEVLOG.md` 2026-10-28. Code in the working tree, verified on disposable DBs, vitest and jsdom only; not device-verified, Gradle not run, no new migration.
+
+97. **SOS is reachable from every Tanod tab.** Home keeps its own SOS dock; every other Tanod tab shows a compact SOS control (`SosHoldButton`) that needs a hold of 800 ms and then opens the same confirm sheet. The phone waits at most 2 seconds for a GPS fix (`utils/sosPosition.ts`) and then sends with what it has; the server fills in the last known position or `no_fix` (Rule 22). The SMS fallback still runs when the local queue write fails. **Silent SOS** (vibrate only, no siren) is a checkbox on the confirm sheet, stored on the phone, **silent by default** (owner to confirm that default).
+98. **Critical alerts queue instead of overwriting.** The phone keeps a queue of critical alerts ordered by severity (SOS first); each has its own tray notification id; lock-screen text is generic (no names, no coordinates). The server sends `sos`, `priority_alert`, `dispatch` and `dispatch_offer` pushes as **data-only FCM** so the native service runs when the app is closed; other types keep the ordinary notification block. A failed acknowledge is still not retried (open item).
+99. **An unacknowledged SOS is repeated.** While a SOS is `active`, `SosEscalation` (run by `notification-worker.php`) creates a new `sos` notification every 2 minutes for up to 5 rounds in the first hour. Round 2 repeats to the active Admin(s); from round 3 the active Secretary and Punong Barangay are added (they have no phone app, so they are reached by SMS). This widens the Rule 89 recipient list for SOS only; dispatch offers stay Admin-only. The Rule 89 scope for SOS is an owner decision still to be confirmed.
+100. **SMS status never overclaims.** `pending` means the gateway phone did not confirm within the wait; SMS Monitor shows it as "Sent, not confirmed". `sent` is shown as "Sent" (the gateway only knows the SIM accepted it). **Nothing is ever shown as "Delivered"**, because no carrier delivery report is collected. `queued` shows "Waiting to send". A `pending` send is not retried automatically, to avoid duplicate SOS or dispatch texts.
+101. **Inbound texts are stored.** The ingest daemon posts human texts to `POST /internal/sms/inbound-text` (loopback and token only); they are filed under `GATEWAY_BARANGAY_ID` (or the only barangay in the database; with more than one and no setting the call fails, Rule 92) as `sms_log` rows with `direction='inbound'`, the sender number and the message body, so SMS Monitor Conversations and unread counts work. A rejected SOS envelope is logged as `rejected` with **no body**. A text of STOP, STOP ALL, UNSUBSCRIBE, TIGIL or HUWAG NA opts that number out of the advisory list (`sms_subscriber.opted_out_at`); no confirmation reply is sent yet.
+102. **Broadcasts are queued.** `POST /sms/broadcast` writes `queued` rows and answers `{recipient_count, queued}` at once; `notification-worker.php` sends them. The same text to the same audience within 10 minutes under a new Idempotency-Key is answered as a duplicate and not sent again. At most 100 recipients per broadcast; the 5 per hour per barangay limit stays. Own barangay only.
+103. **Message text is readable and short.** Dispatch, offer and priority messages name the incident type in words (not the enum), carry the barangay and `Ref: INC-YYYY-NNN`, are written in GSM-7 so a message stays in as few segments as possible, and the push versions carry no names and no coordinates. The SMS text of an SOS still names the tanod and gives a position; whether to keep names and coordinates there is an owner decision.
+104. **Sign-out cleans the phone.** Logout stops the patrol location service, clears the session and scopes the local lists (incidents, dispatches, availability, schools, evidence) to the signed-in user, so a second user on the same phone does not see the first user's data. The release APK has `allowBackup` off and blocks cleartext HTTP; cleartext is allowed only in a debug build (`CAP_LOCAL_DEV=1 npx cap sync android` for local development).
+105. **My Shifts has an offline copy.** The last published shifts and swap requests are cached on the phone (`shiftCache.ts`, Capacitor Preferences, not the encrypted SQLite) and shown read-only with "Offline. Showing your saved schedule from <time>" when the workstation cannot be reached. Swap requests still need a connection (Rule 94).
+106. **Background jobs are scheduled.** `install-scheduled-backup-jobs.ps1` registers `BaranguardNotificationWorker` (every minute: push ack timeouts, queued broadcasts, SOS escalation) and `BaranguardGsmIngest` (at logon: inbound SMS daemon), beside the existing tasks; `start-baranguard.ps1` also starts the ingest daemon. `GET /dispatch-offers` and its list carry `server_time` so the phone computes offer countdowns against the server clock, not its own.

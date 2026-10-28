@@ -373,7 +373,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
       presetLabel.className = 'scheduler-publish-bar__hint';
       presetLabel.textContent = '+ adds:';
       const presets = document.createElement('div');
-      presets.className = 'filter-chips scheduler-preset-chips';
+      presets.className = 'filter-chips';
       presets.setAttribute('role', 'group');
       presets.setAttribute('aria-label', 'Shift added by +');
       for (const p of SHIFT_PRESETS) {

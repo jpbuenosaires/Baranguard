@@ -159,7 +159,7 @@ When the Chief Tanod is away you can do these on the web:
 
 Things that stay different from the Chief Tanod:
 - You see the tanod list without contact numbers.
-- SOS and offer alerts (sounds and pushes) are sent to Admin accounts only. If you cover the desk, keep the Dispatch Center open and the sound on.
+- Offer alerts (sounds and pushes) are sent to Admin accounts only. SOS alerts go to Admin accounts first; if nobody acknowledges, the alert is repeated every 2 minutes and, from the third send, you are texted too (Rule 99). If you cover the desk, keep the Dispatch Center open and the sound on.
 - You have no phone console.
 
 ## 10. Personnel for the Secretary

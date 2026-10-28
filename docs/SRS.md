@@ -68,11 +68,11 @@ are not yet applied to the real `baranguard` database; the tunnel currently serv
 ## 3. External interfaces
 | ID | Interface | Notes |
 |---|---|---|
-| EI-01 | REST API `/api/v1/*`, JSON | Success = the object; error = `{"error":{"code","message"}}`; pagination `page`/`limit` (default 25, max 100). 105 routes in 28 files per HANDOFF (`php backend/scripts/count-routes.php` is the check). |
+| EI-01 | REST API `/api/v1/*`, JSON | Success = the object; error = `{"error":{"code","message"}}`; pagination `page`/`limit` (default 25, max 100). 103 routes in 27 files (`php backend/scripts/count-routes.php`, run 2026-10-28; earlier text saying 105 is stale). |
 | EI-02 | Web dashboard | Browser, vanilla JS, MapLibre vendored. Pages (`web/src/pages`): Login, Dashboard, Dispatch Center, GIS Live Tracking, Incident Management, Incident Detail, Analytics, Historical Heatmap, Statistical Reports, Personnel (Users, Scheduler, Swap Requests), Approvals, Accomplishment Reports, Referral Log, Safer School Zones, SMS Monitor, Audit Log, Service Health, Map Packages, Settings, Privacy. |
 | EI-03 | Android tanod app | Tabs Home, Dispatches, Report, Map, Profile; plus Availability, Accomplishments, School Check-in, My Shifts, Refer panel. Chief Tanod console: SOS, Dispatch, Incidents (read-only plus Log an incident), Profile. |
 | EI-04 | Push (FCM) | Optional; needs real credentials. Never carries `raw_narrative`. |
-| EI-05 | SMS gateway | Tethered Android phone (`sms-gateway/`) outbound; `gsm-ingest-daemon.php` inbound; internal `/internal/sms/*` loopback and token only. |
+| EI-05 | SMS gateway | Tethered Android phone (`sms-gateway/`) outbound; `gsm-ingest-daemon.php` inbound (stores human texts via `POST /internal/sms/inbound-text`); internal `/internal/sms/*` (7 handlers) loopback and token only. |
 | EI-06 | OpenRouteService | Road routing for `GET /dispatch/:id/route`; failure never a 500. |
 | EI-07 | Cloudflare Named Tunnel | Public hostnames; no Access policy yet. |
 | EI-08 | Printer | A4 print layouts for reports, rosters, Annexes B, C-1, D. |
@@ -114,18 +114,18 @@ are not yet applied to the real `baranguard` database; the tunnel currently serv
 
 ### 4.5 SOS and fallback
 - **FR-26** A Tanod raises an SOS after a confirmation dialog; the server never rejects it for a missing fix: live coordinates, else last `gps_track` fix (`last_known`, with that fix's own time), else `no_fix`. (Rules 22, 25; O3)
-- **FR-27** Admin (and Secretary on web) acknowledge and resolve an SOS; acknowledging does not clear the alert banner, resolving does; the Chief Tanod phone console may do both (online, signed write). (Rules 24, 72, 89; O3)
-- **FR-28** If the server is unreachable the phone sends (a) an AES-256-GCM encrypted SOS envelope with coordinates to the gateway phone, which creates a real SOS (`fallback_channel='sms'`) with no duplicate on later sync, and (b) a plain-text alert to one configured backup contact. Best-effort only. (Rule 23; O3)
-- **FR-29** Notifications (push, with SMS fallback for critical types) are created, delivered and acknowledged; a dispatch-offer push raises a full-screen critical alert; roster and report-update pushes are ordinary and carry no narrative. (Rule 74; O3, S)
+- **FR-27** Admin (and Secretary on web) acknowledge and resolve an SOS; acknowledging does not clear the alert banner, resolving does; the Chief Tanod phone console may do both (online, signed write; Resolve only after Acknowledge). An SOS left `active` is re-sent every 2 minutes, to the Secretary and Punong Barangay too from round 3, up to 5 rounds. (Rules 24, 72, 89, 99; O3)
+- **FR-28** If the server is unreachable the phone sends (a) an AES-256-GCM encrypted SOS envelope with coordinates to the gateway phone, which creates a real SOS (`fallback_channel='sms'`) with no duplicate on later sync, and (b) a plain-text alert to one configured backup contact. Best-effort only. The SOS control is on every Tanod tab (hold 800 ms), waits at most 2 s for GPS, and has a Silent SOS option (default silent). (Rules 23, 97; O3)
+- **FR-29** Notifications (push, with SMS fallback for critical types) are created, delivered and acknowledged; a dispatch-offer push raises a full-screen critical alert; roster and report-update pushes are ordinary and carry no narrative; `sos`, `priority_alert`, `dispatch` and `dispatch_offer` pushes are data-only FCM, queued by severity on the phone. (Rules 74, 98; O3, S)
 
 ### 4.6 Offline sync
 - **FR-30** Every mobile write persists to encrypted SQLite before the user can leave the screen and is never shown as synced until the server confirms. (Rule 44, REF Rule 7; O2)
-- **FR-31** `POST /sync/batch` processes kinds in order sos, incident, referral, gps, duty_status, dispatch_status, availability, accomplishment_entry, school_checkin; chunks of 50, server limit 200, GPS capped at 200; a repeated `client_event_id` returns the original row; non-transient rejections revert optimistic local state and flag the item. (Rules 45-48; O2)
+- **FR-31** `POST /sync/batch` processes kinds in order sos, incident, referral, gps, duty_status, dispatch_status, availability, accomplishment_entry, school_checkin; (the phone's own upload order differs slightly, SOS first in both: Rule 45 note) chunks of 50, server limit 200, GPS capped at 200; a repeated `client_event_id` returns the original row; non-transient rejections revert optimistic local state and flag the item. (Rules 45-48; O2)
 - **FR-32** Web writes carry `Idempotency-Key`; mobile writes carry `client_event_id` plus `X-Device-Id`; signed device writes are verified against the registered public key. (Rule 16, REF Rule 3; O2, O4)
 - **FR-33** Devices register and deactivate; a deactivated device is refused. (O2)
 
 ### 4.7 Messaging
-- **FR-34** Admin reads SMS logs and conversations, sends SMS, and broadcasts to opted-in subscribers of the own barangay only (recipient resolved server-side, `Idempotency-Key`); subscriber removal is an opt-out, not a delete. (S)
+- **FR-34** Admin reads SMS logs and conversations, sends SMS, and broadcasts to opted-in subscribers of the own barangay only (recipient resolved server-side, `Idempotency-Key`); a broadcast is queued (`{recipient_count, queued}`, 10-minute duplicate guard, 100 recipients at most). Inbound human texts are stored and shown in Conversations; STOP, TIGIL or UNSUBSCRIBE opts the sender out. Send status is `Waiting to send`, `Sent, not confirmed`, `Sent` or `Failed`, never `Delivered`. Subscriber removal is an opt-out, not a delete. (Rules 100-102; S)
 
 ### 4.8 Reports, audit, health, settings
 - **FR-35** Dashboard and reports show summary, average response time, heatmap, a statistical report export and a weekly digest for Admin and Punong Barangay. (O1)
@@ -210,5 +210,5 @@ are not applied to the real database.
 2. `WORKFLOWS_AND_RULES.md` Rule 18 says Admins get no narrative; REF Rule 1 lets the web Admin read it.
 3. Rules 7, 26, 28 and 42 still say Admin-only dispatch and in-app publish/approve; Rules 89, 80 and 96 supersede them.
 4. `REFERENCE.md` sections 3 and 5 still describe the Admin-managed approval authority and note/approve; Rule 96 and 0041 removed the screens and routes.
-5. Route count: REFERENCE section 5 says 103, HANDOFF says 105.
+5. Route count: REFERENCE section 5 says 103 and the 2026-10-28 `count-routes.php` run agrees; HANDOFF's old 105 is stale (resolved).
 6. HANDOFF's quick reference still names `verify-scheduler-fatigue.sh`; the file is `verify-scheduler.sh`.

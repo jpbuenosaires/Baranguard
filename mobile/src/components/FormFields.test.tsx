@@ -33,4 +33,10 @@ describe('TextField accessibility props', () => {
     expect(ion.getAttribute('aria-describedby')).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
   });
+
+  it('password toggle renders in the end slot (the type flip itself is Ionic code, not hydrated in jsdom)', async () => {
+    const { container } = render(<TextField label="Password" type="password" passwordToggle value="x" onChange={() => {}} />);
+    const toggle = container.querySelector('ion-input-password-toggle') as HTMLElement;
+    expect(toggle).not.toBeNull();
+  });
 });

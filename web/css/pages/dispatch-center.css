@@ -807,7 +807,7 @@
   height: 1.125rem;
   padding: 0 0.3125rem;
   border-radius: var(--radius-full);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   line-height: 1;
   background: color-mix(in srgb, var(--color-text-secondary) 14%, transparent);
@@ -825,7 +825,7 @@
 .dispatch-map-filter-chip__count--critical.has-items {
   background: var(--tint-critical-bg);
   color: var(--color-critical-solid);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .dispatch-map-filter-chip.is-active .dispatch-map-filter-chip__count--critical.has-items {

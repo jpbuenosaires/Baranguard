@@ -22,7 +22,7 @@
  */
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { IonInput } from '@ionic/react';
+import { IonInput, IonInputPasswordToggle } from '@ionic/react';
 
 /**
  * Subscribes to a custom-element event, keeping the latest callback
@@ -73,6 +73,8 @@ interface TextFieldProps {
   enterKeyHint?: 'enter' | 'done' | 'go' | 'next' | 'previous' | 'search' | 'send';
   autoCorrect?: 'on' | 'off';
   required?: boolean;
+  /** Adds Ionic's show/hide eye (password fields only); it flips the native input type itself. */
+  passwordToggle?: boolean;
   /** Validation message; rendered under the field and tied to it via aria-describedby. */
   error?: string;
 }
@@ -89,6 +91,7 @@ export const TextField: React.FC<TextFieldProps> = ({
   enterKeyHint,
   autoCorrect,
   required,
+  passwordToggle,
   error,
 }) => {
   const attachRef = useElementEvent('ionInput', onChange);
@@ -109,7 +112,9 @@ export const TextField: React.FC<TextFieldProps> = ({
       required={required}
       aria-invalid={error ? 'true' : undefined}
       aria-describedby={error ? errorId : undefined}
-    />
+    >
+      {passwordToggle && <IonInputPasswordToggle slot="end" />}
+    </IonInput>
   );
   if (!error) return input;
   return (

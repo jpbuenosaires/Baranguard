@@ -3,7 +3,7 @@
 *Print on one page. Keep it with your ID.*
 
 ## EMERGENCY
-1. **Home** > red **EMERGENCY SOS**
+1. **Home** > red **EMERGENCY SOS** (on other tabs: hold the small SOS button about 1 second)
 2. Tap **Confirm: send SOS**
 3. No signal? It is saved and texted by itself. Then **CALL the desk**.
 
@@ -23,7 +23,7 @@
 You cannot end your shift while a dispatch is still open.
 
 ## SEE SOMETHING? REPORT IT
-**+ Report** > choose type > write what happened > location > **Submit report**
+**Report** (round **+** button) > choose type (required) > write what happened > location > **Submit report**
 Works with no signal. The next screen tells you if it is saved or synced.
 
 ## HAND OVER A BIG CASE

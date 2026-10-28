@@ -28,7 +28,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { IonButton, IonContent, IonIcon, IonItem, IonList, IonPage, IonSpinner } from '@ionic/react';
-import { eyeOffOutline, eyeOutline, lockClosedOutline, personOutline, shield } from 'ionicons/icons';
+import { lockClosedOutline, personOutline, shield } from 'ionicons/icons';
 import { TextField } from '../components/FormFields';
 import { useOnline } from '../components/useOnline';
 import tacticalFeedback from '../utils/tacticalFeedback';
@@ -51,7 +51,6 @@ const LoginPage: React.FC = () => {
   const isOnline = useOnline();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -146,21 +145,14 @@ const LoginPage: React.FC = () => {
                     <IonIcon icon={lockClosedOutline} slot="start" className="mobile-login-icon" />
                     <TextField
                       label="Password"
-                      type={showPassword ? 'text' : 'password'}
+                      type="password"
+                      passwordToggle
                       autoComplete="current-password"
                       enterKeyHint="go"
                       value={password}
                       onChange={setPassword}
                       disabled={busy}
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="mobile-login-password-toggle"
-                      aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    >
-                      <IonIcon icon={showPassword ? eyeOffOutline : eyeOutline} style={{ fontSize: '1.25rem' }} />
-                    </button>
                   </IonItem>
                 </IonList>
 

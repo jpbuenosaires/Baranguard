@@ -242,7 +242,7 @@ function openKeyboardShortcutsModal() {
 
   const gotItBtn = document.createElement('button');
   gotItBtn.type = 'button';
-  gotItBtn.className = 'btn btn--secondary';
+  gotItBtn.className = 'ghost';
   gotItBtn.textContent = 'Got it';
   gotItBtn.addEventListener('click', () => backdrop.remove());
 

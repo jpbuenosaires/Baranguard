@@ -48,7 +48,7 @@ draft's scope).
 > by SMS. You can opt out at any time by replying STOP (or through the
 > means the barangay provides); your number will be marked opted-out
 > rather than deleted, so the barangay has a record that you asked to
-> stop receiving messages.
+> stop receiving messages. If you text the barangay's number, your number and your message are stored in the barangay's SMS log, together with the date and time, so staff can read and answer it; texting STOP, TIGIL or UNSUBSCRIBE also opts you out of advisory messages.
 
 ## 4. What is NOT covered by these notices
 

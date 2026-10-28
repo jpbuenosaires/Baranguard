@@ -601,3 +601,5 @@ prompts and the full prompt-engineering scaffolding once carried here now
 live in `docs/Baranguard_Sprint_Prompts.md`/`docs/SPRINTS.md` and
 `backend/DEVLOG.md` respectively — kept out of this file so it stays a
 technical reference, not a process log.*
+
+> **Reconciliation note, 2026-10-28.** This file is still not reconciled past migration 0014 apart from the 0029 note at the top. Where it disagrees with the current system, `docs/REFERENCE.md`, `docs/WORKFLOWS_AND_RULES.md` and `docs/SRS.md` win for: the removal of the blotter, AI pipeline and Fatigue Flags (0029, 0042); print-only reports (0041); Admin and Secretary dispatch and SOS rights (Rules 72, 89); Admin web read of the narrative (Rule 1 amendment); the retired citizen inbox; and, from the 2026-10-28 mobile and messaging fixes (Rules 97-106): SOS on every Tanod tab with a 2-second GPS wait, SOS repeat and escalation, honest SMS statuses (never "Delivered"), stored inbound texts and STOP opt-out, queued broadcasts, data-only critical pushes. Current counts (2026-10-28): 103 routes in 27 files, 45 migrations.

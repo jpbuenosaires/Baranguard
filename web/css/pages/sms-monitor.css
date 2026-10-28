@@ -1962,7 +1962,7 @@
 }
 
 .sms-log-failure-sub {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   letter-spacing: -0.01em;
   color: var(--color-critical-text, var(--color-critical));
   word-break: break-all;

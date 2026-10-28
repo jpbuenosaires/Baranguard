@@ -67,7 +67,7 @@ Notes:
 
 Use only when you or someone near you is in real danger.
 
-1. On **Home**, tap the red **EMERGENCY SOS** button.
+1. On **Home**, tap the red **EMERGENCY SOS** button. On any other tab, press and **hold the small SOS button for about a second** (800 ms) until the confirmation opens.
 2. The app asks: "Send SOS to HQ and nearby tanods?"
 3. Tap **Confirm: send SOS**. (Tap **Cancel** if it was a mistake.)
 4. Read the result:
@@ -75,7 +75,9 @@ Use only when you or someone near you is in real danger.
    - **SOS saved on this phone, will send when online**: there was no connection. It is kept and sent as soon as you are online.
 5. Tap **Done**.
 
-**What is sent:** your location. If the phone has no GPS fix, the SOS is still sent (the desk sees your last known place, or "no location").
+**Silent SOS.** The confirmation has a box, **Silent SOS (vibrate only, no siren)**. It is ticked by default, so the phone does not sound a siren. Untick it if you want the siren.
+
+**What is sent:** your location. The phone waits at most 2 seconds for a GPS fix, then sends anyway (the desk sees your last known place, or "no location"). If nobody at the desk acknowledges, the alert is sent again every 2 minutes, and after two repeats the Secretary and Punong Barangay are texted too.
 
 **If there is no internet (SMS fallback)**
 
@@ -97,7 +99,7 @@ If a red notice says SOS alerts "could not be delivered to HQ", tap **Retry** an
 Important:
 - Texting needs **SMS permission** and a working SIM with **load**. (not yet device-verified)
 - The SMS fallback needs a gateway number and a backup contact set by the Chief Tanod. If none is set, the SOS is only saved on the phone.
-- On **Home** there are call buttons: **Backup contact**, **Police 911**, **MDRRMO 160**.
+- On **Home** there are call buttons: **Backup contact**, **Police** (911) and **MDRRMO** (160); each row shows the number.
 
 ## 6. Dispatches (calls given to you)
 
@@ -147,10 +149,10 @@ This only records that **you handed the case over**. It does not change the disp
 
 ## 7. Report a new incident (works offline)
 
-1. Tap the big **+ Report** button (or **Report incident** on Home).
-2. Choose the **Incident Type** (Disturbance, Theft, Injury, Traffic, Medical, Fire, Domestic, Vandalism, Missing, Animal, Other).
+1. Tap the round **+** button in the middle of the tab bar, labelled **Report** (or **Report incident** on Home).
+2. Choose the **Incident Type**. It is required; no type is pre-selected and **Submit report** is refused until you choose one (Disturbance, Theft, Injury, Traffic, Medical, Fire, Domestic, Vandalism, Missing, Animal, Other).
 3. Write **What Happened** (required): people involved, exact place, what you did. You can tap a quick phrase to start.
-4. Add the **location**: **Use Current GPS** or **Choose on Map**. You can also save without a map pin.
+4. Check the **location**. The phone tries to fill in your current GPS position when the form opens; you can also tap **Use Current GPS** or **Choose on Map**. You can still save without a map pin.
 5. Optional: open **More details** for the school link, C-1 notes, photos or audio.
 6. Tap **Submit report**.
 
@@ -185,7 +187,7 @@ You can open a submission and **Save changes** any time. It is saved on the phon
 
 ## 10. My shifts
 
-**Profile**, then **My duty shifts**. Only **published** shifts show here. "No upcoming shifts" means the desk has not published a roster yet.
+**Profile**, then **My duty shifts**. Only **published** shifts show here. "No upcoming shifts" means the desk has not published a roster yet. With no connection the screen shows your last saved schedule under the notice "Offline. Showing your saved schedule from <time>"; swap requests still need a connection.
 
 **Swap request:** on a shift tap **Request swap**, write the reason, send. This needs a connection. The Desk Officer reviews it. You can **Cancel Swap Request** while it is pending. If approved, you are excused; if denied, you still report for duty.
 

@@ -165,7 +165,6 @@ export function SchoolC1Card({ incidentId, canEdit, rawNarrative }) {
       }
     } else {
       const schoolRow = fieldRow('School', linked ? schoolName(data.schoolId) : 'Not linked');
-      schoolRow.classList.add('case-card__field--school');
       card.appendChild(schoolRow);
       for (const f of C1_FIELDS) {
         if (data[f.key] || f.key !== 'c1StatusNotes') {
@@ -174,8 +173,6 @@ export function SchoolC1Card({ incidentId, canEdit, rawNarrative }) {
             val = 'Same as incident narrative';
           }
           const row = fieldRow(f.label, val);
-          if (f.key === 'c1Summary') row.classList.add('case-card__field--c1-summary');
-          if (f.key === 'c1ActionTaken') row.classList.add('case-card__field--c1-action');
           card.appendChild(row);
         }
       }

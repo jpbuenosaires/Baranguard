@@ -113,7 +113,7 @@ Profile, Password (at least 12 characters, mixed case, a digit) and Appearance (
 
 | Situation | Do this |
 |---|---|
-| You see an SOS banner | Tell the Chief Tanod at once. You cannot acknowledge or dispatch |
+| You see an SOS banner, or you are texted an SOS | Tell the Chief Tanod at once. You cannot acknowledge or dispatch. You are texted only when nobody has acknowledged the SOS after two repeats |
 | A report needs to be changed | Ask the Secretary |
 | Power or internet is down | Follow `docs/POWER_CUT_PROCEDURE.md`. The system serves one workstation and stops when it stops |
 | You think someone read a record they should not | Tell the Chief Tanod. The audit log records each narrative read by incident number |

@@ -15,7 +15,7 @@ For the barangay's operating steps. It is a draft for the Punong Barangay and th
 |---|---|
 | Chief Tanod | Call or text the nearest on-duty tanod directly. Write the incident in the paper logbook with the time, the place and the tanod sent. |
 | Chief Tanod (phone) | If the phone has data, log the incident in the console. It is saved on the phone first and sent when the workstation is back. |
-| Tanods | Keep using the app. Records are kept on the phone and sent later. An SOS still reaches the gateway phone by SMS and the backup contact. |
+| Tanods | Keep using the app. Records are kept on the phone and sent later. An SOS still reaches the backup contact by SMS from the phone itself. It reaches the dashboard through the gateway phone only if the gateway phone is connected and `BaranguardGsmIngest` (the inbound daemon) is running on the workstation; check `Get-ScheduledTask -TaskName BaranguardGsmIngest` (OPERATIONS_MANUAL section 6). |
 | Secretary | Back-up dispatcher when the Chief Tanod is away: dispatches and resolves from the web dashboard once it is back. |
 
 ## When it comes back

@@ -50,7 +50,7 @@ the reference before being reconciled.
 | Contact (broadcast) | `sms_subscriber.phone_number`, `consent_at`, `consent_source` | Ordinary personal data, consent-tracked |
 | Evidence | `evidence_attachment` files (photo/audio) | May contain sensitive personal information depending on content |
 | Citizen reports | `citizen_report` (submitter-supplied name/contact/description) | Ordinary personal data; may contain sensitive content in the free text |
-| Messaging | `sms_log` (`message_body`, phone number), `sms_subscriber`, `notification`/`notification_target`/`notification_delivery` | Ordinary personal data (phone numbers, message content) |
+| Messaging | `sms_log` (`message_body`, phone number; since 2026-10-28 inbound human texts are stored too: `direction='inbound'`, `sender_number`, body; a rejected SOS envelope is logged without its body), `sms_subscriber`, `notification`/`notification_target`/`notification_delivery` | Ordinary personal data (phone numbers, message content) |
 | Audit | `audit_log` | Identifiers and statuses only (§2 Rule 8) — never narrative, coordinates or credentials |
 | Employment/scheduling | `shift_schedule`, `duty_status` | Ordinary personal data (Tanod work records) |
 | Authentication | `user.password_hash`, `auth_session` | Ordinary personal data; hashed, never stored in plaintext |
@@ -172,7 +172,7 @@ and AI Tools jobs (90 days).
   migration 0029). Any transfer of case information to BIMSS/KPIS or to
   the Lupon is now done by barangay staff outside this system, from the
   barangay's own binders.
-- **GSM SMS gateway**: outbound messages transit the barangay's own
+- **GSM SMS gateway**: outbound messages and inbound texts (stored in `sms_log` since 2026-10-28, same 1-year `sms_log` retention) transit the barangay's own
   tethered phone/SIM, not a third-party cloud API (Semaphore was removed
   2026-09-23 for exactly this reason — see `backend/DEVLOG.md`).
 - **OpenRouteService (ORS)**: dispatch routing sends the caller's live

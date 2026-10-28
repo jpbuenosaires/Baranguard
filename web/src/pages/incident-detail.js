@@ -517,7 +517,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
    */
   function buildParticularsCard() {
     const card = document.createElement('div');
-    card.className = 'card dossier-card dossier-card--particulars';
+    card.className = 'card dossier-card';
 
     const header = document.createElement('div');
     header.className = 'dossier-card__header';
@@ -627,7 +627,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
    */
   function buildPartiesSection() {
     const card = document.createElement('div');
-    card.className = 'card dossier-card dossier-card--parties';
+    card.className = 'card dossier-card';
 
     const header = document.createElement('div');
     header.className = 'dossier-card__header';
@@ -734,7 +734,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
    */
   function buildNarrativeSection() {
     const card = document.createElement('div');
-    card.className = 'card dossier-card dossier-card--narrative';
+    card.className = 'card dossier-card';
 
     const header = document.createElement('div');
     header.className = 'dossier-card__header';
@@ -764,7 +764,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
    */
   function buildEvidenceSection() {
     const card = document.createElement('div');
-    card.className = 'card dossier-card dossier-card--evidence';
+    card.className = 'card dossier-card';
 
     const header = document.createElement('div');
     header.className = 'dossier-card__header';
@@ -914,7 +914,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
    */
   function buildOperationsBody() {
     const opsBody = document.createElement('div');
-    opsBody.className = 'operations-body case-ops-panel';
+    opsBody.className = 'operations-body';
 
     opsBody.appendChild(buildTimeline());
     opsBody.appendChild(buildResponders());
@@ -965,7 +965,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
   /** Every responder ever dispatched to this incident (A-13). Names are shown to the Admin only. */
   function buildResponders() {
     const card = document.createElement('div');
-    card.className = 'card dossier-card dossier-card--responders';
+    card.className = 'card dossier-card';
 
     const header = document.createElement('div');
     header.className = 'dossier-card__header';

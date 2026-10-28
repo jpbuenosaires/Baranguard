@@ -1038,7 +1038,7 @@
 }
 
 .settings-sos-tier__tag {
-  font-size: 0.65rem;
+  font-size: var(--font-size-label);
   font-weight: 600;
   text-transform: uppercase;
   padding: 0.0625rem 0.3125rem;
@@ -1059,7 +1059,7 @@
 }
 
 .settings-sos-tier__desc {
-  font-size: 0.6875rem;
+  font-size: var(--font-size-label);
   color: var(--color-text-secondary);
   line-height: 1.3;
 }

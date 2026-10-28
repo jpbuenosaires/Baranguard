@@ -710,7 +710,7 @@
   min-width: 0;
 }
 .topbar__search-result-priority {
-  font-size: 0.625rem;
+  font-size: var(--font-size-label);
   font-weight: 700;
   letter-spacing: 0.04em;
   padding: 0.0625rem 0.3125rem;
