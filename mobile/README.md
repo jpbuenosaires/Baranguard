@@ -1,7 +1,8 @@
 # mobile — Baranguard Tanod app
 
 Ionic React + Capacitor (Android) app, per §1 of the Master Reference.
-Scaffolded 2026-09-02 (Sprint 2).
+Purpose: what the Tanod app is, how to run it and its local database.
+Status / Last updated: 2026-10-28 (scaffolded 2026-09-02). Device-verification status per feature is in `backend/DEVLOG.md` and `docs/HANDOFF.md`.
 
 ## Installed baseline
 
@@ -26,6 +27,7 @@ npm install            # install dependencies
 npm run dev            # Vite dev server (browser)
 npm run build          # tsc + vite build
 npm run verify.schema  # verify the local SQLite schema against §5
+                       # (same as: node scripts/verify-local-schema.mjs)
 npm run lint
 ```
 
@@ -47,8 +49,8 @@ Android; enabled by `androidIsEncryption: true` in `capacitor.config.ts`).
   against §5 (47 checks).
 
 Tables created so far: `incident_local`, `mobile_device_local`,
-`offline_map_package_local`, `evidence_attachment_local` (Sprint 2), and
-`dispatch_local`, `gps_track_local`, `offline_queue_local` (Sprint 3).
+`offline_map_package_local`, `evidence_attachment_local`, `dispatch_local`, `gps_track_local`,
+`offline_queue_local`, plus the later tables listed in `localSchema.ts`.
 `duty_status_local` is deliberately not created — see `localSchema.ts`'s
 file header for why.
 
@@ -56,13 +58,10 @@ Migrations are **append-only** and applied in place — never drop and
 recreate the local store. Rule 2 makes this non-negotiable: a rebuild
 would destroy field captures not yet reconciled with the server.
 
-## Not done yet
+## Open items
 
-- **The Android platform is not added** (`npx cap add android`). This
-  machine has no Android SDK/Studio/adb, so it could not be built or
-  verified — adding an unbuildable native project would be an unverifiable
-  claim. Run `npx cap add android && npx cap sync` on a workstation with
-  the Android SDK. (`mobile/android/` is already gitignored.)
+- Build and install commands for a real device are in `docs/HANDOFF.md`
+  (always set `VITE_API_BASE_URL` explicitly) and `docs/SETUP.md` section 2.
 - **SQLCipher encryption-at-rest is unverified.** It requires opening the
   DB file on a real device and confirming it isn't readable plaintext.
 - **The DB passphrase source is an unresolved design decision** — see the

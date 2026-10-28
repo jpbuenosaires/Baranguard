@@ -1,5 +1,8 @@
 # Shared UI components
 
+Purpose: which shared mobile UI component to use when.
+Status / Last updated: 2026-10-28.
+
 Import from `components/ui` (`import { Button, Banner } from '../components/ui'`). All CSS lives in `theme/ui.css` (class prefix `ui-`), tokens only, no hex.
 
 ## When to use which

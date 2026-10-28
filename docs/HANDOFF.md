@@ -1,448 +1,168 @@
-**2026-10-28 — Audit fixes applied (uncommitted, not device-verified).** Mobile SOS/UX, data/sync/security, alerts and SMS/messaging fixes from `docs/audit-2026-10-28/` are in the working tree; details and open owner decisions in `backend/DEVLOG.md` 2026-10-28. Needs: a Gradle debug AND release build + device pass (R8 minify, cleartext config, critical alerts, SOS hold button), re-registering scheduled tasks (`install-scheduled-backup-jobs.ps1`), `GATEWAY_BARANGAY_ID` check in `.env`, new APK.
-
 # Baranguard — Session Handoff
 
-**2026-10-13 — Fatigue Flags REMOVED entirely (migration 0042; applied to the demo DBs
-`baranguard_ch4` (rebuilt) and `baranguard_uiseed` (which is now at migration 0042, 0041 included), NOT to the
-real `baranguard`; destructive, back up first).** Table `fatigue_flag`,
-`GET /shifts/fatigue-flags`, `PATCH /fatigue-flags/:id/acknowledge`,
-`FatigueFlagsController`/`FatigueCalculator` (and their `recalculate()` calls in
-shift create/update and swap approval), the `unacknowledged_fatigue_flags`
-nav count, the web Fatigue page, the scheduler's fatigue callouts and
-"[Over/Near Limit]" labels, the 56 h/week red markers and the Smart Fill
-weekly limit are all gone. **Kept:** the 12 h/day scheduled-hours cap (422
-`DAILY_HOURS_EXCEEDED`), the plain weekly "Hours" total in the week grid, and
-old `fatigue_flag_acknowledged` audit rows. `verify-scheduler-fatigue.sh` is now
-`verify-scheduler.sh`. Anywhere below that mentions fatigue flags, the Fatigue
-tab or `verify-scheduler-fatigue.sh` is history. Routes: 103 across 27 files (`php backend/scripts/count-routes.php`, 2026-10-23).
-Details and measured results: `backend/DEVLOG.md` 2026-10-13 (1).
-
-**Replaced-in-place snapshot, not a log** — rewrite fresh each session,
-never stack banners. Full history: `backend/DEVLOG.md` (grep by
-date/keyword, don't read front to back). Everything older than this
-snapshot (the 2026-09 audit passes, the C7/M13/GSM-gateway device
-sessions, the abandoned React Native rebuild, the PHP 8.3 swap, the
-Cloudflare tunnel set-up) lives in DEVLOG; only what is still true and
-still actionable is kept here.
-
-## 2026-10-12 print-only change (supersedes the paper-first sections below)
-
-**Decision: all reports are printed and signed on paper outside the app; the
-app no longer tracks signatures. It only prints.** Migration **0041**
-(NOT applied to any real DB until you run it) removes the tracking:
-- `accomplishment_report.status` is now `open | prepared | returned`
-  (`noted`/`approved` removed; existing rows migrate to `prepared`).
-  `prepared` = the tanod submitted it, entries are locked, ready to print.
-  Return stays. Annex D (`ssz_term_report`) is `draft | prepared | submitted`.
-- Removed endpoints: `/accomplishment-reports/:id/note|approve|paper-signature|
-  record-paper-approval`, `/ssz-term-reports/:id/paper-signature|
-  record-paper-approval` and the `/document-scans` endpoints.
-  `POST /shifts/publish` is a plain publish (no `recorded_from_paper`).
-- Dropped by 0041: the `approval_mode`/`paper_*` columns, the
-  `noted_by/noted_at/approved_by/approved_at` columns, and the `document_scan`
-  table. **Any scan or paper-signature data in an older DB is dropped**
-  (scan files under `SCANS_DIR` are no longer referenced).
-- Authority flags (`approve_report`, `note_report`, `approve_roster`,
-  `prepare_annex_d`, ...) remain. Accomplishment-report retention now keys on
-  `prepared`. Mobile shows Open / Prepared / Returned; a stale cached
-  `noted`/`approved` is shown as Prepared. **The mobile change needs a new APK.**
-- Rule 80 in `docs/WORKFLOWS_AND_RULES.md` replaces Rules 62-63, 73, 75 and 78.
-Older paper-first and workflow-gap notes are history: see `backend/DEVLOG.md` 2026-10-12 (1)-(4).
-
-**Last updated: 2026-10-09 (after the web audit fixes, waves 1-3).**
+Purpose: compact current-state snapshot for the next session. Replaced in
+place each update, never stacked; history lives in `backend/DEVLOG.md`
+(grep by date or keyword, do not read front to back).
+Status / Last updated: 2026-10-28.
 
 ## Current state
 
-**Proposed Changes Review build (2026-10-07, DEVLOG 2026-10-07 (1)) is
-code-complete on local `main`, NOT pushed, verified on disposable DBs / jsdom
-only, NOT browser- or device-verified.** Migrations 0034-0038 (not applied to
-any real DB, apply in order after 0029-0033; 0039 follows them). What exists: dispatch cancel
-reason (also from `arrived`), published-shift rule with Admin override,
-Secretary draft shifts/swap review, `pending_reapproval` swaps, legal hold
-stops all backup pruning, incident report channel + related-incident link,
-public citizen form retired, paper-signature/record-from-paper approvals +
-scans, night dispatch offers (online-only first-accept-wins, sweeper task
-`BaranguardDispatchOfferSweeper` NOT yet registered on this machine), Chief
-Tanod (Admin) mobile console with a scope-limited device session, Chief Tanod
-rosterable, retention placeholders (purge OFF), System Tools web menu. Plan and
-decisions: `docs/WORKFLOWS_AND_RULES.md` Part 3 rules 56-66 and REFERENCE.md §1.
-Route count 117 across 30 files.
+- **Scope:** thesis defense, ISO/IEC 25010 evaluation and UAT. The system is
+  not being deployed at a barangay; deployment items are listed as "not
+  doing" in `docs/ROADMAP_TO_COMPLETION.md` (the work list, in phases).
+- **Code:** 103 routes in 27 route files (`php backend/scripts/count-routes.php`),
+  45 migrations (0001-0045). Last full re-measure 2026-10-28 (REFERENCE.md §9):
+  `verify-web-wiring.mjs` 938/0, `web/tests` 735 of 736 (known order-sensitive
+  map test 'SOS markers are never clustered', passes alone), mobile vitest
+  193/193, mobile `verify-local-schema.mjs` 266/0. Nothing from the recent
+  builds is device-verified.
+- **Databases:** `backend/.env` points at `baranguard_uiseed` (Barangay Dao,
+  simulated data, at migration 0045, 11 users). The real `baranguard` has
+  migrations only up to 0026 plus whatever was applied earlier; 0029-0045
+  are NOT applied to it, and the roadmap says do not migrate it (nothing in
+  scope needs it; 0029 and 0042 drop tables permanently). `baranguard_ch4`
+  was dropped 2026-10-14. Reset and runbook: `docs/DEFENSE_DB_RUNBOOK.md`,
+  `docs/UAT_DATA_REQUIREMENTS.md`.
+- **Reference authority:** `docs/REFERENCE.md` wins for removed features
+  (blotter, AI pipeline, Fatigue Flags); the Master Reference wins elsewhere
+  (stated in CLAUDE.md, README.md and the Master Reference's closing note).
 
-**Web audit fixes (2026-10-09; report in `docs/audit-2026-10-09/00-SUMMARY.md`,
-nine auditor reports beside it), local `main`, NOT pushed, jsdom/scripts only,
-NOT browser-verified (the user is doing the browser pass).** Three committed waves
-(`06736b5`, `6b52a53`, wave 3). Fixed: the `?api_base=` credential-theft override
-(now localhost / same-site only), unescaped `patrolZone` XSS and latent sites,
-session expiry (401 -> sign-in with notice) and a 15-minute idle lock, security
-headers + CSP in `web/.htaccess`/`backend/public/.htaccess`, the pre-filled "certify
-under oath" attestation removed from reports, the fake "Target < 20m" chip, honest
-Service Health ('configured', not green), SOS acknowledge + last-known/no-fix display
-on the web, site-wide SOS bar, Manila time everywhere (`web/src/utils/manilaTime.js`),
-shared modal accessibility, z-index scale, contrast token fixes, paper-report workflow
-(Secretary sees entry text; paper approval from `prepared`; paper-pending queue),
-Scheduler date window, Punong Barangay incident/dispatch list scope (open + last 30
-days, no search/paging, id-only search), invented fallbacks removed, Copy Narrative
-removed, privacy notice draft (`web/privacy.html`) and breach/DPO docs. Decisions
-still owed: darker warning/success/info colours (visible app-wide), idle lock vs the
-Dispatch screen (it signs out an Admin who only watches for SOS), SOS bar after
-'Mark as seen', Annex B/C-1 'Prepared by/Noted by' blocks, Kagawad account model,
-whether the PB 30-day window is right, shift delete route, Secretary incident
-date/location filters, Lupon/KP referral destination, map tiles/fonts (third-party).
-Not code: DPO designation, verifying the legal text (MC 2026-037 was unreadable),
-real DB migrations. `git stash@{0}` is a leftover from an agent's mishap: the tree was
-restored, drop it when satisfied. Checks: wiring 914/0, `web/tests` 742 (the order-
-sensitive map test can fail in a full run, passes alone), h16 59, wave1a 145, roster-
-accomplishment 339, paper-approvals 280, w2-reports 41, pentest-incidents 74, sprint4-
-phase2-3 73, sprint7-audit 60, scheduler-fatigue 55.
+## What changed 2026-10-28
 
-**Scheduler week grid (2026-10-12, DEVLOG 2026-10-12 (3), PR #4), web only, no
-migration.** Tanod availability is fixed per tanod: the web shows it as given and
-never accepts or revises it (review panel and Approvals queue removed; the
-`PATCH /availability/:id` endpoint and mobile are unchanged). Personnel >
-Scheduler opens on a week grid (add standard shifts with "+", drag to move,
-outside-availability / 56 h / 12 h warnings, coverage row, Copy last week,
-Publish week with signed paper, A4 week print); List keeps the old table.
-`web/tests` 640/0, wiring 809/0, headless-Chromium render with stub data only;
-not tested against a real backend.
+- **Docs pruned** to what the defense, evaluation and UAT need (CLAUDE.md
+  lists what was removed; recover with `git log --diff-filter=D -- docs/`).
+  `HANDOFF.md` rewritten from 448 lines; the deployment-only backlog is gone.
+  `web/README-serving.md` and `backend/scripts/README-serving.md` were merged
+  into `docs/SETUP.md` ("Serving through Apache"). Code comments in
+  `backend/.htaccess`, `backend/public/index.php`, `web/index.html` and
+  `web/src/api/apiClient.js` still name the old README-serving files (code
+  not edited here).
+- **Mobile and messaging audit fixes** (commit `3f7cc2d`; Rules 97-106 in
+  `docs/WORKFLOWS_AND_RULES.md` Part 8): SOS on every Tanod tab (800 ms hold),
+  GPS wait at most 2 s, Silent SOS option, SOS repeat and escalation, honest
+  SMS statuses, stored inbound texts and STOP opt-out, queued broadcasts,
+  data-only critical pushes. Verified on disposable DBs, vitest and jsdom
+  only. **Still owed:** a Gradle debug AND release build and a device pass
+  (R8 minify, cleartext config, critical alerts, SOS hold button), re-run
+  `install-scheduled-backup-jobs.ps1` so the new tasks register, check
+  `GATEWAY_BARANGAY_ID` in `.env`, install a new APK.
+- Defense prep: password toggles on web and mobile, web styling fixes,
+  `docs/DEFENSE_DB_RUNBOOK.md`, `docs/DEFENSE_QA.md`, manuscript and
+  instrument audit (`docs/MANUSCRIPT_AUDIT_2026-10-28.md`), UAT forms matched
+  to the build, `docs/SPRINT8_DEVICE_TEST_PLANS.md`.
 
-**Logic review (2026-10-09, DEVLOG 2026-10-09 (1)), local `main`, not pushed:**
-an Admin can now resolve a `pending`/`reopened` incident that needed no dispatch
-with a mandatory reason (migration **0039** `incident.resolve_reason`, not applied
-to any real DB; `PATCH /incidents/:id/status`; web "Resolve without dispatch").
-Master Reference §2 rule 21 and REFERENCE.md were annotated. Also fixed a real bug:
-`incident-management.js` called an undefined `refreshCounterCounts()` after a
-successful resolve/dispatch. Part 5 of `docs/WORKFLOWS_AND_RULES.md` now lists
-assumptions A1-A8 with owners (SOS resolve stays web-only, Rule 72).
-`verify-h16` 59/0, wiring 779/0, `web/tests` 616/0. Not browser-verified.
+## Standing decisions to keep in mind
 
-**Gap-X1/X2/X3 (2026-10-08, DEVLOG 2026-10-08 (2)), merged to local `main`, not
-pushed:** reopened incidents are dispatchable (X1; verify-h16 47/0 and verify-dispatch-offers 193/0
-re-run after the merge), evidence capture/upload on assigned incidents on
-mobile (X2, not device-verified), create-shift-from-availability and Admin-only
-Resolve/Dispatch in Incident Management (X3). Chapter 4 instruments live in
-`docs/chapter4-instruments/` (untracked); the UAT sign-off covers these.
+- Electronic Blotter and the local AI pipeline removed (migration 0029);
+  Fatigue Flags removed (0042); the 12 h/day scheduled-hours cap stays. Do
+  not rebuild without an explicit new decision.
+- Reports are printed and signed on paper; the app does not track
+  signatures (migration 0041, Rule 80).
+- Raw narrative is purged at ONE YEAR (365 days), decided 2026-10-17.
+  Retention for the newer tables is provisional (365 days), Rule 10.
+- Baranguard complements DILG BIMSS and never replaces it.
+- The Chief Tanod is the Admin account (`official_title`), not a role; a
+  Kagawad uses a `secretary` account carrying approval authorities.
 
-**Open from this build (need the user / the barangay):** (1) retention
-periods for availability/accomplishments/check-ins/referrals/Annex D/scans
-(all placeholders, purge OFF; `ssz_term_report` ages from
-`mayor_office_received_at`, `school` is deliberately never purged); (2) a
-`dispatch_offer` push now raises the full-screen critical alert (native
-`CriticalAlertMessagingService.java` and `criticalAlertStore.ts` `CRITICAL_TYPES`
-must be kept in sync by hand) but the Android side was only syntax-checked,
-never compiled in Gradle or run on a device; (3) admins are NOT dispatchable and
-get no offers, and the Chief Tanod cannot create accomplishment entries (the
-web roster picker now lists the Chief Tanod via `GET /users/directory?purpose=roster`);
-(4) the stakeholder proposal document was never available, so items 7-9 of the
-review were applied to the rules doc only; (5) PHP `upload_max_filesize` /
-`post_max_size` must allow ~11 MB for scans; (6) concurrency (first accept wins,
-12h cap) is reasoned, not demonstrated; (7) migrations 0029-0038 were rehearsed
-on scratch copies of BOTH real DBs on 2026-10-08 and applied cleanly with all
-rows preserved, but are still not applied to the real DBs; (8) the sweeper
-scheduled task is not registered yet.
+## Open owner decisions (do not guess)
 
-**Tanod-workflow build (2026-10-01, DEVLOG 2026-10-01 (3)) is code-complete
-and verified on disposable DBs and jsdom ONLY.** It is NOT browser-verified
-by an agent (the user is doing the browser test themselves) and NOT
-device-verified. Plan: `docs/FEATURE_PLAN_2026-10.md`; binding contract
-(amended during review): `docs/FEATURE_CONTRACT_2026-10.md`. What exists:
-availability submission and draft -> published rosters approved by an
-official with `approve_roster`; monthly accomplishment reports (prepared ->
-noted -> approved, with return) as the attendance path; incident referrals
-(refer, never handle); Safer School Zones (school inventory = Annex B,
-check-ins, per-incident C-1 fields, Annex D term report); a separate
-Admin-managed approval-authority attribute on users (not a role); Approvals
-inbox, Accomplishment Reports, Referral Log and Safer School Zones web
-pages; Fatigue tab removed from nav (endpoints kept); mobile Availability,
-Accomplishments, School check-in, Refer and C-1 inputs. Live routes 76 ->
-105 (`php backend/scripts/count-routes.php`). Details: REFERENCE.md §3-§5,
-§7.
+1. Roadmap Phase 0.6 defaults: Silent SOS on, SOS escalates to Secretary and
+   Punong Barangay, emergency numbers 911/160 (Rules 97 and 99).
+2. Kagawad-as-secretary account model; whether an Admin may hold `approve_*`
+   through a second account.
+3. Retention periods for availability, accomplishment reports, school
+   check-ins, referrals and Annex D (provisional 365 days, purge job exists
+   with the rules set provisionally); needs a council/COA decision, out of
+   scope for the defense.
+4. Text of MC 2026-037 (deadlines, C-1 filing frequency, Annex A) was never
+   readable; Annex B/C-1/D layouts follow the user's own forms and are marked
+   draft (Rule 88).
+5. From the 2026-10-09 web audit, as recorded in DEVLOG: darker
+   warning/success/info colours, idle lock vs the Dispatch screen, SOS bar
+   after 'Mark as seen', Secretary incident date/location filters, map
+   tiles/fonts being third-party.
 
-**Migrations 0029, 0030, 0031, 0032, 0033 are NOT applied to `baranguard`
-or `baranguard_uiseed`.** Back up first (`backend/scripts/backup.sh`), apply
-in numeric order as DBA/root (`baranguard_app` has no ALTER/CREATE/DROP).
-0029 drops the blotter/AI tables irreversibly; 0030 also rewrites `user`
-authority columns and backfills existing shifts to `published`. Until then
-the real DBs lack every new table and the new code paths will 500 against
-them.
+## Environment and access
 
-**Measured 2026-10-01 after the build (disposable DBs / jsdom):**
-b2-pentest 59, device-session 20, device-signature 21, devices-map-packages
-57, duty-status-map-upload 49, evidence-upload 19, f5 16, f6 8, f8 8, f9 15,
-h16 30, public-transparency 17, routing 23, second-responder 25, sprint0
-19, sprint1-auth 23, sprint3 43, sprint4-phase2-3 72, sprint7-audit 59,
-sprint7-pentest-incidents 56, sprint7-retention 82, w2-reports 31, w3-w4
-38, scheduler-fatigue 49; NEW: referrals 147, roster-accomplishment 332,
-school-zones 213. sprint1-remaining, sprint4 and (later runs of)
-scheduler-fatigue/roster printed `ALL CHECKS PASSED`, count not captured.
-`verify-web-wiring.mjs` 733/0, `web/tests` 542/0, mobile
-`verify-local-schema.mjs` 230/0 (`tsc` 1 and `lint` 18 errors are
-pre-existing).
-
-**Decisions taken (FEATURE_PLAN §2):** (1) accomplishment reports: tanod
-prepares, a Chief Tanod/Kagawad/Punong Barangay notes and approves,
-configurable per user via authorities, never the preparer; (2)
-availability coexists with admin-created shifts, both reach tanods only
-after publish; (3) server duty-sum is a suggestion, tanod's confirmed value
-is stored beside it, difference > 30 min flagged; (4) Ambulance/EMS is its
-own referral value, maps to Other agencies (or DOH via setting) on Annex D;
-(5) Secretary kept, redefined as Records & Reports Officer; (6) Fatigue
-Flags out of navigation, data kept; (7) `raw_narrative` stays on the 90-day
-purge, a separate non-identifying C-1 summary is stored apart. Also: Chief
-Tanod is a `official_title`, not a role.
-
-**Open decisions (need the user / the barangay, do not guess):**
-- No Kagawad role exists: a Kagawad uses a `secretary` account carrying
-  authorities. Confirm that is acceptable.
-- Narrative retention: every raw narrative is on the 90-day ceiling
-  (no approved redaction ever exists); policy confirmation still owed.
-- Retention for the new tables and `c1_*` columns is undecided and NO purge
-  job was added (Rule 10; needs an architecture review and a council
-  decision). Documented as "pending" in `DATA_INVENTORY.md`.
-- Annex A fields and MC 2026-037 deadlines / C-1 filing frequency /
-  required deployment days are unknown — needs the circular PDF from
-  dilg.gov.ph. Annex B/C-1/D layouts follow the user's own forms.
-- Whether an Admin may also hold `approve_*` through another account
-  (segregation of duties is only enforced per-account: an Admin cannot edit
-  their OWN approving authorities, but a second Admin can grant them).
-- What attendance evidence the treasurer/COA actually accepts for
-  honoraria, and who approves rosters in practice.
-
-**Unresolved reviewer items NOT fixed / NOT proven:** the 12h/day cap race
-and the accomplishment-report-creation deadlock fix are untested because
-`php -S` is single-threaded (the user-row lock is reasoned, not
-demonstrated under concurrency); the mobile discard SQL has not been run
-against SQLCipher; the sync `closes_client_event_id` path and offline
-availability/accomplishment flows have never run on a device. One
-web/tests map test, 'SOS markers are never clustered', looks
-order-sensitive (flaky); one unexplained flaky run was seen once in
-`verify-roster-accomplishment.sh` earlier and did not reproduce.
-
-**Electronic Blotter and the local-AI pipeline remain REMOVED (migration
-0029, DEVLOG 2026-10-01 (1)).** Barangays keep the blotter and Lupon
-records in binders; DILG BIMSS/KPIS stays the case ledger and Baranguard
-complements it (REFERENCE.md §1). The Secretary role, `raw_narrative` and
-party fields stayed.
-
-**Docs reconciled 2026-10-01:** `CLAUDE.md`, `REFERENCE.md` (post-0033),
-`SETUP.md`, `REMAINING.md`, `SPRINTS.md`, `DATA_INVENTORY.md` and
-`PRIVACY_IMPACT_ASSESSMENT.md` (new categories only). **Still describing the
-old system, not reconciled:** `Baranguard_Master_Reference_FINAL .md`,
-`PRIVACY_NOTICES.md` (no notice yet for staff hours / availability /
-school check-ins), `Baranguard_Sprint_Prompts.md`, `AI_Evaluation_Dataset_
-Guide.md` (history). Thesis drafts: `THESIS_OBJECTIVES_ALIGNMENT.md`,
-`ISO25010_EVALUATION_PLAN.md` — nothing measured yet.
-
-**Loose ends on the workstation:** `backend/.env` may still carry
-`OLLAMA_*` values, harmless; a `BaranguardAiWorker` Scheduled Task may
-still be registered — `Unregister-ScheduledTask -TaskName BaranguardAiWorker
--Confirm:$false`.
-
-## Environment and access (still true)
-
-- **Branch**: commit and push directly to `main` (explicit user
-  instruction 2026-09-22); `develop` and `feature/push-body-incident-
-  label` are stale, don't build on them.
-- **Credentials**: `baranguard_uiseed` password is `Demo@2026`.
-  `tanod.olayvar` is seeded suspended — use `tanod.reyes` (user_id 4),
-  `tanod.delacruz`, `tanod.gubaton` or `tanod.dichoso`. `admin.dao` is the
-  Admin. `backend/.env` points at `baranguard_uiseed`, **not** the real
-  `baranguard` DB — check `DB_NAME` before trusting any real-DB claim.
-- **Public exposure**: the Cloudflare Named Tunnel `baranguard` (id
-  `28c3134b-1a35-4c85-971a-0fb18f262493`, config `~/.cloudflared/
-  config.yml`) fronts `https://baranguardph.win` (web) and `https://
-  api.baranguardph.win` (API) from THIS machine. Because `.env` points at
-  the demo DB, public visitors see demo data. No Cloudflare Access policy
-  exists (deferred; if added, scope it to the web host only, never the
-  API — REFERENCE.md §1). The tunnel is started by `start-baranguard.ps1`
-  as a user process; it is not yet a Windows service here (needs an
-  elevated `install-autostart-services.ps1`), so it does not survive a
-  reboot until someone logs in and runs the launcher. The `danilyn`
-  machine's `baranguard-main` tunnel is orphaned, not deleted — ask first.
-- **Single point of failure**: everything assumes the workstation is on;
-  only SOS has a device-local SMS fallback (REFERENCE.md Rule 27 of the
-  Master Reference). UPS/backup internet is an unsolved resilience
-  question.
-- **SMS transport**: Semaphore is gone; a tethered Android phone
-  (`sms-gateway/`, setup in its README) sends over its own SIM and the
-  same phone does inbound ingestion (`gsm-ingest-daemon.php`). Needs
+- **Branch:** commit and push directly to `main` (user instruction
+  2026-09-22). `git stash@{0}` may still hold a leftover from an agent
+  mishap on 2026-10-09; drop it when satisfied. Remote `origin`:
+  `github.com/jpbuenosaires/Baranguard`. Commits: `[Tag] Short description`.
+- **Credentials:** the demo/UAT seed accounts and their shared password are
+  listed in `docs/UAT_DATA_REQUIREMENTS.md`; `tanod.olayvar` is seeded
+  suspended. Check `DB_NAME` in `backend/.env` before trusting any DB claim.
+- **Public hostnames** `baranguardph.win` / `api.baranguardph.win`: tunnel
+  from this machine, demo data only, no Cloudflare Access, started as a user
+  process by `start-baranguard.ps1`; out of scope (REFERENCE.md §1). The
+  `baranguard-main` tunnel on the `danilyn` machine is orphaned; ask first.
+- **Single point of failure:** everything needs the workstation on; only SOS
+  has a device-local SMS fallback. Not solved, deployment-only.
+- **SMS:** a tethered Android phone (`sms-gateway/`) sends over its own SIM
+  and the same phone does inbound (`gsm-ingest-daemon.php`); needs
   `GSM_GATEWAY_ENABLED=true` and the app launched once after install.
-- **Mobile build**: always set `VITE_API_BASE_URL` explicitly for a
-  real-device APK (see the quick reference) — `mobile/.env.local` leaks
-  `http://localhost:8081` into every bare `vite build`.
+- **Mobile build:** always set `VITE_API_BASE_URL` explicitly for a real
+  device; `mobile/.env.local` otherwise leaks `http://localhost:8081`.
+- **Device/adb:** see the auto-memory notes; `adb` is at
+  `C:\Users\JAYSON~1\AppData\Local\Android\Sdk\platform-tools\adb.exe`.
 
-## Outstanding work (all needs a device, a credential, or a decision)
-
-1. **Apply migrations 0029-0039 to the real DBs** (back up first, DBA/root,
-   in order) and decide whether `baranguard_uiseed` or `baranguard` should back the public
-   tunnel.
-2. **Print/PDF visual check**: the shared print-preview modal and the
-   server-generated PDFs (statistical report, PB digest) passed static
-   checks only; nobody has opened a freshly generated one. (The Lupon
-   packet no longer exists.) The new print layouts (accomplishment report,
-   Annex B, C-1, D + signature page) are unverified visually too.
-2b. **Browser pass of the tanod-workflow pages** across all four roles
-   (the user is running this) and a **device pass** of the new mobile
-   screens, offline-queue sync of the four new kinds, and the
-   `closes_client_event_id` check-out path.
-3. **Device verification still owed** (Infinix X6840): the 2026-10-10 SOS envelope SMS to the gateway SIM (set `sos_fallback.gateway_number` in Settings, turn mobile data off, raise SOS, confirm the SOS appears on the dashboard with `fallback_channel` sms and that the later sync does not duplicate it; DEVLOG 2026-10-10); M13's `sms_failed`
-   path (airplane mode / no SIM) and `SosSmsPlugin` pre-validation; the
-   no-GPS SOS change (kill GPS, raise SOS, confirm it still reaches the
-   server or queues); H-09 device-signature keys (confirm
-   `mobile_device.device_public_key_pem` is populated and signature
-   headers are actually sent); the `patrolLocationService` permission
-   sequencing; FCM push end-to-end with the real `google-services.json`;
-   removal of the on-device workstation-address UI; GPS moving run
-   outdoors.
-4. **Not done on purpose**: MFA (C-02), Cloudflare Access (above), DND
-   bypass for critical alerts, privacy governance actions (DPO
-   designation is a barangay-council action).
-5. **Decisions/inputs owed** (see Current state): Kagawad-as-secretary
-   account, retention for the new tables, narrative-retention policy, the
-   MC 2026-037 circular text and Annex A, COA/treasurer attendance
-   evidence. No retention purge exists for the new tables.
-6. **Thesis evaluation**: run the measurements in
-   `docs/ISO25010_EVALUATION_PLAN.md`; nothing is claimed until they exist.
-
-Full ordered backlog with reasoning: `docs/REMAINING.md`.
-
-## Things most likely to bite you
-
-1. A native exception on Capacitor's plugin thread can't be caught by JS
-   try/catch — use a native pre-check.
-2. Never mount an Ionic tab shell at a root catch-all (`/*`); keep shells
-   at a named prefix (`/tabs/*`).
-3. Static checks (`node --check`, wiring script, `php -l`, `tsc`) can be
-   green on code with a P0 defect; several real bugs only showed up on a
-   live device or HTTP call. A "code only, not device-verified" DEVLOG
-   entry is not closed.
-4. A verify script proves nothing about a route it never calls — grep the
-   `.sh` before trusting a green result.
-5. `backend/.env` isn't git-tracked and may lack secrets a feature needs
-   — compare with `.env.example`.
-6. Gradle's daemon JVM follows `JAVA_HOME`, not PATH — `./gradlew --stop`
-   then re-export.
-7. A named PDO parameter binds only ONE placeholder occurrence under
-   native prepares.
-8. An already-open browser tab or a Capacitor WebView can run a stale
-   bundle; try a new tab or `adb shell pm clear` first. `pm clear` also
-   resets runtime permissions.
-9. Capacitor's default logging prints plugin results (SQLite rows) to
-   logcat; `capacitor.config.ts` sets `loggingBehavior: 'none'` — never
-   ship a `CAP_DEBUG_LOGGING=1` build.
-10. `adb reverse tcp:8081 tcp:8081` is how the phone reaches this PC's
-    backend over USB; the mapping drops on every reconnect.
-    `adb reverse --remove tcp:8081` is a clean way to simulate an
-    unreachable workstation.
-11. `adb shell <cmd>` re-joins arguments with spaces; build the whole
-    remote command as one quoted string.
-12. PHP `proc_open()` + `stream_set_blocking(false)` is not a subprocess
-    timeout on Windows; `LocalGsmOutboundClient` shells out to PowerShell
-    `Process.WaitForExit(ms)` instead.
-13. A freshly installed Android app is "stopped" and receives no
-    broadcast until launched once. This Infinix/XOS build has its own
-    background freezer (`Usf_Hiber`) that can delay broadcasts.
-14. Git-Bash `/c/...` paths break native `php.exe` and `curl.exe` — use
-    `cygpath -m`.
-15. `bootstrap-admin.js`'s documented `BARANGUARD_BOOTSTRAP_JSON` is never
-    read; pipe answers on stdin in prompt order.
-16. `ext-curl` under Apache needs the four `LoadFile` DLL lines in
-    `C:\xampp\apache\conf\extra\httpd-xampp.conf` (not git-tracked) —
-    re-add them if XAMPP's PHP is swapped (REFERENCE.md §8).
-
-## Operational quick reference
+## Quick commands
 
 ```bash
-# Retention (dry-run FIRST on real data — deletion is irreversible by design)
-php backend/scripts/retention-job.php --dry-run
-php backend/scripts/retention-job.php --list
-
-# Restore drill (records the drill; W20 shows "Never" until you run it)
-BACKUP_ENCRYPTION_PASSPHRASE=... bash backend/scripts/restore-drill.sh
-
-# GSM ingestion daemon (once the phone is adb-reachable) — inbound
-cd backend && php scripts/gsm-ingest-daemon.php --status
-php scripts/gsm-ingest-daemon.php --once   # one poll
-php scripts/gsm-ingest-daemon.php --daemon # keep polling
-
-# GSM outbound gateway — one-time setup on a new gateway phone
-cd sms-gateway
-export JAVA_HOME="C:/Program Files/Eclipse Adoptium/jdk-21.0.12.101-hotspot"
-export TMPDIR=C:/gtmp TEMP=C:/gtmp TMP=C:/gtmp
-./gradlew assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell pm grant ph.baranguard.smsgateway android.permission.SEND_SMS
-adb shell monkey -p ph.baranguard.smsgateway -c android.intent.category.LAUNCHER 1
-# then set GSM_GATEWAY_ENABLED=true in backend/.env
-
-# Web checks — run after ANY web change
-node web/scripts/verify-web-wiring.mjs
-cd web/tests && npm test            # one-time `npm install` first
-
-# Mobile static checks — run after ANY mobile change
+# Counts and checks
+php backend/scripts/count-routes.php
+node web/scripts/verify-web-wiring.mjs            # after ANY web change
+cd web/tests && npm test                           # one-time npm install first
 cd mobile && npx tsc --noEmit && npm run lint && node scripts/verify-local-schema.mjs
 
-# Route count (the number in REFERENCE.md §5 drifts)
-php backend/scripts/count-routes.php
-
-# Backend evidence scripts (disposable DB, safe to re-run)
+# Backend evidence (disposable DB, safe to re-run)
+bash backend/scripts/verify-scheduler.sh
+bash backend/scripts/verify-sprint7-pentest-incidents.sh
+bash backend/scripts/verify-b2-pentest-remaining-resources.sh
 php backend/scripts/verify-json-contracts.php
 php backend/scripts/verify-auth-lockout-revocation.php
-bash backend/scripts/verify-b2-pentest-remaining-resources.sh
-bash backend/scripts/verify-sprint7-pentest-incidents.sh
-bash backend/scripts/verify-scheduler.sh
 
-# Build + install the mobile Tanod app onto a connected Android device.
-# VITE_API_BASE_URL MUST be set explicitly: mobile/.env.local exists on
-# this machine for LOCAL dev builds and Vite auto-loads it into EVERY
-# `vite build`, silently baking http://localhost:8081 into an APK meant
-# for a real device unless this env var overrides it.
+# Retention (dry-run FIRST; deletion is irreversible by design)
+php backend/scripts/retention-job.php --dry-run
+# Restore drill
+BACKUP_ENCRYPTION_PASSPHRASE=... bash backend/scripts/restore-drill.sh
+# GSM inbound daemon
+cd backend && php scripts/gsm-ingest-daemon.php --status
+
+# Mobile APK for a real device (VITE_API_BASE_URL MUST be explicit)
 cd mobile && VITE_API_BASE_URL=https://api.baranguardph.win/api/v1 npx vite build && npx cap sync android
 cd android
 export JAVA_HOME="C:/Program Files/Eclipse Adoptium/jdk-21.0.12.101-hotspot"
-export TMPDIR=C:/gtmp TEMP=C:/gtmp TMP=C:/gtmp
-export JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=C:/gtmp"
+export TMPDIR=C:/gtmp TEMP=C:/gtmp TMP=C:/gtmp JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=C:/gtmp"
 ./gradlew --stop && ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell monkey -p ph.baranguard.tanod -c android.intent.category.LAUNCHER 1
-# adb is not on PATH: C:\Users\JAYSON~1\AppData\Local\Android\Sdk\platform-tools\adb.exe
-
-# Cloudflare Named Tunnel set-up (idempotent; needs `cloudflared tunnel login` once)
-bash backend/scripts/setup-cloudflare-tunnel.sh yourdomain.win
-# One-time backend/.env generation on a fresh machine (docs/SETUP.md 1.4)
-bash backend/scripts/setup-env.sh
 ```
 
-**Day-to-day: double-click `Start Baranguard.bat`** (repo root) to start
-Apache, MySQL and the Cloudflare tunnel (whichever isn't already running;
-safe to click twice) and open the dashboard. No admin rights needed.
+`Start Baranguard.bat` (repo root) starts Apache, MySQL and the tunnel; scheduled
+jobs are registered by `backend/scripts/install-scheduled-backup-jobs.ps1`.
+Setup from scratch: `docs/SETUP.md`.
 
-**Zero-click autostart instead** (one-time elevated PowerShell; pick one
-of the two approaches):
+## Things most likely to bite you
 
-```powershell
-powershell -ExecutionPolicy Bypass -File backend\scripts\install-autostart-services.ps1
-```
-
-Installs Apache2.4/MySQL/cloudflared as auto-starting Windows services
-(idempotent, prints an uninstall cheat-sheet). Not run on this machine.
-
-**Backup/retention/digest are scheduled** (no elevation needed):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File backend\scripts\install-scheduled-backup-jobs.ps1
-```
-
-Registers `BaranguardBackupRetention` (daily 02:00), `BaranguardRestoreDrill`
-(weekly Sunday 03:00) and `BaranguardPbDigest` (weekly Monday 06:00). The
-first two read `BACKUP_ENCRYPTION_PASSPHRASE` from `backend/.env`. Logs:
-`backend/backups/scheduled-logs/`.
-
-## Conventions
-
-Commits: `[Tag] Short description`, ending with the `Co-Authored-By:` line
-the current session instructions specify. Remote `origin` →
-`github.com/jpbuenosaires/Baranguard`; push before ending a session that
-adds real work. Rewrite this file — don't append — at the end of any
-session that changes the picture. A stale `HANDOFF.md` is treated like a
-stale DEVLOG claim: verify against the repo before trusting it.
-
+1. A native exception on Capacitor's plugin thread cannot be caught by JS
+   try/catch; use a native pre-check.
+2. Never mount an Ionic tab shell at a root catch-all (`/*`); use `/tabs/*`.
+3. Static checks (`node --check`, wiring script, `php -l`, `tsc`) can be green
+   on code with a P0 defect. A "code only, not device-verified" DEVLOG entry
+   is not closed.
+4. A verify script proves nothing about a route it never calls; grep the `.sh`.
+5. `backend/.env` is not git-tracked; compare with `.env.example`.
+6. Gradle's daemon JVM follows `JAVA_HOME`, not PATH (`./gradlew --stop`).
+7. A named PDO parameter binds only ONE placeholder under native prepares.
+8. A stale browser tab or Capacitor WebView can run an old bundle; try a new
+   tab or `adb shell pm clear` (which also resets runtime permissions).
+9. Never ship a `CAP_DEBUG_LOGGING=1` build (it prints SQLite rows to logcat).
+10. `adb reverse tcp:8081 tcp:8081` drops on every reconnect.
+11. A freshly installed Android app is "stopped" and gets no broadcast until
+    launched once; the Infinix/XOS build also has a background freezer.
+12. Git-Bash `/c/...` paths break native `php.exe` and `curl.exe`; use
+    `cygpath -m`.
+13. `ext-curl` under Apache needs four `LoadFile` DLL lines in
+    `C:\xampp\apache\conf\extra\httpd-xampp.conf` (not git-tracked); re-add
+    them if XAMPP's PHP is swapped (REFERENCE.md §8).
+14. XAMPP's MariaDB listens on 3306 here; an unrelated `MySQL80` service may
+    also exist, so check `DB_PORT` (REFERENCE.md §8).

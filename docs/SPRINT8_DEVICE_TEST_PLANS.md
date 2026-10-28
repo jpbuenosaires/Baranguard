@@ -1,13 +1,15 @@
-# Sprint 8 — device test plans (offline durability, notification reliability)
+# Device test plans (offline durability, notification reliability)
+
+Purpose: step-by-step plans for the two evaluation items that need a real Android device.
+Status/Last updated: 2026-10-28.
 
 **Status: PLANS ONLY. Nothing here has been run.** Written 2026-10-23 for two
-Sprint 8 boxes that need hardware (`docs/SPRINTS.md`). Preparing both in one
-session was an explicit user request (a deliberate exception to the one-cut
-rule). Results go in `backend/DEVLOG.md`; a box is checked only with the
-evidence listed under "Pass evidence" (Standing rule 5).
+evaluation items that need hardware (the former "Sprint 8" boxes). Results go in
+`backend/DEVLOG.md`; an item counts as done only with the evidence listed under
+"Pass evidence".
 
 Baseline already proven (do **not** redo, only regress if code changed since):
-Infinix X6840, 2026-09-19/24 (`docs/REMAINING.md` A1, A4; `docs/evidence/2026-09-19-device/`):
+Infinix X6840, 2026-09-19/24 (`docs/evidence/2026-09-19-device/`):
 SQLCipher header, one offline report surviving force-stop, keystore round-trip,
 one queue drain (incident 119), real FCM critical alert + ack, M13 `sent_by_sms`,
 real GSM outbound SMS. These were **n = 1** each. The plans below turn them into
@@ -113,7 +115,7 @@ availability · accomplishment_entry · school_checkin).
 
 Table: trial · N · survived · reached server · duplicates · notes. Plus
 sync latency (reconnect → last row in DB) per trial, since "Sync latency" is its
-own Sprint 8 box and the same data feeds it. Log in DEVLOG; reconcile
+own evaluation item and the same data feeds it. Log in DEVLOG; reconcile
 `docs/OFFLINE_SYNC_CONFLICT_RULES.md` if behaviour differs from its table.
 
 ---
@@ -147,7 +149,7 @@ no device / FCM fail → retry once → SMS on 2nd failure · FCM `sent` and no 
 | B4 | Phone offline (airplane) at send | airplane mode, dispatch | 5 | FCM accepted by Google but undelivered, or fails; record what the ladder does and what the Tanod sees on reconnect |
 | B5 | No registered device | deactivate the device (`PATCH /devices/:id/deactivate`), dispatch | 3 | SMS `sms_log` row, no fcm row |
 | B6 | FCM hard failure | temporarily blank `FCM_SERVICE_ACCOUNT_PATH` (restore after) or revoke token | 3 | fcm `failed` attempt 1 + attempt 2, then SMS |
-| B7 | SMS fallback itself fails | B6 with the gateway phone unplugged | 2 | `sms_log.failure_reason` set, `GET /system/health` flags exhaustion (REMAINING.md H-20 note) |
+| B7 | SMS fallback itself fails | B6 with the gateway phone unplugged | 2 | `sms_log.failure_reason` set, `GET /system/health` flags exhaustion |
 | B8 | `dispatch_offer` critical alert | night window offer (or set test hours) | 3 | critical overlay; **Android side never compiled/run** (HANDOFF open item 2) |
 | B9 | Tanod SOS → Admin/SMS path | raise SOS | 3 | per Rule 27, incl. no-GPS fix |
 

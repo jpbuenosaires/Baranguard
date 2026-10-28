@@ -1,5 +1,8 @@
 # Manuscript Audit — Research Adviser Review
 
+Purpose: one-off adviser-style review of the capstone manuscript, instruments and system accuracy.
+Status/Last updated: 2026-10-28. Findings stay open until applied to the manuscript. Instrument files `03`-`06`, `08` and `10` named below were removed 2026-10-28 (only `01`, `02`, `07`, `09`, `11`, `12a-d` remain in `docs/chapter4-instruments/`); read those mentions as history. Delete this file once its P0/P1 items are applied.
+
 **Document reviewed:** `docs/Baranguard_Capstone_Manuscript.html` (revised 2026-10-17, about 24,000 words, Chapters 1-4, References, Appendices A-B).
 **Reviewed on:** 2026-10-28, against the code as of commit `8c4ed06`, and with every scholarly reference checked online.
 **Scope decision applied:** the system will not be deployed at any barangay; the study ends with ISO/IEC 25010 evaluation and UAT.
@@ -133,7 +136,7 @@ The system description (Section 4.3) is unusually strong, honest and well eviden
 
 ## G. Chapter 4 instruments (`docs/chapter4-instruments/`)
 
-Reviewed: the bundle `06-evaluation-and-uat-documents.html` (per-role ISO forms BG-EV-02-A to D, per-role UAT forms BG-UAT-02-A to D, and the facilitator guide and tally sheets BG-EV-02-F), the newer one-sheet versions `09-consolidated-uat.html` (BG-UAT-02), `10`/`11` (BG-EV-02 questionnaire) and `12a-d` (answer sheets), plus the facilitator guide `07`, and the headings of `01` (interview guide) and `02` (needs questionnaire). Every UAT label was searched for in the current web and mobile code.
+Reviewed: the bundle `06-evaluation-and-uat-documents.html` (removed) (per-role ISO forms BG-EV-02-A to D, per-role UAT forms BG-UAT-02-A to D, and the facilitator guide and tally sheets BG-EV-02-F), the newer one-sheet versions `09-consolidated-uat.html` (BG-UAT-02), `10`/`11` (BG-EV-02 questionnaire) and `12a-d` (answer sheets), plus the facilitator guide `07`, and the headings of `01` (interview guide) and `02` (needs questionnaire). Every UAT label was searched for in the current web and mobile code.
 
 **What is good:** bilingual forms, N/A option, objective tags on each item, evidence-backed technical statements for IT evaluators, the SUS included with a correct scoring key, time-on-task and error counts in the UAT, defect and retest logs, a facilitator script that keeps the facilitator's hands off the device, and the honest rule "implemented, not yet device-verified" until the SMS test passes.
 
@@ -148,7 +151,7 @@ Reviewed: the bundle `06-evaluation-and-uat-documents.html` (per-role ISO forms 
 | G1e | Two usability measures: SUS (S1-S10) and Q1-Q3 | No usability scale named | Describe SUS in 3.3.2 and report it in 4.4 (see B5). |
 | G1f | Tally sheet says "Table 4-18 (template). Summary of ISO evaluation results" | That summary is **Table 4-22**; Table 4-18 is the defect table | Renumber the template. |
 
-> **Status 2026-10-28:** G2 and G3 are **fixed** in `09-consolidated-uat.html`, `06-evaluation-and-uat-documents.html` and `04-uat-signoff.html` (and one note in `07-facilitator-session-guide.html`). Task IDs and task counts are unchanged: S-N2 was turned into a real Secretary boundary check (no Users tab in Personnel) rather than deleted. The Filipino lines added for T-04 and T-05 are working translations, like the rest of the form. G1, G4, G5 and G6 are still open.
+> **Status 2026-10-28:** G2 and G3 are **fixed** in `09-consolidated-uat.html`, `06-evaluation-and-uat-documents.html` (removed) and `04-uat-signoff.html` (removed) (and one note in `07-facilitator-session-guide.html`). Task IDs and task counts are unchanged: S-N2 was turned into a real Secretary boundary check (no Users tab in Personnel) rather than deleted. The Filipino lines added for T-04 and T-05 are working translations, like the rest of the form. G1, G4, G5 and G6 are still open.
 
 ### G2. The UAT form contradicts itself (P0 — testers will fail correct behaviour)
 

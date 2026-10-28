@@ -1,23 +1,23 @@
 # Baranguard — Defect Log
 
-Consolidated 2026-10-23 from `AUDIT_2026-09-07.md`, `audit-2026-10-09/`
-(`00-SUMMARY.md` plus nine reports), `REMAINING.md` §F and the DEVLOG
-entries that record the fixes. **Only statuses those documents state are
-recorded here**; "not stated" means no source says. "Verified" means what
-the source says was run, and none of the 2026-10-09 fixes were
-browser-verified (jsdom and scripts only). Severity is the audit's own
-(P0 worst).
+Purpose: single record of defects found by the 2026-09-07 audit, the 2026-10-09 web audit, the
+2026-10-28 mobile/messaging audit and the DEVLOG fixes.
+Status: consolidated 2026-10-23; last updated 2026-10-28. The source reports (`AUDIT_2026-09-07.md`,
+`audit-2026-10-09/`, `audit-2026-10-28/`, `REMAINING.md` §F) were deleted 2026-10-28 and are in git
+history (`git log --diff-filter=D -- docs/`); this file is now the only record.
+
+**Only statuses those documents stated are recorded here**; "not stated" means no source says.
+"Verified" means what the source said was run, and none of the 2026-10-09 fixes were
+browser-verified (jsdom and scripts only). Severity is the audit's own (P0 worst).
 
 ## A. Audit of 2026-09-07 (F1-F11)
 
-Numbering below is the audit file's own. `REMAINING.md` §F groups and
-numbers a few items differently (it calls the response-time item F8 and
-the blotter `200 []` item F9).
+Numbering below is the audit file's own; the old `REMAINING.md` §F numbered a few items differently (response-time item F8, blotter `200 []` item F9).
 
 | ID | Sev | Found | Status | How fixed / verified |
 |---|---|---|---|---|
 | F1 | P0 | 2026-09-07 | **Reopened 2026-09-15** | API published to the internet. Closed 2026-09-13 via private VPN, VPN decommissioned 2026-09-15; now a Cloudflare Named Tunnel with no Access policy (see `RISK_REGISTER.md` R-02, R-03) |
-| F2 | P0 | 2026-09-07 | Closed | Stored XSS from unauthenticated citizen report; shared `escapeHtml.js`, fixed 2026-09-12; endpoint later removed (2026-10-07). Per REMAINING: "proven with dedicated verify scripts" |
+| F2 | P0 | 2026-09-07 | Closed | Stored XSS from unauthenticated citizen report; shared `escapeHtml.js`, fixed 2026-09-12; endpoint later removed (2026-10-07). Stated as proven with dedicated verify scripts |
 | F3 | P0 | 2026-09-07 | Closed | Same unescaped `innerHTML` pattern across ~12 files; fixed 2026-09-12 |
 | F4 | P1 | 2026-09-07 | Closed | Evidence upload built end-to-end (`POST /incidents/:id/evidence`); `verify-evidence-upload.sh` |
 | F5 | P1 | 2026-09-07 | Closed | `PATCH /incidents/:id` idempotency replay via `audit_log`; dedicated verify script |
@@ -86,7 +86,7 @@ w2-reports 41, pentest-incidents 74, sprint4-phase2-3 73, sprint7-audit
 
 ## C. Mobile and messaging audit of 2026-10-28
 
-Source: `docs/audit-2026-10-28/` (reports 01-05) and `backend/DEVLOG.md` 2026-10-28. Fixed in the working tree the same day; verified on disposable DBs, vitest (193 tests, 30 files), `verify-local-schema.mjs` (266) and jsdom only. **None is device-verified; Gradle was not run.** IDs are the audit reports' own.
+Source: the 2026-10-28 audit reports 01-05 (deleted, in git history) and `backend/DEVLOG.md` 2026-10-28. Fixed in the working tree the same day; verified on disposable DBs, vitest (193 tests, 30 files), `verify-local-schema.mjs` (266) and jsdom only. **None is device-verified; Gradle was not run.** IDs are the audit reports' own.
 
 | ID | Sev | Found | Status | What was found / how fixed |
 |---|---|---|---|---|
@@ -108,6 +108,6 @@ Source: `docs/audit-2026-10-28/` (reports 01-05) and `backend/DEVLOG.md` 2026-10
 | 02 P1-6, P1-8 | P1 | 2026-10-28 | Fixed 2026-10-28 | Patrol GPS service outlived logout; local data not user-scoped. Logout stops the service and scopes lists per user |
 | 02 P1-7 | P1 | 2026-10-28 | Fixed 2026-10-28 | Live Map broadcast GPS regardless of duty. Posts only on duty |
 | 02 P1-10 / 05 | P1 | 2026-10-28 | Fixed in code, not built | `allowBackup` on and cleartext allowed in release. `allowBackup` off; cleartext only in a debug config; build 11 MB to 5.8 MB, R8 on release |
-| 04 doc drift 10-16 | P3 | 2026-10-28 | Fixed 2026-10-28 (docs) | Seven doc-vs-code drifts (seven signed Admin device writes, sync order, SOS resolve wording, Rule 89, POWER_CUT_PROCEDURE ingest dependency, nav-item and check counts, mobile `noted`/`approved` mapping, which does exist in `apiService.ts`) |
+| 04 doc drift 10-16 | P3 | 2026-10-28 | Fixed 2026-10-28 (docs) | Seven doc-vs-code drifts (seven signed Admin device writes, sync order, SOS resolve wording, Rule 89, power-cut procedure ingest dependency (document since removed), nav-item and check counts, mobile `noted`/`approved` mapping, which does exist in `apiService.ts`) |
 
 **Open after this pass (from the DEVLOG):** names and coordinates in the SOS SMS, native service token storage, hard-coded 911/160 numbers, SOS replay-then-500, STOP confirmation reply, phone-number masking, no notification list screen, no retry of a failed alert acknowledge, no on-duty status in the assign picker, no tanod decline of a dispatch, no cancel or swap notification. `verify-web-wiring.mjs` showed 936/32 in the DEVLOG run; re-run 2026-10-28 for this reconciliation it shows 938 passed, 0 failed.

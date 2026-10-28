@@ -1,10 +1,13 @@
 # Baranguard - Requirements Traceability Matrix
 
-Written 2026-10-23. Companion to `SRS.md` (requirement text and rule numbers live there).
+Purpose: maps each requirement to a thesis objective, screen/endpoint and test; section 5 holds the per-objective evidence and limits.
+Status/Last updated: 2026-10-28 (written 2026-10-23).
+
+Companion to `SRS.md` (requirement text and rule numbers live there).
 Chain: requirement -> thesis objective -> screen / endpoint -> test.
 
 How to read it
-- Objectives: O1 GIS command center, O2 offline-first app, O3 SMS fallback for SOS, O4 ISO/IEC 25010 evaluation, S supporting (`THESIS_OBJECTIVES_ALIGNMENT.md`).
+- Objectives: O1 GIS command center, O2 offline-first app, O3 SMS fallback for SOS, O4 ISO/IEC 25010 evaluation, S supporting (evidence and limits in section 5).
 - Automated tests are files under `backend/scripts/` (disposable DB, HTTP), `web/tests/pages|unit` (jsdom), `mobile/scripts/`. A suite is listed only if its header or a grep shows it exercises that route or rule; I did not re-run any suite for this matrix, so no pass counts are claimed here (counts: `REFERENCE.md` section 9, last measured 2026-10-01 to 2026-10-09).
 - UAT cases are task IDs on form BG-UAT-02 (`chapter4-instruments/09-consolidated-uat.html`): T- Tanod, C- Chief Tanod, S- Secretary, P- Punong Barangay. The form lists them as tasks, not as results; none has been run on real users yet.
 - "none yet" = no test found. "Not device-verified" = code exists, never run on a phone.
@@ -40,7 +43,7 @@ How to read it
 | FR-25 | GIS map and historical heatmap | O1 | GIS Live Tracking; Historical Heatmap / Analytics; `GET /reports/heatmap` | `verify-sprint1-remaining.sh` (heatmap); `verify-w3-w4-dispatch-gis.sh`; `web/tests/pages/analytics.test.mjs` | P-04 |
 | FR-26 | SOS never blocked by missing fix (GPS wait at most 2 s; SOS control on every Tanod tab, hold 800 ms; Silent SOS option) | O3 | Mobile Home SOS and `SosHoldButton`; `POST /tanod-sos` | `verify-sprint4.sh` | T-06, T-07 (no-GPS change not device-verified) |
 | FR-27 | SOS acknowledge / resolve | O3 | Dispatch Center SOS bar; Chief Tanod SOS tab; `PATCH /tanod-sos/:id/acknowledge`, `.../resolve` | `verify-sprint4.sh`; `verify-chief-tanod-mobile.sh`; SOS escalation (Rule 99) in `verify-messaging-hardening.sh` | T-05, C-02, S-17 (escalation: no UAT task yet) |
-| FR-28 | SMS SOS envelope + backup-contact text | O3 | Mobile SOS offline; `GET /tanod-sos/fallback-contact`; `/internal/sms/sos` | `verify-sprint4-phase2-3.sh`; `mobile/scripts/verify-sos-envelope.mjs` (12/12 per THESIS_OBJECTIVES_ALIGNMENT) | T-08 (end-to-end tanod phone -> gateway -> dashboard not yet shown) |
+| FR-28 | SMS SOS envelope + backup-contact text | O3 | Mobile SOS offline; `GET /tanod-sos/fallback-contact`; `/internal/sms/sos` | `verify-sprint4-phase2-3.sh`; `mobile/scripts/verify-sos-envelope.mjs` (12/12 per section 5) | T-08 (end-to-end tanod phone -> gateway -> dashboard not yet shown) |
 | FR-29 | Notifications, ack, critical alert for offers | O3, S | Mobile notifications; `GET /notifications`, `POST /notifications/:id/ack`, `POST /notifications/ack-all` | `verify-sprint4.sh`; `verify-sprint4-phase2-3.sh`; `verify-dispatch-offers.sh` | T-14 (FCM end to end needs real credentials: none yet) |
 | FR-30 | Durable encrypted local write before leaving screen | O2 | Mobile local SQLite schema | `mobile/scripts/verify-local-schema.mjs` (230/0 on 2026-10-01); SQLCipher discard SQL not run on a device | T-17 |
 | FR-31 | Idempotent ordered sync, limits, failure handling | O2 | `POST /sync/batch` | `verify-sprint3.sh`; `verify-offline-sync-conflicts.sh`; `mobile/scripts/verify-sync-failure-class.mjs` | T-18 (Sprint 8 offline durability box not complete) |
@@ -68,11 +71,11 @@ How to read it
 | ID | Characteristic | Related FR | Test / evidence | Status |
 |---|---|---|---|---|
 | NFR-01 | Access control | FR-05, FR-10 | `verify-sprint7-pentest-incidents.sh`, `verify-b2-pentest-remaining-resources.sh` | automated; other resource types (referrals, schools, availability) only inside their own suites |
-| NFR-02 | Confidentiality | FR-10, FR-28, FR-36 | raw-PII exposure audit (Sprint 8 box, open); `verify-sprint7-audit.sh` | partial; audit box not done |
+| NFR-02 | Confidentiality | FR-10, FR-28, FR-36 | raw-PII exposure audit (planned, not yet run); `verify-sprint7-audit.sh` | partial; audit box not done |
 | NFR-03 | Authenticity | FR-02-FR-04, FR-32 | `verify-auth-lockout-revocation.php`, `verify-device-signature.sh`, `verify-device-session.sh` | automated |
 | NFR-04 | Accountability | FR-36 | `verify-sprint7-audit.sh` | automated |
 | NFR-05 | Recoverability | FR-30-FR-31, FR-49 | `verify-offline-sync-conflicts.sh`, `restore-drill.sh` | backend automated; device durability test not done |
-| NFR-06 | Availability | FR-28, FR-49 | `POWER_CUT_PROCEDURE.md` (procedure only) | none yet (no measurement) |
+| NFR-06 | Availability | FR-28, FR-49 | none | none yet (no measurement; not deployed) |
 | NFR-07 | Performance efficiency | FR-23, FR-31 | `measure-api-latency.mjs`, `metrics-report.php` exist | none yet (never run on real data; no target set) |
 | NFR-08 | Interaction capability | all screens | `mobile/scripts/verify-touch-targets.mjs`, `verify-contrast.mjs`; `web/tests` render every page; SUS in ISO questionnaires (`chapter4-instruments/10-`, `11-`) | partial; SUS not collected |
 | NFR-09 | Compatibility | FR-03 | device sessions on Infinix X6840 and Galaxy A21s (HANDOFF, memory); no multi-device tier test | partial |
@@ -80,14 +83,14 @@ How to read it
 | NFR-11 | Maintainability | all | `count-routes.php`, `verify-web-wiring.mjs` | tooling only; no maintainability evaluation |
 | NFR-12 | Installability | - | `SETUP.md` (mobile and gateway sections partial) | none yet |
 | NFR-13 | Safety | FR-26, FR-28 | `verify-sprint4.sh`; T-07, T-08 | no-GPS and offline paths not device-verified |
-| NFR-14 | Honesty | FR-37 | `docs/audit-2026-10-09/00-SUMMARY.md` (manual audit) | audit only, no automated test |
+| NFR-14 | Honesty | FR-37 | `DEFECT_LOG.md` (manual audit) | audit only, no automated test |
 
 ## 3. Objective coverage
 
 | Objective | Requirements | Strongest evidence | Gap |
 |---|---|---|---|
 | O1 GIS command center | FR-07, 09, 11, 12, 17-21, 23, 25, 35 | `verify-w3-w4-dispatch-gis.sh`, `verify-w2-reports.sh`, `web/tests` | no measured latency; browser pass by the user pending |
-| O2 Offline-first app | FR-03, 08, 15, 19, 22, 24, 30-33 | `verify-sprint3.sh`, `verify-offline-sync-conflicts.sh`, `verify-local-schema.mjs` | Sprint 8 offline durability and duplicate tests on a device not recorded complete |
+| O2 Offline-first app | FR-03, 08, 15, 19, 22, 24, 30-33 | `verify-sprint3.sh`, `verify-offline-sync-conflicts.sh`, `verify-local-schema.mjs` | offline durability and duplicate tests on a device not recorded complete (planned in ISO25010 plan) |
 | O3 SMS SOS fallback | FR-26-FR-29 | `verify-sprint4.sh`, `verify-sprint4-phase2-3.sh`, `verify-sos-envelope.mjs` | end-to-end phone -> gateway -> dashboard SMS not demonstrated |
 | O4 ISO 25010 | FR-01-FR-05, 10, 32, 36-37, 48-49; NFR-01-NFR-14 | security suites above | performance, usability, reliability rates unmeasured |
 
@@ -99,3 +102,41 @@ How to read it
 - `verify-sprint1-remaining.sh` header still lists the removed blotter list and citizen inbox; those assertions are history, do not cite them.
 - `verify-roster-accomplishment.sh` predates Rule 96 (approval-authority dialog removed); re-check any authority assertion before citing it for FR-06.
 - Suite pass counts in `REFERENCE.md` section 9 are from 2026-10-01 to 2026-10-09; re-run before quoting them in a test completion report.
+
+## 5. Objective evidence and limits
+
+Merged 2026-10-28 from the former `THESIS_OBJECTIVES_ALIGNMENT.md`. Evidence is cited from repo docs; items not device-verified are labelled. No performance numbers are claimed.
+
+### Objective 1 - GIS web command center: real-time responder tracking and historical heatmaps
+- Does: W2 dashboard, W3 dispatch (map markers, assign-from-map), W4 GIS live map (vendored MapLibre), Analytics with a Heatmap tab (Admin and Punong Barangay). Endpoints: GPS live/history, `/reports/heatmap`.
+- Evidence: `verify-w3-w4-dispatch-gis.sh`, `verify-w2-reports.sh`, `web/tests` (jsdom renders every page); continuous GPS over a 17-minute locked-screen run (device session of 2026-09-24, `docs/evidence/2026-09-19-device/`).
+- Limits: "real-time" is polling (dashboard 15 s; phone GPS about every 30-90 s observed), so near-real-time; no latency measured yet. Depends on the single workstation being online. Road routing uses OpenRouteService (external, needs a key). Measurement tooling exists since 2026-10-10 (`backend/scripts/metrics-report.php`: GPS delivery delay and fix interval; `measure-api-latency.mjs`: endpoint response times) but has NOT yet been run on real data.
+- Wording: "a web-based GIS command center showing near-real-time responder positions refreshed by periodic polling, and historical incident heatmaps."
+
+### Objective 2 - Offline-first tanod mobile app that queues records and syncs on reconnect
+- Does: Ionic React/Capacitor app with encrypted SQLite (SQLCipher); writes persist locally before the user leaves the screen and sync via `/sync/batch` with `client_event_id` + `X-Device-Id` idempotency. Queued: incident records, evidence, GPS points, dispatch status updates, SOS. Cached: dispatches and an offline map package.
+- Evidence: `verify-sprint3.sh`, `verify-device-session.sh`, `verify-evidence-upload.sh`, `mobile verify.schema`; device sessions 2026-09-19/23/24. The offline durability and duplicate-reconciliation device test is not recorded complete.
+- Limits: sync success and duplicate rates are now logged per batch (`backend/storage/metrics/sync-*.jsonl`, summarised by `metrics-report.php`) but have no real-use data yet. Device session is 24 h sliding with a 7-day cap, so a long-offline tanod must log in again. Offline map rendering not separately verified. Offline evidence is queued, not visible to the dashboard until sync.
+- Wording: "an offline-first mobile application that stores incident records, evidence, GPS points, dispatch updates and SOS alerts in encrypted local storage and synchronizes them idempotently when connectivity returns."
+
+### Objective 3 - SMS best-effort fallback for emergency alerts with geolocation
+- Does (updated 2026-10-10, DEVLOG): when an SOS cannot reach the server, the phone sends two independent SMS through its own SIM (Android SmsManager): (a) an AES-256-GCM encrypted `sos` envelope with the coordinates to the command center's GSM gateway phone (`sos_fallback.gateway_number`), whose ingest daemon forwards it to `/internal/sms/sos` and creates a real SOS (`fallback_channel='sms'`) on the dashboard; (b) a plain-text alert to ONE human backup contact (`sos_fallback.backup_contact_number`). Both numbers are format-validated. Location is included when available; the server-side SOS falls back to the tanod's last `gps_track` fix (`last_known`, with that fix's own timestamp) or to none (`no_fix`), and the SOS is never blocked for lack of GPS. The envelope reuses the SOS's `client_event_id`, so the queued sync cannot create a duplicate.
+- The gateway phone is tethered to the workstation: if the workstation itself is down, only (b) still works. Path (a) covers the partial-outage case (app cannot reach the server over data, cellular SMS still works).
+- Evidence: `verify-sprint4.sh`; M13 `sent_by_sms` confirmed on the Infinix via `content://sms/sent` (2026-09-24); `mobile/scripts/verify-sos-envelope.mjs` 12/12 (the JS-built envelope decrypts with the real PHP `EnvelopeCrypto`). NOT yet shown: a real end-to-end SMS from a tanod phone through the gateway phone to the dashboard.
+- Limits: emergency/SOS alerts only, not general incident reporting; one gateway number and one backup contact, not a broadcast; best-effort, carrier delivery is neither guaranteed nor confirmed; the envelope is about 3 SMS segments; `sms_failed`/no-SIM handling and the mobile no-GPS SOS change are code-only, not device-verified; needs signal and a SIM with credit; the contact is cached at login, so it must be set before going offline.
+- Wording: "a best-effort SMS fallback that, when broadband is unavailable, sends an encrypted emergency (SOS) alert with the last available geolocation to the command center's gateway phone, which records it as an SOS on the dashboard, and sends a plain-text alert to a configured backup contact." Use this wording only after the end-to-end device test passes; until then say "implemented, not yet device-verified".
+
+### Objective 4 - ISO/IEC 25010:2023 evaluation
+- Plan: `docs/ISO25010_EVALUATION_PLAN.md`. Existing artefacts are mostly correctness and security suites; performance, usability (SUS) and reliability rates are unmeasured.
+- Wording: "evaluated against the ISO/IEC 25010:2023 product quality model (Functional Suitability, Performance Efficiency, Compatibility, Interaction Capability, Reliability, Security, Maintainability, Flexibility, Safety)" - [verify names against the standard]. Do not claim any characteristic as achieved before data exist.
+
+### Scope removals to state in the thesis
+The electronic blotter and AI redaction pipeline were removed (migration 0029; barangays keep binders; DILG BIMSS remains the mandated case ledger and Baranguard complements it). Do not present them as features.
+
+### Compliance notes - snippet-sourced, verify before citing
+- Data Privacy Act (RA 10173) registration: NPC Circular 2022-04 thresholds may apply to the operator - snippet-sourced, verify.
+- Personal data breach notification to NPC and data subjects within 72 hours - snippet-sourced, verify.
+- Designate a Data Protection Officer; none is designated yet (HANDOFF: council action) - snippet-sourced, verify.
+- Privacy Impact Assessment: PIA and data inventory exist (`docs/PRIVACY_IMPACT_ASSESSMENT.md`, `DATA_INVENTORY.md`), reconciled for 0029; draft notice wording is in the PIA appendix.
+- NPC Circular 2024-02 (CCTV): relevant only if CCTV is integrated; the system has no CCTV feature - snippet-sourced, verify.
+- Research-ethics consent for the SUS study; the public tunnel (REFERENCE section 1) is outside the evaluated scope and serves the demo seed DB.

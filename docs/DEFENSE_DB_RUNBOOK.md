@@ -1,5 +1,8 @@
 # Defense database runbook
 
+Purpose: how to inspect, reset and present the real and UAT databases at the defense.
+Status/Last updated: 2026-10-28.
+
 Written 2026-10-28. Everything here was checked against the live XAMPP MariaDB 10.4.32 on this workstation
 (port **3306**, not 3307: `C:\xampp\mysql\bin\my.ini` says 3306, and `backend/.env` agrees; older docs that say 3307 are stale).
 Root has an empty password on this XAMPP install, so the commands below use `-uroot` with no `-p`.

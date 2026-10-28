@@ -1,5 +1,8 @@
 # Offline sync: what happens when the server has moved on
 
+Purpose: how the mobile offline queue and sync resolve conflicts, rule by rule.
+Status / Last updated: 2026-10-28 (rules written 2026-10-10).
+
 Scope: thesis objective 2 (offline-first Tanod app that captures incidents without internet and synchronises on reconnect). Written 2026-10-10 from the code, not from the design documents. Where the two differ, the code is described.
 
 Status legend:

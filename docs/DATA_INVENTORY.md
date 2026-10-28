@@ -1,11 +1,9 @@
 # Baranguard — Personal Data Inventory
 
-Drafted 2026-09-26 as part of closing H-14 (2026-09-24 external
-business-rules audit, `docs/REMAINING.md` §H: "privacy governance
-incomplete"). This is the record of processing activities the Data
-Privacy Act of 2012 (RA 10173) and its IRR expect a personal information
-controller to maintain — not a new system, a written inventory of what
-the system in `docs/REFERENCE.md` §4/§5 already stores.
+Purpose: record of the personal data the system stores, as RA 10173 (Data
+Privacy Act of 2012) and its IRR expect a controller to maintain. Not a new
+system; a written inventory of what `docs/REFERENCE.md` §4/§5 already stores.
+Status: draft, not reviewed by a DPO. Drafted 2026-09-26; last updated 2026-10-28.
 
 **Reconciled 2026-10-01 for migration 0029** (Electronic Blotter and the
 whole local-AI pipeline removed — `backend/migrations/0029_remove_blotter_
@@ -17,8 +15,7 @@ of this writing (REFERENCE.md §4) — until it is, those four tables still
 physically exist there.
 
 **Extended 2026-10-01 for migrations 0030-0033** (tanod workflow:
-availability, accomplishment reports, referrals, Safer School Zones —
-`docs/FEATURE_PLAN_2026-10.md`, `docs/FEATURE_CONTRACT_2026-10.md`). The
+availability, accomplishment reports, referrals, Safer School Zones). The
 new categories are the "(2026-10-01)" rows in §1. They are written and
 verified on disposable DBs only; not applied to either real DB, so no real
 personal data is held in them yet. **Retention for every new category is
@@ -35,8 +32,7 @@ columns on `accomplishment_report` and `ssz_term_report`. **Dropped again by mig
 **This is a snapshot, not a log.** Re-derive it from the actual schema
 (`backend/migrations/`) whenever a migration adds, removes, or
 reclassifies a personal-data column — don't hand-edit it out of sync
-with the code the way `docs/AUDIT_2026-09-07.md`'s findings drifted from
-the reference before being reconciled.
+with the code.
 
 ## 1. Categories of personal data processed
 
@@ -49,7 +45,7 @@ the reference before being reconciled.
 | Device/technical | `mobile_device.device_id`, `fcm_token`, `device_public_key_pem` | Ordinary personal data (device identifiers) |
 | Contact (broadcast) | `sms_subscriber.phone_number`, `consent_at`, `consent_source` | Ordinary personal data, consent-tracked |
 | Evidence | `evidence_attachment` files (photo/audio) | May contain sensitive personal information depending on content |
-| Citizen reports | `citizen_report` (submitter-supplied name/contact/description) | Ordinary personal data; may contain sensitive content in the free text |
+| Citizen reports (legacy) | `citizen_report` (submitter-supplied name/contact/description). No new rows: public intake removed 2026-10-07, inbox retired 2026-10-17; existing rows kept | Ordinary personal data; may contain sensitive content in the free text |
 | Messaging | `sms_log` (`message_body`, phone number; since 2026-10-28 inbound human texts are stored too: `direction='inbound'`, `sender_number`, body; a rejected SOS envelope is logged without its body), `sms_subscriber`, `notification`/`notification_target`/`notification_delivery` | Ordinary personal data (phone numbers, message content) |
 | Audit | `audit_log` | Identifiers and statuses only (§2 Rule 8) — never narrative, coordinates or credentials |
 | Employment/scheduling | `shift_schedule`, `duty_status` | Ordinary personal data (Tanod work records) |
@@ -61,13 +57,14 @@ the reference before being reconciled.
 | School inventory (2026-10-01) | `school` (name, address, optional coordinates, `focal_person`, `focal_contact`, remarks) | Ordinary personal data limited to school staff contact (a named focal person and phone number). No student data of any kind. Retention: **deliberately NOT time-purged, by decision** (standing master list, retired via `is_active`; §5), not a gap |
 | School check-ins (2026-10-01) | `school_checkin` (`user_id`, `school_id`, `checked_in_at`, `checked_out_at`) | Ordinary personal data: where and when a named tanod was deployed. No coordinates stored. Retention: pending barangay/COA confirmation (placeholder rule, purge OFF; §5) |
 | Signed-paper scans (2026-10; **dropped by migration 0041**) | Nothing is stored any more: the `document_scan` table, the files under `SCANS_DIR` and the `paper_*`/`approval_mode` columns are removed. Reports are printed and signed on paper outside the app. | Not applicable | Not applicable |
-| Annex C-1 summary fields (2026-10-01) | `incident.school_id`, `c1_summary`, `c1_action_taken`, `c1_status_notes` | Designed as short, factual, non-identifying text (no victim/student names), separate from `raw_narrative`, which stays on the 90-day purge. Code enforces length only; free text can still be typed carelessly. Retention: pending decision; no purge rule exists for these columns, so they currently live as long as the incident |
+| Annex C-1 summary fields (2026-10-01) | `incident.school_id`, `c1_summary`, `c1_action_taken`, `c1_status_notes` | Designed as short, factual, non-identifying text (no victim/student names), separate from `raw_narrative`, which stays on the one-year (365-day) purge. Code enforces length only; free text can still be typed carelessly. Retention: pending decision; no purge rule exists for these columns, so they currently live as long as the incident |
 | Term reports (2026-10-01) | `ssz_term_report` (aggregate counts, prepared_by/approved_by, mayor-office and DILG received-by names and dates) | Aggregate counts plus names of staff and receiving officers. Retention: pending barangay/COA confirmation (placeholder rule, purge OFF; §5) |
 
 ## 2. Purpose of processing
 
-Barangay emergency dispatch, incident record-keeping, GPS-based Tanod
-safety and accountability, SOS response, and citizen report intake.
+Barangay emergency dispatch, incident record-keeping (walk-in and phone
+reports are logged as incidents by staff), GPS-based Tanod safety and
+accountability, and SOS response.
 Baranguard no longer finalizes, amends or exports blotter entries —
 barangays keep the blotter and Lupon records in their own binders, and
 DILG BIMSS/KPIS remains the mandated case ledger (`docs/REFERENCE.md`
@@ -84,16 +81,16 @@ DILG BIMSS/KPIS remains the mandated case ledger (`docs/REFERENCE.md`
   / `consent_source`, migration 0018).
 - **Employee/Tanod records** (shifts, duty status, GPS while on duty):
   necessary for the barangay's management of its own personnel.
-- **Citizen reports**: consent (the citizen submits voluntarily) plus
-  the barangay's public-safety mandate.
+- **Citizen reports (legacy rows only)**: consent (the citizen submitted
+  voluntarily) plus the barangay's public-safety mandate. No new rows are created.
 
 ## 4. Who can access what (see `docs/REFERENCE.md` §3 for the full role matrix)
 
-`raw_narrative` is Secretary-only (Rule 1) — the single sharpest access
-restriction in the system, because it is the only narrative field and
-carries unredacted personal/sensitive content. The incident party fields
-(`complainant_name`, `respondent_name`, `complainant_contact_number`) are
-Secretary-only on read as well. Admin gets less here on purpose. Accomplishment-entry text is shown only
+`raw_narrative` is read only by the Secretary and, since 2026-10-13, the
+Chief Tanod (Admin) on a web session (Rule 1 as amended; the Admin's phone
+session never receives it). The incident party fields
+(`complainant_name`, `respondent_name`, `complainant_contact_number`) follow
+the same read rule; `complainant_name` is edited by the Secretary only. Accomplishment-entry text is shown only
 to the owning tanod and to admin/secretary/Punong Barangay of the same
 barangay (cross-tenant is 404); the Referral Log and school-term reports
 are aggregate/delegation views. Every other category
@@ -105,24 +102,20 @@ Barangay/Tanod), tenant-isolated per barangay (Rule 2).
 Code-enforced constants (§2 Rule 10 — a change needs architecture
 review, not a runbook edit): `incident` record 7 years
 (`RECORD_RETENTION_DAYS`), `evidence_attachment` with its incident,
-`audit_log` 7 years, `citizen_report` 1 year (unconverted only),
+`audit_log` 7 years, `citizen_report` 1 year (unconverted only; legacy rows),
 `sms_log` 1 year, `gps_track`/`duty_status`/`shift_schedule`/
 `notification` 1 year each (H-15, 2026-09-26), `mobile_device` secret
 columns scrubbed 90 days after deactivation. Legal hold exempts the
 tables that carry it.
 
-**`raw_narrative` — OPEN POLICY DECISION, not decided here.** The rule
+**`raw_narrative` — one year (decided 2026-10-17).** The rule
 in `RetentionService` is unchanged: hard-purged (set NULL,
-`raw_narrative_purged_at` stamped) at the one-year (365-day) ceiling from
-`created_at`, or 30 days after an approved redaction if one existed.
-Since 0029 nothing can ever approve a redaction, so in practice **every
-incident's narrative is permanently destroyed at one year (365 days; was 90 until 2026-10-17) with no
-redacted or summarized replacement kept anywhere** (legal hold is the
-only exception). Whether that is acceptable — or whether the retention
-window, a manual Secretary-authored summary, or the barangay's binder
-record is the intended continuation — is a policy call for the barangay
-and an architecture review (Rule 10), not something this document or a
-code session settles.
+`raw_narrative_purged_at` stamped) 365 days after `created_at`. There is no
+redaction path, so **every incident's narrative is permanently destroyed at
+one year (365 days; set by the owner 2026-10-17, was 90) with no redacted
+or summarized replacement kept** (legal hold is the only exception). The
+barangay's binder remains the long-term record. Any further change needs an
+architecture review (Rule 10).
 
 **New 2026-10 tables: retention PENDING barangay/COA confirmation —
 placeholder rules exist, purge is OFF.** `RetentionService::NEW_TABLE_RULES`
@@ -162,8 +155,7 @@ accepts is unconfirmed (HANDOFF.md). Backups are not covered by any of
 this (Rule 11 reminder in `retention-job.php`).
 
 **Historical (removed by 0029, no longer in force):** retention rules
-for `blotter_record`/`blotter_revision`, `ai_processing_log` (1 year)
-and AI Tools jobs (90 days).
+for `blotter_record`/`blotter_revision` and `ai_processing_log`.
 
 ## 6. Third-party disclosure
 
@@ -180,10 +172,11 @@ and AI Tools jobs (90 days).
   an external service and should be reviewed as a disclosure.
 - **Firebase Cloud Messaging (FCM)**: push notifications transit FCM
   (`raw_narrative` is barred from it, Rule 1).
-- **Cloudflare**: the production hostnames (`baranguardph.win`,
+- **Cloudflare**: the workstation's hostnames (`baranguardph.win`,
   `api.baranguardph.win`) are fronted by a Cloudflare Named Tunnel
-  (REFERENCE.md §1), so web/API traffic transits Cloudflare. This
-  supersedes the original "LAN-only, no cloud" framing of this inventory.
+  (REFERENCE.md §1), so web/API traffic transits Cloudflare while the
+  tunnel runs. The system is not deployed at any barangay; the tunnel is
+  outside the evaluated scope and may be offline.
 - **No AI processor**: the local Ollama/SEA-LION pipeline was removed
   2026-10-01; no AI service, cloud or local, processes personal data.
   There is no analytics vendor or ad network.
@@ -195,5 +188,4 @@ responsibility is the Barangay Secretary, who is already RA 7160
 §394(c)'s designated records custodian and the only role with
 `raw_narrative` access — but formally designating a DPO is a barangay
 council action (a Sangguniang Barangay resolution or equivalent), not
-something a codebase can resolve. Flagged here as the open item; see
-`docs/REMAINING.md` §H, H-14.
+something a codebase can resolve. Flagged here as the open item.

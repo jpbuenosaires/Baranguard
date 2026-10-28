@@ -1,8 +1,11 @@
 # Baranguard - Software Requirements Specification
 
-Format follows ISO/IEC/IEEE 29148:2018 (check the edition with your adviser). Written 2026-10-23.
-Extracted from `REFERENCE.md`, `WORKFLOWS_AND_RULES.md` (Parts 3 and 7), `FEATURE_CONTRACT_2026-10.md`,
-`THESIS_OBJECTIVES_ALIGNMENT.md`, `backend/routes/*.php` and `chapter4-instruments/09-consolidated-uat.html`.
+Purpose: states what Baranguard must do and the limits it works within.
+Status/Last updated: 2026-10-28 (written 2026-10-23).
+
+Format follows ISO/IEC/IEEE 29148:2018 (check the edition with your adviser).
+Extracted from `REFERENCE.md`, `WORKFLOWS_AND_RULES.md` (Parts 3 and 7),
+the thesis-objective section of `TRACEABILITY_MATRIX.md`, `backend/routes/*.php` and `chapter4-instruments/09-consolidated-uat.html`.
 Nothing here is new design. Where sources disagree, `REFERENCE.md` and the later WORKFLOWS rules win
 (see section 9). Test mapping is in `TRACEABILITY_MATRIX.md`.
 
@@ -60,7 +63,7 @@ Windows workstation (XAMPP Apache + MariaDB, PHP 8.3 runtime), optional Cloudfla
 phone, optional OpenRouteService and FCM. Times are stored UTC and shown Asia/Manila (REF Rule 11).
 
 ### 2.4 Assumptions and dependencies
-Workstation power and connectivity (UPS, `POWER_CUT_PROCEDURE.md`); tanods use their own mobile data (Rule 94);
+Workstation power and connectivity (UPS; no power-cut procedure is specified because the system is not deployed); tanods use their own mobile data (Rule 94);
 tanods without data cannot accept night offers and are assigned by call/SMS (Rule 84); migrations 0029-0045
 are not yet applied to the real `baranguard` database; the tunnel currently serves the demo database
 (REFERENCE section 1).
@@ -158,7 +161,7 @@ No numeric performance target has been agreed or measured; the NFRs below state 
 | NFR-02 | Security: confidentiality | `raw_narrative` and party fields never leave the system by push, SMS, logs or audit metadata; local phone store encrypted (SQLCipher). |
 | NFR-03 | Security: authenticity | Revocable sessions (15 min web, 24 h / 7 d device); lockout; device signatures for signed writes; security headers and CSP on web and API. |
 | NFR-04 | Security: accountability | Append-only audit log with allow-listed metadata. |
-| NFR-05 | Reliability: recoverability | Offline capture durable before navigation; idempotent retries create no duplicates; encrypted nightly backup and weekly restore drill; power cuts follow `POWER_CUT_PROCEDURE.md`. |
+| NFR-05 | Reliability: recoverability | Offline capture durable before navigation; idempotent retries create no duplicates; encrypted nightly backup and weekly restore drill; power-cut handling is not specified (not deployed). |
 | NFR-06 | Reliability: availability | One workstation per barangay is a known single point of failure; only SOS has a device-local SMS fallback. Availability target: not set. |
 | NFR-07 | Performance efficiency | Dashboard refresh by 15 s polling; phone GPS interval observed about 30-90 s. API response time, sync latency, position-refresh delay: target not set; tooling exists (`measure-api-latency.mjs`, `metrics-report.php`), no real-data run yet. |
 | NFR-08 | Interaction capability | Every data screen has Loading, Empty, Error-with-retry and Populated states; tokens-only styling with dark mode; touch targets and contrast checked (`verify-touch-targets.mjs`, `verify-contrast.mjs`); usability (SUS) not yet measured. |
@@ -184,9 +187,8 @@ accepting a night offer and submitting a monthly report need a connection (Rules
 
 ### 6.3 Data Privacy Act (RA 10173)
 Data minimisation and allow-listed audit metadata; raw narrative on a fixed retention ceiling with legal
-hold; no student names in school records; privacy notice and PIA drafts exist (`PRIVACY_NOTICES.md`,
-`PRIVACY_IMPACT_ASSESSMENT.md`, `DATA_INVENTORY.md`, `BREACH_RESPONSE_RUNBOOK.md`) but predate parts of the
-build. DPO designation, NPC registration and 72-hour breach notification are barangay actions, snippet-sourced,
+hold; no student names in school records; PIA, data inventory and draft notice wording exist (`PRIVACY_IMPACT_ASSESSMENT.md`,
+`DATA_INVENTORY.md`); no breach runbook is adopted. DPO designation, NPC registration and 72-hour breach notification are barangay actions, snippet-sourced,
 to verify. UAT uses pretend data only.
 
 ### 6.4 Other
@@ -211,4 +213,3 @@ are not applied to the real database.
 3. Rules 7, 26, 28 and 42 still say Admin-only dispatch and in-app publish/approve; Rules 89, 80 and 96 supersede them.
 4. `REFERENCE.md` sections 3 and 5 still describe the Admin-managed approval authority and note/approve; Rule 96 and 0041 removed the screens and routes.
 5. Route count: REFERENCE section 5 says 103 and the 2026-10-28 `count-routes.php` run agrees; HANDOFF's old 105 is stale (resolved).
-6. HANDOFF's quick reference still names `verify-scheduler-fatigue.sh`; the file is `verify-scheduler.sh`.

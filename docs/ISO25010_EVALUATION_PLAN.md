@@ -1,5 +1,8 @@
 # Baranguard - ISO/IEC 25010:2023 Evaluation Plan
 
+Purpose: how each ISO/IEC 25010 characteristic will be measured for the thesis.
+Status/Last updated: 2026-10-28.
+
 Status: PLAN ONLY. Every result cell reads "not yet measured" unless a real measured number exists in the repo docs (cited). Characteristic and sub-characteristic names are from memory of the 2023 edition; every item marked **[verify against the standard]** must be checked against the purchased text before the thesis cites it. Nothing here is a result.
 
 Repo facts used: the blotter and AI pipeline were removed by migration 0029 (REFERENCE.md section 1; HANDOFF.md 2026-10-01), so no evidence for them is planned. Per HANDOFF, 0029 had NOT been applied to the real DBs. Verify suites live in `backend/scripts/verify-*.sh`; web render tests in `web/tests` (`npm test`); `node web/scripts/verify-web-wiring.mjs`; mobile `mobile/scripts/verify-local-schema.mjs`. Pass counts quoted in docs are code-correctness checks, not quality measurements, and several predate 0029 - re-run before citing.
@@ -9,7 +12,7 @@ Runner key: DEV = developer/researcher; DEVICE = researcher with the Infinix X68
 ## 1. Functional Suitability
 Sub-characteristics: completeness, correctness, appropriateness [verify against the standard].
 - Metric: % of thesis-objective functions implemented; % of test cases giving the expected result.
-- Method: requirement-to-test traceability matrix (see THESIS_OBJECTIVES_ALIGNMENT.md); UAT scenarios per role.
+- Method: requirement-to-test traceability matrix (see TRACEABILITY_MATRIX.md); UAT scenarios per role.
 - Existing evidence: `verify-sprint0/1/3/4*.sh`, `verify-w3-w4-dispatch-gis.sh`, `verify-w2-reports.sh`, `verify-second-responder.sh`, `verify-json-contracts.php` (GET route envelopes), `verify-f8-response-time-dedup.sh`.
 - Missing: the traceability matrix; a UAT pass/fail log with real users.
 - Who: DEV (matrix, scripts), USERS (UAT).
@@ -19,17 +22,17 @@ Sub-characteristics: completeness, correctness, appropriateness [verify against 
 Sub-characteristics: time behaviour, resource utilization, capacity [verify against the standard].
 - Metrics: API response time (median, p95) per key endpoint; dashboard position-refresh delay; sync latency (reconnect to server row); dispatch response time per the REFERENCE definition (`incident.created_at` to `dispatch.arrived_at`, per-incident MIN(arrived_at)); workstation CPU/RAM; battery drain per on-duty hour.
 - Method: scripted timed requests (N fixed in advance, e.g. 30+) against the real stack; timestamps from logcat/server for sync; `adb shell dumpsys batterystats` for battery.
-- Existing evidence: no measured latency numbers found in the docs. The response-time computation is implemented (ReportsController, F8). The 15 s dashboard poll is a design interval, not a measurement. GPS fixes arriving every ~30-90 s over a 17-minute locked-screen run (REMAINING.md C7) is an observation, not a benchmark.
+- Existing evidence: no measured latency numbers found in the docs. The response-time computation is implemented (ReportsController, F8). The 15 s dashboard poll is a design interval, not a measurement. GPS fixes arriving every ~30-90 s over a 17-minute locked-screen run (device session of 2026-09-24, `docs/evidence/2026-09-19-device/`) is an observation, not a benchmark.
 - Tooling added 2026-10-10 (not yet run on real data): `backend/scripts/measure-api-latency.mjs` (median/p95/max per key GET endpoint) and `backend/scripts/metrics-report.php` (GPS delivery delay, fix interval, dispatch response, offline sync delay, SOS delay).
-- Missing: all of the above. Sprint 8 boxes "Sync latency" and "Dispatch response-time metric" are open (SPRINTS.md).
+- Missing: all of the above. The sync-latency and dispatch-response-time measurements are still open.
 - Who: DEV (API), DEVICE (sync, battery).
 - Result: not yet measured.
 
 ## 3. Compatibility
 Sub-characteristics: co-existence, interoperability [verify against the standard].
 - Metrics: dashboard works in the chosen browsers; app runs on chosen Android versions; correct exchange with FCM, ORS, GSM gateway.
-- Method: browser matrix (state which); 3+ device tiers (Sprint 8 hook); contract tests.
-- Evidence: `verify-routing.sh` (ORS; SKIPs without a key), `verify-json-contracts.php`; FCM and GSM sends verified on the Infinix (REMAINING.md A4, 2026-09-24). Only one Android device is documented as tested.
+- Method: browser matrix (state which); the Android device(s) available (the SLM that motivated device tiers was removed); contract tests.
+- Evidence: `verify-routing.sh` (ORS; SKIPs without a key), `verify-json-contracts.php`; FCM and GSM sends verified on the Infinix (2026-09-24 device session). Only one Android device is documented as tested.
 - Missing: browser matrix, multi-device tiers.
 - Who: DEV, DEVICE. Result: not yet measured.
 
@@ -51,7 +54,7 @@ Sub-characteristics I recall: appropriateness recognizability, learnability, ope
 Sub-characteristics: faultlessness (maturity), availability, fault tolerance, recoverability [verify against the standard].
 - Metrics: (a) offline durability = % of records created offline that survive app kill/reboot and reach the server; (b) sync success rate = confirmed / queued; (c) duplicate rate after forced retry (design target zero via `client_event_id`); (d) SMS fallback outcome rate over N attempts; (e) workstation availability; (f) restore-test pass.
 - Method: DEVICE trials: create N incidents/evidence items offline, kill app, reconnect, compare local queue with server rows; repeat with forced duplicate sends; log timestamps.
-- Existing evidence: `verify-sprint3.sh` (sync/batch backend), `verify-device-session.sh`, `verify-evidence-upload.sh`, `restore-drill.sh` (12 checks, real DB; scheduled weekly per HANDOFF), `backup.sh`, `verify-sprint7-retention.sh`. Device sessions 2026-09-19/23/24: FCM alert, 17-minute continuous locked-screen GPS (REMAINING.md C7), one SMS fallback `sent_by_sms` (M13). The Sprint 8 offline durability and duplicate-reconciliation box is not recorded complete.
+- Existing evidence: `verify-sprint3.sh` (sync/batch backend), `verify-device-session.sh`, `verify-evidence-upload.sh`, `restore-drill.sh` (12 checks, real DB; scheduled weekly per HANDOFF), `backup.sh`, `verify-sprint7-retention.sh`. Device sessions 2026-09-19/23/24: FCM alert, 17-minute continuous locked-screen GPS (device session of 2026-09-24, `docs/evidence/2026-09-19-device/`), one SMS fallback `sent_by_sms` (M13). The offline durability and duplicate-reconciliation box is not recorded complete.
 - Known limit: everything depends on one powered-on workstation (REFERENCE section 1); no UPS/backup internet measured.
 - Tooling added 2026-10-10: every `/sync/batch` appends success/duplicate/failed counts to `backend/storage/metrics/sync-*.jsonl`; `metrics-report.php` turns them into (b) and (c) once real tanod use exists. (a) still needs the DEVICE kill-and-reconnect trial.
 - Missing: (a)-(e) as rates. Who: DEVICE + DEV. Result: not yet measured.

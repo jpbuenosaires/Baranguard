@@ -1,5 +1,8 @@
 # Baranguard — Role Quick Cards
 
+Purpose: one-page printable cards for the Chief Tanod, Secretary and Punong Barangay (the Tanod card is `TANOD_QUICK_CARD.md`).
+Status/Last updated: 2026-10-28. Screens not checked in a browser or on a phone.
+
 One page per role. Print each on A4 (one card per page). Full steps are in the manuals. Written from the code of 2026-10-23; screens not checked in a browser or on a phone by the writer. Never write a password on a card.
 
 <div style="page-break-after: always;"></div>
@@ -26,7 +29,7 @@ One page per role. Print each on A4 (one card per page). Full steps are in the m
 
 **Phone.** Needs a connection. SOS: **Acknowledge**, then **Mark resolved**. Dispatch: **Cancel dispatch** (reason), **Cancel offer**. Incident sheet: **Assign more responders**, **Take over (offer to on-duty Tanods)**. **Log an incident** (saved on the phone if there is no signal). No narratives on the phone.
 
-**Power or internet down.** Paper logbook, then enter afterwards. See `docs/POWER_CUT_PROCEDURE.md`.
+**Power or internet down.** Paper logbook, then enter afterwards.
 
 <div style="page-break-after: always;"></div>
 

@@ -1,5 +1,8 @@
 # Baranguard — Project Context
 
+Purpose: map of the project docs, auto-loaded each session.
+Status / Last updated: 2026-10-28.
+
 Auto-loads every session. Read the three imports below before doing
 anything — they carry the schema, API, roles, screens, what is left
 (scoped to the defense, ISO/IEC 25010 evaluation and UAT; the system is
@@ -22,14 +25,12 @@ code comments are historical.
 
 ## Not auto-loaded — open deliberately
 
-- **`docs/Baranguard_Master_Reference_FINAL .md`** — the real source of
-  truth; `REFERENCE.md` summarises it with section numbers. **If the two
-  disagree, this file wins** and `REFERENCE.md` should be corrected —
-  **except** where it describes the Electronic Blotter, the Lupon packet,
-  the AI/Ollama pipeline or Fatigue Flags: it predates migrations 0029
-  (2026-10-01) and 0042 (2026-10-13), which removed those, so
-  `REFERENCE.md` wins there. Its own
-  closing "Document status" note says how current it is.
+- **`docs/Baranguard_Master_Reference_FINAL .md`** — section numbers and
+  DDL; `REFERENCE.md` summarises it. **Where they differ, `REFERENCE.md`
+  wins for removed features (Electronic Blotter, Lupon packet, AI/Ollama
+  pipeline, Fatigue Flags: migrations 0029 and 0042) and the Master
+  Reference wins elsewhere**; correct whichever is wrong. Its closing
+  "Document status" note says how current it is.
 - **`backend/DEVLOG.md`** (huge, append-only) — every decision and why.
   **Log new work here.** Never read front-to-back — `grep` for the
   feature you're touching.

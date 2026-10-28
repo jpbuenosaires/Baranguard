@@ -1,11 +1,9 @@
 # Baranguard — Privacy Impact Assessment (PIA)
 
-Drafted 2026-09-26 to close H-14 (2026-09-24 external business-rules
-audit, `docs/REMAINING.md` §H: "privacy governance incomplete — no PIA,
-DPO role, notices, data inventory"). Companion documents:
-`docs/DATA_INVENTORY.md` (what is collected) and `docs/PRIVACY_NOTICES.md`
-(what data subjects are told). This PIA assesses risk and mitigation; it
-does not restate the inventory.
+Purpose: assess privacy risk and mitigation for Baranguard under RA 10173. Companion
+to `docs/DATA_INVENTORY.md` (what is collected); it does not restate the inventory.
+Draft data-subject notice wording is in the Appendix.
+Status: draft, not reviewed by a DPO. Drafted 2026-09-26; last updated 2026-10-28.
 
 **Reconciled 2026-10-01 for migration 0029** (Electronic Blotter and the
 local-AI pipeline removed). Risks and mitigations tied to redaction,
@@ -19,19 +17,20 @@ and Emergency Dispatch System for four barangays in Pilar, Sorsogon
 on-duty Tanod, SOS alerts and citizen reports. It no longer produces or
 stores blotter entries or Lupon packets — barangays keep those in their
 own binders; DILG BIMSS/KPIS remains the case ledger. Note: the
-workstation is now reachable through a Cloudflare Named Tunnel
-(REFERENCE.md §1), so "LAN-only" no longer describes the deployment.
+workstation can be reached through a Cloudflare Named Tunnel
+(REFERENCE.md §1). The system is not deployed at any barangay and the
+tunnel is outside the evaluated scope.
 
 ## 2. Necessity and proportionality
 
 - **Raw narrative collection** supports dispatch and the Secretary's
   records-custodian role (RA 7160 §394(c)) and is the system's single
-  highest-risk field — mitigated by Rule 1 (Secretary-only access, never
-  leaves the system) and the 90-day hard purge in §11. **OPEN POLICY
-  DECISION:** with the redaction pipeline gone there is no redacted
-  replacement, so the narrative is destroyed outright at 90 days (legal
-  hold excepted). Whether that is the intended outcome is undecided and
-  is not settled by this PIA.
+  highest-risk field — mitigated by Rule 1 (Secretary, and the Chief Tanod on the web only; never
+  leaves the system) and the one-year (365-day) hard purge. With the
+  redaction pipeline gone there is no redacted replacement, so the
+  narrative is destroyed outright at one year (legal hold excepted). The
+  owner set this on 2026-10-17; the barangay's binder is the long-term
+  record.
 - **GPS tracking is limited to on-duty Tanod**, for dispatch routing and
   personnel safety (SOS). It is not continuous surveillance of an
   off-duty person's location — `duty_status` gates whether tracking is
@@ -59,8 +58,8 @@ workstation is now reachable through a Cloudflare Named Tunnel
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| Raw narrative (raw PII, possibly sensitive personal information) leaking beyond the Secretary role | Medium (many endpoints touch incidents) | High | Rule 1 — `GET /incidents/:id` is the ONLY endpoint returning `raw_narrative`, Secretary-only; never sent to FCM/SMS/logs/audit metadata; enforced server-side, not client-side (Rule 2) |
-| Narrative lost at 90 days with no redacted record kept | Certain under current code | Medium-high (records-integrity, not confidentiality) | None — open policy decision (§2 above); see `docs/DATA_INVENTORY.md` §5 |
+| Raw narrative (raw PII, possibly sensitive personal information) leaking beyond the Secretary and web Chief Tanod | Medium (many endpoints touch incidents) | High | Rule 1 — `GET /incidents/:id` is the ONLY endpoint returning `raw_narrative`, Secretary and web-session Admin only; never sent to FCM/SMS/logs/audit metadata; enforced server-side, not client-side (Rule 2) |
+| Narrative destroyed at one year with no redacted record kept | Certain under current code | Medium (records-integrity, not confidentiality) | Accepted by the owner 2026-10-17; the barangay's binder is the long-term record; see `docs/DATA_INVENTORY.md` §5 |
 | Cross-tenant access to another barangay's residents' data | Medium | High | Every protected endpoint verifies tenant server-side; cross-tenant is 404, never 403 (Rule 2) |
 | GPS/location data retained indefinitely | Was a real gap until 2026-09-26 | Medium | H-15: `gps_track` now on a 1-year retention clock (`RetentionService::purgeGpsTracks()`) |
 | Device compromise exposing stored session/credentials | Low-medium | High | Encrypted SQLite (SQLCipher) on mobile; 15-min sliding web JWT / device sessions revoked on password change or suspension (§2 Rule 12); web JWT moved out of `sessionStorage` into memory-only (H-05, 2026-09-24) |
@@ -70,12 +69,12 @@ workstation is now reachable through a Cloudflare Named Tunnel
 | Approval authority misused (an official approves their own or colleagues' reports/rosters) | Low-medium | Medium | A preparer can never note/approve their own report; an Admin cannot edit their OWN approving authorities (403); every change audited. A second Admin could still grant them (open decision, HANDOFF.md) |
 | SMS broadcast reaching a non-consenting number | Low | Medium | `sms_subscriber.consent_at`/`consent_source` NOT NULL; removal is `opted_out_at`, never a hard delete (traceability) |
 | Unauthorized access via a compromised web session (XSS) | Was a real gap until 2026-09-24 | High | H-05 — JWT moved to an in-memory variable, unreachable by `sessionStorage`-targeting XSS; full mitigation (HttpOnly cookie) is scoped and pending an HTTPS deployment decision (C-03/F1) |
-| Transport-level interception / public exposure | Partly addressed (C-03, in progress per REFERENCE.md §1) | High | The Cloudflare Named Tunnel provides TLS to the public hostnames; no Cloudflare Access policy exists and `api.baranguardph.win` is reachable by anyone with the URL. Re-check against `docs/REMAINING.md` before relying on this row |
-| No MFA on Admin/Secretary web accounts | Open (C-02, `docs/REMAINING.md`) | Medium-high (these roles reach raw case data) | Needs a method decision (TOTP vs. SMS OTP via the existing GSM gateway) before implementation |
+| Transport-level interception / public exposure | Out of scope: the system is not deployed | High if it were deployed | The workstation's Cloudflare Named Tunnel gives TLS to its hostnames, but no Cloudflare Access policy exists and `api.baranguardph.win` is reachable by anyone with the URL. Any deployment needs a transport and access review first |
+| No MFA on Admin/Secretary web accounts | Open (C-02, explicitly deferred; out of scope while not deployed) | Medium-high (these roles reach raw case data) | Needs a method decision (TOTP vs. SMS OTP via the existing GSM gateway) before implementation |
 
 ## 4. Data subject rights (RA 10173 Chapter IV)
 
-- **Right to be informed**: addressed by `docs/PRIVACY_NOTICES.md`.
+- **Right to be informed**: draft notice wording is in the Appendix below; nothing is posted or rendered in the UI, and the system is not deployed.
 - **Right to access/correction**: a complainant/respondent may request
   their own record through the barangay (manual process today — no
   self-service portal, consistent with the system's staff-operated,
@@ -83,7 +82,7 @@ workstation is now reachable through a Cloudflare Named Tunnel
 - **Right to object/erasure**: constrained by RA 7160's records-retention
   mandate — an incident record cannot be deleted on request while its
   7-year retention or a legal hold is active (the raw narrative is
-  purged at 90 days regardless, unless on hold); this is a legal
+  purged at one year regardless, unless on hold); this is a legal
   requirement, not an oversight, and should be stated as such in any
   public-facing notice.
 - **Right to data portability**: not currently offered; low priority
@@ -95,7 +94,7 @@ workstation is now reachable through a Cloudflare Named Tunnel
 Findings **C-02 (no MFA, explicitly deferred by the user)** and
 **C-03 (remote access/TLS, in progress)** are NOT mitigated by anything
 in this PIA. Both need a policy/infrastructure decision, not a
-documentation exercise — see `docs/REMAINING.md` for current disposition.
+documentation exercise, and both are outside the evaluated scope.
 This PIA should be revisited once either is resolved, and again whenever a new personal-data
 field is added to the schema (§9's migration convention makes each such
 addition a discrete, reviewable commit).
@@ -134,10 +133,28 @@ authors against the original.
 - **Staff data under the tanod workflow (2026-10-01).** Confirm how RA
   10173 and NPC issuances treat staff hours/attendance records and school
   deployment records held by a barangay, whether a separate privacy notice
-  is needed for tanods (none exists in `docs/PRIVACY_NOTICES.md`), and what
+  is needed for tanods (the Appendix has no tanod staff-records notice), and what
   retention applies (COA/treasurer attendance-evidence rules are
   unconfirmed). Annex A fields and MC 2026-037 reporting duties are
   unknown until the circular PDF is read.
 - **Third-party disclosures** (ORS, FCM, Cloudflare —
   `docs/DATA_INVENTORY.md` §6) are not yet assessed for data-sharing
   agreements.
+
+## Appendix. Draft data-subject notice wording
+
+Moved here from the former `PRIVACY_NOTICES.md` (removed 2026-10-28; the system is not deployed, so these are plain-language drafts for barangay staff to adapt, not text the UI shows). Not reviewed by a DPO or the barangay council; no Bikol/Filipino translation exists.
+
+**A. Citizen filing a report (walk-in, phone or SMS)**
+
+> This barangay uses Baranguard, a local dispatch system, to respond to your report. The barangay will collect your name, contact number, and the details of what happened. Your written statement is only read by the Barangay Secretary and the Chief Tanod; other barangay staff see the incident's type, location and status for dispatch and tracking. Baranguard keeps the incident record for up to seven years, but **your written statement itself is deleted from the system after one year** (unless it is under legal hold). Any official blotter entry is kept by the barangay in its own records, not in this system. Your contact number may be used to send you updates about your report. This barangay does not sell or share your information with advertisers. Some services outside the barangay's own workstation are used to deliver the service (for example route calculation and push notifications to responders).
+
+**B. Tanod (on registering a device / starting duty)**
+
+> While you are on duty, this app records your GPS location so the barangay can dispatch you to incidents and respond if you activate the SOS button. Location tracking is tied to your duty status and is not used when you are off duty. Your shift schedule, duty status changes, and any dispatch you respond to are recorded for staffing and accountability and are kept for one year. Your device is registered with a unique identifier so the barangay can confirm requests really come from your device.
+
+**C. SMS broadcast subscriber / anyone who texts the barangay number**
+
+> By opting in, you agree to receive barangay safety and dispatch alerts by SMS. You can opt out at any time by replying STOP (or through the means the barangay provides); your number will be marked opted-out rather than deleted, so the barangay has a record that you asked to stop. If you text the barangay's number, your number and your message are stored in the barangay's SMS log, together with the date and time, so staff can read and answer it; texting STOP, TIGIL or UNSUBSCRIBE also opts you out of advisory messages.
+
+Not covered by a notice: internal credentials and session tokens (operational security data). A record under legal hold is kept regardless of a deletion request (including the one-year narrative purge); state this when a data subject asks about deletion.

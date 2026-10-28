@@ -1,5 +1,8 @@
 # Baranguard — Workflows & Business Rules (Code-Verified)
 
+Purpose: end-user workflows, state machines and the numbered business rules the code and tests cite.
+Status / Last updated: 2026-10-28 (rules 97-106 added that day; earlier audit dates below).
+
 > **Barangay Intelligence and Emergency Dispatch System**  
 > Operational reference for Pilar, Sorsogon (Dao, Binanuahan, Marifosque, Banuyo).  
 > *Audited and reconciled directly against the backend, web, and mobile codebase on 2026-10-02; updated 2026-10-07 for the Proposed Changes Review decisions and re-checked 2026-10-08 against the code (nav/landing pages in `web/src/main.js` and `AppShell.js`, incident and dispatch rules in `IncidentsController`/`DispatchController`, sync in `SyncController`/`syncService.ts`, offers in `OfferService`) after Gap-X1/X2/X3. Code-complete, verified on disposable databases only; not browser- or device-verified.*
@@ -23,7 +26,7 @@ Baranguard serves **4 end-user personas** (the anonymous citizen form was retire
 
 ---
 
-## 1. 🔵 Admin (Chief Tanod / Desk Officer)
+## 1. Admin (Chief Tanod / Desk Officer)
 
 * **Platform:** Web Desktop (`https://baranguardph.win`)
 * **Default Landing Page:** `dashboard`
@@ -75,7 +78,7 @@ flowchart TD
 
 ---
 
-## 2. 🟢 Secretary (Records & Reports Officer)
+## 2. Secretary (Records & Reports Officer)
 
 * **Platform:** Web Desktop (`https://baranguardph.win`)
 * **Default Landing Page:** `incident-management` *(Code: `main.js` routes secretary directly here; dashboard is inaccessible to Secretary)*
@@ -123,7 +126,7 @@ flowchart TD
 
 ---
 
-## 3. 🟡 Punong Barangay (Barangay Captain / Executive Oversight)
+## 3. Punong Barangay (oversight)
 
 * **Platform:** Web Desktop (`https://baranguardph.win`)
 * **Default Landing Page:** `dashboard` (Read-only executive analytics with pending approvals widget)
@@ -159,7 +162,7 @@ flowchart TD
 
 ---
 
-## 4. 🔴 Tanod (Patrol Responder / Field Operative)
+## 4. Tanod (Patrol Responder / Field Operative)
 
 * **Platform:** Mobile Android App (Ionic React + Capacitor + SQLCipher encrypted database)
 * **Shell Structure:** 5 Persistent Bottom Tabs (`Home`, `Dispatches`, `Report [+]`, `Map`, `Profile`) + Contextual Sub-Pages.
@@ -393,7 +396,7 @@ stateDiagram-v2
 15. Incident status or lifecycle modifications are rejected with a conflict error if an active dispatch is open; a related-incident link is the exception because it never changes status.
 16. Web writes require a UUID `Idempotency-Key` and mobile writes require a `client_event_id`; replayed requests return the original row rather than creating duplicates.
 
-### III. Data Privacy, Redaction & Statutory Compliance
+### III. Data Privacy & Statutory Compliance
 17. Raw incident narratives are stored encrypted and never transmitted via push notifications, SMS alerts, server logs, or audit metadata.
 18. Only a Secretary can view an incident's confidential raw narrative and party contact details; Admins and Punong Barangays receive only non-identifying operational summaries.
 19. All raw narratives are permanently purged after a mandatory one-year (365-day) retention ceiling (was 90 days until 2026-10-17, Rule 82).
@@ -503,7 +506,7 @@ stateDiagram-v2
 
 # Part 4: Scenario Walk-Throughs (for checking)
 
-Each scenario is one realistic story you can follow step by step and compare with the app. "Rules" points to Part 3, "State" to Part 2, "Evidence" to the automated suite that exercises it on a disposable database. None of these has been run in a browser or on a device by an agent (see `docs/HANDOFF.md`). Where a UAT ID is given it comes from `docs/chapter4-instruments/04-uat-signoff.html`.
+Each scenario is one realistic story you can follow step by step and compare with the app. "Rules" points to Part 3, "State" to Part 2, "Evidence" to the automated suite that exercises it on a disposable database. None of these has been run in a browser or on a device by an agent (see `docs/HANDOFF.md`). Where a UAT ID is given it comes from `docs/chapter4-instruments/09-consolidated-uat.html`.
 
 | # | Scenario | Roles |
 |---|---|---|
@@ -586,7 +589,7 @@ Each scenario is one realistic story you can follow step by step and compare wit
 5. The Admin or Secretary prints the schedule; the officials sign it on paper outside the app (not tracked). The Admin or Secretary then publishes the week. The shift becomes visible to the tanod (Rules 26, 80).
 6. A swap request on a `draft` shift returns 404 (Rule 29). On a published shift the swap goes to the Admin or Secretary for review.
 7. Changing the tanod, start or end of a published shift reverts it to `draft` (Rule 28). An approved swap keeps it published with the new tanod, who must be available for it (Rules 74, 76).
-- **State:** 4 and the availability appendix below. **Evidence:** `verify-roster-accomplishment.sh` (332), `verify-scheduler.sh`, `verify-paper-approvals.sh`. **UAT:** S-19, A-19, P-05. **Not demonstrated:** the 12-hour cap under real concurrent writes.
+- **State:** 4 and the availability appendix below. **Evidence:** `verify-roster-accomplishment.sh` (332), `verify-scheduler.sh`. **UAT:** S-19, A-19, P-05. **Not demonstrated:** the 12-hour cap under real concurrent writes.
 
 ### Scenario 9. Monthly accomplishment report
 1. During the month the tanod enters daily work on the phone with a confirmed duration of 1 to 1440 minutes. A work date in the future or more than 62 days back is refused (Rule 33).
@@ -596,7 +599,7 @@ Each scenario is one realistic story you can follow step by step and compare wit
 5. An official who disagrees returns it with a reason (1 to 255 characters). The tanod edits and resubmits.
 6. A prepared report is locked, and the paper copy is the official record; the app does not track its signature (Rules 62, 80).
 7. An Admin cannot grant or remove their own `approve_*` authorities; a second Admin must (Rule 36).
-- **State:** 3. **Evidence:** `verify-roster-accomplishment.sh`, `verify-paper-approvals.sh` (271). **UAT:** P-06.
+- **State:** 3. **Evidence:** `verify-roster-accomplishment.sh`. **UAT:** P-06.
 
 ### Scenario 10. Annex D term report and school check-in
 1. The tanod checks in at a school on the phone and later checks out. A check-in time more than 5 minutes ahead or more than 62 days back is refused. A check-out before the check-in, or more than 24 hours after it, is refused (Rules 39, 40).
@@ -710,7 +713,7 @@ Reviewed 2026-10-08 by reading the rules against each other and against the code
 90. **The Chief Tanod can log an incident from the phone**, with the report channel (phone call, Facebook, walk-in, SMS or other). The report is written to the phone's encrypted store first, sent with its own idempotency key (a signed write, `POST /incidents`), and deleted from the phone once the server confirms. The console never shows the narrative back (Rule 1). Sending happens while the app is open; there is no background job for the console.
 91. **A referral may go to the Lupon / Katarungang Pambarangay** (`lupon_kp`, migration 0045). It is a delegation record only: date, office, reference number. It counts as barangay-level in Annex D, like a barangay official or the VAW desk. The case itself stays in the barangay's binders and the DILG BIMS.
 92. **One workstation per barangay**, each with its own database and its own tunnel hostname if one is used. Dao, Binanuahan, Marifosque and Banuyo are separate deployments; the tenant separation inside the database remains as a second safeguard. Nothing in one barangay's data is visible from another's.
-93. **Power and connection cuts follow `docs/POWER_CUT_PROCEDURE.md`**: a UPS for the workstation and router, an offsite encrypted backup, a paper logbook while the system is down, and entry of the paper incidents afterwards.
+93. **Power and connection cuts (a written procedure is not kept; deployment-only)** call for: a UPS for the workstation and router, an offsite encrypted backup, a paper logbook while the system is down, and entry of the paper incidents afterwards.
 94. **Kept as is, by decision:** night dispatch offers are accepted online only (first accept wins, unchanged); dispatch still needs a published shift or an override reason; residents cannot report directly, staff log every report with its channel; tanods use their own mobile data, so no low-data mode or load allowance is built.
 95. **Kagawads have no account.** They sign printed reports and rosters on paper, which is already how approval works. The earlier idea of a Secretary account carrying approval authority for a Kagawad is dropped.
 96. **The Approval authority dialog is removed (2026-10-17).** There is nothing to configure: the Chief Tanod (Admin) and the Secretary hold every sign-off right by role (publish a roster, return an accomplishment report, prepare Annex D), and the preparer may also publish, return or file their own document (the Punong Barangay's signature on the paper is the check; the record keeps who prepared it and the audit log who acted). The Punong Barangay oversees and holds none; a value written into `user.approval_authority` by hand is still honoured for that role, but no screen sets it. The Users tab lost its "Title & authority" column. The columns `official_title` and `approval_authority` stay in the database (migrations are never edited). This replaces the Admin-managed authority attribute described in REFERENCE.md §3.
@@ -720,7 +723,7 @@ Reviewed 2026-10-08 by reading the rules against each other and against the code
 
 # Part 8: Rules from the 2026-10-28 mobile and messaging audit fixes
 
-Source: `docs/audit-2026-10-28/` and `backend/DEVLOG.md` 2026-10-28. Code in the working tree, verified on disposable DBs, vitest and jsdom only; not device-verified, Gradle not run, no new migration.
+Source: the 2026-10-28 audit (findings in `docs/DEFECT_LOG.md`) and `backend/DEVLOG.md` 2026-10-28. Code in the working tree, verified on disposable DBs, vitest and jsdom only; not device-verified, Gradle not run, no new migration.
 
 97. **SOS is reachable from every Tanod tab.** Home keeps its own SOS dock; every other Tanod tab shows a compact SOS control (`SosHoldButton`) that needs a hold of 800 ms and then opens the same confirm sheet. The phone waits at most 2 seconds for a GPS fix (`utils/sosPosition.ts`) and then sends with what it has; the server fills in the last known position or `no_fix` (Rule 22). The SMS fallback still runs when the local queue write fails. **Silent SOS** (vibrate only, no siren) is a checkbox on the confirm sheet, stored on the phone, **silent by default** (owner to confirm that default).
 98. **Critical alerts queue instead of overwriting.** The phone keeps a queue of critical alerts ordered by severity (SOS first); each has its own tray notification id; lock-screen text is generic (no names, no coordinates). The server sends `sos`, `priority_alert`, `dispatch` and `dispatch_offer` pushes as **data-only FCM** so the native service runs when the app is closed; other types keep the ordinary notification block. A failed acknowledge is still not retried (open item).

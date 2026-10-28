@@ -1,10 +1,13 @@
 # Baranguard — Chief Tanod Manual
 
+Purpose: user guide for the Chief Tanod (Admin) on the web dashboard and phone console.
+Status/Last updated: 2026-10-28. Written from code of 2026-10-23; not checked in a browser or on a phone.
+
 For the Chief Tanod. In the system this is the **Admin** account. You use two things: the web dashboard in the browser on the barangay workstation, and a console on your own phone.
 
 > **Status of this manual.** Written from the code of 2026-10-23 (`web/src/pages`, `mobile/src/pages/admin`, `docs/WORKFLOWS_AND_RULES.md`). The screens were **not checked in a browser or on a phone by the writer**. Button names are copied from the code. If a screen looks different, tell the developer. Items marked **[not verified]** rely on a rule in the docs that the writer could not see in the screen code.
 
-Related: `SECRETARY_MANUAL.md`, `PUNONG_BARANGAY_MANUAL.md`, `ROLE_QUICK_CARDS.md`, `docs/POWER_CUT_PROCEDURE.md`.
+Related: `SECRETARY_MANUAL.md`, `PUNONG_BARANGAY_MANUAL.md`, `ROLE_QUICK_CARDS.md`.
 
 ---
 
@@ -122,7 +125,7 @@ Resolving cannot be undone from this screen. Only the **Secretary** can reopen a
 
 The record page shows complainant, respondent, contact numbers and the official narrative (web only, so you can brief a responding tanod). Each read is logged by incident number. Do not copy a narrative into SMS or chat.
 
-The page says narratives are removed after 90 days. The policy since 2026-10-17 is one year. **The screen text is out of date.**
+Narratives are removed after one year (policy since 2026-10-17).
 
 ## 7. Personnel: Scheduler (week grid)
 
@@ -216,12 +219,10 @@ Shows your name, "Workstation: Reachable / Not reachable", the device, a privacy
 | Signed out suddenly | 15 minutes without input. Sign in again |
 | Account locked | Wait 15 minutes |
 | No tanod to assign | Phone a tanod to go on duty, or assign with an override reason |
-| Power or internet down | Follow `docs/POWER_CUT_PROCEDURE.md`. Keep a paper logbook and enter it afterwards |
+| Power or internet down | Keep a paper logbook and enter it afterwards |
 
 ## 12. Known gaps and doubts
 
-- The record page says narratives are removed after 90 days; policy is one year.
-- Settings shows an old role blurb for the Secretary (blotter, citizen triage).
 - Two tanods accepting one offer at the same instant, and the 12-hour cap under heavy use, were reasoned in code, not tested.
 - Phone console and offline off-duty: not device verified.
 - On the incident record page only the Admin sees Dispatch and Resolve buttons. The Secretary uses Incident Management for those.

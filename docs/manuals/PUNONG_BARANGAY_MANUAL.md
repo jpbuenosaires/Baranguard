@@ -1,5 +1,8 @@
 # Baranguard — Punong Barangay Manual
 
+Purpose: user guide for the Punong Barangay (oversight) on the web dashboard.
+Status/Last updated: 2026-10-28. Written from code of 2026-10-23; not checked in a browser.
+
 For the Punong Barangay. You use the web dashboard in the browser. Your role is **oversight**: you watch, you read reports, you sign on paper. You do not dispatch.
 
 > **Status of this manual.** Written from the code of 2026-10-23 (`web/src/pages`, `docs/WORKFLOWS_AND_RULES.md`, `docs/REFERENCE.md`). The screens were **not checked in a browser by the writer**. Button names are copied from the code. If a screen looks different, tell the developer. Items marked **[not verified]** could not be confirmed in the screen code.
@@ -115,7 +118,7 @@ Profile, Password (at least 12 characters, mixed case, a digit) and Appearance (
 |---|---|
 | You see an SOS banner, or you are texted an SOS | Tell the Chief Tanod at once. You cannot acknowledge or dispatch. You are texted only when nobody has acknowledged the SOS after two repeats |
 | A report needs to be changed | Ask the Secretary |
-| Power or internet is down | Follow `docs/POWER_CUT_PROCEDURE.md`. The system serves one workstation and stops when it stops |
+| Power or internet is down | No power-cut procedure is documented. The system serves one workstation and stops when it stops |
 | You think someone read a record they should not | Tell the Chief Tanod. The audit log records each narrative read by incident number |
 
 ## 11. Known gaps and doubts

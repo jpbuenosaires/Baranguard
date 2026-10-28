@@ -1,15 +1,18 @@
 # Baranguard — Roadmap to Finish (Defense, ISO 25010 and UAT only)
 
-Rewritten 2026-10-28. **Scope decision:** Baranguard will not be deployed at any
+Purpose: what is left to finish the thesis (defense, ISO 25010, UAT).
+Status / Last updated: 2026-10-28.
+
+**Scope decision:** Baranguard will not be deployed at any
 barangay. The remaining work is the thesis defense, the ISO/IEC 25010
 evaluation and User Acceptance Testing (UAT). Everything about go-live, rollout,
 Cloudflare Access, UPS, signing keys, DPO and council decisions is out of scope
 and is listed at the end as "not doing, say so in the thesis".
 
-Sources: `docs/THESIS_OBJECTIVES_ALIGNMENT.md` (the 4 objectives),
+Sources: `docs/TRACEABILITY_MATRIX.md` (the 4 objectives),
 `docs/ISO25010_EVALUATION_PLAN.md`, `docs/chapter4-instruments/`,
 `docs/SPRINT8_DEVICE_TEST_PLANS.md`, `docs/DEFENSE_QA.md`,
-`docs/DEFENSE_DB_RUNBOOK.md` and the 2026-10-28 audit reports.
+`docs/DEFENSE_DB_RUNBOOK.md` and `docs/DEFECT_LOG.md`.
 
 **Rule for every phase:** only measured numbers go into Chapter 4. A feature that
 was not run on a device is written as "implemented, not device-verified".
@@ -141,7 +144,7 @@ collect one piece of real evidence per characteristic.
 | Compatibility | Browsers and Android models/WebViews actually tested | Phase 1 |
 | Interaction capability | SUS score, task time, error counts, accessibility pass | UAT |
 | Reliability | Sync success and duplicate rate, restore drill, outage behaviour (workstation down: only SOS SMS works) | Phase 1, `restore-drill.sh` |
-| Security | Tenant and ownership pentest suites, lockout and revocation, raw-PII audit, audit-report items fixed | verify suites, `docs/audit-2026-10-28/` |
+| Security | Tenant and ownership pentest suites, lockout and revocation, raw-PII audit, audit-report items fixed | verify suites, `docs/DEFECT_LOG.md` |
 | Maintainability | Test counts, route count, migrations, docs reconciled | `count-routes.php`, suites |
 | Flexibility | Offline operation, per-barangay scoping, settings | Phase 1 |
 | Safety | SOS and critical-alert behaviour, no false "synced" claims | Phase 1 |
@@ -223,7 +226,7 @@ are recoverable from git history (`git log --diff-filter=D -- docs/`).
 `docs/DEFENSE_DB_RUNBOOK.md` and `docs/RISK_REGISTER.md` remain.
 
 **Infrastructure and resilience**
-- UPS for the workstation and a backup internet source (a workstation outage stops everything except the SOS SMS fallback). Follow `POWER_CUT_PROCEDURE.md` and test a real power cut.
+- UPS for the workstation and a backup internet source (a workstation outage stops everything except the SOS SMS fallback). A power-cut procedure is not written (removed, deployment-only).
 - Run Apache, MySQL and cloudflared as Windows services (`install-autostart-services.ps1`, elevated) so the system returns after a reboot; add the Windows Firewall rule for port 80.
 - Scheduled backups and a weekly restore drill checked on the real backup.
 - One workstation per barangay with its own `GATEWAY_BARANGAY_ID` (Rule 92).

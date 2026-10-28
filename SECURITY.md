@@ -1,5 +1,8 @@
 # Security Policy
 
+Purpose: how to report a vulnerability in Baranguard.
+Status / Last updated: 2026-10-28. Placeholder policy for a thesis repo; the system is not deployed.
+
 Baranguard handles incident reports, tanod locations and personal data for
 four barangays in Pilar, Sorsogon, so security reports are taken seriously.
 
@@ -21,7 +24,7 @@ example an acknowledgement window) once a maintainer is named.
 
 ## Supported versions
 
-No version has been tagged yet (see `CHANGELOG.md`). Only the current
+No version has been tagged yet (no releases are tagged). Only the current
 `main` branch is supported; there are no maintained older releases.
 
 ## Scope
@@ -34,10 +37,10 @@ OpenRouteService, Firebase), denial-of-service by volume, social
 engineering, and physical access to the workstation.
 
 Note: the public hostnames `baranguardph.win` / `api.baranguardph.win`
-currently serve the demo database, not real records
-(`docs/REFERENCE.md` §1).
+are out of scope for the defense and may be offline; when up they serve
+the demo database, not real records (`docs/REFERENCE.md` §1).
 
 ## If personal data may have been exposed
 
-Follow `docs/BREACH_RESPONSE_RUNBOOK.md`. It is a draft that the barangay
-council and a Data Protection Officer have not yet adopted.
+No breach runbook is adopted; the barangay council and a Data Protection
+Officer would need to adopt one before any deployment.

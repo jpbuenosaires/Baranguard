@@ -1,5 +1,8 @@
 # sms-gateway
 
+Purpose: the standalone Android app that sends Baranguard's SMS over its own SIM.
+Status / Last updated: 2026-10-28.
+
 A small, standalone Android app — **not** part of the Capacitor Tanod app
 in `mobile/`, its own Gradle project — that turns a dedicated phone into
 Baranguard's outbound SMS gateway. Replaces Semaphore (removed

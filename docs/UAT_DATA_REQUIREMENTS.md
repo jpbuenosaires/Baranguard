@@ -1,12 +1,15 @@
 # UAT / final-evaluation database: what each scenario needs
 
+Purpose: what data and device state each UAT scenario needs, and how to reset the seeded database.
+Status/Last updated: 2026-10-28. Simulated data only; not run on real users.
+
 Database `baranguard_uiseed` (Barangay Dao only, **simulated data**; the project keeps only the real `baranguard` and this one). Built by the `uat` profile of
 `backend/scripts/seed-ch4.php`; reset with **`Reset UAT Data.bat`** at the repo root
 (`backend\scripts\reset-ch4.ps1 -Profile uat -PointAppTo uat`). Ground truth for each build:
 `backend/storage/uat-seed-manifest.json` (key `uat_fixtures`). It never touches the real `baranguard`.
 
-Source of the scenarios: `docs/chapter4-instruments/04-uat-signoff.html` (BG-UAT-01, 92 scenarios).
-The ISO/IEC 25010 sheets (03a-d) rate the system after a short facilitator-guided task set on the
+Source of the scenarios: `docs/chapter4-instruments/09-consolidated-uat.html` (form BG-UAT-02).
+The ISO/IEC 25010 answer sheets (12a-d) rate the system after a short facilitator-guided task set on the
 same setup and need no data of their own.
 
 ## How to run a session
@@ -188,7 +191,7 @@ before changing the form.
 * FCM push and the full-screen alert (T-14, A-09): needs the real `google-services.json` on the phone.
 * The local GSM gateway for any SMS monitor or fallback check; `GSM_GATEWAY_ENABLED` is not set in `backend/.env`.
 * Real response-time and sync-latency figures. Everything in this database is generated; report the
-  figures as "simulated test data" (see `docs/CHAPTER4_SEED.md`, "Limits to state in the chapter").
+  figures as "simulated test data" (see "Limits to state in the chapter" below).
 * A tester who is the intended user; a developer may not act as tester (form, ground rule 5).
 
 ## Verification done when this was written (2026-10-13)
@@ -201,3 +204,22 @@ the last 3 days; the SOS settings; no pre-opened offer. Over HTTP (Apache :8081)
 Admin, Secretary and Punong Barangay logins succeed and the main lists answer 200; dispatching `tanod.dichoso`
 is refused with 422 `NO_PUBLISHED_SHIFT` and dispatching `tanod.espinosa` is refused as unavailable. Not run:
 any scenario in a browser or on a phone.
+
+## Seed data: scope, ground truth and limits
+
+Merged 2026-10-28 from the former `CHAPTER4_SEED.md` (its separate `baranguard_ch4` database and `Reset Chapter 4 Data.bat` no longer exist; the same seed now lives in `baranguard_uiseed`, reset with `Reset UAT Data.bat`).
+
+**Everything in the seeded database is simulated.** It exists for screenshots and for the ISO/IEC 25010 and UAT runs. It is not field data, and no figure taken from it may be reported as a measured result of real tanod use. In Chapter 4, call it "simulated test data".
+
+What it contains:
+- One barangay only: Dao (barangay_id 1). The seed script refuses to run on any database name other than the ones it knows, and never touches the real `baranguard`.
+- 11 accounts, all with password `Demo@2026`: `admin.dao` (Chief Tanod), `secretary.dao`, `punong.dao`, and eight tanods (`tanod.reyes`, `tanod.delacruz`, `tanod.gubaton`, `tanod.dichoso`, `tanod.espinosa`, `tanod.banares`, `tanod.candelaria`, and `tanod.olayvar`, who is suspended on purpose).
+- About 30 days of history covering every current screen: incidents (English, Tagalog, Bikol narratives; every status), dispatches with simulated routes, night dispatch offers, SOS alerts (app and SMS fallback), GPS tracks, shifts and rosters, availability, swap requests, accomplishment reports, referrals, Safer School Zones (3 schools, check-ins, a prepared term report), SMS log, legacy citizen-report rows (the inbox was retired 2026-10-17; nothing creates new ones), audit log, health checks.
+- Not seeded: evidence photos and voice files, and the mobile app's own offline queue (that lives on the phone).
+
+Ground truth: each run writes a manifest under `backend/storage/` (`uat-seed-manifest.json` for the UAT profile) with the exact counts generated: incidents by status, type and source; the median created-to-arrival time; SOS by app vs SMS fallback and their delays; offline-captured incidents and their lateness; GPS rows and delivery delay; referrals by office. Compare the system's own reports against it. The Reports screen's average response time should agree with the manifest (same rule: incident created to first arrival; the screen counts only the date range it shows), and `backend/scripts/metrics-report.php` should reproduce the GPS and SOS figures. Dates are relative to the moment of the reset, so the pending queue, active SOS, open offer and live tanod positions always look current.
+
+Limits to state in the chapter:
+- The delays and response times are drawn from ranges chosen by the script, so they show the system computing them correctly, not how fast real responders are.
+- Names, contact numbers, school names and reference numbers are made up (`SIM-` prefixes where a reference is needed).
+- The sync-latency and offline-durability figures for objective 2 still need real phone runs (`docs/ISO25010_EVALUATION_PLAN.md`).

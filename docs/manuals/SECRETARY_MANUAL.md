@@ -1,5 +1,8 @@
 # Baranguard — Secretary Manual
 
+Purpose: user guide for the Barangay Secretary on the web dashboard.
+Status/Last updated: 2026-10-28. Written from code of 2026-10-23; not checked in a browser.
+
 For the Barangay Secretary (Records and Reports Officer). You use the web dashboard in the browser. You have no phone console.
 
 > **Status of this manual.** Written from the code of 2026-10-23 (`web/src/pages`, `docs/WORKFLOWS_AND_RULES.md`, `docs/REFERENCE.md`). The screens were **not checked in a browser by the writer**. Button names are copied from the code. If a screen looks different, tell the developer. Items marked **[not verified]** rely on a rule in the docs that the writer could not see in the screen code.
@@ -62,7 +65,7 @@ Open it from Incident Management. You see: particulars, **Involved Parties**, **
 Rules for you:
 - The narrative never goes out by SMS, push, chat or logs. Do not paste it into SMS or Messenger.
 - Every read is recorded in the audit log by incident number only.
-- Narratives are deleted after **one year**. The page still says "90-day". That text is out of date; the policy changed on 2026-10-17.
+- Narratives are deleted after **one year** (policy since 2026-10-17).
 - If the narrative is blank, the page says "No narrative recorded" (recent) or "removed after the retention period" (old).
 
 ## 5. Incident lifecycle (only you)
@@ -178,8 +181,6 @@ Profile, Password (at least 12 characters, mixed case and a digit) and Appearanc
 
 ## 13. Known gaps and doubts
 
-- Narrative retention text on the record page says 90 days; policy is one year.
-- Settings shows an old blurb for your role (blotter, citizen triage).
 - The Annex B, C-1 and D layouts are drafts. Deadlines and filing frequency are unknown.
 - Retention for referrals, accomplishment reports, check-ins and submitted Annex D is a provisional one year, to be confirmed by the barangay and COA.
 - Whether Secretary SOS acknowledge and resolve works in the screen: not verified.

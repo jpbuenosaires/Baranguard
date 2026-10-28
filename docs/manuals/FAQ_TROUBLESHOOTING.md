@@ -1,5 +1,8 @@
 # Baranguard FAQ and Troubleshooting (Tanod app)
 
+Purpose: answers to common Tanod app problems.
+Status/Last updated: 2026-10-28. Items marked "(not yet device-verified)" were written from code.
+
 Simple answers to common problems. For full steps, see `TANOD_MANUAL.md`. Items marked "(not yet device-verified)" were written from the app code and not yet tested on a phone.
 
 In an **emergency**: raise **SOS**, then **call** the barangay desk, backup contact, 911 or 160.
@@ -112,8 +115,6 @@ Tap **Download school list** (needs a connection). If still empty, ask the desk 
 - An **SOS** still goes out by SMS if a gateway and backup number are set. Call the desk or backup contact too.
 - The Chief Tanod will call or text you. Follow their instructions and use the paper logbook if told to.
 - When power comes back, wait a few minutes. The phone sends saved records by itself. Open the app and check that "waiting" goes down to zero.
-
-Full barangay procedure: [`../POWER_CUT_PROCEDURE.md`](../POWER_CUT_PROCEDURE.md).
 
 ## Who do I ask?
 

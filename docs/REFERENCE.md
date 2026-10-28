@@ -1,9 +1,13 @@
 # Baranguard — Working Reference (compact)
 
-**This is the auto-loaded working reference.** The full
-`Baranguard_Master_Reference_FINAL .md` (reconciled 2026-09-07) stays in
-`docs/` as the authority — open it by section number (§n below) for full
-wording.
+Purpose: the auto-loaded working reference (schema, API, roles, screens, rules).
+Status / Last updated: 2026-10-28, reconciled through migrations 0001-0045.
+
+**Which document wins:** the full `Baranguard_Master_Reference_FINAL .md`
+stays in `docs/` for section numbers and DDL (open it by §n). Where the two
+differ, this file wins for removed features (Electronic Blotter, Lupon
+packet, AI/Ollama pipeline, Fatigue Flags) and the Master Reference wins
+elsewhere.
 
 **Never invent a field, route, role, or state transition that isn't
 here or there.** If something seems missing, stop and ask.
@@ -16,96 +20,24 @@ Offline-first, locally hosted Barangay Intelligence and Emergency
 Dispatch System for four barangays in Pilar, Sorsogon. Production
 system, not a demo. Single workstation, LAN-only, no cloud.
 
-**API base URL — C-03 in progress, resolved onto this machine
-2026-09-27.** A persistent Cloudflare Named Tunnel now fronts both the
-web dashboard and the API on a real, Cloudflare-registered domain:
-`https://baranguardph.win` (web) and `https://api.baranguardph.win`
-(API), tunnel name `baranguard` (id `28c3134b-1a35-4c85-971a-
-0fb18f262493`) — the ORIGINAL tunnel, created on THIS machine 2026-09-25,
-config at `~/.cloudflared/config.yml`. It was briefly orphaned 2026-09-26
-when a different session, running on a **separate physical machine**
-(Windows profile `danilyn`), didn't find `cloudflared` here, assumed no
-tunnel existed anywhere reachable, and stood up a second tunnel
-(`baranguard-main`, id `eeaa890d-...`) there instead, re-routing DNS to
-it. Resolved 2026-09-27: confirmed this machine is the real production
-workstation (real XAMPP, real `backend/.env`, real Apache :8081 vhost) —
-installed `cloudflared` here, re-routed both hostnames' DNS back to this
-machine's original `baranguard` tunnel via `--overwrite-dns`, verified
-live with real `curl` 200s from both hostnames. **`danilyn`'s
-`baranguard-main` tunnel is now the orphaned one** (not deleted — nobody
-has confirmed whether that machine still needs to serve anything; ask
-before touching it). If REFERENCE.md's "the workstation" ever seems
-ambiguous again, check `~/.cloudflared/config.yml`'s `tunnel:` id against
-`cloudflared tunnel list`'s connection count — the one with active
-connections is the one actually serving traffic. This tunnel setup
-replaces the private-mesh VPN (closed 2026-09-13, decommissioned
-2026-09-15) and the
-Cloudflare Quick Tunnel testing-only exception that followed it (random
-hostname, no Cloudflare-side auth, never a production path — see
-`DEVLOG.md` for all three). `web/index.html`'s `window.
-BARANGUARD_API_BASE_URL` now auto-derives `api.<hostname>` when NOT
-opened from localhost/127.0.0.1, so the web dashboard needs zero manual
-setup from any of these hostnames. `mobile/src/services/apiService.ts`'s
-`API_BASE_URL` now defaults to `https://api.baranguardph.win/api/v1`
-at build time (a fresh install/release APK just works off any network);
-local dev overrides this per-machine via a gitignored `mobile/.env.local`
-(`VITE_API_BASE_URL=http://localhost:8081/api/v1`). **Mobile's on-device
-runtime override (the "Workstation address" UI on Login and Profile,
-`setApiBaseUrlOverride()`) was REMOVED 2026-09-27** — a fixed, stable
-tunnel hostname removed the DHCP-reassigned-IP problem that override
-existed for; the `.env.local` build-time override above is now the only
-way to point a build anywhere else. Web keeps its own separate runtime
-override (a `?api_base=` query param or `localStorage`, no on-screen UI)
-unchanged. `backend/.env`'s `CORS_ALLOWED_ORIGIN` includes
-`https://baranguardph.win` alongside the local dev origins.
-
-**IMPORTANT, disclosed deliberately**: as of 2026-09-26 (28), the machine
-currently running this tunnel has `backend/.env` pointed at
-`baranguard_uiseed` (the demo/seed database), NOT the real production
-`baranguard` database — a deliberate, explicit user decision (infra set
-up first, database switch deferred). **Anyone who visits
-`baranguardph.win`/`api.baranguardph.win` right now sees demo data, not
-real citizen/incident records.** Don't treat the tunnel being live as
-proof real data is exposed publicly, and don't treat it as "done" for
-C-03's real purpose (Tanod/Secretary/PB reaching real operational data)
-until `backend/.env` is deliberately repointed — check `DB_NAME` in
-`backend/.env` before assuming which database current public traffic
-actually reaches.
-
-**Not yet done** (so C-03 is NOT closed in `docs/REMAINING.md` yet): on
-THIS machine, the tunnel is currently only started by
-`start-baranguard.ps1` (the `Start Baranguard.bat` launcher) as an
-ordinary user process — it does NOT yet run as a Windows service here, so
-it won't come back after a reboot until someone logs in and
-double-clicks the launcher. (The real Windows-service install steps
-described in DEVLOG 2026-09-26 (29) — `cloudflared service install` alone
-doesn't seed a working config for a locally-managed tunnel, needs
-`sc.exe config` directly — were done on `danilyn`'s machine, for the
-tunnel that's now orphaned; they still apply verbatim if/when this
-machine gets the same treatment, via `install-autostart-services.ps1`
-from an elevated prompt.) There is also still **no Cloudflare Access
-policy anywhere** —
-`api.baranguardph.win` is reachable by anyone with the URL, same
-exposure shape the Quick Tunnel had, just with a stable address instead
-of a rotating one (§2 Rule 7 still holds for anything meant to stay
-non-public). **If this gets picked up: scope any Access policy to the
-web dashboard host (`baranguardph.win`) only, never the API** —
-confirmed 2026-09-26 (29, continued) that several API endpoints are
-intentionally public (the transparency report, `GET /barangays`;
-citizen report submission was public until it was removed 2026-10-07) and that Access's browser-redirect email-OTP
-flow doesn't work for the mobile app's programmatic API calls; gating
-`api.baranguardph.win` would break real functionality, not just add
-security. This was explicitly deferred by the user after the scoping
-correction, not attempted and abandoned — see DEVLOG for the exact
-dashboard steps already worked out. C-02 (MFA) was explicitly deferred
-by the user in the same session this was set up. Also unresolved: this
-whole mechanism assumes the workstation itself is powered on and
-reachable — a workstation outage still takes the whole system down
-except SOS, which has its own device-local SMS fallback independent of
-the workstation entirely (§2 Rule 27); a real fix for THAT is a
-power/connectivity-resilience question (UPS, backup internet), not
-something this tunnel setup solves, and cloud-hosting as an alternative
-was explicitly considered and rejected by the user in the same session.
+**Not deployed (decision 2026-10-28).** The system is not being rolled out
+at a barangay; scope is the thesis defense, ISO 25010 evaluation and UAT
+(`docs/ROADMAP_TO_COMPLETION.md`, with a "not doing" appendix for
+deployment). A Cloudflare Named Tunnel `baranguard` on this workstation
+can front `https://baranguardph.win` (web) and `https://api.baranguardph.win`
+(API), config in `~/.cloudflared/config.yml`; it is started by
+`start-baranguard.ps1`, runs as a user process, has no Cloudflare Access
+policy, and `backend/.env` points at the demo database `baranguard_uiseed`,
+so anyone reaching those hostnames sees demo data only. A second tunnel
+`baranguard-main` on another machine (profile `danilyn`) is orphaned; ask
+before touching it. API base URL: `web/index.html` derives `api.<hostname>`
+unless opened from localhost; the mobile app defaults to
+`https://api.baranguardph.win/api/v1` and local builds override it with the
+gitignored `mobile/.env.local` (`VITE_API_BASE_URL`). The on-device
+"Workstation address" override was removed 2026-09-27. Public-endpoint
+caveat if an Access policy is ever added: scope it to the web host only,
+never the API (the transparency report and `GET /barangays` are public and
+the mobile app's calls cannot pass a browser login).
 
 **Stack:** PHP 8.2 serves all of `/api/v1/*` (Node is CLI tooling only).
 MariaDB 10.4 via XAMPP. Web: vanilla JS, no bundler, no npm step (hand-
@@ -134,9 +66,7 @@ raw_narrative rule reduces to its existing ceiling for every
 incident (changed from 90 days to ONE YEAR by the owner 2026-10-17;
 Rule 10 architecture review still applies to any further change).
 
-**Tanod-workflow build added 2026-10-01 (migrations 0030-0033; plan in
-`docs/FEATURE_PLAN_2026-10.md`, binding contract in
-`docs/FEATURE_CONTRACT_2026-10.md`).** Real tanods are honorarium-only,
+**Tanod-workflow build added 2026-10-01 (migrations 0030-0033; feature plan and contract removed 2026-10-28, see git history).** Real tanods are honorarium-only,
 have no DTR, and submit a monthly accomplishment report as their
 attendance; rosters are built from stated availability and approved by a
 barangay official; large matters are referred (PNP/BFP/EMS/officials),
@@ -239,8 +169,8 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   `fatigue_flag_acknowledged` (write-once). Routes 117 -> 105 (the rest of that
   drop is 0041's removals). **Do not rebuild without an explicit new decision.**
 - **0044** (2026-10-17, NOT applied to any real DB) `incident.report_channel` gains `phone_call` and `facebook` (additive enum widening; down folds them into `other`). Same day, no migration: raw narrative ceiling 90 -> 365 days, the five new-table retention rules set to a provisional 365 days, tanod availability made optional (Rule 83), Safer School Zones annexes marked draft layout (Rule 88). See `WORKFLOWS_AND_RULES.md` rules 81-88.
-- **0045** (2026-10-17, applied to `baranguard_uiseed` only) `incident_referral.referred_to` gains `lupon_kp`. Same day, no other migration: the Secretary is the back-up dispatcher (Rule 89), the Chief Tanod phone console can log an incident (`POST /incidents` joins `ADMIN_DEVICE_ALLOWLIST`, local schema v10 `admin_incident_outbox`, Rule 90), one workstation per barangay (Rule 92). See `WORKFLOWS_AND_RULES.md` Part 7 and `docs/POWER_CUT_PROCEDURE.md`.
-- **2026-10-28 mobile and messaging audit fixes** (no migration; working tree, verified on disposable DBs / vitest / jsdom only, NOT device-verified; Rules 97-106 in `WORKFLOWS_AND_RULES.md` Part 8; findings in `docs/audit-2026-10-28/`). SOS control on every Tanod tab (hold 800 ms), GPS wait at most 2 s, Silent SOS option (default silent). SOS repeats every 2 min while `active` (Secretary and Punong Barangay added from round 3, max 5). FCM is data-only for `sos`, `priority_alert`, `dispatch`, `dispatch_offer`. `POST /sms/broadcast` answers `{recipient_count, queued}` (queued, 10-min duplicate guard, 100 cap). SMS statuses: `queued` / `pending` ("Sent, not confirmed") / `sent` ("Sent") / `failed`; never "Delivered". Inbound human texts stored through `POST /internal/sms/inbound-text` (7 internal handlers) under `GATEWAY_BARANGAY_ID`; STOP/TIGIL/UNSUBSCRIBE opts out. `server_time` added to `GET /dispatch-offers`. Scheduled tasks `BaranguardNotificationWorker` and `BaranguardGsmIngest`. Phone: logout cleanup and per-user local data, `allowBackup` off, cleartext only in debug builds, My Shifts offline cache, critical alert queue. Open owner decisions: names/coordinates in the SOS SMS, SOS recipients beyond the Admin (Rule 89), keystore for the native service token.
+- **0045** (2026-10-17, applied to `baranguard_uiseed` only) `incident_referral.referred_to` gains `lupon_kp`. Same day, no other migration: the Secretary is the back-up dispatcher (Rule 89), the Chief Tanod phone console can log an incident (`POST /incidents` joins `ADMIN_DEVICE_ALLOWLIST`, local schema v10 `admin_incident_outbox`, Rule 90), one workstation per barangay (Rule 92). See `WORKFLOWS_AND_RULES.md` Part 7.
+- **2026-10-28 mobile and messaging audit fixes** (no migration; working tree, verified on disposable DBs / vitest / jsdom only, NOT device-verified; Rules 97-106 in `WORKFLOWS_AND_RULES.md` Part 8; findings summarised in `docs/DEFECT_LOG.md`). SOS control on every Tanod tab (hold 800 ms), GPS wait at most 2 s, Silent SOS option (default silent). SOS repeats every 2 min while `active` (Secretary and Punong Barangay added from round 3, max 5). FCM is data-only for `sos`, `priority_alert`, `dispatch`, `dispatch_offer`. `POST /sms/broadcast` answers `{recipient_count, queued}` (queued, 10-min duplicate guard, 100 cap). SMS statuses: `queued` / `pending` ("Sent, not confirmed") / `sent` ("Sent") / `failed`; never "Delivered". Inbound human texts stored through `POST /internal/sms/inbound-text` (7 internal handlers) under `GATEWAY_BARANGAY_ID`; STOP/TIGIL/UNSUBSCRIBE opts out. `server_time` added to `GET /dispatch-offers`. Scheduled tasks `BaranguardNotificationWorker` and `BaranguardGsmIngest`. Phone: logout cleanup and per-user local data, `allowBackup` off, cleartext only in debug builds, My Shifts offline cache, critical alert queue. Open owner decisions: names/coordinates in the SOS SMS, SOS recipients beyond the Admin (Rule 89), keystore for the native service token.
 - **0040** (2026-10-12, NOT applied to any real DB) report and roster
   notifications: `notification.notification_type` gains `report_update` and
   `roster_published`; `notification.accomplishment_report_id` (FK, SET NULL).
@@ -292,7 +222,7 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   Dispatch board; paper panels; related-incident card; Secretary scheduler.
   Verification counts 2026-10-07: `verify-web-wiring.mjs` 776, `web/tests` 609,
   `verify-wave1a-dispatch-roster.sh` 145, `verify-incident-intake.sh` 124,
-  `verify-paper-approvals.sh` 271, `verify-dispatch-offers.sh` 193 (re-run 2026-10-08; 184 was the first count),
+  `verify-dispatch-offers.sh` 193 (re-run 2026-10-08; 184 was the first count),
   `verify-retention-new-tables.sh` 131,
   `verify-sprint7-retention.sh` 89, `verify-chief-tanod-mobile.sh` 174.
 
@@ -593,7 +523,7 @@ is_suspended; suspend/unsuspend + is_active toggle) · ~~`/citizen-reports`~~ (*
 > (migration 0029; barangays use binders). Each now answers a plain 404
 > route miss (asserted in `verify-sprint7-pentest-incidents.sh`).
 
-**Tanod workflow (2026-10-01, contract in `docs/FEATURE_CONTRACT_2026-10.md`;
+**Tanod workflow (2026-10-01;
 cross-tenant 404, web writes need `Idempotency-Key`, tanod writes
 `client_event_id` + `X-Device-Id`; audit metadata ids/statuses only):**
 
@@ -810,13 +740,13 @@ controls that do nothing.
   `mysqld.exe` running as proof it's XAMPP's** — this machine also has
   an unrelated `MySQL80` Windows service on port 3306; check the actual
   listening port against `backend/.env`'s `DB_PORT` (XAMPP's own MariaDB
-  is 3307 here, per `my.ini`). Same trap for the `mysql` CLIENT: bare
+  is 3306 here, per `my.ini`). Same trap for the `mysql` CLIENT: bare
   `command -v mysql` can resolve to that other install's client ahead of
   `C:\xampp\mysql\bin\mysql.exe` on PATH, and pointed at the wrong
   server (that other install, on 3306) even XAMPP's own client fails
   with `caching_sha2_password could not be loaded` — an old-client-vs-
   new-server plugin gap, not a broken client (it works fine against
-  XAMPP's real MariaDB on 3307). **Fixed 2026-09-26 (33) in all 29
+  XAMPP's real MariaDB on 3306). **Fixed 2026-09-26 (33) in all 29
   `backend/scripts/*.sh` that talk to MariaDB directly**: their shared
   `find_bin()` now tries the explicit XAMPP path before falling back to
   `command -v`, and `XAMPP_MYSQL_PORT` now defaults to `backend/.env`'s
@@ -829,7 +759,7 @@ controls that do nothing.
   is now a copy of `C:\php-8.3.13`, and a new `Listen 8081`/
   `<VirtualHost *:8081>` vhost in `httpd-vhosts.conf` (DocumentRoot
   `backend/public`) serves the API through Apache, matching
-  `backend/scripts/README-serving.md` Option A for real. Old PHP kept at
+  `docs/SETUP.md` "Serving through Apache" for real. Old PHP kept at
   `C:\xampp\php-8.0.30-backup`. See `backend/DEVLOG.md` 2026-09-26 (32).
 - **That PHP upgrade silently broke `ext-curl` under Apache specifically
   (fixed same day, (34))** — a real symptom: the dashboard's AI badge
@@ -890,7 +820,7 @@ controls that do nothing.
 
 ---
 
-## 9. Verification suites (table counts measured 2026-10-01 after the tanod-workflow build; disposable DBs only)
+## 9. Verification suites (current totals in the 2026-10-28 note; the table is historical per-suite counts from 2026-10-01; disposable DBs only)
 
 **Re-measured 2026-10-28 (docs reconciliation, run on the working tree):** `php backend/scripts/count-routes.php` 103 routes / 27 files; 45 migrations (0001-0045); 39 `backend/scripts/verify-*.sh` plus 5 `verify-*.php/.mjs` there (44), 5 in `mobile/scripts`, 1 in `web/scripts`; `node web/scripts/verify-web-wiring.mjs` 938 passed, 0 failed; `web/tests` `npm test` 736 tests, 735 passed and 1 failed in the known order-sensitive map test 'SOS markers are never clustered' (a second run showed 734/2, same test family; it passes alone); mobile `npx vitest run` 30 files, 193 tests, all passed; mobile `verify-local-schema.mjs` 266 passed, 0 failed. The older per-suite figures in the table below are historical and were not all re-run. Nothing here is device-verified.
 
@@ -901,7 +831,7 @@ controls that do nothing.
 | `verify-w2-reports.sh` | 31 |
 | `verify-w3-w4-dispatch-gis.sh` | 38 |
 | `verify-sprint1-remaining.sh` | `ALL CHECKS PASSED` (count not captured) |
-| `verify-scheduler.sh` (renamed from `verify-scheduler-fatigue.sh` 2026-10-13) | ALL CHECKS PASSED (flag assertions replaced by 404 checks for the removed routes) |
+| `verify-scheduler.sh` (was `verify-scheduler-fatigue.sh` before 2026-10-13) | ALL CHECKS PASSED (flag assertions replaced by 404 checks for the removed routes) |
 | `verify-devices-map-packages.sh` | 57 |
 | `verify-duty-status-map-upload.sh` | 49 |
 | `verify-public-transparency.sh` | 17 |
@@ -946,12 +876,12 @@ all: it renders every page in jsdom against a fake `fetch` (one-time
 
 ## 10. Where the full detail lives
 
-- **`docs/Baranguard_Master_Reference_FINAL .md`** — the authority. §5
+- **`docs/Baranguard_Master_Reference_FINAL .md`** — section numbers and DDL (see the precedence note at the top). §5
   schema DDL, §6 per-endpoint contracts, §7 role matrix, §8 design
   system, §9 screen specs, §11 retention table.
 - **`backend/DEVLOG.md`** — every decision and why. **Don't read front
   to back.** `grep` for the feature you're touching.
-- **`docs/REMAINING.md`** — what's left before Sprint 8.
+- **`docs/ROADMAP_TO_COMPLETION.md`** — what's left (defense, ISO 25010, UAT).
 - **`docs/HANDOFF.md`** — current state and next step.
 - Controller/component class docs carry the resolved decisions for that
   file specifically, usually the fastest answer.

@@ -1,4 +1,7 @@
-# Baranguard - Defense Q&A (prepared 2026-10-28)
+# Baranguard - Defense Q&A
+
+Purpose: prepared answers to the ten questions a skeptical panel is most likely to ask.
+Status/Last updated: 2026-10-28.
 
 Honest, evidence-based answers to the ten questions a skeptical panel is most likely to ask. Every answer names where the evidence lives. Test counts are the ones re-run on 2026-10-28 (`REFERENCE.md` section 9); nothing below claims a device or field result that does not exist.
 
@@ -8,8 +11,8 @@ Open with these. A panel that hears them from you treats the rest as credible.
 
 1. **Not device-verified.** The 2026-10 features and the 2026-10-28 mobile and messaging fixes were verified on disposable databases, vitest, jsdom and scripts only. The Gradle debug and release (R8) builds, the data-only FCM critical-alert path, the SOS hold button, the critical alert queue and offline sync of the newer record kinds have never run on a phone in their current form. The one device-verified SOS result is the successful `sent_by_sms` path on 2026-09-24 (`WORKFLOWS_AND_RULES.md` Scenario 7). Plans: `SPRINT8_DEVICE_TEST_PLANS.md`. Risks R-07, R-09, R-10, R-26.
 2. **Real database not migrated.** Migrations 0029-0045 (45 migrations in all) are not applied to the real `baranguard` database. They were rehearsed on scratch copies of both real DBs on 2026-10-08 (0029-0038 then), and 0029, 0041 and 0042 are destructive. Until applied, the new code paths would fail against the real DB (R-04).
-3. **The public tunnel shows demo data.** `baranguardph.win` and `api.baranguardph.win` are served from this workstation by a Cloudflare Named Tunnel, and `backend/.env` currently points at the demo database `baranguard_uiseed`. Visitors see simulated records, not real ones (R-02).
-4. **No Cloudflare Access policy.** The API is reachable by anyone with the URL and protected by the application login only. Access was deferred on purpose, because gating the API would break the mobile app and the public endpoints; if added it covers the web host only (R-03).
+3. **The public tunnel shows demo data (not part of the evaluated scope).** `baranguardph.win` and `api.baranguardph.win` are served from this workstation by a Cloudflare Named Tunnel, and `backend/.env` currently points at the demo database `baranguard_uiseed`. Visitors see simulated records, not real ones (R-02).
+4. **No Cloudflare Access policy (not part of the evaluated scope).** The API is reachable by anyone with the URL and protected by the application login only. Access was deferred on purpose, because gating the API would break the mobile app and the public endpoints; if added it covers the web host only (R-03).
 5. **No MFA.** Multi-factor sign-in (C-02) was explicitly deferred (R-17).
 6. **One workstation is a single point of failure**, and the background jobs (SMS inbound daemon, notification worker, offer sweeper) run only while a user is logged on until they are installed as services (R-01, R-05, R-28). Only SOS has a phone-side fallback independent of the workstation.
 7. **Nothing is measured on real tanods or real data.** All tests and the UAT seed are synthetic. The ISO/IEC 25010 survey and UAT were not field results (R-24).
@@ -35,13 +38,13 @@ Open with these. A panel that hears them from you treats the rest as credible.
 
 - No, and it must not. DILG BIMS/KPIS is the mandated case ledger and ships its own blotter. Baranguard complements it: real-time dispatch, GPS, SOS and offline field capture, none of which BIMS provides (`REFERENCE.md` section 1, "settled, do not re-litigate"; manuscript Chapter 1 scope and delimitations).
 - To stay on the right side of that line the system has no electronic blotter, no Lupon or Katarungang Pambarangay case records and no browsable case registry. The referral log is a delegation log with no names or narratives, and an incident record is explicitly "not the barangay's official blotter entry" (manuscript glossary).
-- Say plainly: the circular numbers (MC 2025-104 for LGUSS-BIMS, MC 2026-037 for Safer School Zones) come from secondary sources and have not been checked against the issued text (`DILG_CIRCULARS_NOTES.md`, REFERENCE section 1). Nothing in the code depends on them.
+- Say plainly: the circular numbers (MC 2025-104 for LGUSS-BIMS, MC 2026-037 for Safer School Zones) come from secondary sources and have not been checked against the issued text (REFERENCE section 1). Nothing in the code depends on them.
 
 ## 4. Data privacy (RA 10173): what personal data do you hold and how is it protected?
 
-- Inventory by category, with legal basis and retention: `DATA_INVENTORY.md`. Privacy impact assessment: `PRIVACY_IMPACT_ASSESSMENT.md`. Notices (drafts): `PRIVACY_NOTICES.md`, `PRIVACY_NOTICE_WEB_DRAFT.md`. Breach plan (draft): `BREACH_RESPONSE_RUNBOOK.md`.
+- Inventory by category, with legal basis and retention: `DATA_INVENTORY.md`. Privacy impact assessment: `PRIVACY_IMPACT_ASSESSMENT.md`. Draft notice wording is in the appendix of the PIA. No breach runbook is adopted (the barangay council would need to adopt one before deployment).
 - Controls: data stays on the barangay's own workstation (one workstation and one database per barangay, Rule 92); no cloud AI; the raw narrative is purged after one year unless under legal hold (Rule 82); audit metadata holds identifiers and statuses only (Rule 8); suspended or deactivated accounts lose access immediately; SMS subscribers are consent-tracked and an opt-out is recorded, not deleted.
-- Since 2026-10-28 inbound human texts (sender number and body) are stored in `sms_log`; the privacy notice and data inventory were updated, and a STOP, TIGIL or UNSUBSCRIBE text opts the sender out (Rule 101; R-25).
+- Since 2026-10-28 inbound human texts (sender number and body) are stored in `sms_log`; the draft notice wording and data inventory were updated, and a STOP, TIGIL or UNSUBSCRIBE text opts the sender out (Rule 101; R-25).
 - Third parties that see some data: Firebase Cloud Messaging (no narrative, no names or coordinates in the push), OpenRouteService (live coordinates for routing), OpenStreetMap tiles on the web (viewed areas). All are listed in `DATA_INVENTORY.md` and risk R-16.
 - Say plainly: no DPO is designated, the notices and breach runbook are drafts not adopted by the barangay council, and retention for the newer tables is provisional.
 
@@ -49,7 +52,7 @@ Open with these. A panel that hears them from you treats the rest as credible.
 
 - Both were built, then removed on 2026-10-01 (migration 0029) by decision. The barangays are directed to keep the blotter and Lupon records in binders, and DILG BIMS/KPIS is the case ledger, so a Baranguard blotter would duplicate a mandated records function (a legal liability) and leave the AI redaction and summary pipeline with nothing to feed (`REFERENCE.md` section 1).
 - It also removes a class of risk: no model sees a narrative, so Rule 1 has one fewer path to defend. Fatigue Flags were removed for similar reasons (0042); the 12-hour daily cap stays.
-- Do not rebuild without a new decision. The thesis objectives were realigned accordingly (`THESIS_OBJECTIVES_ALIGNMENT.md`); AI-evaluation artifacts are history only.
+- Do not rebuild without a new decision. The thesis objectives were realigned accordingly (`TRACEABILITY_MATRIX.md` section 5); AI-evaluation artifacts are history only.
 
 ## 6. SOS reliability: what if the signal, the GPS or the workstation fails?
 
@@ -75,7 +78,7 @@ Re-run 2026-10-28 on the working tree: 103 routes in 27 files (`count-routes.php
 
 ## 9. SMS fallback: how can you trust texting through a tethered phone?
 
-- Outbound and inbound SMS go through one dedicated Android phone on the workstation's USB, using its own SIM, with no cloud aggregator and no per-message fee. Setup: `sms-gateway/README.md`, `OPERATIONS_MANUAL.md` section 7.
+- Outbound and inbound SMS go through one dedicated Android phone on the workstation's USB, using its own SIM, with no cloud aggregator and no per-message fee. Setup: `sms-gateway/README.md`.
 - Honesty rules: status is Waiting to send, Sent, not confirmed, Sent or Failed, and never Delivered (Rule 100); failures are recorded, not dropped; broadcasts are queued, limited to 100 recipients and own barangay, with a duplicate guard (Rule 102).
 - Say plainly: the gateway is one phone and one SIM, which makes it a single point of failure; it needs load and signal; a text that stays "Sent, not confirmed" is not retried automatically; the inbound daemon and worker must be running (limitation 6). It is a fallback and an advisory channel, not a guaranteed-delivery system.
 

@@ -1,5 +1,8 @@
 # BARANGUARD - TANOD QUICK CARD
 
+Purpose: one-page printable card for tanods.
+Status/Last updated: 2026-10-28. Not device-verified; linked from `TANOD_MANUAL.md` and `ROLE_QUICK_CARDS.md`.
+
 *Print on one page. Keep it with your ID.*
 
 ## EMERGENCY
