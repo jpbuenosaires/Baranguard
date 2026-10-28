@@ -215,11 +215,12 @@ Phase 4 collects evidence while the others run.
 
 ## Appendix — If Baranguard is ever deployed (kept on record, not part of this thesis)
 
-These items are NOT being done now. They stay documented so a later team, or
-the barangays, know what a real deployment still needs. The detail lives in
-`docs/REMAINING.md`, `docs/POWER_CUT_PROCEDURE.md`, `docs/DEFENSE_DB_RUNBOOK.md`,
-`docs/MAINTENANCE_AND_TURNOVER.md`, `docs/BREACH_RESPONSE_RUNBOOK.md` and
-`docs/RISK_REGISTER.md`; none of those files were changed by this scope decision.
+These items are NOT being done now. This list is the record of what a real
+deployment still needs. The detailed deployment documents (power-cut
+procedure, deployment checklist, turnover, breach runbook, DPO template,
+operations manual) were removed on 2026-10-28 to keep the repo focused; they
+are recoverable from git history (`git log --diff-filter=D -- docs/`).
+`docs/DEFENSE_DB_RUNBOOK.md` and `docs/RISK_REGISTER.md` remain.
 
 **Infrastructure and resilience**
 - UPS for the workstation and a backup internet source (a workstation outage stops everything except the SOS SMS fallback). Follow `POWER_CUT_PROCEDURE.md` and test a real power cut.

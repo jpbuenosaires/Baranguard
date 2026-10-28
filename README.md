@@ -19,7 +19,7 @@ described. Mobile (Ionic/Capacitor/Android) isn't covered there yet; see
 coding session — read those, not this file, for the actual reference:
 
 - `docs/REFERENCE.md` — schema, API, roles, screens, non-negotiable rules
-- `docs/SPRINTS.md` — sprint discipline, what's left
+- `docs/ROADMAP_TO_COMPLETION.md` — what's left (defense, ISO 25010, UAT)
 - `docs/HANDOFF.md` — current state, replaced fresh each session
 
 Full detail and history live under `docs/`, opened deliberately (not
@@ -27,8 +27,6 @@ auto-loaded — see `CLAUDE.md` for when to open each):
 
 - `docs/Baranguard_Master_Reference_FINAL .md` — the authority; if it and
   `REFERENCE.md` disagree, this file wins
-- `docs/REMAINING.md` — full ordered backlog before Sprint 8
-- `docs/Baranguard_Sprint_Prompts.md` — Sprints 0–7 verbatim, pure history
 - `backend/DEVLOG.md` — every decision and why (huge, append-only —
   grep for what you're touching, don't read front to back)
 
@@ -49,9 +47,10 @@ BIMSS and does not replace it.
 
 ## Documentation
 
-The planned software documentation set (what exists, what is missing, and
-the standards it follows) is in
-[`docs/SOFTWARE_DOCS_PLAN.md`](docs/SOFTWARE_DOCS_PLAN.md). Also see
-[`CHANGELOG.md`](CHANGELOG.md), [`SECURITY.md`](SECURITY.md),
-[`docs/RISK_REGISTER.md`](docs/RISK_REGISTER.md) and
-[`docs/DEFECT_LOG.md`](docs/DEFECT_LOG.md).
+Requirements and quality: [`docs/SRS.md`](docs/SRS.md),
+[`docs/TRACEABILITY_MATRIX.md`](docs/TRACEABILITY_MATRIX.md),
+[`docs/RISK_REGISTER.md`](docs/RISK_REGISTER.md),
+[`docs/DEFECT_LOG.md`](docs/DEFECT_LOG.md) and
+[`SECURITY.md`](SECURITY.md). User manuals are in `docs/manuals/`.
+Defense material: [`docs/DEFENSE_QA.md`](docs/DEFENSE_QA.md) and
+[`docs/MANUSCRIPT_AUDIT_2026-10-28.md`](docs/MANUSCRIPT_AUDIT_2026-10-28.md).

@@ -1,27 +1,27 @@
 # Baranguard — Project Context
 
 Auto-loads every session. Read the three imports below before doing
-anything — they carry the schema, API, roles, screens, sprint
-discipline, and current status. This file is a map to what else exists,
-not a summary of what they already say — confirm architectural decisions
-with the user before writing code.
+anything — they carry the schema, API, roles, screens, what is left
+(scoped to the defense, ISO/IEC 25010 evaluation and UAT; the system is
+not being deployed at a barangay), and current status. This file is a map
+to what else exists, not a summary of what they already say — confirm
+architectural decisions with the user before writing code.
 
 @docs/REFERENCE.md
-@docs/SPRINTS.md
+@docs/ROADMAP_TO_COMPLETION.md
 @docs/HANDOFF.md
 
-`docs/REMAINING.md` §F (the 2026-09-07 audit's remediation list) closed
-in full on 2026-09-13, but F1 (API base URL, both mobile and web) was
-reopened 2026-09-15 — see `REFERENCE.md` §1. `docs/AUDIT_2026-09-07.md`'s
-other findings are still historical only; current status lives in
-`HANDOFF.md` (loaded above), not restated here to avoid saying the same
-thing twice in the same context.
+**Docs were pruned 2026-10-28** to what the defense, evaluation and UAT
+need. Removed (recoverable with `git log --diff-filter=D -- docs/`):
+`SPRINTS.md`, `REMAINING.md`, `TODO_TO_FINISH.md`, the sprint prompts,
+the 2026-09 and 2026-10 audit reports, the October feature plan and
+contract, the AI dataset guide, the deployment-only docs (power cut,
+deployment checklist, turnover, breach runbook, DPO template, operations
+manual) and old instrument versions. References to them in older docs and
+code comments are historical.
 
 ## Not auto-loaded — open deliberately
 
-- **`docs/REMAINING.md`** — full ordered list of what's left before
-  Sprint 8, including hardware/account-blocked items. Open when picking
-  Sprint 8 work or planning.
 - **`docs/Baranguard_Master_Reference_FINAL .md`** — the real source of
   truth; `REFERENCE.md` summarises it with section numbers. **If the two
   disagree, this file wins** and `REFERENCE.md` should be corrected —
@@ -30,14 +30,14 @@ thing twice in the same context.
   (2026-10-01) and 0042 (2026-10-13), which removed those, so
   `REFERENCE.md` wins there. Its own
   closing "Document status" note says how current it is.
-- **`docs/Baranguard_Sprint_Prompts.md`** — Sprints 0–7 verbatim, all
-  complete; pure history.
 - **`backend/DEVLOG.md`** (huge, append-only) — every decision and why.
   **Log new work here.** Never read front-to-back — `grep` for the
   feature you're touching.
-- **`docs/AI_Evaluation_Dataset_Guide.md`** — historical only: the AI
-  pipeline and its eval scripts (incl. `generate-eval-dataset.php`) were
-  deleted by migration 0029. Kept for the PII category definitions.
+- **Defense and evaluation:** `docs/DEFENSE_QA.md`,
+  `docs/DEFENSE_DB_RUNBOOK.md`, `docs/MANUSCRIPT_AUDIT_2026-10-28.md`,
+  `docs/ISO25010_EVALUATION_PLAN.md`, `docs/UAT_DATA_REQUIREMENTS.md`,
+  `docs/SPRINT8_DEVICE_TEST_PLANS.md`, and the final instruments in
+  `docs/chapter4-instruments/` (01, 02, 07, 09, 11, 12a-d).
 
 `HANDOFF.md` is a **replaced-in-place snapshot, not a log** — rewrite its
 current-state section fresh each update; don't stack a new banner on the
