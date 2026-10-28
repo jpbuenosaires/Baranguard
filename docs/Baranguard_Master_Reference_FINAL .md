@@ -37,7 +37,7 @@ current docs: print-only reports (0041); Admin and Secretary dispatch and
 SOS rights (Rules 72, 89); Admin web read of the narrative (Rule 1
 amendment); the retired citizen inbox; and the 2026-10-28 mobile and
 messaging fixes (Rules 97-106). Current counts (2026-10-28): 103 routes in
-27 files, 45 migrations. Known defects are tracked in `docs/DEFECT_LOG.md`.
+27 files, 45 migrations. Known defects are tracked in `docs/RISKS_AND_DEFECTS.md`.
 
 ---
 
@@ -220,13 +220,13 @@ substitute for MariaDB's lack of partial/filtered unique indexes.
 
 **`dispatch`** — `dispatch_id` PK · `incident_id` FK RESTRICT · `dispatched_by`, `tanod_id` FK RESTRICT · `priority` ENUM(same as incident) · `route_json` JSON NULL · `route_status` ENUM('available','unavailable','stale') DEFAULT 'unavailable' · `status` ENUM('assigned','en_route','arrived','completed','cancelled') DEFAULT 'assigned' · `dispatched_at`, `en_route_at`, `arrived_at`, `completed_at`, `cancelled_at` NULL · `cancelled_by` FK SET NULL · `created_client_request_id` CHAR(36) UNIQUE. At most one active dispatch (`assigned`/`en_route`/`arrived`) per incident, enforced transactionally.
 
-**`evidence_attachment`** — `attachment_id` PK · `incident_id` FK RESTRICT · `type` ENUM('photo','voice') · `file_path` VARCHAR(512) (outside web root) · `uploaded_by` FK RESTRICT · `uploaded_at` · `sha256` CHAR(64) · `byte_size`, `mime_type`, `original_filename` · `retention_expires_at` NULL · `legal_hold` BOOLEAN DEFAULT FALSE · `client_request_id` CHAR(36) NULL UNIQUE. **No server-side writer exists for this table as of 2026-09-07** — see `docs/DEFECT_LOG.md`; the schema is real, the upload endpoint is not (written for the 2026-09-07 baseline).
+**`evidence_attachment`** — `attachment_id` PK · `incident_id` FK RESTRICT · `type` ENUM('photo','voice') · `file_path` VARCHAR(512) (outside web root) · `uploaded_by` FK RESTRICT · `uploaded_at` · `sha256` CHAR(64) · `byte_size`, `mime_type`, `original_filename` · `retention_expires_at` NULL · `legal_hold` BOOLEAN DEFAULT FALSE · `client_request_id` CHAR(36) NULL UNIQUE. **No server-side writer exists for this table as of 2026-09-07** — see `docs/RISKS_AND_DEFECTS.md`; the schema is real, the upload endpoint is not (written for the 2026-09-07 baseline).
 
 **`blotter_record`** — **(Historical — table dropped 2026-10-01, migration 0029; its rows were destroyed with it.)** Formerly the finalized blotter entry (`narrative_summary`, `case_status`, party fields, `display_id` `BLT-YYYY-NNN`). Barangays keep blotter records in their own binders.
 
 **`blotter_revision`** — **(Historical — table dropped 2026-10-01, migration 0029.)** Formerly one row per superseded blotter version.
 
-**`citizen_report`** *(no longer written: public intake removed 2026-10-07, inbox retired 2026-10-17; legacy rows kept)* — `report_id` PK · `barangay_id` FK RESTRICT · `incident_id` FK SET NULL UNIQUE · `contact_number` VARCHAR(32) NULL · `description` TEXT · `latitude`/`longitude` NULL · `submitted_at` · `converted_at` NULL · `retention_expires_at` NULL · `legal_hold` BOOLEAN DEFAULT FALSE. Conversion locks the row, permits exactly one incident linkage. **Unauthenticated intake — `description`/`contact_number` are the head of an open stored-XSS chain**, see `docs/DEFECT_LOG.md` (intake is removed).
+**`citizen_report`** *(no longer written: public intake removed 2026-10-07, inbox retired 2026-10-17; legacy rows kept)* — `report_id` PK · `barangay_id` FK RESTRICT · `incident_id` FK SET NULL UNIQUE · `contact_number` VARCHAR(32) NULL · `description` TEXT · `latitude`/`longitude` NULL · `submitted_at` · `converted_at` NULL · `retention_expires_at` NULL · `legal_hold` BOOLEAN DEFAULT FALSE. Conversion locks the row, permits exactly one incident linkage. **Unauthenticated intake — `description`/`contact_number` are the head of an open stored-XSS chain**, see `docs/RISKS_AND_DEFECTS.md` (intake is removed).
 
 **`sms_log`** — `log_id` PK · `report_id`/`incident_id`/`dispatch_id` FK SET NULL · `sender_number`, `receiver_number` NULL · `transport` ENUM('gsm_modem','semaphore') · `message_type` ENUM('incident','dispatch','priority_alert','coord_ping','confirmation','duty_status','sos','manual') *(0013 adds `manual`)* · `direction` ENUM('inbound','outbound') · `gateway_message_id`, `modem_message_id`, `correlation_id` NULL · `status` ENUM('queued','pending','sent','failed','refunded','received','rejected','deduplicated') · `sent_at`, `received_at` NULL · `failure_reason` NULL · `barangay_id` FK *(0006)* · `message_body` TEXT NULL, `read_at` DATETIME NULL *(0013)* · `legal_hold` BOOLEAN NOT NULL DEFAULT FALSE *(0016)* · `created_at`. Phone numbers masked in UI. *(The former "no `legal_hold` column" gap is closed — 0016 added it, and §11's rule is now enforced: the retention job checks this column AND the linked incident/citizen_report/dispatch-through-incident holds at purge time.)*
 
@@ -305,7 +305,7 @@ endpoints require `Authorization: Bearer <token>`.
 - `GET /incidents/:id` — Secretary gets `raw_narrative` + the three party fields (Secretary-only, same protection as raw narrative — §2 Rule 1); everyone else gets the allow-listed view with no narrative (there is no redacted narrative any more — nothing writes `redacted_narrative`).
 - `PATCH /incidents/:id` *(new, 2026-09-06)* — **operational correction, not a narrative editor.** Admin+Secretary may set `priority`/`incident_type`/`location_description`; `complainant_name` is **Secretary-only**. Sending `raw_narrative`/`redacted_narrative` is a hard `400`. Requires `Idempotency-Key` — **but does not actually replay on it** (validates and discards); every sibling write replays for real. Audit records field *names* only, never values.
 - `PATCH /incidents/:id/status` — Admin only, body `{status:"resolved"}`, requires no active dispatch remains. *(Historical: it also flipped a linked finalized blotter's `case_status` to `resolved`; no blotter exists since 2026-10-01.)*
-- `POST /incidents/:id/evidence` / `GET /incidents/:id/evidence` — **documented, not implemented.** No POST route exists server-side; `GET` is real but permanently empty. See `docs/DEFECT_LOG.md`.
+- `POST /incidents/:id/evidence` / `GET /incidents/:id/evidence` — **documented, not implemented.** No POST route exists server-side; `GET` is real but permanently empty. See `docs/RISKS_AND_DEFECTS.md`.
 - `GET /incidents/nearby` — Tanod only, radius-capped, never raw narrative/contact data.
 
 ### AI processing, Blotter and AI Tools — **(Historical — all removed 2026-10-01, migration 0029; and AI Tools earlier by 0027/0028)**
@@ -342,7 +342,7 @@ read. **Do not re-add without an explicit new decision.**
 ### Audit / reports
 
 - `GET /audit-log` — Admin, own barangay.
-- `GET /reports/summary` — `avg_response_time_minutes` is defined as `incident.created_at → dispatch.arrived_at` per incident that reached `arrived`. **Currently double-counts** an incident with more than one arrived dispatch (`AVG()` over an un-deduplicated join) — see `docs/DEFECT_LOG.md`; the target fix is a per-incident `MIN(arrived_at)` before averaging.
+- `GET /reports/summary` — `avg_response_time_minutes` is defined as `incident.created_at → dispatch.arrived_at` per incident that reached `arrived`. **Currently double-counts** an incident with more than one arrived dispatch (`AVG()` over an un-deduplicated join) — see `docs/RISKS_AND_DEFECTS.md`; the target fix is a per-incident `MIN(arrived_at)` before averaging.
 - `GET /reports/heatmap`, `GET /reports/notifications-summary`, `GET /reports/export` — as specified; export is audited.
 
 ### Shifts, fatigue, map packages, citizen reports, sync
@@ -535,7 +535,7 @@ records) · M12 Critical Alert Overlay · M13 SMS Fallback Confirmation
 - [ ] All retryable writes use idempotency/client event IDs — for real, not merely a validated-and-discarded header (see `PATCH /incidents/:id`'s known exception).
 - [ ] Offline screens show explicit stale/cached state.
 - [ ] No raw narrative appears outside Secretary-authorized surfaces.
-- [ ] No screen interpolates server data into `innerHTML` without escaping (see `docs/DEFECT_LOG.md`).
+- [ ] No screen interpolates server data into `innerHTML` without escaping (see `docs/RISKS_AND_DEFECTS.md`).
 - [ ] Design tokens only; no hardcoded colors/spacing/fonts.
 - [ ] No demo/prototype tells.
 
@@ -575,7 +575,7 @@ design pass before implementation:
 | `notification` | 1 year from `created_at` | Same H-15 sign-off; matches the existing `sms_log` default for a comparable dispatch/alert transport record. `notification_target`/`notification_delivery` cascade automatically (`ON DELETE CASCADE`). `RetentionService::purgeNotifications()` |
 | `map_package` | No time-based retention | Governed by the per-barangay storage quota (M-07/H-21) instead of a clock — deliberate, not an oversight (H-15's own resolution note) |
 
-**Pre-UAT exit conditions:** executable schema matches §5 · every §6 endpoint's documented response shape and authorization rule matches the implementation · tenant penetration tests pass · offline duplicate tests pass · critical notification/SOS fallback tests pass · restore test passes · no unresolved P0/P1 contradictions. (Status of each is tracked in `docs/DEFECT_LOG.md` and `docs/HANDOFF.md`.)
+**Pre-UAT exit conditions:** executable schema matches §5 · every §6 endpoint's documented response shape and authorization rule matches the implementation · tenant penetration tests pass · offline duplicate tests pass · critical notification/SOS fallback tests pass · restore test passes · no unresolved P0/P1 contradictions. (Status of each is tracked in `docs/RISKS_AND_DEFECTS.md` and `docs/HANDOFF.md`.)
 
 Recovery baseline: daily encrypted local backup, documented retention,
 periodic restore verification, tested restart procedure. Backups are

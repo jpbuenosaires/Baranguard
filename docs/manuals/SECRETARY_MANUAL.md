@@ -7,7 +7,7 @@ For the Barangay Secretary (Records and Reports Officer). You use the web dashbo
 
 > **Status of this manual.** Written from the code of 2026-10-23 (`web/src/pages`, `docs/WORKFLOWS_AND_RULES.md`, `docs/REFERENCE.md`). The screens were **not checked in a browser by the writer**. Button names are copied from the code. If a screen looks different, tell the developer. Items marked **[not verified]** rely on a rule in the docs that the writer could not see in the screen code.
 
-Related: `CHIEF_TANOD_MANUAL.md`, `PUNONG_BARANGAY_MANUAL.md`, `ROLE_QUICK_CARDS.md`.
+Related: `CHIEF_TANOD_MANUAL.md`, `PUNONG_BARANGAY_MANUAL.md`, `QUICK_CARDS.md`.
 
 ---
 

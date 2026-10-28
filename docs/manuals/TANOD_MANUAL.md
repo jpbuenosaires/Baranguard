@@ -1,7 +1,7 @@
 # Baranguard Tanod Manual (Mobile App)
 
 Purpose: user guide for tanods using the mobile app.
-Status/Last updated: 2026-10-28. Not device-verified; parts marked "(not yet device-verified)". One-page card: `TANOD_QUICK_CARD.md`.
+Status/Last updated: 2026-10-28. Not device-verified; parts marked "(not yet device-verified)". One-page card: `QUICK_CARDS.md`.
 
 For tanods using the Baranguard app on their Android phone. Short steps, simple words.
 

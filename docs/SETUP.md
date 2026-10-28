@@ -108,8 +108,8 @@ that creates the **one-time first Admin account** for whichever barangay
 you pick. There is no production seed or demo login in the repo (§8
 production-realism rule) — this is the only way to get a working account
 on a fresh `baranguard` database. (The UAT/demo seed with its own
-accounts is described in `docs/UAT_DATA_REQUIREMENTS.md` and
-`docs/DEFENSE_DB_RUNBOOK.md`.) (Deliberately NOT automated — it's the one account this repo
+accounts is described in `docs/EVALUATION.md` and
+`docs/DEFENSE.md`.) (Deliberately NOT automated — it's the one account this repo
 has no safe default for.)
 
 ### 1.6 Run the API
@@ -216,7 +216,7 @@ mobile app's Capacitor WebView; see the CORS block in
 
 **Test accounts.** A fresh database has only the account from step 1.5.
 The UAT/demo seed (`baranguard_uiseed`) carries its own accounts; see
-`docs/UAT_DATA_REQUIREMENTS.md`.
+`docs/EVALUATION.md`.
 
 ---
 
@@ -265,7 +265,7 @@ Remote access (a Cloudflare tunnel, `backend/scripts/setup-cloudflare-tunnel.sh`
 and auto-start Windows services (`backend/scripts/install-autostart-services.ps1`,
 elevated) exist as scripts but are not part of the evaluated scope; the
 system is not being deployed. See the "not doing" appendix of
-`docs/ROADMAP_TO_COMPLETION.md`. The public hostnames, when up, serve the
+`docs/HANDOFF.md`. The public hostnames, when up, serve the
 demo database (`docs/REFERENCE.md` §1). For your own local mobile builds, a
 gitignored `mobile/.env.local` with
 `VITE_API_BASE_URL=http://localhost:8081/api/v1` targets the workstation.

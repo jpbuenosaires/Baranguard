@@ -17,12 +17,11 @@ database, not just described.
 
 ## Start here (for working on the codebase)
 
-`CLAUDE.md` (repo root) auto-loads three docs at the start of every AI
+`CLAUDE.md` (repo root) auto-loads two docs at the start of every AI
 coding session — read those, not this file, for the actual reference:
 
 - `docs/REFERENCE.md` — schema, API, roles, screens, non-negotiable rules
-- `docs/ROADMAP_TO_COMPLETION.md` — what's left (defense, ISO 25010, UAT)
-- `docs/HANDOFF.md` — current state, replaced fresh each session
+- `docs/HANDOFF.md` — current state and what's left (defense, ISO 25010, UAT), replaced fresh each session
 
 Full detail and history live under `docs/`, opened deliberately (not
 auto-loaded — see `CLAUDE.md` for when to open each):
@@ -51,16 +50,10 @@ BIMSS and does not replace it.
 
 ## Documentation
 
-Requirements and quality: [`docs/SRS.md`](docs/SRS.md),
-[`docs/TRACEABILITY_MATRIX.md`](docs/TRACEABILITY_MATRIX.md),
-[`docs/RISK_REGISTER.md`](docs/RISK_REGISTER.md),
-[`docs/DEFECT_LOG.md`](docs/DEFECT_LOG.md) and
-[`SECURITY.md`](SECURITY.md). User manuals are in `docs/manuals/`.
-Data and privacy: [`docs/DATA_INVENTORY.md`](docs/DATA_INVENTORY.md),
-[`docs/PRIVACY_IMPACT_ASSESSMENT.md`](docs/PRIVACY_IMPACT_ASSESSMENT.md).
-Evaluation: [`docs/ISO25010_EVALUATION_PLAN.md`](docs/ISO25010_EVALUATION_PLAN.md),
-[`docs/UAT_DATA_REQUIREMENTS.md`](docs/UAT_DATA_REQUIREMENTS.md),
-[`docs/DEFENSE_DB_RUNBOOK.md`](docs/DEFENSE_DB_RUNBOOK.md).
-Quick card for tanods: [`docs/manuals/TANOD_QUICK_CARD.md`](docs/manuals/TANOD_QUICK_CARD.md).
-Defense material: [`docs/DEFENSE_QA.md`](docs/DEFENSE_QA.md) and
-[`docs/MANUSCRIPT_AUDIT_2026-10-28.md`](docs/MANUSCRIPT_AUDIT_2026-10-28.md).
+Opened deliberately: [`docs/WORKFLOWS_AND_RULES.md`](docs/WORKFLOWS_AND_RULES.md)
+(workflows, rules, offline sync rules), [`docs/SRS.md`](docs/SRS.md),
+[`docs/PRIVACY.md`](docs/PRIVACY.md),
+[`docs/RISKS_AND_DEFECTS.md`](docs/RISKS_AND_DEFECTS.md),
+[`docs/EVALUATION.md`](docs/EVALUATION.md),
+[`docs/DEFENSE.md`](docs/DEFENSE.md), [`docs/SETUP.md`](docs/SETUP.md),
+user manuals in `docs/manuals/`, and [`SECURITY.md`](SECURITY.md).

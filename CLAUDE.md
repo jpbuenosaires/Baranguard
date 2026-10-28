@@ -3,15 +3,14 @@
 Purpose: map of the project docs, auto-loaded each session.
 Status / Last updated: 2026-10-28.
 
-Auto-loads every session. Read the three imports below before doing
-anything — they carry the schema, API, roles, screens, what is left
-(scoped to the defense, ISO/IEC 25010 evaluation and UAT; the system is
-not being deployed at a barangay), and current status. This file is a map
+Auto-loads every session. Read the two imports below before doing
+anything — they carry the schema, API, roles, screens, and current status
+plus what is left (scoped to the defense, ISO/IEC 25010 evaluation and
+UAT; the system is not being deployed at a barangay). This file is a map
 to what else exists, not a summary of what they already say — confirm
 architectural decisions with the user before writing code.
 
 @docs/REFERENCE.md
-@docs/ROADMAP_TO_COMPLETION.md
 @docs/HANDOFF.md
 
 **Docs were pruned 2026-10-28** to what the defense, evaluation and UAT
@@ -34,11 +33,12 @@ code comments are historical.
 - **`backend/DEVLOG.md`** (huge, append-only) — every decision and why.
   **Log new work here.** Never read front-to-back — `grep` for the
   feature you're touching.
-- **Defense and evaluation:** `docs/DEFENSE_QA.md`,
-  `docs/DEFENSE_DB_RUNBOOK.md`, `docs/MANUSCRIPT_AUDIT_2026-10-28.md`,
-  `docs/ISO25010_EVALUATION_PLAN.md`, `docs/UAT_DATA_REQUIREMENTS.md`,
-  `docs/SPRINT8_DEVICE_TEST_PLANS.md`, and the final instruments in
-  `docs/chapter4-instruments/` (01, 02, 07, 09, 11, 12a-d).
+- **`docs/WORKFLOWS_AND_RULES.md`** — workflows, state machines, numbered
+  business rules, and Part 9, the offline sync and conflict rules.
+- **`docs/SRS.md`**, **`docs/PRIVACY.md`**, **`docs/RISKS_AND_DEFECTS.md`**,
+  **`docs/EVALUATION.md`**, **`docs/DEFENSE.md`**, **`docs/SETUP.md`**,
+  **`docs/manuals/`** — requirements, privacy, risks and defects,
+  ISO 25010/UAT evaluation, defense material, setup, user manuals.
 
 `HANDOFF.md` is a **replaced-in-place snapshot, not a log** — rewrite its
 current-state section fresh each update; don't stack a new banner on the

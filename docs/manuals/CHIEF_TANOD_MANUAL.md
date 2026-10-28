@@ -7,7 +7,7 @@ For the Chief Tanod. In the system this is the **Admin** account. You use two th
 
 > **Status of this manual.** Written from the code of 2026-10-23 (`web/src/pages`, `mobile/src/pages/admin`, `docs/WORKFLOWS_AND_RULES.md`). The screens were **not checked in a browser or on a phone by the writer**. Button names are copied from the code. If a screen looks different, tell the developer. Items marked **[not verified]** rely on a rule in the docs that the writer could not see in the screen code.
 
-Related: `SECRETARY_MANUAL.md`, `PUNONG_BARANGAY_MANUAL.md`, `ROLE_QUICK_CARDS.md`.
+Related: `SECRETARY_MANUAL.md`, `PUNONG_BARANGAY_MANUAL.md`, `QUICK_CARDS.md`.
 
 ---
 

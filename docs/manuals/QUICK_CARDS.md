@@ -1,11 +1,71 @@
-# Baranguard — Role Quick Cards
+# Baranguard - Quick Cards
 
-Purpose: one-page printable cards for the Chief Tanod, Secretary and Punong Barangay (the Tanod card is `TANOD_QUICK_CARD.md`).
-Status/Last updated: 2026-10-28. Screens not checked in a browser or on a phone.
+Purpose: one-page printable cards for the Tanod, Chief Tanod, Secretary and Punong Barangay. Full steps are in the role manuals.
+Status / Last updated: 2026-10-28. Written from the code of 2026-10-23; screens not checked in a browser or on a phone by the writer. Not device-verified.
 
-One page per role. Print each on A4 (one card per page). Full steps are in the manuals. Written from the code of 2026-10-23; screens not checked in a browser or on a phone by the writer. Never write a password on a card.
+## Contents
+1. Tanod (phone app)
+2. Chief Tanod (Admin)
+3. Secretary
+4. Punong Barangay
+
+Print each card on its own A4 page. Never write a password on a card.
 
 <div style="page-break-after: always;"></div>
+
+## TANOD - quick card
+
+*Keep it with your ID.*
+
+### Emergency
+1. **Home** > red **EMERGENCY SOS** (on other tabs: hold the small SOS button about 1 second)
+2. Tap **Confirm: send SOS**
+3. No signal? It is saved and texted by itself. Then **CALL the desk**.
+
+**Call:** Barangay desk / backup: ______________ | Police **911** | MDRRMO **160**
+(The Home screen has call buttons.)
+
+### Every shift
+| Step | Tap |
+|---|---|
+| Start | **Home** > **Go on duty** (needs signal) |
+| Calls | **Dispatches** > open the call |
+| Moving | **Go En Route** |
+| There | **Mark Arrived at Scene** |
+| Done | **Mark Completed** > **Confirm & Complete** |
+| End | **Home** > **End shift** > **End Shift** |
+
+You cannot end your shift while a dispatch is still open.
+
+### See something? report it
+**Report** (round **+** button) > choose type (required) > write what happened > location > **Submit report**
+Works with no signal. The next screen tells you if it is saved or synced.
+
+### Hand over a big case
+Dispatch > **Referral** > **Refer This Case** > choose office > **Record referral**
+(No names of victims or complainants.)
+
+### Monthly
+- **Profile** > **My accomplishments** > **Add entry** each work day
+- End of month: **Submit month** (needs signal), then print and sign at the hall
+- **Profile** > **My availability** > **New availability**
+- **Profile** > **School check-in** > **Check in** / **Check out**
+
+### Problems
+| You see | Do |
+|---|---|
+| "CACHE" or "N waiting" | Tap it. Records send when signal returns |
+| Cannot sign in | Check username and password. 5 wrong tries = locked 15 min |
+| Phone registered to another account | Ask the Chief Tanod |
+| Session expired | Sign in again. Saved items stay |
+| No GPS | Turn on Location, go outside |
+
+### Rules
+- Never share your password.
+- Never write victim, complainant or student names in notes.
+- Keep location and notifications on. Keep the phone charged.
+<div style="page-break-after: always;"></div>
+
 
 ## CHIEF TANOD (Admin) — quick card
 

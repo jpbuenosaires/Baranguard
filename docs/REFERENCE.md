@@ -22,7 +22,7 @@ system, not a demo. Single workstation, LAN-only, no cloud.
 
 **Not deployed (decision 2026-10-28).** The system is not being rolled out
 at a barangay; scope is the thesis defense, ISO 25010 evaluation and UAT
-(`docs/ROADMAP_TO_COMPLETION.md`, with a "not doing" appendix for
+(`docs/HANDOFF.md`, with a "not doing" appendix for
 deployment). A Cloudflare Named Tunnel `baranguard` on this workstation
 can front `https://baranguardph.win` (web) and `https://api.baranguardph.win`
 (API), config in `~/.cloudflared/config.yml`; it is started by
@@ -170,7 +170,7 @@ DB (apply in order after 0029-0033, DBA/root, backup first).**
   drop is 0041's removals). **Do not rebuild without an explicit new decision.**
 - **0044** (2026-10-17, NOT applied to any real DB) `incident.report_channel` gains `phone_call` and `facebook` (additive enum widening; down folds them into `other`). Same day, no migration: raw narrative ceiling 90 -> 365 days, the five new-table retention rules set to a provisional 365 days, tanod availability made optional (Rule 83), Safer School Zones annexes marked draft layout (Rule 88). See `WORKFLOWS_AND_RULES.md` rules 81-88.
 - **0045** (2026-10-17, applied to `baranguard_uiseed` only) `incident_referral.referred_to` gains `lupon_kp`. Same day, no other migration: the Secretary is the back-up dispatcher (Rule 89), the Chief Tanod phone console can log an incident (`POST /incidents` joins `ADMIN_DEVICE_ALLOWLIST`, local schema v10 `admin_incident_outbox`, Rule 90), one workstation per barangay (Rule 92). See `WORKFLOWS_AND_RULES.md` Part 7.
-- **2026-10-28 mobile and messaging audit fixes** (no migration; working tree, verified on disposable DBs / vitest / jsdom only, NOT device-verified; Rules 97-106 in `WORKFLOWS_AND_RULES.md` Part 8; findings summarised in `docs/DEFECT_LOG.md`). SOS control on every Tanod tab (hold 800 ms), GPS wait at most 2 s, Silent SOS option (default silent). SOS repeats every 2 min while `active` (Secretary and Punong Barangay added from round 3, max 5). FCM is data-only for `sos`, `priority_alert`, `dispatch`, `dispatch_offer`. `POST /sms/broadcast` answers `{recipient_count, queued}` (queued, 10-min duplicate guard, 100 cap). SMS statuses: `queued` / `pending` ("Sent, not confirmed") / `sent` ("Sent") / `failed`; never "Delivered". Inbound human texts stored through `POST /internal/sms/inbound-text` (7 internal handlers) under `GATEWAY_BARANGAY_ID`; STOP/TIGIL/UNSUBSCRIBE opts out. `server_time` added to `GET /dispatch-offers`. Scheduled tasks `BaranguardNotificationWorker` and `BaranguardGsmIngest`. Phone: logout cleanup and per-user local data, `allowBackup` off, cleartext only in debug builds, My Shifts offline cache, critical alert queue. Open owner decisions: names/coordinates in the SOS SMS, SOS recipients beyond the Admin (Rule 89), keystore for the native service token.
+- **2026-10-28 mobile and messaging audit fixes** (no migration; working tree, verified on disposable DBs / vitest / jsdom only, NOT device-verified; Rules 97-106 in `WORKFLOWS_AND_RULES.md` Part 8; findings summarised in `docs/RISKS_AND_DEFECTS.md`). SOS control on every Tanod tab (hold 800 ms), GPS wait at most 2 s, Silent SOS option (default silent). SOS repeats every 2 min while `active` (Secretary and Punong Barangay added from round 3, max 5). FCM is data-only for `sos`, `priority_alert`, `dispatch`, `dispatch_offer`. `POST /sms/broadcast` answers `{recipient_count, queued}` (queued, 10-min duplicate guard, 100 cap). SMS statuses: `queued` / `pending` ("Sent, not confirmed") / `sent` ("Sent") / `failed`; never "Delivered". Inbound human texts stored through `POST /internal/sms/inbound-text` (7 internal handlers) under `GATEWAY_BARANGAY_ID`; STOP/TIGIL/UNSUBSCRIBE opts out. `server_time` added to `GET /dispatch-offers`. Scheduled tasks `BaranguardNotificationWorker` and `BaranguardGsmIngest`. Phone: logout cleanup and per-user local data, `allowBackup` off, cleartext only in debug builds, My Shifts offline cache, critical alert queue. Open owner decisions: names/coordinates in the SOS SMS, SOS recipients beyond the Admin (Rule 89), keystore for the native service token.
 - **0040** (2026-10-12, NOT applied to any real DB) report and roster
   notifications: `notification.notification_type` gains `report_update` and
   `roster_published`; `notification.accomplishment_report_id` (FK, SET NULL).
@@ -881,7 +881,7 @@ all: it renders every page in jsdom against a fake `fetch` (one-time
   system, §9 screen specs, §11 retention table.
 - **`backend/DEVLOG.md`** — every decision and why. **Don't read front
   to back.** `grep` for the feature you're touching.
-- **`docs/ROADMAP_TO_COMPLETION.md`** — what's left (defense, ISO 25010, UAT).
+- **`docs/HANDOFF.md`** — what's left (defense, ISO 25010, UAT).
 - **`docs/HANDOFF.md`** — current state and next step.
 - Controller/component class docs carry the resolved decisions for that
   file specifically, usually the fastest answer.

@@ -7,7 +7,7 @@ For the Punong Barangay. You use the web dashboard in the browser. Your role is 
 
 > **Status of this manual.** Written from the code of 2026-10-23 (`web/src/pages`, `docs/WORKFLOWS_AND_RULES.md`, `docs/REFERENCE.md`). The screens were **not checked in a browser by the writer**. Button names are copied from the code. If a screen looks different, tell the developer. Items marked **[not verified]** could not be confirmed in the screen code.
 
-Related: `CHIEF_TANOD_MANUAL.md`, `SECRETARY_MANUAL.md`, `ROLE_QUICK_CARDS.md`.
+Related: `CHIEF_TANOD_MANUAL.md`, `SECRETARY_MANUAL.md`, `QUICK_CARDS.md`.
 
 ---
 
