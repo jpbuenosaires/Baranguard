@@ -1,3 +1,5 @@
+**2026-10-28 — Audit fixes applied (uncommitted, not device-verified).** Mobile SOS/UX, data/sync/security, alerts and SMS/messaging fixes from `docs/audit-2026-10-28/` are in the working tree; details and open owner decisions in `backend/DEVLOG.md` 2026-10-28. Needs: a Gradle debug AND release build + device pass (R8 minify, cleartext config, critical alerts, SOS hold button), re-registering scheduled tasks (`install-scheduled-backup-jobs.ps1`), `GATEWAY_BARANGAY_ID` check in `.env`, new APK.
+
 # Baranguard — Session Handoff
 
 **2026-10-13 — Fatigue Flags REMOVED entirely (migration 0042; applied to the demo DBs
@@ -442,4 +444,5 @@ the current session instructions specify. Remote `origin` →
 `github.com/jpbuenosaires/Baranguard`; push before ending a session that
 adds real work. Rewrite this file — don't append — at the end of any
 session that changes the picture. A stale `HANDOFF.md` is treated like a
-stale DEVLOG claim: verify against the repo before trusting it.
+stale DEVLOG claim: verify against the repo before trusting it.
+

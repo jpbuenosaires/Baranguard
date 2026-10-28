@@ -21,6 +21,7 @@
  */
 
 import { Preferences } from '@capacitor/preferences';
+import { stopPatrolTracking } from './patrolLocationService';
 
 const SESSION_KEY = 'baranguard.session';
 
@@ -88,10 +89,13 @@ export async function storeRenewedToken(token: string): Promise<void> {
 
 export async function clearSession(): Promise<void> {
   cached = null;
+  // The foreground GPS service must not outlive the session it posts for.
+  void stopPatrolTracking();
   await Preferences.remove({ key: SESSION_KEY });
   // Home's last-known duty status belongs to the user who just signed out.
   try {
     localStorage.removeItem('baranguard.lastKnownDutyStatus');
+    localStorage.removeItem('baranguard.shiftStartTime');
   } catch {
     // Storage unavailable — nothing cached.
   }

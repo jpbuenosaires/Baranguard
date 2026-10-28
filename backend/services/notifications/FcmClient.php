@@ -62,6 +62,27 @@ final class FcmClient
         return $this->loadAccount() !== false;
     }
 
+    /** @param array<string,string> $data @return array<string,mixed> */
+    public static function buildPayload(string $fcmToken, string $title, string $body, array $data): array
+    {
+        // Critical types go DATA-ONLY: a `notification` block is shown by the
+        // OS and bypasses onMessageReceived while the app is backgrounded or
+        // killed, so the full-screen critical alert would never fire. The
+        // client builds the visible text from data.title/data.body.
+        $critical = in_array($data['notification_type'] ?? '', ['sos', 'priority_alert', 'dispatch', 'dispatch_offer'], true);
+        $message = [
+            'token' => $fcmToken,
+            'data' => $critical ? $data + ['title' => $title, 'body' => $body] : $data,
+            // Rule 5's "critical alerts use ... the app's notification/overlay
+            // behavior" needs the OS to wake the app promptly.
+            'android' => $critical ? ['priority' => 'high', 'ttl' => '300s'] : ['priority' => 'high'],
+        ];
+        if (!$critical) {
+            $message['notification'] = ['title' => $title, 'body' => $body];
+        }
+        return ['message' => $message];
+    }
+
     /**
      * Sends one high-priority data+notification message to one device.
      *
@@ -84,19 +105,7 @@ final class FcmClient
 
         $accessToken = $this->accessToken($account);
 
-        $payload = [
-            'message' => [
-                'token' => $fcmToken,
-                'notification' => ['title' => $title, 'body' => $body],
-                'data' => $data,
-                'android' => [
-                    // Rule 5's "critical alerts use ... the app's
-                    // notification/overlay behavior" needs the OS to wake
-                    // the app promptly rather than batching delivery.
-                    'priority' => 'high',
-                ],
-            ],
-        ];
+        $payload = self::buildPayload($fcmToken, $title, $body, $data);
 
         $url = "https://fcm.googleapis.com/v1/projects/{$account['project_id']}/messages:send";
         $response = $this->httpJson('POST', $url, $payload, [

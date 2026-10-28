@@ -32,6 +32,7 @@ import {
   personOutline,
 } from 'ionicons/icons';
 import CriticalAlertOverlay from './components/CriticalAlertOverlay';
+import SosHoldButton from './components/SosHoldButton';
 const AccomplishmentsPage = lazy(() => import('./pages/accomplishments'));
 const AssignmentDetailPage = lazy(() => import('./pages/assignment-detail'));
 const AssignmentsPage = lazy(() => import('./pages/assignments'));
@@ -252,6 +253,8 @@ const TabbedShell: React.FC = () => {
   const isAssignmentDetail = currentPath.startsWith('/tabs/assignments/') && currentPath !== '/tabs/assignments';
 
   return (
+    <>
+    {!isHome && <SosHoldButton raised={isAssignmentDetail || isNewIncident} />}
     <IonTabs>
       <IonRouterOutlet>
         <Route path="home" element={<HomePage />} />
@@ -348,6 +351,7 @@ const TabbedShell: React.FC = () => {
         </IonTabButton>
       </IonTabBar>
     </IonTabs>
+    </>
   );
 };
 

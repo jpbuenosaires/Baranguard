@@ -104,25 +104,27 @@ $baseUrl = rtrim((string) baranguard_env('INTERNAL_SMS_BASE_URL') ?: 'http://127
 $token = baranguard_env('INTERNAL_SERVICE_TOKEN');
 
 $stateFile = dirname(__DIR__) . '/storage/gsm-ingest-state.json';
+const MAX_SERVER_FAILURES = 5;
 
 /** @return array<string,mixed> */
 function loadState(string $stateFile): array
 {
     if (!is_file($stateFile)) {
-        return ['last_id' => 0];
+        return ['last_id' => 0, 'fails' => []];
     }
     $raw = file_get_contents($stateFile);
     $decoded = $raw !== false ? json_decode($raw, true) : null;
-    return is_array($decoded) && isset($decoded['last_id']) ? $decoded : ['last_id' => 0];
+    return is_array($decoded) && isset($decoded['last_id']) ? $decoded + ['fails' => []] : ['last_id' => 0, 'fails' => []];
 }
 
-function saveState(string $stateFile, int $lastId): void
+/** @param array<string,int> $fails server-error counts per inbox _id (head-of-line guard) */
+function saveState(string $stateFile, int $lastId, array $fails = []): void
 {
     $dir = dirname($stateFile);
     if (!is_dir($dir)) {
         mkdir($dir, 0750, true);
     }
-    file_put_contents($stateFile, json_encode(['last_id' => $lastId], JSON_PRETTY_PRINT));
+    file_put_contents($stateFile, json_encode(['last_id' => $lastId, 'fails' => (object) $fails], JSON_PRETTY_PRINT));
 }
 
 function out(string $line): void
@@ -240,6 +242,29 @@ function forwardEnvelope(string $baseUrl, string $path, string $rawEnvelopeJson,
     return ['status' => $status, 'body' => is_array($decoded) ? $decoded : null];
 }
 
+/**
+ * Reports a human text, or a dropped envelope (`$rejectedReason`), to the
+ * workstation so it shows in SMS Monitor instead of vanishing into stdout.
+ * Best effort: a failure here never blocks the inbox.
+ */
+function reportText(string $baseUrl, string|false $token, array $row, ?string $rejectedReason): bool
+{
+    if ($token === false || trim($token) === '') {
+        return false;
+    }
+    try {
+        $r = forwardEnvelope($baseUrl, '/internal/sms/inbound-text', (string) json_encode([
+            'sender_number' => $row['address'],
+            'body' => $rejectedReason === null ? $row['body'] : '',
+            'sms_key' => $row['id'] . ':' . $row['date'],
+            'rejected_reason' => $rejectedReason,
+        ]), $token);
+        return $r['status'] >= 200 && $r['status'] < 300;
+    } catch (RuntimeException $e) {
+        return false;
+    }
+}
+
 /** One poll: read the inbox, forward every new row, update state. Returns [forwarded, skipped]. */
 function pollOnce(
     string $adbPath,
@@ -255,6 +280,7 @@ function pollOnce(
     $state = loadState($stateFile);
     $lastId = (int) $state['last_id'];
 
+    $fails = is_array($state['fails'] ?? null) ? $state['fails'] : [];
     $forwarded = 0;
     $skipped = 0;
 
@@ -267,7 +293,19 @@ function pollOnce(
 
         $envelope = json_decode($row['body'], true);
         if (!is_array($envelope) || !isset($envelope['message_type']) || !is_string($envelope['message_type'])) {
-            out("[sms _id={$row['id']} from={$addressMasked}] SKIPPED — not a Baranguard envelope (not JSON, or missing message_type). Likely carrier notice or a wrong-number text.");
+            // A human text (or carrier notice): hand it to SMS Monitor. If the
+            // workstation is unreachable, retry next poll rather than lose it.
+            if (!reportText($baseUrl, $token, $row, null)) {
+                out("[sms _id={$row['id']} from={$addressMasked}] text NOT STORED — workstation unreachable or rejected it. Left for the next poll.");
+                $fails[$row['id']] = ($fails[$row['id']] ?? 0) + 1;
+                if ($fails[$row['id']] < MAX_SERVER_FAILURES) {
+                    break;
+                }
+                out("[sms _id={$row['id']}] text DROPPED after " . MAX_SERVER_FAILURES . " failed attempts.");
+            } else {
+                out("[sms _id={$row['id']} from={$addressMasked}] human text stored for SMS Monitor.");
+            }
+            unset($fails[$row['id']]);
             $lastId = $row['id'];
             $skipped++;
             continue;
@@ -276,6 +314,7 @@ function pollOnce(
         $path = endpointForMessageType($envelope['message_type']);
         if ($path === null) {
             out("[sms _id={$row['id']} from={$addressMasked}] SKIPPED — message_type '{$envelope['message_type']}' is not a valid INBOUND type.");
+            reportText($baseUrl, $token, $row, 'INVALID_MESSAGE_TYPE');
             $lastId = $row['id'];
             $skipped++;
             continue;
@@ -296,6 +335,7 @@ function pollOnce(
         if ($result['status'] >= 200 && $result['status'] < 300) {
             $resultId = is_array($result['body']) ? (reset($result['body']) ?: '?') : '?';
             out("[sms _id={$row['id']} type={$envelope['message_type']} from={$addressMasked}] forwarded to {$path} -> {$result['status']} (result={$resultId})");
+            unset($fails[$row['id']]);
             $lastId = $row['id'];
             $forwarded++;
         } elseif ($result['status'] === 422) {
@@ -305,15 +345,25 @@ function pollOnce(
             // identical here on purpose (same class of denial Rule 13
             // uses elsewhere) — terminal for THIS message either way.
             out("[sms _id={$row['id']} type={$envelope['message_type']}] SKIPPED — envelope rejected (expired/replayed/unknown device/tampered — indistinguishable by design).");
+            reportText($baseUrl, $token, $row, 'ENVELOPE_REJECTED_' . strtoupper($envelope['message_type']));
             $lastId = $row['id'];
             $skipped++;
         } else {
-            out("[sms _id={$row['id']} type={$envelope['message_type']}] NOT FORWARDED — unexpected status {$result['status']}. Left for the next poll.");
-            break;
+            // Head-of-line guard: one envelope that keeps 5xx-ing must not block every
+            // later SOS. Retry a few polls, then log it as rejected and move on.
+            $fails[$row['id']] = ($fails[$row['id']] ?? 0) + 1;
+            out("[sms _id={$row['id']} type={$envelope['message_type']}] NOT FORWARDED — unexpected status {$result['status']} (attempt {$fails[$row['id']]}).");
+            if ($fails[$row['id']] < MAX_SERVER_FAILURES) {
+                break;
+            }
+            out("[sms _id={$row['id']}] GIVING UP after " . MAX_SERVER_FAILURES . " attempts; recorded as rejected so later messages are not blocked.");
+            reportText($baseUrl, $token, $row, 'FORWARD_FAILED_HTTP_' . $result['status']);
+            $lastId = $row['id'];
+            $skipped++;
         }
     }
 
-    saveState($stateFile, $lastId);
+    saveState($stateFile, $lastId, $fails);
     return [$forwarded, $skipped];
 }
 
@@ -339,6 +389,15 @@ if ($options['status']) {
 if (!$options['once'] && !$options['daemon']) {
     fwrite(STDERR, "Specify --once, --daemon, or --status. See this script's own header for usage.\n");
     exit(1);
+}
+
+// One daemon at a time (the launcher and the scheduled task may both start one).
+if ($options['daemon']) {
+    $lockHandle = fopen(dirname($stateFile) . '/gsm-ingest.lock', 'c');
+    if ($lockHandle === false || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
+        out('another gsm-ingest-daemon is already running — exiting.');
+        exit(0);
+    }
 }
 
 do {

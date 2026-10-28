@@ -11,7 +11,7 @@
  * `GET /dispatch`.
  */
 
-import { openLocalDatabase } from './localDatabase';
+import { openLocalDatabase, withTransaction } from './localDatabase';
 import type { DispatchLocalRow } from './localSchema';
 import type { DispatchEntry } from '../apiService';
 import { uuid } from '../uuid';
@@ -39,13 +39,11 @@ function localIdForServer(serverDispatchId: number): string {
  */
 async function writeDispatchesToCache(entries: DispatchEntry[]): Promise<void> {
   if (entries.length === 0) return;
-  const db = await openLocalDatabase();
   const now = new Date();
   const cachedAt = now.toISOString();
   const staleAfter = new Date(now.getTime() + CACHE_FRESH_MINUTES * 60 * 1000).toISOString();
 
-  await db.beginTransaction();
-  try {
+  await withTransaction(async (db) => {
     for (const entry of entries) {
       const localId = localIdForServer(entry.dispatchId);
       await db.run(
@@ -93,11 +91,7 @@ async function writeDispatchesToCache(entries: DispatchEntry[]): Promise<void> {
         /* transaction */ false
       );
     }
-    await db.commitTransaction();
-  } catch (error) {
-    await db.rollbackTransaction();
-    throw error;
-  }
+  });
   // GET /dispatch carries no display_id: fetch it in the background.
   void resolveMissingIncidentCodes();
 }
@@ -114,6 +108,12 @@ export function cacheDispatchesFromServer(entries: DispatchEntry[]): Promise<voi
   const run = dispatchCacheQueue.then(() => writeDispatchesToCache(entries));
   dispatchCacheQueue = run.catch(() => undefined);
   return run;
+}
+
+/** Sign-out: drop server-confirmed cached assignments so the next user starts clean. Unsynced status changes stay (Rule 7). */
+export async function clearSyncedDispatchCache(): Promise<void> {
+  const db = await openLocalDatabase();
+  await db.run('DELETE FROM dispatch_local WHERE synced = 1', [], false);
 }
 
 /** Non-terminal cached assignments, newest first — M5's list. */

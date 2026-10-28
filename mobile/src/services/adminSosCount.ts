@@ -19,26 +19,35 @@ export function publishActiveSosCount(n: number): void {
   listeners.forEach((l) => l(n));
 }
 
+let subscribers = 0;
+let stopPoll: (() => void) | null = null;
+
+/** Fetches the SOS list now and publishes the count; keeps the last count on any failure. */
+export async function refreshActiveSosCount(): Promise<void> {
+  try {
+    if (!(await hasStoredSession())) return;
+    publishActiveSosCount(activeSosCount(await getSosAlerts()));
+  } catch {
+    // Keep the last known count.
+  }
+}
+
+/** One shared poll for every badge, however many components mount the hook. */
 export function useActiveSosCount(): number {
   const [n, setN] = useState(count);
   useEffect(() => {
     listeners.add(setN);
-    let alive = true;
-    const poll = async () => {
-      try {
-        if (!(await hasStoredSession())) return;
-        const alerts = await getSosAlerts();
-        if (alive) publishActiveSosCount(activeSosCount(alerts));
-      } catch {
-        // Keep the last known count.
-      }
-    };
-    void poll();
-    const stop = visibleInterval(() => void poll(), 20000);
+    setN(count);
+    if (subscribers++ === 0) {
+      void refreshActiveSosCount();
+      stopPoll = visibleInterval(() => void refreshActiveSosCount(), 20000);
+    }
     return () => {
-      alive = false;
-      stop();
       listeners.delete(setN);
+      if (--subscribers === 0) {
+        stopPoll?.();
+        stopPoll = null;
+      }
     };
   }, []);
   return n;

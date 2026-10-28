@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { postGps } from '../../services/apiService';
 import { saveGpsPointLocally } from '../../services/db/gpsTrackRepository';
 import { getCurrentPosition, watchPosition, type DevicePosition } from '../../services/geolocation';
+import { getKnownDutyStatus } from '../../services/syncScheduler';
 import { uuid } from '../../services/uuid';
 
 const MIN_BROADCAST_INTERVAL_MS = 15000;
@@ -21,6 +22,9 @@ export function useDeviceBroadcast() {
     let cancelled = false;
 
     async function broadcast(point: DevicePosition) {
+      // Off duty (or not yet known) the position stays on this phone: never sent to HQ.
+      const duty = getKnownDutyStatus();
+      if (duty !== 'on_duty' && duty !== 'responding') return;
       const now = Date.now();
       if (now - lastBroadcastAt.current < MIN_BROADCAST_INTERVAL_MS) return;
       lastBroadcastAt.current = now;

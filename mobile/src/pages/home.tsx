@@ -57,7 +57,7 @@ import { uuid } from '../services/uuid';
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const [fullName, setFullName] = useState('');
-  const [barangayName, setBarangayName] = useState('Dao');
+  const [barangayName, setBarangayName] = useState('');
   const [status, setStatus] = useState<DutyStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [toggling, setToggling] = useState(false);
@@ -481,6 +481,15 @@ const HomePage: React.FC = () => {
 
       <IonContent className="h4-content">
         <div className="console-overhaul-container console-overhaul-container--docked-sos h4-home">
+          {/* The active call comes first: it is the one thing Home must never bury. */}
+          {/* Night-dispatch offers: online-only, accept is never queued (see DispatchOfferCards). */}
+          <DispatchOfferCards />
+
+          <DispatchHeadline topDispatch={topDispatch} activeDispatchCount={activeDispatchCount} />
+
+          {/* Consolidated Prioritized Tactical Alert Bar */}
+          <TacticalAlertBar alerts={homeAlerts} />
+
           <DutyStatusCard
             fullName={fullName}
             barangayName={barangayName}
@@ -493,14 +502,6 @@ const HomePage: React.FC = () => {
             waitingToSend={pendingOffDutyAt !== null}
             onToggleDuty={handleToggleDuty}
           />
-
-          {/* Consolidated Prioritized Tactical Alert Bar */}
-          <TacticalAlertBar alerts={homeAlerts} />
-
-          {/* Night-dispatch offers: online-only, accept is never queued (see DispatchOfferCards). */}
-          <DispatchOfferCards />
-
-          <DispatchHeadline topDispatch={topDispatch} activeDispatchCount={activeDispatchCount} />
 
           <EmergencyDials deskContact={deskContact} />
 

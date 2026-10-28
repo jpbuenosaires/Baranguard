@@ -20,7 +20,7 @@
  * Nothing in here logs window contents.
  */
 
-import { openLocalDatabase } from './localDatabase';
+import { openLocalDatabase, withTransaction } from './localDatabase';
 import type { AvailabilityLocalRow, AvailabilityStatus, AvailabilityWindow } from './localSchema';
 import { uuid } from '../uuid';
 import { manilaToday } from '../../utils/manilaTime';
@@ -82,13 +82,11 @@ export async function saveAvailabilityLocally(input: NewAvailabilityInput): Prom
   const problem = validateAvailability(input);
   if (problem) throw new Error(problem);
 
-  const db = await openLocalDatabase();
   const windows = normalizeWindows(input.windows);
   const clientEventId = uuid();
   const now = new Date().toISOString();
 
-  await db.beginTransaction();
-  try {
+  return await withTransaction(async (db) => {
     const existing = (
       await db.query('SELECT * FROM availability_local WHERE period_start = ? AND period_end = ?', [
         input.periodStart,
@@ -118,12 +116,8 @@ export async function saveAvailabilityLocally(input: NewAvailabilityInput): Prom
         /* transaction */ false
       );
     }
-    await db.commitTransaction();
     return { localId, clientEventId };
-  } catch (error) {
-    await db.rollbackTransaction();
-    throw error;
-  }
+  });
 }
 
 /** Every submission this device knows about, newest period first. */

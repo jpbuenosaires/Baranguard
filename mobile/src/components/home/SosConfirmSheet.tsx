@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { IonIcon, IonModal, IonSpinner } from '@ionic/react';
 import { checkmarkCircleOutline, cloudOfflineOutline, radioOutline, warningOutline } from 'ionicons/icons';
+import { isSosSilent, setSosSilent } from '../../utils/tacticalFeedback';
 import { shouldDismissOnDrag, sosResultHeadline, type SosResult } from '../../utils/sosSheet';
 
 interface Props {
@@ -17,6 +18,7 @@ interface Props {
 const SosConfirmSheet: React.FC<Props> = ({ isOpen, raisingSos, result, error, onClose, onConfirm }) => {
   const [dragY, setDragY] = useState(0);
   const startY = useRef<number | null>(null);
+  const [silent, setSilent] = useState(isSosSilent);
 
   function onTouchStart(e: React.TouchEvent) {
     if (raisingSos) return;
@@ -85,6 +87,17 @@ const SosConfirmSheet: React.FC<Props> = ({ isOpen, raisingSos, result, error, o
               Your location goes to Barangay HQ and the tanods near you. If there is no signal, the SOS is saved on this
               phone and sent when you are online.
             </p>
+            <label className="sos-sheet__silent">
+              <input
+                type="checkbox"
+                checked={silent}
+                onChange={(e) => {
+                  setSilent(e.target.checked);
+                  setSosSilent(e.target.checked);
+                }}
+              />
+              <span>Silent SOS (vibrate only, no siren)</span>
+            </label>
           </>
         )}
 

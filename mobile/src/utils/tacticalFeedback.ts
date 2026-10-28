@@ -5,6 +5,25 @@
  * tactile confirmation for field responders without requiring external MP3/WAV assets.
  */
 
+const SOS_SILENT_KEY = 'baranguard.sosSilent';
+
+/** SOS feedback is vibrate-only unless the Tanod opted into sound (stored on this phone). */
+export function isSosSilent(): boolean {
+  try {
+    return localStorage.getItem(SOS_SILENT_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+export function setSosSilent(silent: boolean): void {
+  try {
+    localStorage.setItem(SOS_SILENT_KEY, silent ? '1' : '0');
+  } catch {
+    // Storage unavailable — keeps the silent default.
+  }
+}
+
 class TacticalFeedback {
   private ctx: AudioContext | null = null;
 
@@ -96,6 +115,7 @@ class TacticalFeedback {
   /** Emergency siren chime & intense vibration when SOS is fired. */
   onSosFired(): void {
     this.vibrate([150, 80, 150, 80, 300]);
+    if (isSosSilent()) return;
     this.playTone(880, 200, 'sawtooth', 0.25);
     setTimeout(() => this.playTone(440, 250, 'sawtooth', 0.25), 200);
     setTimeout(() => this.playTone(880, 300, 'sawtooth', 0.25), 450);
@@ -104,6 +124,7 @@ class TacticalFeedback {
   /** Sharp warning blip for high-stakes actions (e.g. emergency speed-dial). */
   onWarning(): void {
     this.vibrate([60, 40, 60]);
+    if (isSosSilent()) return;
     this.playTone(880, 90, 'square', 0.1);
     setTimeout(() => this.playTone(880, 90, 'square', 0.1), 130);
   }

@@ -80,6 +80,7 @@ final class NotificationDispatcher
         if ($message === null) {
             return; // §6's entity-integrity matrix already prevents this in practice.
         }
+        $message['sms'] = self::gsm7($message['sms']);
 
         $targets = $this->loadPendingTargets($pdo, $notificationId);
         foreach ($targets as $target) {
@@ -149,8 +150,9 @@ final class NotificationDispatcher
                     return null;
                 }
                 $stmt = $pdo->prepare(
-                    'SELECT i.incident_type, i.latitude, i.longitude, i.display_id, d.priority
+                    'SELECT i.incident_type, i.latitude, i.longitude, i.display_id, i.location_description, d.priority, b.name AS barangay_name
                      FROM dispatch d JOIN incident i ON i.incident_id = d.incident_id
+                     JOIN barangay b ON b.barangay_id = i.barangay_id
                      WHERE d.dispatch_id = :id'
                 );
                 $stmt->execute(['id' => $notification['dispatch_id']]);
@@ -158,14 +160,19 @@ final class NotificationDispatcher
                 if ($row === false) {
                     return null;
                 }
-                $location = self::formatLocation($row['latitude'], $row['longitude']);
-                // The incident code (INC-YYYY-NNN) is an identifier, not personal data: it lets the responder tie this
-                // message to the incident the Chief Tanod and the Secretary are looking at. Omitted for old rows without one.
-                $ref = ($row['display_id'] ?? '') !== '' ? " Ref: {$row['display_id']}." : '';
+                // What, where (landmark/barangay), Ref -- urgent facts first. The incident
+                // code is an identifier, not personal data. Push bodies carry no raw
+                // coordinates (lock screen); the SMS adds them only when there is no
+                // landmark, since the SMS may be read with no data/map at all.
+                $type = self::typeLabel((string) $row['incident_type']);
+                $place = self::placeLabel($row['location_description'], (string) $row['barangay_name']);
+                $prio = $row['priority'] === 'normal' ? '' : strtoupper((string) $row['priority']) . ' ';
+                $ref = ($row['display_id'] ?? '') !== '' ? " Ref {$row['display_id']}." : '';
+                $coords = ($row['location_description'] ?? '') === '' ? self::coordsForSms($row['latitude'], $row['longitude']) : '';
                 return [
-                    'title' => 'New dispatch assigned',
-                    'body' => "You've been assigned a {$row['incident_type']} incident{$location}.{$ref} Open the app for details.",
-                    'sms' => "BARANGUARD DISPATCH: You've been assigned a {$row['incident_type']} incident{$location}.{$ref} Priority: {$row['priority']}. Open the app.",
+                    'title' => "Dispatch: {$type}",
+                    'body' => "{$prio}{$type} - {$place}.{$ref} Open the app.",
+                    'sms' => "DISPATCH {$prio}{$type} - {$place}{$coords}.{$ref} Open app.",
                     'message_type' => 'dispatch',
                 ];
 
@@ -174,8 +181,10 @@ final class NotificationDispatcher
                     return null;
                 }
                 $stmt = $pdo->prepare(
-                    'SELECT u.full_name, s.latitude, s.longitude
+                    'SELECT u.full_name, s.latitude, s.longitude, s.location_source, s.triggered_at, b.name AS barangay_name,
+                            (SELECT COUNT(*) FROM notification n WHERE n.sos_id = s.sos_id AND n.notification_type = \'sos\') AS rounds
                      FROM tanod_sos s JOIN user u ON u.user_id = s.user_id
+                     JOIN barangay b ON b.barangay_id = s.barangay_id
                      WHERE s.sos_id = :id'
                 );
                 $stmt->execute(['id' => $notification['sos_id']]);
@@ -183,11 +192,22 @@ final class NotificationDispatcher
                 if ($row === false) {
                     return null;
                 }
-                $location = self::formatLocation($row['latitude'], $row['longitude']);
+                // Push: no name and no coordinates (they show on the lock screen).
+                // SMS: keeps the Tanod's name and, when there is a fix, coordinates --
+                // it is the fallback for a responder with no data, and says plainly
+                // whether the location is live, last known, or missing.
+                $source = (string) $row['location_source'];
+                $hasFix = $row['latitude'] !== null && $row['longitude'] !== null && $source !== 'no_fix';
+                $locPush = $source === 'no_fix' || !$hasFix ? 'Location unknown' : ($source === 'last_known' ? 'Last known location' : 'Live location');
+                $locSms = $source === 'no_fix' || !$hasFix ? 'NO LOCATION' : ($source === 'last_known' ? 'LAST KNOWN loc' : 'Live loc');
+                $time = (new \DateTimeImmutable((string) $row['triggered_at'], new \DateTimeZone('UTC')))
+                    ->setTimezone(new \DateTimeZone('+08:00'))->format('H:i');
+                $repeat = (int) $row['rounds'] > 1 ? ' (reminder #' . ((int) $row['rounds'] - 1) . ')' : '';
+                $coords = $hasFix ? self::coordsForSms($row['latitude'], $row['longitude']) : '';
                 return [
                     'title' => 'SOS ALERT',
-                    'body' => "{$row['full_name']} needs help{$location}. Open the app immediately.",
-                    'sms' => "BARANGUARD SOS: {$row['full_name']} needs help{$location}. Respond immediately.",
+                    'body' => "A tanod needs help in {$row['barangay_name']}. {$locPush}. Open the app now.{$repeat}",
+                    'sms' => "SOS{$repeat}: {$row['full_name']} needs help, {$row['barangay_name']}. {$locSms}{$coords} at {$time}. Open app.",
                     'message_type' => 'sos',
                 ];
 
@@ -227,15 +247,15 @@ final class NotificationDispatcher
                     ];
                 }
                 $incidentType = null;
-                $lat = $lng = null;
+                $place = '';
                 if ($notification['incident_id'] !== null) {
-                    $stmt = $pdo->prepare('SELECT incident_type, latitude, longitude FROM incident WHERE incident_id = :id');
+                    $stmt = $pdo->prepare('SELECT i.incident_type, i.location_description, b.name AS barangay_name FROM incident i JOIN barangay b ON b.barangay_id = i.barangay_id WHERE i.incident_id = :id');
                     $stmt->execute(['id' => $notification['incident_id']]);
                     $row = $stmt->fetch(PDO::FETCH_ASSOC);
                 } elseif ($notification['dispatch_id'] !== null) {
                     $stmt = $pdo->prepare(
-                        'SELECT i.incident_type, i.latitude, i.longitude
-                         FROM dispatch d JOIN incident i ON i.incident_id = d.incident_id WHERE d.dispatch_id = :id'
+                        'SELECT i.incident_type, i.location_description, b.name AS barangay_name
+                         FROM dispatch d JOIN incident i ON i.incident_id = d.incident_id JOIN barangay b ON b.barangay_id = i.barangay_id WHERE d.dispatch_id = :id'
                     );
                     $stmt->execute(['id' => $notification['dispatch_id']]);
                     $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -244,10 +264,9 @@ final class NotificationDispatcher
                 }
                 if ($row !== false && $row !== null) {
                     $incidentType = $row['incident_type'];
-                    $lat = $row['latitude'];
-                    $lng = $row['longitude'];
+                    $place = self::placeLabel($row['location_description'], (string) $row['barangay_name']);
                 }
-                $location = self::formatLocation($lat, $lng);
+                $location = $place !== '' ? " at {$place}" : '';
                 $what = $incidentType !== null ? self::describeIncidentType($incidentType) : 'an active incident';
                 return [
                     'title' => 'PRIORITY ALERT',
@@ -390,17 +409,42 @@ final class NotificationDispatcher
         if ($incidentType === 'other') {
             return 'an active incident';
         }
-        $words = str_replace('_', ' ', $incidentType);
+        $words = strtolower(preg_replace('/ incident$/i', '', self::typeLabel($incidentType)) ?? '');
         $article = preg_match('/^[aeiou]/i', $words) === 1 ? 'an' : 'a';
         return "{$article} {$words} incident";
     }
 
-    private static function formatLocation($lat, $lng): string
+    private const TYPE_LABELS = [
+        'theft' => 'Theft', 'physical_injury' => 'Injury', 'disturbance' => 'Disturbance',
+        'domestic_dispute' => 'Domestic dispute', 'vandalism' => 'Vandalism', 'traffic_incident' => 'Traffic incident',
+        'fire' => 'Fire', 'medical_emergency' => 'Medical emergency', 'missing_person' => 'Missing person',
+        'animal_complaint' => 'Animal complaint', 'other' => 'Incident',
+    ];
+
+    /** Plain-text label for an `incident.incident_type` enum value. */
+    private static function typeLabel(string $incidentType): string
     {
-        if ($lat === null || $lng === null) {
-            return '';
-        }
-        return sprintf(' near %.5f, %.5f', (float) $lat, (float) $lng);
+        return self::TYPE_LABELS[$incidentType] ?? ucfirst(str_replace('_', ' ', $incidentType));
+    }
+
+    /** Coarse place: the landmark text (<= 40 chars) with the barangay, else the barangay alone. */
+    private static function placeLabel(?string $locationDescription, string $barangayName): string
+    {
+        $desc = trim((string) $locationDescription);
+        return $desc === '' ? $barangayName : mb_substr($desc, 0, 40) . ", {$barangayName}";
+    }
+
+    private static function coordsForSms($lat, $lng): string
+    {
+        return $lat === null || $lng === null ? '' : sprintf(' (%.4f,%.4f)', (float) $lat, (float) $lng);
+    }
+
+    /** Keeps an SMS in one GSM-7 segment where possible: ASCII fixes for common typographic chars, drops anything else outside GSM-7. */
+    public static function gsm7(string $text): string
+    {
+        $text = strtr($text, ["\u{2018}" => "'", "\u{2019}" => "'", "\u{201C}" => '"', "\u{201D}" => '"',
+            "\u{2013}" => '-', "\u{2014}" => '-', "\u{2026}" => '...', "\u{00A0}" => ' ']);
+        return preg_replace('/[^\x20-\x7E\n\x{00F1}\x{00D1}]/u', '', $text) ?? '';
     }
 
     /**
@@ -510,10 +554,12 @@ final class NotificationDispatcher
             $notification['barangay_id']
         );
 
+        // `pending` = handed to the phone, no confirmation (may have been sent).
+        // notification_delivery has no such value; `initiated` is the honest one.
         $this->finalizeDeliveryAttempt(
             $pdo,
             $deliveryId,
-            $result['status'],
+            $result['status'] === 'pending' ? 'initiated' : $result['status'],
             $result['gateway_message_id'] ?? null,
             $result['failure_reason'] ?? null
         );

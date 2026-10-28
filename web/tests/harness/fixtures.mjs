@@ -414,7 +414,7 @@ export function buildRoutes(scenario) {
     { method: 'GET', path: '/sms/conversations/:phone/messages', handler: () => ok({ items: conversationMessages }) },
     { method: 'PATCH', path: '/sms/conversations/:phone/resolve', handler: ({ params }) => ok({ phone_number: params.phone, resolved_count: 2 }) },
     { method: 'POST', path: '/sms/send', handler: () => ({ status: 201, body: { log_id: 1199, status: 'queued', failure_reason: null } }) },
-    { method: 'POST', path: '/sms/broadcast', handler: () => ok({ recipient_count: 4, sent: 4, failed: 0 }) },
+    { method: 'POST', path: '/sms/broadcast', handler: () => ok({ recipient_count: 4, queued: 4 }) },
     { method: 'GET', path: '/sms/subscribers', handler: () => ok({ active_count: empty ? 0 : 1, total_count: empty ? 0 : 2, items: empty ? [] : [
       { subscriber_id: 1, contact_number: '09181234567', consent_at: sqlAgo(10 * 1440), consent_source: 'barangay_hall', consent_note: t('Signed form #12'), opted_out_at: null, created_at: sqlAgo(10 * 1440) },
       { subscriber_id: 2, contact_number: '09189998888', consent_at: sqlAgo(20 * 1440), consent_source: 'sms_keyword', consent_note: null, opted_out_at: sqlAgo(1440), created_at: sqlAgo(20 * 1440) },

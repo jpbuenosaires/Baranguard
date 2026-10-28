@@ -46,12 +46,14 @@ public class CriticalAlertMessagingService extends MessagingService {
         }
         if (notificationType != null && CRITICAL_TYPES.contains(notificationType)) {
             RemoteMessage.Notification notificationBlock = remoteMessage.getNotification();
+            // A data-only critical push (no `notification` block) is what reaches this service
+            // when the app is backgrounded or killed; its title/body travel in `data`.
             String title = notificationBlock != null && notificationBlock.getTitle() != null
                 ? notificationBlock.getTitle()
-                : "Critical alert";
+                : (data.get("title") != null ? data.get("title") : "Critical alert");
             String body = notificationBlock != null && notificationBlock.getBody() != null
                 ? notificationBlock.getBody()
-                : "";
+                : (data.get("body") != null ? data.get("body") : "");
             // notification_id travels in the same `data` payload
             // NotificationDispatcher.php already sends (see its own
             // attemptFcm() call) — threading it through here is what lets

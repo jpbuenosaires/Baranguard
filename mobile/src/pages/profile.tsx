@@ -32,11 +32,12 @@ import { formatSyncResult } from '../components/syncQueueSummary';
 import { checkHealth, getDispatches, logout } from '../services/apiService';
 import { getDeviceId } from '../services/deviceIdentity';
 import { clearSession, loadSession, type StoredSession } from '../services/session';
-import { cacheDispatchesFromServer, listActiveCachedDispatches } from '../services/db/dispatchRepository';
+import { cacheDispatchesFromServer, clearSyncedDispatchCache, listActiveCachedDispatches } from '../services/db/dispatchRepository';
 import { listUnsyncedIncidents } from '../services/db/incidentRepository';
 import { listUnsyncedGpsPoints } from '../services/db/gpsTrackRepository';
 import { listPendingDispatchStatusUpdates, listPendingSosItems } from '../services/db/offlineQueueRepository';
-import { runSyncPass, type SyncSummary } from '../services/syncService';
+import { type SyncSummary } from '../services/syncService';
+import { runSyncPassExclusive } from '../services/syncScheduler';
 import {
   formatBytes,
   getStorageSnapshot,
@@ -147,7 +148,7 @@ const ProfilePage: React.FC = () => {
   const handleManualSync = async () => {
     setSyncing(true);
     try {
-      const result: SyncSummary = await runSyncPass();
+      const result: SyncSummary = await runSyncPassExclusive();
       tacticalFeedback.onSuccess();
       const summary = formatSyncResult(result);
       setToastMessage(`Sync result: ${[summary.headline, ...summary.details].join(' ')}`);
@@ -183,6 +184,7 @@ const ProfilePage: React.FC = () => {
       // Offline sign-out
     }
     await clearSession();
+    await clearSyncedDispatchCache().catch(() => undefined);
     navigate('/login', { replace: true });
   };
 

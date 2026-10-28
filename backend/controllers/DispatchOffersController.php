@@ -98,9 +98,7 @@ final class DispatchOffersController
                 'expires_at' => self::isoFromDb((string) $row['expires_at']),
                 'status' => $row['status'],
             ], $stmt->fetchAll(PDO::FETCH_ASSOC));
-            unset($now);
-
-            Http::send(200, ['items' => $items, 'page' => 1, 'limit' => count($items), 'total' => count($items)]);
+            Http::send(200, ['items' => $items, 'page' => 1, 'limit' => count($items), 'total' => count($items), 'server_time' => $now]);
         }
 
         $where = ['o.barangay_id = :barangay_id'];
@@ -169,7 +167,7 @@ final class DispatchOffersController
             'accepted_dispatch_id' => $row['accepted_dispatch_id'] !== null ? (int) $row['accepted_dispatch_id'] : null,
         ], $stmt->fetchAll(PDO::FETCH_ASSOC));
 
-        Http::send(200, ['items' => $items, 'page' => $page, 'limit' => $limit, 'total' => $total]);
+        Http::send(200, ['items' => $items, 'page' => $page, 'limit' => $limit, 'total' => $total, 'server_time' => self::iso(OfferService::now())]);
     }
 
     // ------------------------------------------------------------------ open

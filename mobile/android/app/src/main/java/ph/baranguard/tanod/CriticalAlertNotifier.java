@@ -11,6 +11,8 @@ import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import androidx.core.app.NotificationCompat;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * CriticalAlertNotifier — shared by `CriticalAlertMessagingService.java`
@@ -39,7 +41,28 @@ final class CriticalAlertNotifier {
     // and recreating the old ID, which would need extra code for no benefit
     // here (no per-channel user customization to preserve yet).
     private static final String CHANNEL_ID = "baranguard_critical_alert_v2";
-    private static final int NOTIFICATION_ID = 2001;
+    private static final int NOTIFICATION_ID_BASE = 2001;
+    // One tray entry per alert (a later dispatch must not replace an unacknowledged SOS).
+    private static final Set<Integer> POSTED_IDS = ConcurrentHashMap.newKeySet();
+
+    private static int idFor(String notificationId) {
+        try {
+            return NOTIFICATION_ID_BASE + (int) Math.abs(Long.parseLong(notificationId) % 100000L);
+        } catch (NumberFormatException | NullPointerException e) {
+            return NOTIFICATION_ID_BASE;
+        }
+    }
+
+    /** Lock-screen-safe wording: never the server body, which can carry a Tanod's name and coordinates. */
+    static String genericTitle(String notificationType) {
+        if ("sos".equals(notificationType)) return "SOS ALERT";
+        if ("priority_alert".equals(notificationType)) return "PRIORITY ALERT";
+        if ("dispatch_offer".equals(notificationType)) return "DISPATCH OFFER";
+        if ("dispatch".equals(notificationType)) return "NEW DISPATCH";
+        return "BARANGUARD ALERT";
+    }
+
+    static final String GENERIC_BODY = "Unlock your phone and open Baranguard to see the details.";
 
     private CriticalAlertNotifier() {}
 
@@ -54,7 +77,10 @@ final class CriticalAlertNotifier {
     static void cancelFullScreenAlert(Context context) {
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager != null) {
-            manager.cancel(NOTIFICATION_ID);
+            for (Integer id : POSTED_IDS) {
+                manager.cancel(id);
+            }
+            POSTED_IDS.clear();
         }
     }
 
@@ -73,7 +99,12 @@ final class CriticalAlertNotifier {
         activityIntent.putExtra(CriticalAlertActivity.EXTRA_NOTIFICATION_TYPE, notificationType);
 
         int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? PendingIntent.FLAG_IMMUTABLE : 0);
-        PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(context, 0, activityIntent, flags);
+        int id = idFor(notificationId);
+        // Distinct request code per alert, else FLAG_UPDATE_CURRENT overwrites the first alert's extras.
+        PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(context, id, activityIntent, flags);
+
+        // Lock-screen privacy: the tray and the lock-screen screen show generic text only. The real
+        // title/body ride in the intent extras and are rendered inside the unlocked app's overlay.
 
         // On API 26+ the CHANNEL's own sound/vibration (set below) is what
         // actually plays — a Builder's setSound()/setVibrate() are ignored
@@ -81,8 +112,10 @@ final class CriticalAlertNotifier {
         // alarm-style cue still applies on API 24-25, which have no channel
         // concept at all (this app's minSdk is 24).
         Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(body)
+            .setContentTitle(genericTitle(notificationType))
+            .setContentText(GENERIC_BODY)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setContentIntent(fullScreenPendingIntent)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
@@ -94,7 +127,8 @@ final class CriticalAlertNotifier {
 
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager != null) {
-            manager.notify(NOTIFICATION_ID, notification);
+            POSTED_IDS.add(id);
+            manager.notify(id, notification);
         }
     }
 

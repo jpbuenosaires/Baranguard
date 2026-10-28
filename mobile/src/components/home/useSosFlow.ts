@@ -7,6 +7,7 @@ import { retryNeedsAttention } from '../../services/syncService';
 import type { SmsFallbackInput } from '../../services/smsFallbackState';
 import tacticalFeedback from '../../utils/tacticalFeedback';
 import { runSosSmsFallback } from '../../utils/sosFallbackSms';
+import { positionWithin, SOS_FIX_WAIT_MS } from '../../utils/sosPosition';
 import { uuid } from '../../services/uuid';
 import type { SosResult } from '../../utils/sosSheet';
 
@@ -68,13 +69,12 @@ export function useSosFlow() {
     tacticalFeedback.onSosFired();
     const clientEventId = uuid();
     try {
-      let payload: { latitude?: number; longitude?: number } = {};
-      try {
-        const position = await getCurrentPosition();
-        payload = { latitude: position.latitude, longitude: position.longitude };
-      } catch {
-        // Fallback without coordinates per §2 Rule 27
-      }
+      // Never wait long for GPS: past the bound, send without coordinates and
+      // the server uses the last-known fix (§2 Rule 27, C-01).
+      const position = await positionWithin(() => getCurrentPosition({ maximumAge: 30000, timeout: SOS_FIX_WAIT_MS }));
+      const payload: { latitude?: number; longitude?: number } = position
+        ? { latitude: position.latitude, longitude: position.longitude }
+        : {};
 
       try {
         await postSos({ ...payload, clientEventId });
@@ -82,7 +82,11 @@ export function useSosFlow() {
         setSosToast('EMERGENCY SOS BROADCAST SENT TO BARANGAY HQ.');
         setSosResult({ kind: 'sent', detail: null });
       } catch {
-        await enqueueSosItem(clientEventId, payload);
+        try {
+          await enqueueSosItem(clientEventId, payload);
+        } catch {
+          // A failed local write must not stop the SMS fallback below.
+        }
         await attemptSosSmsFallback(payload, clientEventId);
         // Kick a sync right away: a 5s SOS timeout can be a blip, and the
         // queued row (same client_event_id) is idempotent if the first

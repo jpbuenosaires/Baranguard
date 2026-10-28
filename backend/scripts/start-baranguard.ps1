@@ -130,6 +130,30 @@ if ($cfSvc) {
     }
 }
 
+# 4b. Background workers the safety paths depend on. Each is skipped when it
+# is already running (or, for the two scheduled ones, already registered as a
+# Task Scheduler task by install-scheduled-backup-jobs.ps1), so this is safe
+# to click twice and never doubles up. The ingest daemon also holds a lock
+# file, so a second copy exits on its own.
+$backendRoot = Split-Path -Parent $PSScriptRoot
+function Start-BaranguardWorker($label, $script, $argsList, $taskName) {
+    if ($taskName -and (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)) {
+        Write-Host "[OK] $label is run by Scheduled Task '$taskName'."
+        return
+    }
+    $running = Get-CimInstance Win32_Process -Filter "Name = 'php.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*$script*" }
+    if ($running) {
+        Write-Host "[OK] $label is already running."
+        return
+    }
+    Start-Process -FilePath $phpExe -ArgumentList (@("scripts\$script") + $argsList) -WorkingDirectory $backendRoot -WindowStyle Hidden
+    Write-Host "[OK] $label started."
+}
+Start-BaranguardWorker "GSM inbound daemon (SOS-by-SMS, inbound texts)" "gsm-ingest-daemon.php" @("--daemon") "BaranguardGsmIngest"
+Start-BaranguardWorker "Notification worker (SOS re-alert, ack timeout, SMS outbox)" "notification-worker.php" @("--daemon") "BaranguardNotificationWorker"
+Start-BaranguardWorker "Dispatch offer sweeper" "dispatch-offer-sweeper.php" @("--daemon") "BaranguardDispatchOfferSweeper"
+
 if ($Quiet) {
     Write-Host ""
     Write-Host "Done (quiet start)."

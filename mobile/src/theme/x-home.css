@@ -215,3 +215,44 @@
   background: var(--color-bg);
   border-top: 1px solid var(--color-border);
 }
+
+/* Persistent SOS control (all Tanod screens but Home) and the sheet's silent toggle. */
+.sos-hold-btn {
+  position: fixed;
+  left: var(--spacing-md);
+  bottom: calc(82px + env(safe-area-inset-bottom, 0px));
+  z-index: 900;
+  min-width: 56px;
+  min-height: 56px;
+  padding: 0 var(--spacing-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  border: 2px solid var(--color-white);
+  border-radius: 28px;
+  background: var(--color-critical-solid, var(--color-critical));
+  color: var(--color-white);
+  font-size: var(--text-sm);
+  font-weight: 800;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  touch-action: none;
+  user-select: none;
+}
+.sos-hold-btn--raised { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+.sos-hold-btn--holding { transform: scale(1.12); transition: transform 0.8s linear; }
+.sos-hold-btn:disabled { opacity: 0.7; }
+.sos-sheet__silent {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-height: 44px;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+.sos-sheet__silent input { width: 22px; height: 22px; }
+
+/* 44px minimum for Ionic small buttons (Retry on failed SOS, sync queue). */
+ion-button[size="small"] { --padding-top: 10px; --padding-bottom: 10px; min-height: 44px; }
+/* "No location" is a warning, not a calm hint: a dispatcher needs the pin. */
+.intake-loc-empty-text { color: var(--color-warning-text, var(--color-text-secondary)); font-size: var(--text-sm); }

@@ -15,6 +15,7 @@ import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import FullScreenAlert from './fullScreenAlert';
 import DeviceKey from './deviceKey';
+import { uuid } from './uuid';
 
 const DEVICE_ID_KEY = 'baranguard.deviceId';
 /** 8s is generous for a registration round-trip against Google's servers
@@ -25,11 +26,7 @@ const FCM_REGISTRATION_TIMEOUT_MS = 8000;
 
 /** Matches DevicesController::DEVICE_ID_PATTERN (8-64 of [A-Za-z0-9._:-]). */
 function generateDeviceId(): string {
-  const uuid =
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
-  return `and-${uuid}`.slice(0, 64);
+  return `and-${uuid()}`.slice(0, 64);
 }
 
 /** Returns this install's device id, creating and persisting one on first call. */

@@ -22,7 +22,7 @@
  *      itself, which would be a second, redundant `GET /duty-status`
  *      poll on top of the one `home.tsx` already does on mount.
  *
- * A module-level `isSyncing` mutex (same "no state library, hand-rolled
+ * A module-level pass chain (`exclusive`) (same "no state library, hand-rolled
  * singleton" pattern as `criticalAlertStore.ts`) ensures overlapping
  * triggers (e.g. the network reconnects AND the app comes to the
  * foreground within the same second) never run two sync passes at once —
@@ -45,9 +45,7 @@ import { isTanodSession } from './role';
 const ON_DUTY_INTERVAL_MS = 60000;
 
 let started = false;
-let isSyncing = false;
 let knownDutyStatus: DutyStatus | null = null;
-let lastSummary: SyncSummary | null = null;
 let authBlocked = false;
 // True when the workstation refuses this phone's whole sync because the
 // device is registered to a different account (or deactivated). Items stay
@@ -63,19 +61,24 @@ function setDeviceBlocked(value: boolean): void {
   for (const listener of blockListeners) listener(value);
 }
 
-async function triggerSync(): Promise<void> {
-  if (isSyncing) return; // A pass already in flight covers whatever prompted this one too.
-  isSyncing = true;
+// Every pass, automatic or manual, runs one at a time through this chain.
+let passTail: Promise<unknown> = Promise.resolve();
+function exclusive<T>(task: () => Promise<T>): Promise<T> {
+  const run = passTail.then(task, task);
+  passTail = run.catch(() => undefined);
+  return run;
+}
+
+/** One pass plus the bookkeeping every caller needs. Rethrows so manual callers can show the error. */
+async function onePass(): Promise<SyncSummary> {
   try {
-    // The Chief Tanod (admin) console has no offline queue and its device
-    // session may not reach /sync/batch (403 DEVICE_SESSION_SCOPE) — never run a pass for it.
-    if (!(await isTanodSession())) return;
-    lastSummary = await runSyncPass();
+    const summary = await runSyncPass();
     authBlocked = false;
     // Only a pass that really sent something proves the device is accepted
     // again; an empty pass makes no request and must not clear the warning.
-    if (lastSummary.attempted > 0) setDeviceBlocked(false);
-    for (const listener of listeners) listener(lastSummary);
+    if (summary.attempted > 0) setDeviceBlocked(false);
+    for (const listener of listeners) listener(summary);
+    return summary;
   } catch (error) {
     // Offline, or the workstation rejected a chunk — runSyncPass() has
     // already applied any earlier chunks and left the rest unsynced (see
@@ -89,9 +92,42 @@ async function triggerSync(): Promise<void> {
     if (error instanceof ApiError && error.status === 422 && error.code === 'DEVICE_NOT_REGISTERED') {
       setDeviceBlocked(true);
     }
-  } finally {
-    isSyncing = false;
+    throw error;
   }
+}
+
+let triggerRunning = false;
+let triggerDirty = false;
+
+async function triggerSync(): Promise<void> {
+  // A pass already running snapshotted its work at the start, so a trigger
+  // arriving mid-pass (e.g. an SOS queued while evidence uploads) is NOT
+  // covered: remember it and run one follow-up pass when this one ends.
+  if (triggerRunning) {
+    triggerDirty = true;
+    return;
+  }
+  triggerRunning = true;
+  try {
+    // The Chief Tanod (admin) console has no offline queue and its device
+    // session may not reach /sync/batch (403 DEVICE_SESSION_SCOPE) — never run a pass for it.
+    if (!(await isTanodSession())) return;
+    do {
+      triggerDirty = false;
+      try {
+        await exclusive(onePass);
+      } catch {
+        // onePass recorded the flags; the next trigger retries.
+      }
+    } while (triggerDirty);
+  } finally {
+    triggerRunning = false;
+  }
+}
+
+/** A manual "Sync now" pass: serialised with the scheduler's, notifies listeners, throws on failure. */
+export function runSyncPassExclusive(): Promise<SyncSummary> {
+  return exclusive(onePass);
 }
 
 /** True when the last attempt was refused for an expired/revoked session — queued items wait for a re-login. */
@@ -139,6 +175,11 @@ export function subscribeSyncSummary(listener: (summary: SyncSummary) => void): 
  */
 export function setKnownDutyStatus(status: DutyStatus | null): void {
   knownDutyStatus = status;
+}
+
+/** The duty status Home last reported (null until Home has learned it). */
+export function getKnownDutyStatus(): DutyStatus | null {
+  return knownDutyStatus;
 }
 
 /** Forces a pass right now, outside the three automatic triggers — e.g. a manual "Sync now" button. Shares the same mutex. */

@@ -65,8 +65,8 @@ export async function ensureLocationPermission(): Promise<boolean> {
 }
 
 /** One-shot read, for the initial map center before a watch's first callback arrives. */
-export async function getCurrentPosition(): Promise<DevicePosition> {
-  const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
+export async function getCurrentPosition(opts: { maximumAge?: number; timeout?: number } = {}): Promise<DevicePosition> {
+  const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: opts.timeout ?? 10000, maximumAge: opts.maximumAge });
   return toDevicePosition(position);
 }
 

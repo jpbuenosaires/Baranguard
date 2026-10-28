@@ -104,7 +104,11 @@ public class CriticalAlertActivity extends AppCompatActivity {
         String body = getIntent().getStringExtra(EXTRA_BODY);
         String notificationId = getIntent().getStringExtra(EXTRA_NOTIFICATION_ID);
         String notificationType = getIntent().getStringExtra(EXTRA_NOTIFICATION_TYPE);
+        // Shown over the lock screen: generic wording only (the server body can hold a name and
+        // coordinates). The real title/body are handed to the unlocked app via PendingAlert.
         setContentView(buildLayout(
+            CriticalAlertNotifier.genericTitle(notificationType),
+            CriticalAlertNotifier.GENERIC_BODY,
             title != null ? title : "Critical alert",
             body != null ? body : "",
             notificationId,
@@ -113,7 +117,7 @@ public class CriticalAlertActivity extends AppCompatActivity {
     }
 
     /** Built in code rather than a layout XML resource — this screen has exactly two lines of text and one button, not worth a separate res/layout file. */
-    private LinearLayout buildLayout(String title, String body, String notificationId, String notificationType) {
+    private LinearLayout buildLayout(String shownTitle, String shownBody, String title, String body, String notificationId, String notificationType) {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER);
@@ -122,14 +126,14 @@ public class CriticalAlertActivity extends AppCompatActivity {
         root.setPadding(pad, pad, pad, pad);
 
         TextView titleView = new TextView(this);
-        titleView.setText(title);
+        titleView.setText(shownTitle);
         titleView.setTextColor(Color.WHITE);
         titleView.setTextSize(24);
         titleView.setTypeface(null, Typeface.BOLD);
         titleView.setGravity(Gravity.CENTER);
 
         TextView bodyView = new TextView(this);
-        bodyView.setText(body);
+        bodyView.setText(shownBody);
         bodyView.setTextColor(Color.WHITE);
         bodyView.setTextSize(16);
         bodyView.setGravity(Gravity.CENTER);

@@ -51,7 +51,8 @@ import { Banner, Button, EmptyState, ErrorState, SyncLabel, type SyncState as Ui
 import { deriveSyncState, listAllLocalIncidents, upsertServerIncidents, type SyncState } from '../services/db/incidentRepository';
 import { getMyServerIncidents } from '../services/apiService';
 import { getEvidenceCountsByIncident } from '../services/db/evidenceRepository';
-import { runSyncPass } from '../services/syncService';
+import { loadSession } from '../services/session';
+import { runSyncPassExclusive } from '../services/syncScheduler';
 import type { IncidentLocalRow } from '../services/db/localSchema';
 import tacticalFeedback from '../utils/tacticalFeedback';
 import { formatIncidentCode, localReportRef } from '../utils/incidentCode';
@@ -157,8 +158,9 @@ const MyReportsPage: React.FC = () => {
       } catch {
         // offline or not allowed: show what is on the phone
       }
+      const userId = (await loadSession())?.userId ?? -1;
       const [all, counts] = await Promise.all([
-        listAllLocalIncidents(),
+        listAllLocalIncidents(userId),
         getEvidenceCountsByIncident().catch(() => ({})),
       ]);
       if (!mountedRef.current) return;
@@ -200,7 +202,7 @@ const MyReportsPage: React.FC = () => {
     setSyncing(true);
     tacticalFeedback.vibrate(20);
     try {
-      await runSyncPass();
+      await runSyncPassExclusive();
       await load();
       tacticalFeedback.onSuccess();
     } catch {

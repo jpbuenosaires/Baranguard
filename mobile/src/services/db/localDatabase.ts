@@ -48,8 +48,60 @@ export type PassphraseProvider = () => Promise<string>;
 let passphraseProvider: PassphraseProvider | null = null;
 let connection: SQLiteConnection | null = null;
 let database: SQLiteDBConnection | null = null;
+let rawDatabase: SQLiteDBConnection | null = null;
 /** The one open in flight, so concurrent cold-start callers share it (see openLocalDatabase). */
 let opening: Promise<SQLiteDBConnection> | null = null;
+
+/**
+ * One connection means every write and every explicit transaction shares one
+ * SQLite state: a bare `db.run()` issued while another caller's transaction
+ * is open JOINS it, and that caller's rollback silently deletes the row (a
+ * queued SOS could vanish that way, audit 2026-10-28 P0-1). Every mutating
+ * call on the handle `openLocalDatabase()` returns therefore waits its turn
+ * here, and `withTransaction()` holds the turn from begin to commit.
+ */
+let dbLock: Promise<void> = Promise.resolve();
+
+export function withDbLock<T>(task: () => Promise<T>): Promise<T> {
+  const run = dbLock.then(task, task);
+  dbLock = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+const SERIALISED_METHODS = new Set<PropertyKey>(['run', 'execute', 'executeSet']);
+
+function serialise(db: SQLiteDBConnection): SQLiteDBConnection {
+  return new Proxy(db, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop, target);
+      if (typeof value !== 'function') return value;
+      return SERIALISED_METHODS.has(prop)
+        ? (...args: unknown[]) => withDbLock(() => value.apply(target, args))
+        : value.bind(target);
+    },
+  });
+}
+
+/**
+ * Runs `task` inside one transaction while holding the database lock. `task`
+ * gets the RAW handle (already inside the lock): never call
+ * `openLocalDatabase()` writes from within it, that would wait on itself.
+ */
+export async function withTransaction<T>(task: (db: SQLiteDBConnection) => Promise<T>): Promise<T> {
+  await openLocalDatabase();
+  const raw = rawDatabase as SQLiteDBConnection;
+  return withDbLock(async () => {
+    await raw.beginTransaction();
+    try {
+      const result = await task(raw);
+      await raw.commitTransaction();
+      return result;
+    } catch (error) {
+      await raw.rollbackTransaction();
+      throw error;
+    }
+  });
+}
 
 /** Register the passphrase source. Must be called before `openLocalDatabase()`. */
 export function configureLocalDatabase(provider: PassphraseProvider): void {
@@ -118,7 +170,9 @@ async function openLocalDatabaseUncontended(): Promise<SQLiteDBConnection> {
   // (dispatch/incident/gps/evidence/offline-queue repositories all funnel
   // through here) with what looks like a workstation-connectivity error.
   const alreadyRegistered = (await connection.isConnection(DATABASE_NAME, false)).result === true;
-  database = alreadyRegistered
+  // Assigned to the module-level handle only after open + migration succeed,
+  // so a throw never leaves later callers a half-opened connection.
+  const db = alreadyRegistered
     ? await connection.retrieveConnection(DATABASE_NAME, false)
     : await connection.createConnection(
         DATABASE_NAME,
@@ -127,11 +181,18 @@ async function openLocalDatabaseUncontended(): Promise<SQLiteDBConnection> {
         LOCAL_SCHEMA_VERSION,
         /* readonly */ false
       );
-  const isOpen = (await database.isDBOpen()).result === true;
-  if (!isOpen) {
-    await database.open();
+  try {
+    const isOpen = (await db.isDBOpen()).result === true;
+    if (!isOpen) {
+      await db.open();
+    }
+    await migrateLocalDatabase(db);
+  } catch (error) {
+    connection = null;
+    throw error;
   }
-  await migrateLocalDatabase(database);
+  rawDatabase = db;
+  database = serialise(db);
   return database;
 }
 
@@ -173,6 +234,7 @@ export async function closeLocalDatabase(): Promise<void> {
   if (database) {
     await database.close();
     database = null;
+    rawDatabase = null;
   }
   if (connection) {
     await connection.closeConnection(DATABASE_NAME, false);

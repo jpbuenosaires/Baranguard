@@ -85,6 +85,30 @@ final class InternalSmsController
         ]);
     }
 
+    /**
+     * Free-text inbound SMS (not an envelope), or a daemon-reported rejected
+     * envelope (`rejected_reason` set; the body is then never stored).
+     * Body: {sender_number, body, sms_key, rejected_reason?}.
+     */
+    public static function inboundText(PDO $pdo): void
+    {
+        $b = Http::jsonBody();
+        $sender = $b['sender_number'] ?? null;
+        $text = $b['body'] ?? '';
+        $key = $b['sms_key'] ?? null;
+        $reason = $b['rejected_reason'] ?? null;
+        if (!is_string($sender) || $sender === '' || !is_string($text) || !is_string($key) || $key === ''
+            || ($reason !== null && !is_string($reason))) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'sender_number, body and sms_key are required.');
+        }
+        try {
+            $r = (new SmsGatewayService())->receiveInboundText($pdo, $sender, $text, $key, $reason);
+        } catch (EnvelopeException $e) {
+            throw new ApiError(422, 'UNPROCESSABLE_ENTITY', $e->getMessage());
+        }
+        Http::send(200, $r);
+    }
+
     /** @param callable(SmsGatewayService,array<string,mixed>):array<string,mixed> $handle */
     private static function handleInbound(PDO $pdo, callable $handle): void
     {
@@ -146,6 +170,6 @@ final class InternalSmsController
             $barangayId
         );
 
-        Http::send($result['status'] === 'sent' ? 200 : 502, $result);
+        Http::send($result['status'] === 'failed' ? 502 : 200, $result);
     }
 }

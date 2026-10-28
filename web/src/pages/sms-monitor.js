@@ -53,7 +53,7 @@ const MESSAGE_TYPE_LABELS = {
   confirmation: 'Confirmation', duty_status: 'Duty status', sos: 'SOS', manual: 'Manual message',
 };
 const STATUS_LABELS = {
-  queued: 'Waiting to send', pending: 'Sending', sent: 'Sent', failed: 'Failed', refunded: 'Refunded',
+  queued: 'Waiting to send', pending: 'Sent, not confirmed', sent: 'Sent', failed: 'Failed', refunded: 'Refunded',
   received: 'Received', rejected: 'Rejected', deduplicated: 'Duplicate, ignored',
 };
 const DIRECTION_LABELS = { inbound: 'Incoming', outbound: 'Outgoing' };
@@ -665,7 +665,25 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
   loadConversations();
   loadStatStrip();
   loadLiveFeed(feedPane, onSelectFeedPhone);
-  setLiveFeedTimer(setInterval(() => loadLiveFeed(feedPane, onSelectFeedPhone), LIVE_FEED_POLL_MS));
+  setLiveFeedTimer(setInterval(() => {
+    loadLiveFeed(feedPane, onSelectFeedPhone);
+    refreshConversations();
+  }, LIVE_FEED_POLL_MS));
+
+  // Background refresh of the contact list and unread counts only: it never
+  // re-renders the open thread (that would wipe a half-typed reply) and a
+  // failed poll keeps the rows already on screen.
+  async function refreshConversations() {
+    try {
+      const fresh = await getSmsConversations();
+      if (!Array.isArray(fresh)) return;
+      allConversations = fresh;
+      renderContactList();
+      loadStatStrip();
+    } catch {
+      // keep the stale list; the live feed shows the connection problem
+    }
+  }
 
   function onSelectFeedPhone(phone) {
     if (!phone) return;
@@ -1151,15 +1169,22 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
           metaRow.appendChild(tagSpan);
         } else {
           const tick = document.createElement('span');
+          // 'sent' only means the gateway phone handed it to its SIM; there is no
+          // carrier delivery report, so never claim "Delivered".
           if (msg.status === 'sent' || msg.status === 'received') {
             tick.className = 'sms-tick--success';
-            tick.textContent = '✓✓';
-            tick.title = 'Delivered';
-            tick.setAttribute('aria-label', 'Delivered');
+            tick.textContent = '✓ Sent';
+            tick.title = 'Handed to the phone network (delivery is not reported)';
+            tick.setAttribute('aria-label', 'Sent to the phone network, delivery not reported');
           } else if (msg.status === 'failed' || msg.status === 'rejected') {
             tick.className = 'sms-tick--fail';
-            tick.textContent = 'Not delivered';
-            tick.title = msg.failureReason || 'Not delivered';
+            tick.textContent = 'Not sent';
+            tick.title = msg.failureReason || 'Not sent';
+            tick.setAttribute('aria-label', 'Not sent');
+          } else if (msg.status === 'pending') {
+            tick.textContent = 'Sent, not confirmed';
+            tick.title = 'The phone did not confirm in time; it may still have been sent. Check before re-sending.';
+            tick.setAttribute('aria-label', 'Sent but not confirmed; check before re-sending');
           } else {
             tick.textContent = '✓';
             tick.title = statusLabel(msg.status);
@@ -1691,8 +1716,10 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
         role: scopeKey === 'role' ? role : undefined,
         idempotencyKey: crypto.randomUUID(),
       });
-      showToast(`Broadcast done: ${result.recipientCount} recipient${result.recipientCount === 1 ? '' : 's'}, ${result.sent} sent.`, {
-        variant: result.failed > 0 ? 'info' : 'success',
+      showToast(result.duplicate
+        ? `Same message already queued a moment ago for ${result.recipientCount} recipient${result.recipientCount === 1 ? '' : 's'}. Not sent again.`
+        : `Broadcast queued for ${result.recipientCount} recipient${result.recipientCount === 1 ? '' : 's'}. They go out over the next minute; watch the Activity Log.`, {
+        variant: 'success',
       });
       onSuccess();
     } catch (err) {

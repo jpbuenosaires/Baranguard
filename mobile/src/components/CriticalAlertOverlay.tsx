@@ -47,10 +47,18 @@ const TYPE_LABEL: Record<CriticalAlert['notificationType'], string> = {
 
 const CriticalAlertOverlay: React.FC = () => {
   const [alert, setAlert] = useState<CriticalAlert | null>(null);
+  const [waiting, setWaiting] = useState(0);
   const [acknowledging, setAcknowledging] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => subscribeToCriticalAlert(setAlert), []);
+  useEffect(
+    () =>
+      subscribeToCriticalAlert((next, more) => {
+        setAlert(next);
+        setWaiting(more);
+      }),
+    []
+  );
 
   // Tapping an SOS notification in the tray opens the SOS tab for the Chief Tanod only.
   useEffect(() => {
@@ -134,6 +142,11 @@ const CriticalAlertOverlay: React.FC = () => {
           <p className="critical-alert-overlay__title critical-alert-overlay__title--flush">{TYPE_LABEL[alert.notificationType]}</p>
         </div>
         <p className="critical-alert-overlay__body">{bodyText}</p>
+        {waiting > 0 && (
+          <p className="critical-alert-overlay__body" role="status">
+            {waiting} more alert{waiting === 1 ? '' : 's'} waiting. Acknowledge this one to see the next.
+          </p>
+        )}
         <div className="critical-alert-overlay__actions">
           {isOffer && (
             <IonButton

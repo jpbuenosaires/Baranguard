@@ -8,6 +8,8 @@
 #   BaranguardRestoreDrill     weekly Sun 03:00 -> scheduled-restore-drill.ps1
 #   BaranguardDispatchOfferSweeper every minute -> scheduled-dispatch-offer-sweep.ps1
 #                              (night-time dispatch offers, Wave 2)
+#   BaranguardNotificationWorker every minute -> scheduled-notification-worker.ps1
+#   BaranguardGsmIngest        at logon       -> scheduled-gsm-ingest.ps1 (daemon)
 #   BaranguardPbDigest         weekly Mon 06:00 -> scheduled-pb-digest.ps1 (7-day
 #                              window, so each digest's range starts exactly where
 #                              the previous one's ended)
@@ -40,13 +42,14 @@ function Write-Info($msg) { Write-Host "[INFO] $msg" -ForegroundColor Cyan }
 function Write-Fail($msg) { Write-Host "[FAIL] $msg" -ForegroundColor Red; $script:fail++ }
 function Write-Step($msg) { Write-Host ""; Write-Host "=== $msg ===" -ForegroundColor Yellow }
 
-function Install-BaranguardTask($taskName, $scriptName, $trigger) {
+function Install-BaranguardTask($taskName, $scriptName, $trigger, $timeLimit = (New-TimeSpan -Hours 1), $restart = $false) {
     $scriptPath = Join-Path $backendDir "scripts\$scriptName"
     $action = New-ScheduledTaskAction -Execute "powershell.exe" `
         -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" `
         -WorkingDirectory $backendDir
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-        -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+        -StartWhenAvailable -ExecutionTimeLimit $timeLimit
+    if ($restart) { $settings.RestartCount = 999; $settings.RestartInterval = (New-TimeSpan -Minutes 1) }
 
     $existing = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     if ($existing) {
@@ -79,8 +82,20 @@ Write-Step "4. Dispatch offer sweeper (every minute)"
 $sweepTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 3650)
 Install-BaranguardTask "BaranguardDispatchOfferSweeper" "scheduled-dispatch-offer-sweep.ps1" $sweepTrigger
 
+Write-Step "5. Notification worker (every minute)"
+# SOS re-alert (Admin, then Secretary + Punong Barangay), FCM ack timeout, and
+# the SMS outbox that broadcasts queue into.
+$notifTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 3650)
+Install-BaranguardTask "BaranguardNotificationWorker" "scheduled-notification-worker.ps1" $notifTrigger
+
+Write-Step "6. GSM inbound daemon (at logon, runs until logoff)"
+# Without it, the SOS-by-SMS fallback and every inbound text go nowhere.
+$ingestTrigger = New-ScheduledTaskTrigger -AtLogOn
+Install-BaranguardTask "BaranguardGsmIngest" "scheduled-gsm-ingest.ps1" $ingestTrigger (New-TimeSpan -Seconds 0) $true
+Start-ScheduledTask -TaskName "BaranguardGsmIngest" -ErrorAction SilentlyContinue
+
 Write-Step "Summary"
-Get-ScheduledTask -TaskName "BaranguardBackupRetention", "BaranguardRestoreDrill", "BaranguardPbDigest", "BaranguardDispatchOfferSweeper" -ErrorAction SilentlyContinue |
+Get-ScheduledTask -TaskName "BaranguardBackupRetention", "BaranguardRestoreDrill", "BaranguardPbDigest", "BaranguardDispatchOfferSweeper", "BaranguardNotificationWorker", "BaranguardGsmIngest" -ErrorAction SilentlyContinue |
     Select-Object TaskName, State | Format-Table -AutoSize
 Write-Host "$pass passed, $fail failed."
 Write-Host ""

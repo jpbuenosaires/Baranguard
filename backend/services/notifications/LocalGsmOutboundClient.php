@@ -46,7 +46,7 @@ namespace Baranguard\Services\Notifications;
  * genuinely different, working mechanism, not the same broken approach
  * retried).
  */
-final class LocalGsmOutboundClient
+class LocalGsmOutboundClient
 {
     private const RECEIVER_ACTION = 'ph.baranguard.smsgateway.SEND';
     private const RECEIVER_COMPONENT = 'ph.baranguard.smsgateway/.SendSmsReceiver';
@@ -216,12 +216,10 @@ final class LocalGsmOutboundClient
             throw new GsmGatewayException("The gateway phone reported the send failed (correlation_id={$correlationId}).");
         }
 
-        // No result line seen within the poll window — the broadcast was
-        // accepted by adb (exit 0 above) but we can't confirm delivery.
-        // Same "don't claim what you can't back up" discipline as the rest
-        // of this codebase (§2 Rule 6): this is a failure, not an assumed
-        // success, even though the SMS may well have gone out.
-        throw new GsmGatewayException("No delivery confirmation from the gateway phone within " . (self::RESULT_POLL_ATTEMPTS * self::RESULT_POLL_DELAY_MICROSECONDS / 1_000_000) . "s (correlation_id={$correlationId}).");
+        // No result line within the poll window: the carrier result may just
+        // be slow (~60 s observed). The SMS may well have gone out, so this is
+        // "unconfirmed", not "failed" (Rule 6: claim neither).
+        throw new GsmUnconfirmedException("No delivery confirmation from the gateway phone within " . (self::RESULT_POLL_ATTEMPTS * self::RESULT_POLL_DELAY_MICROSECONDS / 1_000_000) . "s (correlation_id={$correlationId}); it may still have been sent.");
     }
 
     /** POSIX single-quote wrapping for a token that will be parsed by the REMOTE Android shell (via `adb shell <one string>`), not this workstation's own. */

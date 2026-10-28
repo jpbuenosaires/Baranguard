@@ -26,6 +26,11 @@ declare(strict_types=1);
  * never re-attempts FCM, never sends SMS, and never touches a delivery
  * row that already failed or already timed out.
  *
+ * Same process, two more jobs that also cannot run inside an HTTP request
+ * (neither touches Rule 24's delivery truth): (1) SosEscalation re-alerts an
+ * SOS that is still `active` (Admin again, then Secretary + Punong Barangay);
+ * (2) it sends the `queued` SMS outbox rows that broadcasts leave behind.
+ *
  * Usage (from backend/):
  *   php scripts/notification-worker.php            sweep once, then exit
  *   php scripts/notification-worker.php --once     same as above (explicit)
@@ -48,6 +53,9 @@ baranguard_load_env();
 require dirname(__DIR__) . '/config/autoload.php';
 require dirname(__DIR__) . '/config/db.php';
 
+use Baranguard\Services\Notifications\SosEscalation;
+use Baranguard\Services\Sms\SmsGatewayService;
+
 const ACK_TIMEOUT_SECONDS = 60;
 const DAEMON_POLL_SECONDS = 15;
 
@@ -60,11 +68,30 @@ if ($options['status']) {
 }
 
 do {
-    $swept = sweepAckTimeouts($pdo);
-    if ($swept > 0) {
-        out("Swept {$swept} delivery row(s) into ack_timeout.");
-    } elseif (!$options['daemon']) {
-        out('No FCM deliveries past the 60s ack window. Nothing to do.');
+    try {
+        // A fresh connection per pass so --daemon survives a DB restart.
+        $pdo = baranguard_db_fresh();
+        $escalated = SosEscalation::sweep($pdo);
+        if ($escalated > 0) {
+            out("Re-alerted {$escalated} unacknowledged SOS record(s).");
+        }
+        $swept = sweepAckTimeouts($pdo);
+        if ($swept > 0) {
+            out("Swept {$swept} delivery row(s) into ack_timeout.");
+        }
+        // SMS outbox (broadcasts): one drainer at a time.
+        if ((int) $pdo->query("SELECT GET_LOCK('baranguard_sms_outbox', 0)")->fetchColumn() === 1) {
+            $sms = (new SmsGatewayService())->drainQueued($pdo);
+            $pdo->query("SELECT RELEASE_LOCK('baranguard_sms_outbox')")->fetchAll();
+            if (array_sum($sms) > 0) {
+                out("SMS outbox: sent={$sms['sent']} unconfirmed={$sms['pending']} failed={$sms['failed']}.");
+            }
+        }
+    } catch (Throwable $e) {
+        fwrite(STDERR, gmdate('c') . ' notification-worker pass failed: ' . $e->getMessage() . PHP_EOL);
+        if (!$options['daemon']) {
+            exit(1);
+        }
     }
     if ($options['daemon']) {
         sleep(DAEMON_POLL_SECONDS);

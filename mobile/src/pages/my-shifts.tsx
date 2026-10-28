@@ -45,6 +45,8 @@ import {
   type ShiftSwapRequestEntry,
 } from '../services/apiService';
 import { uuid } from '../services/uuid';
+import { loadShiftCache, saveShiftCache } from '../services/shiftCache';
+import { formatManilaTime } from '../utils/manilaTime';
 import tacticalFeedback from '../utils/tacticalFeedback';
 import { parseShiftTiming } from '../utils/shiftTiming';
 import { ShiftCard } from '../components/forms/ShiftCard';
@@ -66,6 +68,8 @@ const MyShiftsPage: React.FC = () => {
   const [confirmWithdrawTarget, setConfirmWithdrawTarget] = useState<ShiftSwapRequestEntry | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [swapError, setSwapError] = useState<string | null>(null);
+  // ISO time of the saved copy being shown while the workstation is unreachable.
+  const [cachedAt, setCachedAt] = useState<string | null>(null);
 
   const hasData = useRef(false);
   const [pastOpen, setPastOpen] = useState(false);
@@ -76,10 +80,21 @@ const MyShiftsPage: React.FC = () => {
       setShifts(shiftItems);
       setSwapRequests(swapItems);
       hasData.current = true;
+      setCachedAt(null);
       setError(null);
+      void saveShiftCache(shiftItems, swapItems);
     } catch (err) {
       // Quiet refresh: keep the data already on screen instead of replacing it with an error.
       if (hasData.current) return;
+      const cached = await loadShiftCache();
+      if (cached) {
+        setShifts(cached.shifts);
+        setSwapRequests(cached.swapRequests);
+        setCachedAt(cached.savedAt);
+        hasData.current = true;
+        setError(null);
+        return;
+      }
       setError(
         err instanceof ApiError && err.isOffline
           ? 'Offline — Connect to the internet or Barangay Wi-Fi to refresh schedule.'
@@ -184,6 +199,11 @@ const MyShiftsPage: React.FC = () => {
         </IonRefresher>
         <div className="roster-container">
           {note && <Banner tone="info">{note}</Banner>}
+          {cachedAt && (
+            <Banner tone="warning">
+              Offline. Showing your saved schedule from {formatManilaTime(cachedAt)}. Swap requests need a connection.
+            </Banner>
+          )}
           {/* Availability entry point — the desk builds the roster from what Tanods submit here. */}
           <button
             type="button"

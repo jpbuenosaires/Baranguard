@@ -115,9 +115,9 @@ const DispatchOfferCards: React.FC = () => {
       pendingRequestIds.current.delete(offer.offerId);
       tacticalFeedback.onWarning();
       if (error instanceof ApiError && error.status === 409 && error.code === 'OFFER_CLOSED') {
-        setNotice({ tone: 'info', text: 'Someone else accepted this call first. It is not assigned to you.' });
+        setNotice({ tone: 'info', text: 'This call is closed: another Tanod may have accepted it first, or it timed out or was cancelled. It is not assigned to you.' });
       } else if (error instanceof ApiError && error.status === 404) {
-        setNotice({ tone: 'info', text: 'This call is no longer available.' });
+        setNotice({ tone: 'info', text: 'This call is no longer available. It is not assigned to you.' });
       } else {
         setNotice({
           tone: 'critical',

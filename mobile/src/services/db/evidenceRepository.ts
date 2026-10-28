@@ -10,7 +10,7 @@
  * same as incident sync itself.
  */
 
-import { openLocalDatabase } from './localDatabase';
+import { openLocalDatabase, withTransaction } from './localDatabase';
 import type { EvidenceAttachmentLocalRow } from './localSchema';
 import type { StagedAttachment } from '../evidenceCapture';
 import { uuid } from '../uuid';
@@ -31,11 +31,9 @@ export async function saveEvidenceLocally(
   incidentLocalId: string,
   staged: StagedAttachment
 ): Promise<SavedEvidence> {
-  const db = await openLocalDatabase();
   const localId = uuid();
 
-  await db.beginTransaction();
-  try {
+  await withTransaction(async (db) => {
     await db.run(
       `INSERT INTO evidence_attachment_local
          (local_id, incident_local_id, type, file_path, sha256, byte_size, mime_type, synced)
@@ -43,11 +41,7 @@ export async function saveEvidenceLocally(
       [localId, incidentLocalId, staged.type, staged.filePath, staged.sha256, staged.byteSize, staged.mimeType],
       /* transaction */ false
     );
-    await db.commitTransaction();
-  } catch (error) {
-    await db.rollbackTransaction();
-    throw error;
-  }
+  });
 
   return { localId };
 }

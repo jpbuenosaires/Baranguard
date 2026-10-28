@@ -75,8 +75,9 @@ public class PatrolLocationService extends Service {
     private static final String PREFS_NAME = "CapacitorStorage";
     private static final String SESSION_KEY = "baranguard.session";
     private static final String API_BASE_URL_KEY = "baranguard.effectiveApiBaseUrl";
-    private static final String DEFAULT_API_BASE_URL = "http://192.168.1.10/baranguard-api/api/v1";
     private static final long UPDATE_INTERVAL_MS = 30000;
+    // A standing Tanod need not burn GPS: no update until they move this far.
+    private static final float MIN_UPDATE_DISTANCE_M = 10f;
 
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
@@ -115,7 +116,9 @@ public class PatrolLocationService extends Service {
 
     private void startLocationUpdates() {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
-        LocationRequest request = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, UPDATE_INTERVAL_MS).build();
+        LocationRequest request = new LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, UPDATE_INTERVAL_MS)
+            .setMinUpdateDistanceMeters(MIN_UPDATE_DISTANCE_M)
+            .build();
         locationCallback = new LocationCallback() {
             @Override
             public void onLocationResult(LocationResult result) {
@@ -145,11 +148,13 @@ public class PatrolLocationService extends Service {
                 try {
                     SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
                     String sessionJson = prefs.getString(SESSION_KEY, null);
-                    if (sessionJson == null) {
-                        return; // Signed out — nothing to authenticate this POST with.
+                    String baseUrl = prefs.getString(API_BASE_URL_KEY, null);
+                    if (sessionJson == null || baseUrl == null) {
+                        // Signed out (or no known API address): nothing to post with; stop the notification and battery drain.
+                        stopSelf();
+                        return;
                     }
                     String token = new JSONObject(sessionJson).getString("token");
-                    String baseUrl = prefs.getString(API_BASE_URL_KEY, DEFAULT_API_BASE_URL);
 
                     JSONObject body = new JSONObject();
                     body.put("latitude", location.getLatitude());
@@ -174,8 +179,11 @@ public class PatrolLocationService extends Service {
                     // request on HttpURLConnection; the point is dropped
                     // either way per this class's own documented tradeoff
                     // above, so the status code itself isn't branched on.
-                    connection.getResponseCode();
+                    int status = connection.getResponseCode();
                     connection.disconnect();
+                    if (status == 401 || status == 403) {
+                        stopSelf(); // Session revoked or not a tanod: stop transmitting.
+                    }
                 } catch (Exception e) {
                     // Dropped, not queued/retried — see class doc.
                 }

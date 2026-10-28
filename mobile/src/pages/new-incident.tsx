@@ -71,7 +71,7 @@ const NARRATIVE_TEMPLATES = [
 
 const NewIncidentPage: React.FC = () => {
   const navigate = useNavigate();
-  const [incidentType, setIncidentType] = useState<IncidentType>('theft');
+  const [incidentType, setIncidentType] = useState<IncidentType | null>(null);
   const [narrative, setNarrative] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [narrativeError, setNarrativeError] = useState<string | null>(null);
@@ -126,7 +126,7 @@ const NewIncidentPage: React.FC = () => {
       try {
         const draft = await loadIncidentDraft(uid);
         if (!cancelled && draft && !isDraftEmpty(draft)) {
-          setIncidentType(draft.incidentType as IncidentType);
+          setIncidentType(ALL_INCIDENT_TYPES.find((t) => t.type === draft.incidentType)?.type ?? null);
           setNarrative(draft.narrative);
           if (draft.latitude !== null && draft.longitude !== null) {
             setLocation({ latitude: draft.latitude, longitude: draft.longitude, accuracyM: draft.accuracyM });
@@ -151,7 +151,7 @@ const NewIncidentPage: React.FC = () => {
   useEffect(() => {
     if (!draftReady) return;
     const draft: IncidentDraft = {
-      incidentType,
+      incidentType: incidentType ?? '',
       narrative,
       latitude: location?.latitude ?? null,
       longitude: location?.longitude ?? null,
@@ -187,7 +187,7 @@ const NewIncidentPage: React.FC = () => {
     tacticalFeedback.onTap();
     submittedRef.current = true; // stop pending autosaves until the form changes again
     void clearIncidentDraft(userId).catch(() => undefined);
-    setIncidentType('theft');
+    setIncidentType(null);
     setNarrative('');
     setLocation(null);
     setSchoolId('');
@@ -214,6 +214,22 @@ const NewIncidentPage: React.FC = () => {
         // Local store unavailable (web preview) — the school block simply stays empty.
       }
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Best-effort location on open: a dispatcher needs a pin, but the form never waits for it.
+  useEffect(() => {
+    let cancelled = false;
+    getCurrentPosition({ maximumAge: 30000, timeout: 8000 }).then(
+      (fix) => {
+        if (cancelled) return;
+        setSelfPosition(fix);
+        setLocation((current) => current ?? { latitude: fix.latitude, longitude: fix.longitude, accuracyM: fix.accuracyM });
+      },
+      () => undefined
+    );
     return () => {
       cancelled = true;
     };
@@ -261,6 +277,11 @@ const NewIncidentPage: React.FC = () => {
 
   async function handleSave() {
     setError(null);
+    if (!incidentType) {
+      setError('Choose the incident type before submitting.');
+      document.getElementById('intake-type-grid')?.scrollIntoView({ block: 'center' });
+      return;
+    }
     if (!narrative.trim()) {
       setNarrativeError('Please describe what happened before submitting.');
       document.getElementById('narrative-error')?.scrollIntoView({ block: 'center' });
@@ -348,11 +369,11 @@ const NewIncidentPage: React.FC = () => {
             <div className="intake-block-header">
               <span className="intake-block-title">
                 <IonIcon icon={shieldCheckmarkOutline} />
-                Incident Type
+                Incident Type (required)
               </span>
             </div>
 
-            <div className="intake-grid-overhaul" role="radiogroup" aria-label="Incident Type">
+            <div id="intake-type-grid" className="intake-grid-overhaul" role="radiogroup" aria-required="true" aria-label="Incident Type">
               {ALL_INCIDENT_TYPES.map(({ type, label, icon }) => {
                 const isSelected = incidentType === type;
                 return (

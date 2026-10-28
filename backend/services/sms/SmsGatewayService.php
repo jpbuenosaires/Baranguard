@@ -9,6 +9,7 @@ use Baranguard\Controllers\IncidentsController;
 use Baranguard\Controllers\TanodSosController;
 use Baranguard\Lib\Audit;
 use Baranguard\Services\Notifications\GsmGatewayException;
+use Baranguard\Services\Notifications\GsmUnconfirmedException;
 use Baranguard\Services\Notifications\LocalGsmOutboundClient;
 use PDO;
 
@@ -331,7 +332,7 @@ final class SmsGatewayService
      *        sends to the same number).
      * @param ?int $reportId links a manual reply back to the citizen
      *        report it's answering, when applicable.
-     * @return array{status:'sent'|'failed',log_id:int,gateway_message_id?:string,failure_reason?:string}
+     * @return array{status:'sent'|'pending'|'failed',log_id:int,gateway_message_id?:string,failure_reason?:string}
      */
     public function sendOutbound(
         PDO $pdo,
@@ -345,22 +346,151 @@ final class SmsGatewayService
         ?string $correlationId = null,
         ?int $reportId = null
     ): array {
+        $r = $this->attemptSend($priority, $phoneNumber, $message);
+        $logId = $this->logOutbound($pdo, $smsLogMessageType, $incidentId, $dispatchId, $reportId, $barangayId, $phoneNumber, $message, $r['status'], $r['gateway_message_id'] ?? null, $r['failure_reason'] ?? null, $correlationId);
+        return ['log_id' => $logId] + $r;
+    }
+
+    /**
+     * One real send attempt. `sent` = the phone confirmed the hand-off to its
+     * SIM (NOT carrier delivery); `pending` = handed to adb but no confirmation
+     * in time, it MAY have gone out; `failed` = known not sent.
+     *
+     * @return array{status:'sent'|'pending'|'failed',gateway_message_id?:string,failure_reason?:string}
+     */
+    private function attemptSend(bool $priority, string $phoneNumber, string $message): array
+    {
         $gateway = $this->resolveOutboundClient();
-
         if (!$gateway->isConfigured()) {
-            $logId = $this->logOutbound($pdo, $smsLogMessageType, $incidentId, $dispatchId, $reportId, $barangayId, $phoneNumber, $message, 'failed', null, 'GSM_GATEWAY_NOT_CONFIGURED', $correlationId);
-            return ['status' => 'failed', 'log_id' => $logId, 'failure_reason' => 'GSM_GATEWAY_NOT_CONFIGURED'];
+            return ['status' => 'failed', 'failure_reason' => 'GSM_GATEWAY_NOT_CONFIGURED'];
         }
-
         try {
             $result = $priority ? $gateway->sendPriority($phoneNumber, $message) : $gateway->send($phoneNumber, $message);
-            $logId = $this->logOutbound($pdo, $smsLogMessageType, $incidentId, $dispatchId, $reportId, $barangayId, $phoneNumber, $message, 'sent', $result['gateway_message_id'], null, $correlationId);
-            return ['status' => 'sent', 'log_id' => $logId, 'gateway_message_id' => $result['gateway_message_id']];
+            return ['status' => 'sent', 'gateway_message_id' => $result['gateway_message_id']];
         } catch (GsmGatewayException $e) {
-            $reason = mb_strlen($e->getMessage()) > 255 ? mb_substr($e->getMessage(), 0, 254) . '…' : $e->getMessage();
-            $logId = $this->logOutbound($pdo, $smsLogMessageType, $incidentId, $dispatchId, $reportId, $barangayId, $phoneNumber, $message, 'failed', null, $reason, $correlationId);
-            return ['status' => 'failed', 'log_id' => $logId, 'failure_reason' => $reason];
+            $reason = mb_strlen($e->getMessage()) > 255 ? mb_substr($e->getMessage(), 0, 254) . '...' : $e->getMessage();
+            return ['status' => $e instanceof GsmUnconfirmedException ? 'pending' : 'failed', 'failure_reason' => $reason];
         }
+    }
+
+    /**
+     * Outbox: records a `queued` outbound row WITHOUT sending (used by
+     * broadcasts so no HTTP request blocks on serial adb sends). `drainQueued()`
+     * (run by notification-worker.php) sends them.
+     */
+    public function queueOutbound(PDO $pdo, string $smsLogMessageType, string $phoneNumber, string $message, int $barangayId): int
+    {
+        return $this->logOutbound($pdo, $smsLogMessageType, null, null, null, $barangayId, $phoneNumber, $message, 'queued', null, null, null);
+    }
+
+    /**
+     * Sends up to $limit `queued` rows. Each row is claimed with an atomic
+     * queued->pending UPDATE first, so a crash mid-send leaves an honest
+     * `pending` (may or may not have gone out), never a silent resend.
+     *
+     * @return array{sent:int,pending:int,failed:int}
+     */
+    public function drainQueued(PDO $pdo, int $limit = 60): array
+    {
+        $rows = $pdo->query(
+            "SELECT log_id, message_type, receiver_number, message_body FROM sms_log
+              WHERE direction = 'outbound' AND status = 'queued' ORDER BY log_id LIMIT " . (int) $limit
+        )->fetchAll(PDO::FETCH_ASSOC);
+        $count = ['sent' => 0, 'pending' => 0, 'failed' => 0];
+        $claim = $pdo->prepare("UPDATE sms_log SET status = 'pending' WHERE log_id = :id AND status = 'queued'");
+        $done = $pdo->prepare(
+            'UPDATE sms_log SET status = :status, sent_at = :sent_at, gateway_message_id = :gw, failure_reason = :reason WHERE log_id = :id'
+        );
+        foreach ($rows as $row) {
+            $claim->execute(['id' => $row['log_id']]);
+            if ($claim->rowCount() !== 1) {
+                continue;
+            }
+            $r = $this->attemptSend($row['message_type'] === 'priority_alert', (string) $row['receiver_number'], (string) $row['message_body']);
+            $done->execute([
+                'status' => $r['status'], 'sent_at' => $r['status'] === 'sent' ? gmdate('Y-m-d H:i:s') : null,
+                'gw' => $r['gateway_message_id'] ?? null, 'reason' => $r['failure_reason'] ?? null, 'id' => $row['log_id'],
+            ]);
+            $count[$r['status']]++;
+        }
+        return $count;
+    }
+
+    // --- Inbound free-text (not an envelope) -------------------------------
+
+    private const OPT_OUT_WORDS = ['STOP', 'STOP ALL', 'UNSUBSCRIBE', 'TIGIL', 'HUWAG NA'];
+
+    /**
+     * Stores a human text (or a daemon-reported rejected envelope) so SMS
+     * Monitor's Conversations can show it. Barangay: GATEWAY_BARANGAY_ID, else
+     * the only barangay in the DB (Rule 92: one workstation per barangay).
+     * A STOP-style keyword opts the sender out of the advisory list (0018).
+     * `message_body` of a rejected envelope is NEVER stored.
+     *
+     * @return array{log_id:int,duplicate:bool,opted_out:bool}
+     * @throws EnvelopeException when no barangay can be resolved
+     */
+    public function receiveInboundText(PDO $pdo, string $sender, string $body, string $smsKey, ?string $rejectedReason): array
+    {
+        $configured = baranguard_env('GATEWAY_BARANGAY_ID');
+        $barangayId = is_string($configured) && ctype_digit($configured) ? (int) $configured : 0;
+        if ($barangayId === 0) {
+            $ids = $pdo->query('SELECT barangay_id FROM barangay')->fetchAll(PDO::FETCH_COLUMN);
+            if (count($ids) !== 1) {
+                throw new EnvelopeException('Cannot tell which barangay this gateway serves (set GATEWAY_BARANGAY_ID).');
+            }
+            $barangayId = (int) $ids[0];
+        }
+
+        $h = md5('inbound-text:' . $smsKey);
+        $correlation = substr($h, 0, 8) . '-' . substr($h, 8, 4) . '-' . substr($h, 12, 4) . '-' . substr($h, 16, 4) . '-' . substr($h, 20, 12);
+        $dup = $pdo->prepare("SELECT log_id FROM sms_log WHERE barangay_id = :b AND direction = 'inbound' AND correlation_id = :c LIMIT 1");
+        $dup->execute(['b' => $barangayId, 'c' => $correlation]);
+        $existing = $dup->fetchColumn();
+        if ($existing !== false) {
+            return ['log_id' => (int) $existing, 'duplicate' => true, 'opted_out' => false];
+        }
+
+        // Canonical thread key: a registered user's own contact_number (so
+        // 0917... and +63917... are one thread), else the raw sender.
+        $digits = substr(preg_replace('/\D/', '', $sender) ?? '', -10);
+        $canonical = mb_substr($sender, 0, 32);
+        if (strlen($digits) === 10) {
+            $u = $pdo->prepare("SELECT contact_number FROM user WHERE barangay_id = :b AND RIGHT(REGEXP_REPLACE(contact_number, '[^0-9]', ''), 10) = :d LIMIT 1");
+            $u->execute(['b' => $barangayId, 'd' => $digits]);
+            $match = $u->fetchColumn();
+            if (is_string($match) && $match !== '') {
+                $canonical = $match;
+            }
+        }
+
+        $optedOut = false;
+        if ($rejectedReason === null && strlen($digits) === 10
+            && in_array(strtoupper(trim(preg_replace('/[^A-Za-z ]/', '', $body) ?? '')), self::OPT_OUT_WORDS, true)) {
+            $o = $pdo->prepare(
+                "UPDATE sms_subscriber SET opted_out_at = UTC_TIMESTAMP()
+                  WHERE barangay_id = :b AND opted_out_at IS NULL AND RIGHT(REGEXP_REPLACE(contact_number, '[^0-9]', ''), 10) = :d"
+            );
+            $o->execute(['b' => $barangayId, 'd' => $digits]);
+            $optedOut = $o->rowCount() > 0;
+            if ($optedOut) {
+                Audit::record($pdo, $barangayId, null, 'sms_subscriber_opted_out', 'sms_subscriber', null, ['channel' => 'sms']);
+            }
+        }
+
+        $stmt = $pdo->prepare(
+            "INSERT INTO sms_log
+                (barangay_id, sender_number, transport, message_type, direction, correlation_id, status, received_at, failure_reason, message_body, created_at)
+             VALUES
+                (:b, :sender, 'gsm_modem', 'manual', 'inbound', :c, :status, UTC_TIMESTAMP(), :reason, :body, UTC_TIMESTAMP())"
+        );
+        $stmt->execute([
+            'b' => $barangayId, 'sender' => $canonical, 'c' => $correlation,
+            'status' => $rejectedReason === null ? 'received' : 'rejected',
+            'reason' => $rejectedReason !== null ? mb_substr($rejectedReason, 0, 255) : null,
+            'body' => $rejectedReason === null ? mb_substr($body, 0, 480) : null,
+        ]);
+        return ['log_id' => (int) $pdo->lastInsertId(), 'duplicate' => false, 'opted_out' => $optedOut];
     }
 
     private function logOutbound(PDO $pdo, string $messageType, ?int $incidentId, ?int $dispatchId, ?int $reportId, ?int $barangayId, string $phone, string $messageBody, string $status, ?string $gatewayMessageId, ?string $failureReason, ?string $correlationId = null): int

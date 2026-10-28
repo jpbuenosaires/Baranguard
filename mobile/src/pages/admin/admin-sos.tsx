@@ -143,6 +143,16 @@ const AdminSosPage: React.FC = () => {
         <div className="wf-card__sub">Raised: {formatServerTime(a.triggeredAt)}</div>
         <div className="wf-card__sub">Received: {formatServerTime(a.receivedAt)}</div>
         <div className="wf-card__sub">Location: {sosLocationText(a.locationSource, a.locationRecordedAt)}</div>
+        {a.latitude !== null && a.longitude !== null && (
+          <a
+            className="admin-fallback-number"
+            href={`https://www.google.com/maps/search/?api=1&query=${a.latitude},${a.longitude}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open location in Maps
+          </a>
+        )}
         {a.acknowledgedAt && <div className="wf-card__sub">Acknowledged: {formatServerTime(a.acknowledgedAt)}</div>}
         {a.resolvedAt && <div className="wf-card__sub">Resolved: {formatServerTime(a.resolvedAt)}</div>}
         {rowError?.id === a.sosId && <Banner tone="error">{rowError.message}</Banner>}

@@ -19,7 +19,8 @@
  * (§2 Rule 7 and Rule 9's "offline mobile capture is unaffected").
  */
 
-import { openLocalDatabase } from './localDatabase';
+import { openLocalDatabase, withTransaction } from './localDatabase';
+import { uuid } from '../uuid';
 import type { IncidentLocalRow } from './localSchema';
 
 /** §5 `incident.incident_type` enum — the only accepted values. */
@@ -76,12 +77,6 @@ export interface SavedIncident {
   createdOfflineAt: string;
 }
 
-function uuid(): string {
-  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
-}
-
 /**
  * Persists a captured incident locally and returns its identifiers.
  *
@@ -103,7 +98,6 @@ export async function saveIncidentLocally(input: NewIncidentInput): Promise<Save
     }
   }
 
-  const db = await openLocalDatabase();
 
   const localId = uuid();
   // Minted once, here. See the file header: Sprint 3's /sync/batch and
@@ -112,8 +106,7 @@ export async function saveIncidentLocally(input: NewIncidentInput): Promise<Save
   // §5: "All local timestamps are stored as ISO 8601 UTC strings".
   const createdOfflineAt = new Date().toISOString();
 
-  await db.beginTransaction();
-  try {
+  await withTransaction(async (db) => {
     await db.run(
       `INSERT INTO incident_local
          (local_id, barangay_id, reported_by, incident_type, priority, raw_narrative,
@@ -137,11 +130,7 @@ export async function saveIncidentLocally(input: NewIncidentInput): Promise<Save
       ],
       /* transaction */ false
     );
-    await db.commitTransaction();
-  } catch (error) {
-    await db.rollbackTransaction();
-    throw error;
-  }
+  });
 
   return { localId, clientEventId, createdOfflineAt };
 }
@@ -194,9 +183,10 @@ export async function countLocalIncidentsSince(sinceIso: string): Promise<number
   return Number((result.values?.[0] as { n?: number } | undefined)?.n ?? 0);
 }
 
-export async function listAllLocalIncidents(): Promise<IncidentLocalRow[]> {
+export async function listAllLocalIncidents(reportedBy: number): Promise<IncidentLocalRow[]> {
   const db = await openLocalDatabase();
-  const result = await db.query('SELECT * FROM incident_local ORDER BY created_offline_at DESC');
+  // Scoped to the signed-in user: on a shared phone the previous Tanod's reports (and narratives) stay hidden.
+  const result = await db.query('SELECT * FROM incident_local WHERE reported_by = ? ORDER BY created_offline_at DESC', [reportedBy]);
   return (result.values ?? []) as IncidentLocalRow[];
 }
 

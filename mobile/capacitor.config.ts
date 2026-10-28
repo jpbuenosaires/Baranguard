@@ -32,17 +32,17 @@ const config: CapacitorConfig = {
   // local diagnostic build only (same opt-in shape as CAP_LIVE_RELOAD
   // below); never ship an APK built that way.
   loggingBehavior: process.env.CAP_DEBUG_LOGGING === '1' ? 'debug' : 'none',
-  // Capacitor's default local-page origin is https://localhost. The
-  // workstation this app talks to is plain HTTP (LAN-only, no TLS
-  // infrastructure — §1), and fetching http:// from an https:// origin is
-  // blocked as mixed content by the WebView engine itself, independent of
-  // Android's OS-level cleartext-traffic policy (network_security_config,
-  // already permitted). Setting the scheme to http:// makes the app's own
-  // origin match the backend's, removing that separate restriction. If a
-  // TLS-fronted deployment is ever set up (revisit alongside REFERENCE.md
-  // F1's still-open API base URL decision), switch this back to 'https'.
+  // Production is HTTPS (https://api.baranguardph.win), so the app's own
+  // origin stays Capacitor's default https://localhost. Local development
+  // against plain-HTTP http://localhost:8081 is a mixed-content block from an
+  // https origin, so for THAT build only run
+  // `CAP_LOCAL_DEV=1 npx cap sync android` (origin becomes http://localhost; the
+  // debug APK's network config permits cleartext to localhost only). Never
+  // ship an APK synced with CAP_LOCAL_DEV=1. Changing the origin resets the
+  // WebView's localStorage (Preferences, session and SQLite are native and kept).
+  // WebView remote debugging is Capacitor's default: on for debuggable builds, off for release.
   server: {
-    androidScheme: 'http',
+    androidScheme: process.env.CAP_LOCAL_DEV === '1' ? 'http' : 'https',
     // Opt-in live reload for UI iteration: when CAP_LIVE_RELOAD=1, the
     // WebView loads straight from the Vite dev server instead of the
     // bundled dist/ — UI edits hot-reload on the device with no

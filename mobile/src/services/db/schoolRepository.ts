@@ -15,7 +15,7 @@
  * `endSchoolCheckin()`.
  */
 
-import { openLocalDatabase } from './localDatabase';
+import { openLocalDatabase, withTransaction } from './localDatabase';
 import type { SchoolCheckinLocalRow, SchoolLocalRow } from './localSchema';
 import { uuid } from '../uuid';
 import type { SchoolEntry } from '../apiService';
@@ -25,10 +25,8 @@ import { markWorkflowSyncFailed } from './workflowSync';
 
 /** Replaces the cache with the server's current list (inside one transaction, so a crash can't leave it half-empty). */
 export async function cacheSchools(schools: SchoolEntry[]): Promise<void> {
-  const db = await openLocalDatabase();
   const cachedAt = new Date().toISOString();
-  await db.beginTransaction();
-  try {
+  await withTransaction(async (db) => {
     await db.run('DELETE FROM school_local', [], /* transaction */ false);
     for (const school of schools) {
       await db.run(
@@ -49,11 +47,7 @@ export async function cacheSchools(schools: SchoolEntry[]): Promise<void> {
         /* transaction */ false
       );
     }
-    await db.commitTransaction();
-  } catch (error) {
-    await db.rollbackTransaction();
-    throw error;
-  }
+  });
 }
 
 /** Cached schools by name. `activeOnly` hides deactivated schools from every picker. */

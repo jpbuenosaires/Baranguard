@@ -39,7 +39,7 @@ const LocationSection: React.FC<Props> = ({
     <div className="intake-block-header">
       <span className="intake-block-title">
         <IonIcon icon={locationOutline} />
-        Incident Location (Optional)
+        Incident Location
       </span>
       {location && (
         <button type="button" onClick={onClear} disabled={saving} className="intake-clear-btn">
@@ -64,7 +64,7 @@ const LocationSection: React.FC<Props> = ({
       ) : (
         <div className="intake-loc-empty-text">
           <IonIcon icon={locationOutline} />
-          <span>No location added &bull; will save without map pin</span>
+          <span>No location yet. Tap Use Current GPS or pick on map so HQ can find the incident.</span>
         </div>
       )}
     </div>

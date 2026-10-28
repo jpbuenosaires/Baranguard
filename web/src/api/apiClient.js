@@ -1242,7 +1242,7 @@ export async function broadcastSms({ message, scope, role, idempotencyKey }) {
     idempotencyKey,
     auth: true,
   });
-  return { recipientCount: json.recipient_count, sent: json.sent, failed: json.failed };
+  return { recipientCount: json.recipient_count, queued: json.queued, duplicate: json.duplicate === true };
 }
 
 /**

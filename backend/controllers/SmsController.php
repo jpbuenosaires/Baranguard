@@ -37,10 +37,11 @@ final class SmsController
 {
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
-    private const MESSAGE_TYPES = ['incident', 'dispatch', 'priority_alert', 'coord_ping', 'confirmation', 'duty_status', 'sos'];
+    private const MESSAGE_TYPES = ['incident', 'dispatch', 'priority_alert', 'coord_ping', 'confirmation', 'duty_status', 'sos', 'manual'];
     private const DIRECTIONS = ['inbound', 'outbound'];
     private const STATUSES = ['queued', 'pending', 'sent', 'failed', 'refunded', 'received', 'rejected', 'deduplicated'];
     private const MAX_RANGE_DAYS = 366;
+    private const MAX_BROADCAST_RECIPIENTS = 100;
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function index(PDO $pdo, array $identity): void
@@ -248,11 +249,12 @@ final class SmsController
                     (SELECT i.display_id FROM incident i WHERE i.incident_id = sms_log.incident_id) AS incident_display_id
              FROM sms_log
              WHERE barangay_id = :barangay_id AND COALESCE(sender_number, receiver_number) = :phone
-             ORDER BY created_at ASC
+             ORDER BY created_at DESC, log_id DESC
              LIMIT 200"
         );
         $stmt->execute(['barangay_id' => $identity['barangay_id'], 'phone' => $phone]);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // Newest 200, shown oldest-first.
+        $rows = array_reverse($stmt->fetchAll(PDO::FETCH_ASSOC));
 
         $items = array_map(static function (array $row): array {
             return [
@@ -486,8 +488,7 @@ final class SmsController
             $prior = json_decode((string) $priorMetadataJson, true);
             Http::send(200, [
                 'recipient_count' => $prior['recipient_count'] ?? 0,
-                'sent' => $prior['sent'] ?? 0,
-                'failed' => $prior['failed'] ?? 0,
+                'queued' => $prior['queued'] ?? 0,
             ]);
         }
 
@@ -524,31 +525,48 @@ final class SmsController
         }
         $recipients = $recipientsStmt->fetchAll(PDO::FETCH_ASSOC);
 
+        if (count($recipients) > self::MAX_BROADCAST_RECIPIENTS) {
+            throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'Too many recipients for one broadcast (max ' . self::MAX_BROADCAST_RECIPIENTS . '). Narrow the audience.');
+        }
+
+        // Same body + audience within 10 minutes under a NEW Idempotency-Key is
+        // a double-click or a re-send after a timeout: confirm the earlier one.
+        $fingerprint = sha1($scope . '|' . (string) $role . '|' . $message);
+        $dupStmt = $pdo->prepare(
+            "SELECT metadata_json FROM audit_log
+             WHERE barangay_id = :b AND action = 'sms_broadcast_sent' AND created_at >= UTC_TIMESTAMP() - INTERVAL 10 MINUTE
+               AND JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.fingerprint')) = :f LIMIT 1"
+        );
+        $dupStmt->execute(['b' => $identity['barangay_id'], 'f' => $fingerprint]);
+        $dupJson = $dupStmt->fetchColumn();
+        if ($dupJson !== false) {
+            $prior = json_decode((string) $dupJson, true);
+            Http::send(200, ['recipient_count' => $prior['recipient_count'] ?? 0, 'queued' => $prior['queued'] ?? 0, 'duplicate' => true]);
+        }
+
+        // Subscribers must be told how to withdraw (RA 10173).
+        $outText = $message;
+        if ($scope === 'subscribers' && stripos($message, 'stop') === false) {
+            $outText = rtrim($message) . ' Reply STOP to unsubscribe.';
+        }
+
+        // Outbox: rows are `queued` and sent by notification-worker.php, so this
+        // request never blocks on serial adb sends.
         $gateway = new SmsGatewayService();
-        $sent = 0;
-        $failed = 0;
         foreach ($recipients as $recipient) {
-            $result = $gateway->sendOutbound(
-                $pdo, 'manual', false, null, null,
-                (string) $recipient['contact_number'], $message, $identity['barangay_id']
-            );
-            if ($result['status'] === 'sent') {
-                $sent++;
-            } else {
-                $failed++;
-            }
+            $gateway->queueOutbound($pdo, 'manual', (string) $recipient['contact_number'], $outText, $identity['barangay_id']);
         }
 
         Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'sms_broadcast_sent', 'user', null, [
             'scope' => $scope,
             'role' => $role,
             'recipient_count' => count($recipients),
-            'sent' => $sent,
-            'failed' => $failed,
+            'queued' => count($recipients),
+            'fingerprint' => $fingerprint,
             'idempotency_key' => $idempotencyKey,
         ]);
 
-        Http::send(201, ['recipient_count' => count($recipients), 'sent' => $sent, 'failed' => $failed]);
+        Http::send(201, ['recipient_count' => count($recipients), 'queued' => count($recipients)]);
     }
 
     private static function optionalInt(mixed $value, string $field): ?int

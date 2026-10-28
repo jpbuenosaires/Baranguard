@@ -32,11 +32,10 @@ import {
   listFailedWorkflowRows,
   type FailedWorkflowRow,
 } from '../services/db/workflowSync';
-import { isSyncAuthBlocked, isSyncDeviceBlocked } from '../services/syncScheduler';
+import { isSyncAuthBlocked, isSyncDeviceBlocked, runSyncPassExclusive } from '../services/syncScheduler';
 import {
   getNeedsAttentionCounts,
   retryNeedsAttention,
-  runSyncPass,
   type NeedsAttentionCounts,
   type SyncSummary,
 } from '../services/syncService';
@@ -127,7 +126,7 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
     setSyncError(null);
     setSyncResult(null);
     try {
-      const summary = await runSyncPass();
+      const summary = await runSyncPassExclusive();
       setSyncResult(summary);
       tacticalFeedback.onSuccess();
       await loadCounts();
@@ -153,7 +152,7 @@ export const SyncQueueModal: React.FC<SyncQueueModalProps> = ({ isOpen, onClose 
     setSyncResult(null);
     try {
       await retryNeedsAttention();
-      setSyncResult(await runSyncPass());
+      setSyncResult(await runSyncPassExclusive());
       tacticalFeedback.onSuccess();
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : 'Could not reach workstation for sync.');

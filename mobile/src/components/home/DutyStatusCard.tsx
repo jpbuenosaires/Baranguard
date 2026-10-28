@@ -37,15 +37,15 @@ const DutyStatusCard: React.FC<Props> = ({
         .slice(0, 2)
         .join('')
         .toUpperCase()
-    : 'TR';
+    : '';
 
   return (
     <section className="h4-status" aria-label="Duty status">
       <div className="h4-identity">
         <div className="profile-avatar-circle" aria-hidden="true">{initials}</div>
         <div className="h4-identity__text">
-          <span className="h4-identity__name">{fullName || 'Field Officer'}</span>
-          <span className="h4-identity__sub">Barangay Tanod &bull; Barangay {barangayName}</span>
+          <span className="h4-identity__name">{fullName || 'Tanod'}</span>
+          <span className="h4-identity__sub">Barangay Tanod{barangayName ? <> &bull; Barangay {barangayName}</> : null}</span>
         </div>
       </div>
 

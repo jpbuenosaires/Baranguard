@@ -99,6 +99,26 @@ export class ApiError extends Error {
   }
 }
 
+const EVIDENCE_UPLOAD_TIMEOUT_MS = 120_000;
+const MAP_DOWNLOAD_TIMEOUT_MS = 300_000;
+
+/** `AbortSignal.timeout` needs Chrome 103+; minSdk 24 WebViews can be older, and a throw there reads as "offline" on every call. */
+export function timeoutSignal(ms: number): AbortSignal {
+  if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms);
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
+
+/** A timeout or drop while reading the body is a network failure, not a raw DOMException. */
+async function readBody(response: Response): Promise<string> {
+  try {
+    return await response.text();
+  } catch {
+    throw new ApiError(0, 'NETWORK_ERROR', 'Cannot reach the barangay workstation.');
+  }
+}
+
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
@@ -151,7 +171,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: timeoutSignal(timeoutMs),
     });
   } catch {
     // §2 Rule 15: the workstation is a known single point of failure and
@@ -166,7 +186,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   // 204 and empty bodies are valid responses; don't try to parse them.
-  const text = await response.text();
+  const text = await readBody(response);
   const payload = text ? safeJsonParse(text) : null;
 
   if (!response.ok) {
@@ -391,6 +411,7 @@ export async function downloadMapPackage(barangayId: number): Promise<Uint8Array
   try {
     response = await fetch(mapPackageDownloadUrl(barangayId), {
       headers: { Authorization: `Bearer ${session.token}` },
+      signal: timeoutSignal(MAP_DOWNLOAD_TIMEOUT_MS),
     });
   } catch {
     throw new ApiError(0, 'NETWORK_ERROR', 'Cannot reach the barangay workstation.');
@@ -402,7 +423,11 @@ export async function downloadMapPackage(barangayId: number): Promise<Uint8Array
   if (!response.ok) {
     throw new ApiError(response.status, 'SERVER_ERROR', 'Could not download the map package.');
   }
-  return new Uint8Array(await response.arrayBuffer());
+  try {
+    return new Uint8Array(await response.arrayBuffer());
+  } catch {
+    throw new ApiError(0, 'NETWORK_ERROR', 'Cannot reach the barangay workstation.');
+  }
 }
 
 // --- Duty status (§6, M2 Home) ----------------------------------------------
@@ -916,6 +941,7 @@ export async function uploadEvidence(
       method: 'POST',
       headers: { Authorization: `Bearer ${session.token}`, ...deviceHeaders },
       body: form,
+      signal: timeoutSignal(EVIDENCE_UPLOAD_TIMEOUT_MS),
     });
   } catch {
     throw new ApiError(0, 'NETWORK_ERROR', 'Cannot reach the barangay workstation.');
@@ -924,7 +950,7 @@ export async function uploadEvidence(
   const renewed = response.headers.get('X-Renewed-Token');
   if (renewed) await storeRenewedToken(renewed);
 
-  const text = await response.text();
+  const text = await readBody(response);
   const payload = text ? safeJsonParse(text) : null;
   if (!response.ok) {
     const error = (payload as { error?: { code?: string; message?: string } } | null)?.error;
@@ -1525,8 +1551,14 @@ interface RawDispatchOffer {
 
 /** GET /dispatch-offers — a tanod caller gets only their own still-`offered` open offers. */
 export async function getOpenDispatchOffers(): Promise<DispatchOfferEntry[]> {
+  return (await getOpenDispatchOffersWithTime()).offers;
+}
+
+/** Same call, plus the server's own clock (`server_time`, ISO-8601 UTC, absent on older servers) so the UI can correct countdown skew. */
+export async function getOpenDispatchOffersWithTime(): Promise<{ offers: DispatchOfferEntry[]; serverTime: string | null }> {
   const json = await request<unknown>('/dispatch-offers');
-  return listItems<RawDispatchOffer>(json).map((row) => ({
+  const serverTime = (json as { server_time?: unknown } | null)?.server_time;
+  const offers = listItems<RawDispatchOffer>(json).map((row) => ({
     offerId: row.offer_id,
     incidentId: row.incident_id,
     incidentType: row.incident_type,
@@ -1537,6 +1569,7 @@ export async function getOpenDispatchOffers(): Promise<DispatchOfferEntry[]> {
     expiresAt: row.expires_at,
     status: row.status,
   }));
+  return { offers, serverTime: typeof serverTime === 'string' ? serverTime : null };
 }
 
 /**
@@ -1589,7 +1622,7 @@ export async function checkHealth(): Promise<boolean> {
     // identically before and after login, unlike an authenticated route
     // that would also fail on a merely-expired session and be
     // misread as "workstation unreachable".
-    const res = await fetch(`${API_BASE_URL}/barangays`, { method: 'GET', signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${API_BASE_URL}/barangays`, { method: 'GET', signal: timeoutSignal(3000) });
     return res.ok;
   } catch {
     return false;

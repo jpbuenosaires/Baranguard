@@ -35,9 +35,10 @@ import { PushNotifications, type PushNotificationSchema, type ActionPerformed } 
 import { Capacitor } from '@capacitor/core';
 import FullScreenAlert from './fullScreenAlert';
 import { isDispatchOfferPush, requestDispatchOfferRefresh } from './dispatchOfferStore';
+import { refreshActiveSosCount } from './adminSosCount';
 
 // 'dispatch_offer' (Wave 2 night-dispatch offers) is kept in sync by hand with
-// CRITICAL_TYPES in CriticalAlertMessagingService.java.
+// CRITICAL_TYPES in CriticalAlertMessagingService.java (and CriticalAlertNotifier.genericTitle).
 export type CriticalNotificationType = 'sos' | 'priority_alert' | 'dispatch' | 'dispatch_offer';
 
 const CRITICAL_TYPES: readonly string[] = ['sos', 'priority_alert', 'dispatch', 'dispatch_offer'];
@@ -58,9 +59,12 @@ export interface CriticalAlert {
   receivedAt: string;
 }
 
-type Listener = (alert: CriticalAlert | null) => void;
+/** `waiting` = how many more alerts are queued behind the one shown. */
+type Listener = (alert: CriticalAlert | null, waiting: number) => void;
 
-let currentAlert: CriticalAlert | null = null;
+// Most severe first, so a later dispatch can never bury an unacknowledged SOS.
+const SEVERITY: Record<CriticalNotificationType, number> = { sos: 0, priority_alert: 1, dispatch_offer: 2, dispatch: 3 };
+let queue: CriticalAlert[] = [];
 const listeners = new Set<Listener>();
 let listenersRegistered = false;
 
@@ -72,28 +76,47 @@ export function setSosTapHandler(handler: (() => void) | null): void {
 }
 
 function notify(): void {
-  for (const listener of listeners) listener(currentAlert);
+  for (const listener of listeners) listener(queue[0] ?? null, Math.max(0, queue.length - 1));
+}
+
+/** Adds an alert (same notification id replaces its older copy) and re-sorts by severity, then arrival. */
+function enqueue(alert: CriticalAlert): void {
+  queue = [...queue.filter((a) => a.notificationId !== alert.notificationId), alert].sort(
+    (a, b) => SEVERITY[a.notificationType] - SEVERITY[b.notificationType] || a.receivedAt.localeCompare(b.receivedAt)
+  );
+  notify();
+}
+
+/** An SOS push means the Chief Tanod's SOS badge is stale: refresh it now rather than at the next poll. */
+function onAlertPush(alert: CriticalAlert | null): void {
+  if (alert?.notificationType === 'sos') void refreshActiveSosCount();
 }
 
 /** M12's overlay subscribes here; returns an unsubscribe function. */
 export function subscribeToCriticalAlert(listener: Listener): () => void {
   listeners.add(listener);
-  listener(currentAlert);
+  listener(queue[0] ?? null, Math.max(0, queue.length - 1));
   return () => listeners.delete(listener);
 }
 
 /** Called after a successful (or explicitly abandoned) acknowledge, or a manual dismiss. */
 export function dismissCriticalAlert(): void {
-  currentAlert = null;
+  queue = queue.slice(1);
   notify();
   // The overlay dismissing does not by itself clear the system heads-up
   // notification (id 2001) — `setAutoCancel` only fires on a direct tap,
   // so an in-app ACKNOWLEDGE otherwise left it in the tray (found on the
   // Infinix X6840, 2026-09-19). Best-effort: never block the in-app
   // dismiss on this, and no-op on web/if nothing was ever posted.
-  if (Capacitor.getPlatform() === 'android') {
+  if (queue.length === 0 && Capacitor.getPlatform() === 'android') {
     void FullScreenAlert.dismiss().catch(() => {});
   }
+}
+
+// A data-only critical push (needed so it reaches the native service in background) carries its text in `data`.
+function dataText(data: unknown, key: string): string | undefined {
+  const value = (data as Record<string, unknown> | undefined)?.[key];
+  return typeof value === 'string' && value ? value : undefined;
 }
 
 function parseAlert(data: Record<string, unknown> | undefined, title: string, body: string): CriticalAlert | null {
@@ -147,13 +170,11 @@ export function registerCriticalAlertListeners(): void {
     }
     const alert = parseAlert(
       notification.data as Record<string, unknown> | undefined,
-      notification.title ?? 'Critical alert',
-      notification.body ?? ''
+      notification.title ?? dataText(notification.data, 'title') ?? 'Critical alert',
+      notification.body ?? dataText(notification.data, 'body') ?? ''
     );
-    if (alert) {
-      currentAlert = alert;
-      notify();
-    }
+    onAlertPush(alert);
+    if (alert) enqueue(alert);
   });
 
   // Tapped from the OS notification tray (app was backgrounded/closed) —
@@ -167,12 +188,12 @@ export function registerCriticalAlertListeners(): void {
     }
     const alert = parseAlert(
       notification.data as Record<string, unknown> | undefined,
-      notification.title ?? 'Critical alert',
-      notification.body ?? ''
+      notification.title ?? dataText(notification.data, 'title') ?? 'Critical alert',
+      notification.body ?? dataText(notification.data, 'body') ?? ''
     );
+    onAlertPush(alert);
     if (alert) {
-      currentAlert = alert;
-      notify();
+      enqueue(alert);
       if (alert.notificationType === 'sos') sosTapHandler?.();
     }
   });
@@ -194,7 +215,12 @@ export async function checkForPendingNativeAlert(): Promise<void> {
   if (Capacitor.getPlatform() !== 'android') {
     return;
   }
-  const result = await FullScreenAlert.getPendingAlert();
+  let result;
+  try {
+    result = await FullScreenAlert.getPendingAlert();
+  } catch {
+    return; // plugin missing: nothing to hand off
+  }
   if (!result.pending) {
     return;
   }
@@ -203,8 +229,5 @@ export async function checkForPendingNativeAlert(): Promise<void> {
     result.title,
     result.body
   );
-  if (alert) {
-    currentAlert = alert;
-    notify();
-  }
+  if (alert) enqueue(alert);
 }

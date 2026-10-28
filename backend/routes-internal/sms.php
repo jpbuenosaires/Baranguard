@@ -19,4 +19,5 @@ return [
     ['POST', '#^/sms/coord-ping$#', [InternalSmsController::class, 'coordPing']],
     ['POST', '#^/sms/duty-status$#', [InternalSmsController::class, 'dutyStatus']],
     ['POST', '#^/sms/sos$#', [InternalSmsController::class, 'sos']],
+    ['POST', '#^/sms/inbound-text$#', [InternalSmsController::class, 'inboundText']],
 ];
