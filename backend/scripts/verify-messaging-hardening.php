@@ -70,6 +70,13 @@ $o = $svc->receiveInboundText($pdo, '+639175550000', ' Stop. ', '13:1', null);
 check($o['opted_out'] === true && one($pdo, "SELECT opted_out_at FROM sms_subscriber WHERE contact_number='09175550000'") !== null, 'STOP text opts the subscriber out');
 check((int) one($pdo, "SELECT COUNT(*) FROM audit_log WHERE action='sms_subscriber_opted_out'") === 1, 'opt-out audited (no number in metadata)');
 check(strpos((string) one($pdo, "SELECT metadata_json FROM audit_log WHERE action='sms_subscriber_opted_out'"), '5550000') === false, 'opt-out audit metadata carries no phone number');
+$confirm = "SELECT COUNT(*) FROM sms_log WHERE direction='outbound' AND message_type='confirmation' AND status='queued' AND receiver_number='+639175550000'";
+check((int) one($pdo, $confirm) === 1, 'STOP queues exactly one confirmation reply to the sender');
+check(strpos((string) one($pdo, "SELECT message_body FROM sms_log WHERE message_type='confirmation' AND receiver_number='+639175550000'"), 'no longer receive') !== false, 'the confirmation says the number will no longer receive advisories');
+$svc->receiveInboundText($pdo, '+639175550000', 'STOP', '13:2', null);
+check((int) one($pdo, $confirm) === 1, 'a second STOP from an already opted-out number sends no second confirmation');
+$svc->receiveInboundText($pdo, '+639175550001', 'STOP', '13:3', null);
+check((int) one($pdo, "SELECT COUNT(*) FROM sms_log WHERE message_type='confirmation' AND receiver_number='+639175550001'") === 0, 'STOP from a number not on the list sends no confirmation');
 
 // ---- 2. Outbound honesty ---------------------------------------------------
 final class Fake extends LocalGsmOutboundClient

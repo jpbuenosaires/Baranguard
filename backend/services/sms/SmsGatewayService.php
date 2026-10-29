@@ -182,7 +182,9 @@ final class SmsGatewayService
      */
     public function receiveSos(PDO $pdo, array $envelope): array
     {
-        $resolved = $this->resolveAndDecrypt($pdo, $envelope, 'sos');
+        // A replayed SOS envelope returns the original SOS (createItem is
+        // idempotent on client_event_id) instead of a 422 the daemon would drop.
+        $resolved = $this->resolveAndDecrypt($pdo, $envelope, 'sos', true);
         $payload = $resolved['payload'];
 
         $item = [
@@ -195,7 +197,9 @@ final class SmsGatewayService
 
         $result = TanodSosController::createItem($pdo, $resolved['identity'], $item);
 
-        $this->logInbound($pdo, $resolved, 'sos', null, is_int($item['dispatch_id']) ? $item['dispatch_id'] : null);
+        if (!$resolved['replayed']) {
+            $this->logInbound($pdo, $resolved, 'sos', null, is_int($item['dispatch_id']) ? $item['dispatch_id'] : null);
+        }
 
         return ['sos_id' => $result['sos_id'], 'wasCreated' => $result['wasCreated']];
     }
@@ -204,10 +208,10 @@ final class SmsGatewayService
 
     /**
      * @param array<string,mixed> $envelope
-     * @return array{identity:array{user_id:int,barangay_id:int,role:string},deviceId:string,clientEventId:string,payload:array<string,mixed>}
+     * @return array{replayed:bool,identity:array{user_id:int,barangay_id:int,role:string},deviceId:string,clientEventId:string,payload:array<string,mixed>}
      * @throws EnvelopeException
      */
-    private function resolveAndDecrypt(PDO $pdo, array $envelope, string $expectedMessageType): array
+    private function resolveAndDecrypt(PDO $pdo, array $envelope, string $expectedMessageType, bool $replayReturnsOriginal = false): array
     {
         foreach (['version', 'message_id', 'device_id', 'client_event_id', 'created_at', 'expiry', 'message_type', 'nonce', 'ciphertext', 'tag'] as $field) {
             if (!isset($envelope[$field]) || !is_string($envelope[$field]) || $envelope[$field] === '') {
@@ -244,19 +248,6 @@ final class SmsGatewayService
             throw new EnvelopeException('Envelope has expired.');
         }
 
-        // Replay dedup FIRST, via the PK's own uniqueness — an attacker
-        // replaying a captured envelope twice in quick succession can't
-        // both land inside the "not yet recorded" window.
-        try {
-            $pdo->prepare(
-                'INSERT INTO sms_envelope_replay (message_id, device_id, received_at) VALUES (:message_id, :device_id, UTC_TIMESTAMP())'
-            )->execute(['message_id' => $messageId, 'device_id' => $deviceId]);
-        } catch (\PDOException $e) {
-            // 23000 = integrity constraint violation (duplicate PK, or the
-            // device_id FK doesn't exist — both are legitimate rejections).
-            throw new EnvelopeException('Envelope was already processed, or references an unknown device.');
-        }
-
         $deviceStmt = $pdo->prepare(
             'SELECT md.user_id, md.device_secret_ref, u.barangay_id, u.role, u.is_active
              FROM mobile_device md
@@ -283,7 +274,24 @@ final class SmsGatewayService
         $aad = EnvelopeCrypto::buildAad($envelope['version'], $messageId, $deviceId, $clientEventId, $createdAtRaw, $expiryRaw, $messageType);
         $payload = $this->crypto->decryptPayload($rawSecret, $envelope['nonce'], $envelope['ciphertext'], $envelope['tag'], $aad);
 
+        // Replay dedup after the device is known and the envelope authenticated,
+        // via the PK's own uniqueness (two concurrent replays cannot both pass).
+        $replayed = false;
+        try {
+            $pdo->prepare(
+                'INSERT INTO sms_envelope_replay (message_id, device_id, received_at) VALUES (:message_id, :device_id, UTC_TIMESTAMP())'
+            )->execute(['message_id' => $messageId, 'device_id' => $deviceId]);
+        } catch (\PDOException $e) {
+            if (!$replayReturnsOriginal) {
+                throw new EnvelopeException('Envelope was already processed.');
+            }
+            // SOS only: the row may be left by an attempt that failed before the
+            // SOS was stored, so let the client_event_id idempotency answer instead.
+            $replayed = true;
+        }
+
         return [
+            'replayed' => $replayed,
             'identity' => [
                 'user_id' => (int) $device['user_id'],
                 'barangay_id' => (int) $device['barangay_id'],
@@ -419,6 +427,8 @@ final class SmsGatewayService
     // --- Inbound free-text (not an envelope) -------------------------------
 
     private const OPT_OUT_WORDS = ['STOP', 'STOP ALL', 'UNSUBSCRIBE', 'TIGIL', 'HUWAG NA'];
+    // GSM-7 only, one SMS, no personal data.
+    private const OPT_OUT_CONFIRMATION = 'You will no longer receive barangay advisories. Hindi na kayo padadalhan ng abiso ng barangay.';
 
     /**
      * Stores a human text (or a daemon-reported rejected envelope) so SMS
@@ -475,6 +485,8 @@ final class SmsGatewayService
             $optedOut = $o->rowCount() > 0;
             if ($optedOut) {
                 Audit::record($pdo, $barangayId, null, 'sms_subscriber_opted_out', 'sms_subscriber', null, ['channel' => 'sms']);
+                // One confirmation, only on a new opt-out; queued so the worker sends it.
+                $this->queueOutbound($pdo, 'confirmation', mb_substr($sender, 0, 32), self::OPT_OUT_CONFIRMATION, $barangayId);
             }
         }
 

@@ -409,6 +409,29 @@ expect_eq "$SOS_ENV_FALLBACK" "sms" "fallback_channel correctly recorded as 'sms
 SOS_ENV_NOTIF=$(db_one "SELECT COUNT(*) FROM notification WHERE sos_id=$SOS_ENV_ID;")
 expect_eq "$SOS_ENV_NOTIF" "1" "The SMS-originated SOS triggered Rule 27's fan-out exactly like an app-originated one"
 
+step "17b. A replayed SOS envelope returns the original SOS, never a rejection or a second alarm"
+SOS_REPLAY_BODY=$(curl -s -w '\n%{http_code}' -X POST "$INTERNAL_URL/sms/sos" -H "X-Internal-Token: $INTERNAL_SERVICE_TOKEN" -H "Content-Type: application/json" -d "$ENV7")
+expect_eq "$(echo "$SOS_REPLAY_BODY" | tail -n1)" "200" "Replaying the same SOS envelope answers 200 (the daemon must not drop a retried SOS as 'rejected')"
+expect_eq "$(echo "$SOS_REPLAY_BODY" | head -n1 | jget sos_id)" "$SOS_ENV_ID" "...with the ORIGINAL sos_id"
+expect_eq "$(db_one "SELECT COUNT(*) FROM tanod_sos WHERE client_event_id='$CE_ENV7';")" "1" "Still exactly 1 SOS row for that event"
+expect_eq "$(db_one "SELECT COUNT(*) FROM notification WHERE sos_id=$SOS_ENV_ID;")" "1" "Still exactly 1 SOS notification — no second alarm"
+
+step "17c. An SOS whose first attempt failed after the replay row was written is still created on retry"
+CE_ENV8=$(uuid)
+ENV8=$("$PHP_BIN" "$BACKEND_DIR/scripts/sms-envelope-build.php" --secret="$KEY1" --device-id="$DEV1" --type=sos --payload='{"latitude":12.98,"longitude":123.68}' --client-event-id="$CE_ENV8")
+MSG8=$(echo "$ENV8" | jget message_id)
+# Simulates the old failure: replay row committed, then a 500 before the SOS row existed.
+mysql_exec "$VALDB" -e "INSERT INTO sms_envelope_replay (message_id, device_id, received_at) VALUES ('$MSG8', '$DEV1', UTC_TIMESTAMP());"
+SOS_RETRY_STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$INTERNAL_URL/sms/sos" -H "X-Internal-Token: $INTERNAL_SERVICE_TOKEN" -H "Content-Type: application/json" -d "$ENV8")
+expect_eq "$SOS_RETRY_STATUS" "200" "The retried SOS envelope answers 200"
+expect_eq "$(db_one "SELECT COUNT(*) FROM tanod_sos WHERE client_event_id='$CE_ENV8';")" "1" "...and the SOS row now exists (the alarm is not lost)"
+
+step "17d. Replay protection still holds for an envelope from an unknown device"
+CE_ENV9=$(uuid)
+ENV9=$("$PHP_BIN" "$BACKEND_DIR/scripts/sms-envelope-build.php" --secret="$KEY1" --device-id="00000000-0000-4000-8000-000000000000" --type=sos --payload='{"latitude":12.99,"longitude":123.69}' --client-event-id="$CE_ENV9")
+expect_eq "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$INTERNAL_URL/sms/sos" -H "X-Internal-Token: $INTERNAL_SERVICE_TOKEN" -H "Content-Type: application/json" -d "$ENV9")" "422" "An SOS envelope from an unregistered device is still rejected"
+expect_eq "$(db_one "SELECT COUNT(*) FROM tanod_sos WHERE client_event_id='$CE_ENV9';")" "0" "...and creates no SOS"
+
 step "18. Inbound rows are logged to sms_log with barangay_id, transport=gsm_modem"
 INBOUND_LOG_COUNT=$(db_one "SELECT COUNT(*) FROM sms_log WHERE direction='inbound' AND transport='gsm_modem' AND barangay_id=1;")
 [ "$INBOUND_LOG_COUNT" -ge "3" ] 2>/dev/null && pass "At least 3 inbound sms_log rows recorded (duty_status/coord_ping x2/incident/sos), all tenant-scoped" || fail "Expected >=3 inbound sms_log rows, got $INBOUND_LOG_COUNT"
