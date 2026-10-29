@@ -38,7 +38,7 @@ Status / Last updated: 2026-10-28.
   `backend/.htaccess`, `backend/public/index.php`, `web/index.html` and
   `web/src/api/apiClient.js` still name the old README-serving files (code
   not edited here).
-- **Mobile and messaging audit fixes** (commit `3f7cc2d`; Rules 97-106 in
+- **Mobile and messaging audit fixes** (commit `9ae5046`; Rules 97-106 in
   `docs/WORKFLOWS_AND_RULES.md` Part 8): SOS on every Tanod tab (800 ms hold),
   GPS wait at most 2 s, Silent SOS option, SOS repeat and escalation, honest
   SMS statuses, stored inbound texts and STOP opt-out, queued broadcasts,

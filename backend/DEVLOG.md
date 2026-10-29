@@ -2028,7 +2028,7 @@ prerequisites M1 Login cannot exist without: `POST /devices/register`,
 `GET /map-packages/:barangay_id/download`.
 
 ## REGRESSION FOUND AND FIXED — introduced by this session's own earlier
-## env.php change (commit d38f524), with a live-data risk
+## env.php change (commit bf84ad1), with a live-data risk
 
 The `$_ENV`/`$_SERVER` thread-safety rewrite made `baranguard_load_env()`
 skip the `.env` file only when `isset($_ENV[$name]) || isset($_SERVER[$name])`.
@@ -7415,7 +7415,7 @@ own browser against the still-preview-pointed app and hit "Could not
 reach the Baranguard server" — `web/index.html` was still pointing
 `BARANGUARD_API_BASE_URL` at the disposable preview backend (port 8140,
 not running) from the earlier UI/UX-preview arc, despite a prior commit
-(`a60a058`) already reverting this once. Fixed the immediate error by
+(`e231846`) already reverting this once. Fixed the immediate error by
 pointing it back at the real vhost (`http://127.0.0.1:8081/api/v1`,
 confirmed already listening via Apache) — then the user explicitly
 asked to apply the outstanding migrations to the real DB.
@@ -8786,8 +8786,8 @@ example), inconsistent margins/spacing ("some feels it is more spacious
 than the others"), and text alignment. The audit found all three, plus a
 set of runtime bugs the inconsistency was hiding.
 
-Commits: `4739b58` (P0) · `6477c1a` (DateRangePicker) · `45db370`
-(control heights) · `13ee0fa` (spacing) · `0312023` (component
+Commits: `8adf9c7` (P0) · `be5ec62` (DateRangePicker) · `f3ae2b5`
+(control heights) · `b2739ce` (spacing) · `1b89320` (component
 consolidation + contrast).
 
 ### What was actually broken, not merely inconsistent
@@ -9005,7 +9005,7 @@ in the barangay. Committed `HEAD` reads `8140`, the disposable
 
 `docs/HANDOFF.md` carried a "RESOLVED 2026-09-05: web app reverted to
 the real API" banner asserting `8081`. `git log -S` shows that line has
-only ever been touched by `f918090`. The banner was wrong for two days
+only ever been touched by `299641b`. The banner was wrong for two days
 and one `git show` would have disproved it — the banner is now rewritten
 in place with that lesson attached, rather than quietly deleted.
 
@@ -10017,7 +10017,7 @@ top of it.
 
 `git status` at session start showed ~28 modified files across backend
 controllers, the AI worker, and a dozen web pages/components, none of it
-staged, none of it reflected in `HANDOFF.md`'s "committed as `f1d87a4`"
+staged, none of it reflected in `HANDOFF.md`'s "committed as `55f4e8d`"
 claim from two sessions ago. Every file was read before touching
 anything (§ this project's own rule about trusting `git diff` over a
 stale doc claim). All of it turned out coherent and complete — no
@@ -10026,7 +10026,7 @@ failed `verify-web-wiring.mjs` (513/513 with everything applied) or a
 syntax check. It split cleanly into six independent commits, each
 buildable on its own, pushed to `origin/main` as:
 
-- `69c7bf3` **Friend-runnable AI evaluation kit** — `--resume` (checkpoint
+- `8a2c65c` **Friend-runnable AI evaluation kit** — `--resume` (checkpoint
   after every record, never lose more than one in-flight record to an
   interruption), `--batch-size`/`--rest-seconds` (thermal pacing for an
   unattended multi-hour run), `--save-results`. `eval-kit/` packages the
@@ -10034,18 +10034,18 @@ buildable on its own, pushed to `origin/main` as:
   can run on a friend's hardware independently of this workstation —
   this is `REMAINING.md` A3's actual deliverable, which `HANDOFF.md` had
   already claimed done without it ever reaching git.
-- `ae200aa` **Threat Analyzer accepts a custom date range** — 7/30/90-day
+- `0646b12` **Threat Analyzer accepts a custom date range** — 7/30/90-day
   presets plus custom via the existing shared `DateRangePicker`; worker
   and endpoint accept an optional `{days}` or `{from,to}` and fall back
   to the prior fixed 90-day behavior when neither is sent.
-- `58b5e17` **Topbar AI-readiness badge + dark-mode chrome fixes** — an
+- `26dbe87` **Topbar AI-readiness badge + dark-mode chrome fixes** — an
   honest Ollama-probe-backed "AI Ready/Offline/Inactive" badge for
   Secretary/PB (Admin's own health badge is now clickable, jumping to
   Service Health); MapLibre's vendored popup/controls/attribution and the
   shared dropdown menu panel now respect dark mode (they didn't before —
   default light-only chrome, `!important`-overridden deliberately since
   nothing else can reach a vendored library's own rules).
-- `27d6cc9` **AI Review workflow stepper; SMS/blotter draft actions; GIS
+- `26fd9ea` **AI Review workflow stepper; SMS/blotter draft actions; GIS
   widget polish** — a 4-step progress stepper on AI Review (Intake
   Redaction / Review & Edit / Summary Sync / Approve & Commit); "Use in
   Broadcast" alongside SMS Monitor's existing "Use in Conversation";
@@ -10053,12 +10053,12 @@ buildable on its own, pushed to `origin/main` as:
   Live Activity widget made collapsible and its private `escapeHtml()`
   swapped for the shared `web/src/utils/escapeHtml.js` (that shared file
   already existed in git history — this was the last private copy).
-- `496e18f` **Docs**: `docs/AUDIT_2026-09-07.md` committed for the first
+- `045d6f8` **Docs**: `docs/AUDIT_2026-09-07.md` committed for the first
   time — `REFERENCE.md`/`HANDOFF.md`/`SPRINTS.md` had been citing it by
   path ("Evidence: docs/AUDIT_2026-09-07.md") since 2026-09-07 while it
   sat uncommitted; `CLAUDE.md` and `SPRINTS.md` brought to the state
   those citations already assumed.
-- `dab2032` — see below, this session's own feature.
+- `f43ebfa` — see below, this session's own feature.
 
 **Process note for next time:** six sessions' worth of finished,
 verified work sitting uncommitted for up to five days is exactly the
@@ -10283,7 +10283,7 @@ SMS · public transparency report · consented advisory broadcast list.
 turned out to already exist.)
 
 **Already shipped, found by looking before building (4):** redaction
-diff view (an LCS word-level diff, landed in `27d6cc9`); backup-staleness
+diff view (an LCS word-level diff, landed in `26fd9ea`); backup-staleness
 warning; two-way SMS console; PB digest (`/reports/export?format=pdf`,
 already PB-accessible — verified by generating one as `kapitan.dao`).
 Checking first is what `SPRINTS.md`'s "never regenerate what's already
@@ -10834,8 +10834,8 @@ succeed.
 Phases 1-4 (background sync, GPS-on-intake + M14 My Reports, photo
 compression + evidence upload, background patrol GPS + full-screen
 alerts + G1 SMS fallback + M7 basemap) were built and committed earlier
-this same session (`a72dbde`, `f3d550b`, `64c1319`, `b1951b1`, plus
-`b570d25` for the backend/web half) but never got their own DEVLOG entry
+this same session (`d6e4897`, `ac25c2e`, `e6f9684`, `f68b2a2`, plus
+`a3fcbe1` for the backend/web half) but never got their own DEVLOG entry
 — found while writing this one. Not reconstructed retroactively here;
 each commit's own message is the record for that work. This entry
 covers what happened AFTER those commits, testing them for real.
@@ -11763,7 +11763,7 @@ folded into this bump.
 `npx cypress run` (1 failing, pre-existing/unrelated reason as above,
 confirmed by reading the stack trace back to `localDatabase.ts:49`, not
 guessed). No mobile source changed — `package.json` +
-`package-lock.json` only. Committed `a4c24f0`.
+`package-lock.json` only. Committed `3e82fa7`.
 
 ## 2026-09-14: first real end-to-end AI evaluation run — A2 substantially unblocked
 
@@ -12158,7 +12158,7 @@ path strings only outside `App.tsx`. No backend, no schema, no web.
 
 - `npx tsc --noEmit` clean. `npx eslint`: only pre-existing unused
   ionicons imports in `home/new-incident/profile/assignments/
-  assignment-detail.tsx`, confirmed present in HEAD `e559dbd` by linting
+  assignment-detail.tsx`, confirmed present in HEAD `85b0d91` by linting
   `git show HEAD:…` — not in any line this change touched, left alone.
 - **Fixed login (probe 1):** `/login` → `/tabs/home` at t0; spinner div
   +43 ms; shell page added invisible +114 ms; **+119 ms shell revealed
@@ -13857,7 +13857,7 @@ after the APK built (HANDOFF bite #12); recorded below once seen.
 REMAINING.md C4's "smaller known gaps" list carried four items found on
 the Infinix X6840 2026-09-19 (DEVLOG same-day entry (4)). The push-body
 article/enum one was already fixed on `feature/push-body-incident-label`
-(commit `7e9952a`). Fixed the other three today; **none of these three
+(commit `59660cf`). Fixed the other three today; **none of these three
 were re-verified on real hardware — no device available this session** —
 static checks only (`tsc --noEmit`, `eslint`, `verify-local-schema.mjs`
 114/114, all clean).
@@ -17187,7 +17187,7 @@ reorganization — every API contract W7/W8 already used is unchanged).
 
 ## 2026-09-27 (1) — Shared print-preview modal + statutory PDF overhaul (in-progress work found uncommitted, committed as-is); blotter-workflow clarity fix
 
-Two unrelated pieces of work landed in the same commit (`0058be7`):
+Two unrelated pieces of work landed in the same commit (`dd6d134`):
 substantial print/PDF work that was already sitting uncommitted in the
 working tree when this session started (not authored in this session —
 committed as-is after verification, since no DEVLOG entry existed for it
@@ -17380,7 +17380,7 @@ progress — Android Studio installing components. NDK/CMake still absent.)
 
 ## 2026-09-27 (4) — React Native rebuild: Phase 0 + Phase 1 (foundations) done, device gate pending
 
-Phase 0 committed as `aa96e81` (scaffold, Expo SDK 57 / RN 0.86 /
+Phase 0 committed as `908e120` (scaffold, Expo SDK 57 / RN 0.86 /
 React 19.2.3). Phase 1 ports the foundation layer into `mobile-rn/src/services/`:
 
 - `storage.ts` — two tiers: `prefs` (AsyncStorage, non-secret) and
@@ -17492,7 +17492,7 @@ REMAINING.md's device-verification items use elsewhere in this project.
 Not yet done: actually running `npx expo run:android` against the
 emulator — this entry only covers getting the toolchain in place.
 
-## 2026-09-27 (6) — React Native rebuild: Phases 2-4 (auth/shell, offline capture, dispatch) — retroactive entry, code was committed (`49ad44b`) without one
+## 2026-09-27 (6) — React Native rebuild: Phases 2-4 (auth/shell, offline capture, dispatch) — retroactive entry, code was committed (`17908c9`) without one
 
 **Process note**: this entry should have been written in the same session
 that committed Phase 2-4 and wasn't — SPRINTS.md's "log deviations before
@@ -17698,7 +17698,7 @@ to the gitignored `.env.local`, read by a new `app.config.ts` env-gated
 default), then `npx expo prebuild --clean` to regenerate `android/` with
 it baked in. Committed: `mobile-rn/app.config.ts`,
 `mobile-rn/tsconfig.json` (its `include` block was auto-added by the same
-prebuild run) — `c3f2cc8`.
+prebuild run) — `c82857d`.
 
 **Bug 3 — the REAL cause of the sync failure, and it wasn't the ABIs at
 all.** After the ABI fix, sync still failed on `x86_64` alone with
@@ -19001,7 +19001,7 @@ migration 0037/0038 and removes the approval steps.
 Run before pushing 45 local commits to `origin/main`. Committed HEAD was NOT green when checked: wiring 6 failed,
 `web/tests` 14 failed. Findings and fixes:
 
-- **Real bug:** `web/src/pages/service-health.js` (from 4d248f2) used an undefined `STATUS_META`, so the Service Health
+- **Real bug:** `web/src/pages/service-health.js` (from 704f29c) used an undefined `STATUS_META`, so the Service Health
   page threw and showed "Could not retrieve operational service health" to every Admin. Now uses the existing
   `STATUS_LABEL`. Browser-verified: the page loads and shows live status.
 - **A11y:** the Accomplishment Reports list wrapped a checkbox in `DataTable`'s keyboard row activator (an unnamed
@@ -19304,7 +19304,7 @@ Fixed in four parallel streams; verified on disposable DBs / vitest / jsdom only
 - `verify-web-wiring.mjs` 936/32: the 32 failures are in files untouched by this work (CSS class/font checks, pre-existing).
 
 ## 2026-10-28 — Docs pruned to defense / ISO 25010 / UAT scope
-Owner decision: the system is not being deployed at a barangay, so only the docs the defense, evaluation and UAT need were kept. Removed (recoverable with `git log --diff-filter=D -- docs/`): SPRINTS, REMAINING, TODO_TO_FINISH, Sprint_Prompts, AUDIT_2026-09-07, audit-2026-10-09/, audit-2026-10-28/ (findings fixed in 3f7cc2d and 8c4ed06), FEATURE_PLAN/CONTRACT_2026-10, SOFTWARE_DOCS_PLAN, MANUSCRIPT_REVISION_LIST, UI_CONSISTENCY_AUDIT, DILG_CIRCULARS_NOTES, AI_Evaluation_Dataset_Guide, the deployment-only docs (POWER_CUT_PROCEDURE, DEPLOYMENT_CHECKLIST, MAINTENANCE_AND_TURNOVER, BREACH_RESPONSE_RUNBOOK, DPO_DESIGNATION_TEMPLATE, PRIVACY_NOTICE_WEB_DRAFT, OPERATIONS_MANUAL), CHANGELOG, the original manuscript copy, superseded instruments (03-03d, 04, 05, 06, 08, 10) and nine empty placeholder READMEs. CLAUDE.md now auto-loads ROADMAP_TO_COMPLETION.md in place of SPRINTS.md. References to removed docs in code comments are historical.
+Owner decision: the system is not being deployed at a barangay, so only the docs the defense, evaluation and UAT need were kept. Removed (recoverable with `git log --diff-filter=D -- docs/`): SPRINTS, REMAINING, TODO_TO_FINISH, Sprint_Prompts, AUDIT_2026-09-07, audit-2026-10-09/, audit-2026-10-28/ (findings fixed in 9ae5046 and ac2f96e), FEATURE_PLAN/CONTRACT_2026-10, SOFTWARE_DOCS_PLAN, MANUSCRIPT_REVISION_LIST, UI_CONSISTENCY_AUDIT, DILG_CIRCULARS_NOTES, AI_Evaluation_Dataset_Guide, the deployment-only docs (POWER_CUT_PROCEDURE, DEPLOYMENT_CHECKLIST, MAINTENANCE_AND_TURNOVER, BREACH_RESPONSE_RUNBOOK, DPO_DESIGNATION_TEMPLATE, PRIVACY_NOTICE_WEB_DRAFT, OPERATIONS_MANUAL), CHANGELOG, the original manuscript copy, superseded instruments (03-03d, 04, 05, 06, 08, 10) and nine empty placeholder READMEs. CLAUDE.md now auto-loads ROADMAP_TO_COMPLETION.md in place of SPRINTS.md. References to removed docs in code comments are historical.
 
 ## 2026-10-28 — Manuscript Chapters 1 and 2 rewritten to the IT121 guide
 Four writing agents (Chapter 1; RRL 2.1.1-2.1.3; RRL 2.1.4-2.1.6; synthesis, gap, framework, IPO figure, terms) worked from `docs/DEFENSE.md` §3 sections A, B2, C and H; merged by script, references de-duplicated.

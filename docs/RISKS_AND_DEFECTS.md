@@ -76,7 +76,7 @@ Numbering below is the audit file's own; the old `REMAINING.md` §F numbered a f
 ### 2.B Web audit of 2026-10-09
 
 Nine read-only auditors; totals 6 P0, 92 P1, 85 P2, 36 P3 (219 reported,
-fewer distinct). Fixed in three committed waves (`06736b5`, `6b52a53`,
+fewer distinct). Fixed in three committed waves (`a8de978`, `9176842`,
 wave 3), recorded in DEVLOG 2026-10-09. The per-finding IDs (V-, X-, R-,
 S-, P-, A-, F-, N- series) live in the nine reports; the P0s and the main
 fixed groups are below. The remaining P1-P3 findings are **not itemised

@@ -255,7 +255,7 @@ The retention job's purge, if run on demo data, is irreversible: use `php backen
 | G4, G5, H3.6, H3.7, H3.11 (instruments) | **Applied** 2026-10-29: agreement scale on BG-EV-02 and the four answer sheets; SUS and Q1-Q3 asked once (UAT Part D), questionnaire Parts 4-6 became Part 4 comments (Group D) and Part 5 technical; answer sheet D asks organization, not barangay; Kagawad dropped from BG-NQ-01; pilot 10+ and CVI rows on the validation blocks; retention placeholder on the consent text; facilitator guide 07 gained sections 10-12 (scoring and tally, SMS run sheet, CVI rating sheet) and no longer points to the deleted 06 file. Open: the G4 item review (double-barrelled items, FS-2 routing, PE-3 to PE-5 placement) is left to the content-validity panel; IT 124 vs IT121 on every footer; contact placeholder in the consent text; Filipino text of the new lines unreviewed |
 
 **Document reviewed:** `docs/Baranguard_Capstone_Manuscript.html` (revised 2026-10-17, about 24,000 words, Chapters 1-4, References, Appendices A-B).
-**Reviewed on:** 2026-10-28, against the code as of commit `8c4ed06`, and with every scholarly reference checked online.
+**Reviewed on:** 2026-10-28, against the code as of commit `ac2f96e`, and with every scholarly reference checked online.
 **Scope decision applied:** the system will not be deployed at any barangay; the study ends with ISO/IEC 25010 evaluation and UAT.
 
 Severity: **P0** = a panel can reject or seriously question the study on this; **P1** = must fix before submission; **P2** = should fix.
