@@ -249,6 +249,10 @@ The retention job's purge, if run on demo data, is irreversible: use `php backen
 | G1b-f, G4, G5 | Open |
 | G6 (version clutter) | Done: instrument files `03`-`06`, `08`, `10` were removed; only `01`, `02`, `07`, `09`, `11`, `12a-d` remain in `docs/chapter4-instruments/`. Read mentions of the removed files below as history |
 | B, C, D, E | Open until applied to the manuscript |
+| H1, H2 and A1-A12 (Chapters 1-2 and the references) | **Applied** 2026-10-28: Chapters 1-2 rewritten (see DEVLOG). Open: sample-size placeholder, Brooke pages, Molina year, Accomplishment-report citation |
+| H3, B1-B10 (Chapter 3) | **Applied** 2026-10-29: Chapter 3 rewritten (see DEVLOG). Open: sample size, ethics clearance, respondent-data retention, adviser sign-off on the added criteria |
+| D1-D4, E3, E4 (Chapter 4) and per-group instruments | **Applied** 2026-10-29: Chapter 4 revised to the current build with re-run counts (3,954 checks, 0 failed); consolidated forms replaced by per-group questionnaires `11a`-`11d` and per-role UAT forms `09a`-`09d`; sprint table without dates (see DEVLOG). Open: abstract and Chapter 5 (E1, E2), device evidence; latency re-measured 2026-10-29 (Table 4-15) |
+| G4, G5, H3.6, H3.7, H3.11 (instruments) | **Applied** 2026-10-29: agreement scale on BG-EV-02 and the four answer sheets; SUS and Q1-Q3 asked once (UAT Part D), questionnaire Parts 4-6 became Part 4 comments (Group D) and Part 5 technical; answer sheet D asks organization, not barangay; Kagawad dropped from BG-NQ-01; pilot 10+ and CVI rows on the validation blocks; retention placeholder on the consent text; facilitator guide 07 gained sections 10-12 (scoring and tally, SMS run sheet, CVI rating sheet) and no longer points to the deleted 06 file. Open: the G4 item review (double-barrelled items, FS-2 routing, PE-3 to PE-5 placement) is left to the content-validity panel; IT 124 vs IT121 on every footer; contact placeholder in the consent text; Filipino text of the new lines unreviewed |
 
 **Document reviewed:** `docs/Baranguard_Capstone_Manuscript.html` (revised 2026-10-17, about 24,000 words, Chapters 1-4, References, Appendices A-B).
 **Reviewed on:** 2026-10-28, against the code as of commit `8c4ed06`, and with every scholarly reference checked online.
@@ -453,6 +457,89 @@ The folder holds three generations of the same forms: `03`-`03d` (BG-EV-01), `05
 3. Fix the scale and item problems (G4).
 4. Fill the consent placeholders, run the 2-person pilot, collect validation signatures (G5).
 5. ~~Archive old versions (G6)~~ done.
+
+---
+
+### H. Chapters 1-3 against the IT121 writing guide (2026-10-28)
+
+Checked against the course's IT121 Capstone Project Writing Guide, with claims verified online. Adds to A-G above; it does not repeat them. Line numbers refer to `Baranguard_Capstone_Manuscript.html`.
+
+#### H1. Chapter 1
+
+| # | Sev | Problem | Fix |
+|---|---|---|---|
+| H1.1 | **P0** | 1.4 says "development **and deployment**" and "Deployment and testing are bounded to" the four barangays (B2). | "covers the development and evaluation of ... evaluated with personnel of the four barangays in a controlled pilot; the system is not deployed for live operations." |
+| H1.2 | **P1** | 1.1 states the problem as handwritten logbooks "for their **blotter** and emergency dispatch", but Baranguard holds no blotter. The study argues a problem it chose not to solve. "A vast majority" is uncited. | Narrow the problem to dispatch, responder location and alerting during outages; blotters stay in binders and BIMS. |
+| H1.3 | **P1** | 1.1 does not end with "This study proposes...": the BIMS and RA 10173 paragraph comes after it. | Move BIMS positioning before the proposal; move the privacy-control list to 1.4. |
+| H1.4 | **P1** | The Global paragraph has no statistic, only a paywalled market report. | Use UNDRR GAR 2025, ITU Facts and Figures 2025, WorldRiskReport 2025 (Philippines ranked 1st of 193). |
+| H1.5 | **P1** | "recent typhoons and fires" and "tanods lack real-time tracking" carry no source. | Cite NDRRMC/PAGASA, MDRRMO records or dated preliminary interviews, or soften. |
+| H1.6 | **P1** | General objective is past tense ("aimed") and says only "design and develop" while objective 4 evaluates. | "This study aims to design, develop and evaluate Baranguard ..." |
+| H1.7 | **P1** | Objective 4 uses old terms ("usability, performance"); UAT is in no objective. | "To evaluate the system's product quality using ISO/IEC 25010:2023 and its acceptance through user acceptance testing with barangay personnel." |
+| H1.8 | **P1** | Scope lacks target-user numbers (sample undecided, G1a) and the technology stack. | Add n per role once decided; add PHP 8.2, MariaDB 10.4, vanilla JS web, Ionic React/Capacitor Android with SQLCipher. |
+| H1.9 | **P1** | 1.3 Future Researchers: "practical deployment ... reachable through a persistent tunnel" contradicts LAN-only in 1.4. 1.3 also says users "will benefit". | "developed with Agile Scrum and evaluated in a controlled pilot"; benefits written as potential ("would benefit if adopted"). Tunnel stated once, in Delimitations, as demo access only. |
+| H1.10 | P2 | "encryption of SMS payloads" overclaims: only the SMS to the gateway is encrypted; the backup-contact SMS is plain text with name and coordinates (`mobile/src/utils/sosFallbackSms.ts:58`, checked). | "encryption of the SOS envelope sent to the gateway phone". |
+| H1.11 | P2 | No labelled Delimitations; no time/cost constraint; residents' inbound texts and SMS broadcasts are not mentioned. | Start "This study is delimited to ..."; add time frame, one workstation, test phones; one sentence on broadcasts and inbound texts. |
+| H1.12 | P2 | 1.4.1 says "empirically most effective" (nothing measured), "Bicol-Sorsogon region", 538 words duplicating Chapter 3. Sorsogon was under Signal No. 3 for Rolly. | Delete "empirically"; "the Bicol Region, including Sorsogon"; cut to about 250 words. |
+| H1.13 | P2 | "primary planning and implementing unit" uncited; "eGMP 2022-2025" title not confirmed, cited to the DICT home page. | Cite RA 7160 Sec. 384; cite the E-Government Masterplan 2022 PDF or the E-Governance Act (RA 12254, 2025). |
+| H1.14 | P2 | Tenses mixed: 1.2 past, 1.3 future, 1.1 and 1.4 present. | Present tense throughout, as the guide says. |
+
+Passes: 8 references in 1.1 (rule 5-10), no bullets, under 4 pages, system named, 4 objectives with action verbs, four stakeholder groups.
+
+#### H2. Chapter 2
+
+| # | Sev | Problem | Fix |
+|---|---|---|---|
+| H2.1 | **P0** | A comparable Philippine system was missed: Camoral et al. (2026), *Sagip Manileño* (WJARR 30(2), 1886-1894, doi 10.30574/wjarr.2026.30.2.1471, checked): mobile app, web dashboard, GPS tracking, SMS offline alert, ISO 25010 mean 4.62 (n=20). It undercuts the gap claim and Table 2-1. | Review it and add it as a Table 2-1 column. Narrow the gap to what is new: barangay tanod context, idempotent offline sync of field records, LAN-hosted command centre, records custody beside BIMS, rostering and accomplishment reports. |
+| H2.2 | **P1** | Numbering differs from the guide (2.1 RRL, 2.2 Gap, 2.3 Concept, 2.4 Terms); Endsley sits in an extra 2.3. | 2.3 Theoretical and Conceptual Framework (2.3.1 Endsley for design, SUS/TAM for evaluation; 2.3.2 IPO); 2.4 Definition of Terms. Cite (Endsley, 1995) in the text, not only the figure note. |
+| H2.3 | **P1** | RRL is about 3 pages, not about 12. Three sub-sections of about 1 page; 2.1.3 reviews 2 studies; several studies have no relevance sentence; no final synthesis. | Six topics (below), each with intro, 3-5 studies as Author-Year / finding / relevance, and a synthesis; then a half-page RRL synthesis. |
+| H2.4 | **P1** | About 10 scholarly references, below the 15-20 minimum; a blog and grey reports carry arguments; A1-A3 still wrong. Search window says 2020-2026. | Add the verified sources below; drop the New Light Technologies blog; window "2016-2026, plus classic definitional sources". |
+| H2.5 | **P1** | IPO does not trace to the objectives; objective 4 (evaluation) is absent; title generic; "real-time". | Tag items O1-O4; add evaluation to Input (respondents, instruments), Process (weighted mean, UAT, SUS) and Output (quality ratings); title "Input-Process-Output Model of the Baranguard System"; "near-real-time". |
+| H2.6 | **P1** | Definition of Terms: 19 terms (guide 10-15); no conceptual definition is cited; 7 have only operational meanings; ISO 25010 called "the formal evaluation instrument"; "deployment sites". | 15 terms, each cited conceptual + operational. Drop/move Agile Scrum, Baranguard, Intelligence, Local-server deployment; fold Dispatch offer, Roster, Paper-first signing, Chief Tanod into parent terms; add Heatmap, Situational awareness, SUS, UAT; "personal information" (RA 10173) instead of PII; "evaluation sites". |
+| H2.7 | P2 | Gap paragraph claims results ("is operationally resilient", "maintains a vital lifeline") and "deployments". | "is designed to"; two tight paragraphs opening "Despite numerous studies on ...". |
+
+**Proposed RRL outline:** 2.1.1 Barangay information systems and tanod operations · 2.1.2 Dispatch, responder tracking and GIS hotspots (O1) · 2.1.3 Offline-first capture and sync (O2) · 2.1.4 SMS and resilient emergency communication (O3) · 2.1.5 Data privacy and records custody · 2.1.6 Software quality and usability evaluation (O4) · 2.1.7 Synthesis.
+
+**Verified new sources** (opened at the publisher, Crossref or arXiv by the review agent; Camoral checked again directly):
+- Kleppmann et al. (2019), Local-first software, Onward! 2019, 154-178, https://doi.org/10.1145/3359591.3359737 (2.1.3)
+- Brunette et al. (2017), Open Data Kit 2.0, MobiSys '17, 440-452, https://doi.org/10.1145/3081333.3081365 (2.1.3)
+- Kenny et al. (2020), offline mHealth data capture in rural Liberia, BMC Med Inform Decis Mak 20(1) 39, https://doi.org/10.1186/s12911-020-1059-6 (2.1.3)
+- Hugelius et al. (2016), disaster radio after Haiyan, Disaster Med Public Health Prep 10(4) 591-597, https://doi.org/10.1017/dmp.2015.188 (2.1.4)
+- Yoo et al. (2021), SMS-based disaster alert systems, Information & Management 58(4) 103454, https://doi.org/10.1016/j.im.2021.103454 (2.1.4)
+- Camoral et al. (2026), Sagip Manileño, https://doi.org/10.30574/wjarr.2026.30.2.1471 (2.1.4, Table 2-1)
+- Sarkisian et al. (2020), GPS-alerted volunteer first responders, Resuscitation 152 170-176, https://doi.org/10.1016/j.resuscitation.2019.12.010 (2.1.2)
+- Althumairi et al. (2021), app vs phone ambulance requests, OAEM 12 471-480, https://doi.org/10.2147/OAEM.S279969 (2.1.2; confirm year)
+- Hu et al. (2018), spatio-temporal KDE hotspots, Applied Geography 99 89-97, https://doi.org/10.1016/j.apgeog.2018.08.001 (2.1.2; say Baranguard's heatmaps are descriptive)
+- Pitogo (2019), LGU data privacy, ICEGOV 2019, 302-309, https://doi.org/10.1145/3326365.3326404 (2.1.5)
+- Ching & Celis (2018), DPA compliance of PH agencies, ICEEG 2018, 59-63, https://doi.org/10.1145/3234781.3234784 (2.1.5)
+- Molina et al. (2025), tanod effectiveness, UB Multidisciplinary Research Journal 13(2), https://doi.org/10.15631/ubmrj.v13i2.283 (2.1.1; low-tier)
+- Lacanilao & Carpio (2025), tanods as first responders, EPRA IJMR 11(6), https://doi.org/10.36713/epra22884 (2.1.1; low-tier)
+- Lewis (2018), SUS past, present and future, IJHCI 34(7) 577-590, https://doi.org/10.1080/10447318.2018.1455307 (2.1.6)
+- Classic: Brooke (1996) SUS, https://doi.org/10.1201/9781498710411-35 (confirm page range); Bangor, Kortum & Miller (2008), IJHCI 24(6) 574-594, https://doi.org/10.1080/10447310802205776; Davis (1989), MIS Quarterly 13(3) 319-340, https://doi.org/10.2307/249008; Endsley (1995); ISO/IEC 25010:2023.
+
+#### H3. Chapter 3
+
+The guide's order is 3.1 Research Design, 3.2 Respondents, 3.3 Instrument, 3.4 Data Gathering Procedure, 3.5 Statistical Treatment, 3.6 Development Methodology, 3.7 Architecture and Tools. The manuscript has no Research Design, no Data Gathering Procedure and no Statistical Treatment section.
+
+| # | Sev | Problem | Fix |
+|---|---|---|---|
+| H3.1 | **P0** | No research design stated. | "This study employs a descriptive-developmental design: developmental because it builds and iteratively evaluates an IT artefact (Hevner et al., 2004, https://doi.org/10.2307/25148625); descriptive because it describes, without testing hypotheses, how barangay personnel and IT experts rate it in a controlled pilot." Drop the pre/post comparison in 3.2.0 (B2). |
+| H3.2 | **P0** | Respondents: no population, no sampling basis. Slovin does not fit (valid only for random samples estimating a proportion; Tejada & Punzalan, 2012, Philippine Statistician 61(1)). | Officials: total enumeration (4 PB, 4 Secretaries, 4 Chief Tanods). Tanods: purposive with stated criteria, 3 per barangay (option 27) or 10 per barangay / all if 10 or fewer (option 57). IT experts: 3 or 5 with stated criteria. State each barangay's tanod count from its roster. |
+| H3.3 | **P0** | No Data Gathering Procedure. | Steps: instrument approval and content validation, pilot and alpha, ethics clearance, letters to each Punong Barangay, scheduling and demo-database preparation, orientation and consent with code slips, UAT session (facilitator times tasks, counts errors), SUS, ISO questionnaire, completeness check and encoding within 24 h, defect log and confirmation round, technical tests on a disposable DB, analysis and secure storage. |
+| H3.4 | **P0** | No Statistical Treatment section. | Frequency and % (profile); weighted mean x̄ = Σfx/n with n excluding N/A, plus SD, per group with n; SUS mean and SD, phone and web separately; task completion rate, median time on task, mean errors; Clopper-Pearson exact 95% CI for the SMS test (19/20 = 75.1-99.9%); p50/p95 latency; interpretation table. Move 3.3.4 acceptance criteria here, with "≥ 4.21 per group". |
+| H3.5 | **P1** | N defined two ways: "total number of respondents" (line 475) vs "number who rated" (line 1064). | Use "number who rated the item; N/A excluded" everywhere. |
+| H3.6 | **P1** | Three label sets: guide (Strongly Agree ... Strongly Disagree), Table 3-8 (Excellent ... Poor), forms (Excellent / Very good / Okay / Fair / Poor). Items are agreement statements (G4). | Use the guide's agreement labels and bands on the form, Table 3-8 and Table 4-20; keep SUS on its own scale. |
+| H3.7 | **P1** | Instrument validity: no CVI or alpha procedure; no demographic Part 1 described; SUS not described. | I-CVI ≥ 0.83 with 6-10 experts, or 1.00 with 3-5 (Yusoff, 2019, https://doi.org/10.21315/eimj2019.11.2.6); Cronbach's alpha from a pilot of 10+ (Tavakol & Dennick, 2011, https://doi.org/10.5116/ijme.4dfb.8dfd); SUS scoring per Brooke (1996) and interpretation per Bangor et al.; ask SUS once only. |
+| H3.8 | **P0** | Past tense for work not done (B1): lines 368, 370, 375 ("re-measured after the deployment period"), 395, 419, 423, 427, 431, 448, 467, 469, 471, 516 ("Written consent was obtained from all 27"), 520, 1034. | Future or present tense until done, then past tense with the date. |
+| H3.9 | **P0** | "Deployment" wording (B2): lines 269, 293, 297, 339 and Table 3-2, 368, 469, 502 ("ready for deployment"), 522. | "controlled pilot", "evaluation", "met the evaluation acceptance criteria". |
+| H3.10 | **P1** | Ethics (B9, G5): no approving body and date, no interview/recording consent, consent placeholders unfilled, no code slip, no respondent-data retention, RA 10173 rights not listed, volunteer tanods not told participation is free of supervisor pressure. | Add all of these; cite RA 10173 as a statute (A11). |
+| H3.11 | **P1** | `07-facilitator-session-guide.html` lines 51 and 189 send the facilitator to `06-evaluation-and-uat-documents.html` for sampling, SUS scoring and tally sheets; that file was deleted 2026-10-28 (G6). No kept form has a scoring key or tally sheet. | Restore the scoring key and tally sheets from git into 07 (or 11) and fix both references. |
+| H3.12 | P2 | Forms say "Bicol University, IT 124"; the guide is IT121. | Confirm the course code and make all forms match. |
+
+**Proposed Chapter 3 outline:** 3.1 Research Design · 3.2 Respondents and Sampling · 3.3 Research Instruments (ISO questionnaire, UAT form, SUS, interview guide, validity and reliability) · 3.4 Data Gathering Procedure (user evaluation; technical tests and test data) · 3.5 Statistical Treatment and Acceptance Criteria · 3.6 System Development Methodology (Scrum) · 3.7 System Architecture, Tools and Hardware · 3.8 Ethical Considerations.
+
+#### H4. Could not verify
+
+NDRRMC SitRep No. 12 figures (PDF returned 403); a Bicol figure in the 2024 NICTHS; the eGMP title and years; Gasmido's own mean (A6); Perante-Calina venue (A7); Brooke's page range; Bangor 2009 adjective values (secondary tables only); the 0.70 alpha threshold source; RA 7160 §384 / §391 and RA 10173 §3 section numbers (check on lawphil); each barangay's tanod count.
 
 ---
 

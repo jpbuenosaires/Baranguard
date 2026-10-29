@@ -756,7 +756,8 @@ controls that do nothing.
   pattern, not the old `command -v`-first one.
 - **XAMPP's Apache PHP was upgraded 2026-09-26** (was 8.0.30, which
   can't load the backend's 8.1+ `readonly` properties) — `C:\xampp\php`
-  is now a copy of `C:\php-8.3.13`, and a new `Listen 8081`/
+  was made a copy of `C:\php-8.3.13` (on 2026-10-29 `C:\xampp\php\php.exe -v`
+  reported 8.2.12, so check before relying on 8.3), and a new `Listen 8081`/
   `<VirtualHost *:8081>` vhost in `httpd-vhosts.conf` (DocumentRoot
   `backend/public`) serves the API through Apache, matching
   `docs/SETUP.md` "Serving through Apache" for real. Old PHP kept at

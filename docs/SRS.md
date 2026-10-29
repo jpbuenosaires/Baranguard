@@ -5,7 +5,7 @@ Status / Last updated: 2026-10-28 (written 2026-10-23).
 
 Format follows ISO/IEC/IEEE 29148:2018 (check the edition with your adviser).
 Extracted from `REFERENCE.md`, `WORKFLOWS_AND_RULES.md` (Parts 3 and 7),
-the thesis-objective section of the former traceability matrix (now section 10.5), `backend/routes/*.php` and `chapter4-instruments/09-consolidated-uat.html`.
+the thesis-objective section of the former traceability matrix (now section 10.5), `backend/routes/*.php` and the per-role UAT forms `chapter4-instruments/09a`-`09d`.
 Nothing here is new design. Where sources disagree, `REFERENCE.md` and the later WORKFLOWS rules win
 (see section 9). Test mapping is in section 10 (Traceability).
 
@@ -228,7 +228,7 @@ Chain: requirement -> thesis objective -> screen / endpoint -> test.
 How to read it
 - Objectives: O1 GIS command center, O2 offline-first app, O3 SMS fallback for SOS, O4 ISO/IEC 25010 evaluation, S supporting (evidence and limits in section 10.5).
 - Automated tests are files under `backend/scripts/` (disposable DB, HTTP), `web/tests/pages|unit` (jsdom), `mobile/scripts/`. A suite is listed only if its header or a grep shows it exercises that route or rule; I did not re-run any suite for this matrix, so no pass counts are claimed here (counts: `REFERENCE.md` section 9, last measured 2026-10-01 to 2026-10-09).
-- UAT cases are task IDs on form BG-UAT-02 (`chapter4-instruments/09-consolidated-uat.html`): T- Tanod, C- Chief Tanod, S- Secretary, P- Punong Barangay. The form lists them as tasks, not as results; none has been run on real users yet.
+- UAT cases are task IDs on forms BG-UAT-02-T, -CT, -S, -PB (the per-role UAT forms `chapter4-instruments/09a`-`09d`): T- Tanod, C- Chief Tanod, S- Secretary, P- Punong Barangay. The form lists them as tasks, not as results; none has been run on real users yet.
 - "none yet" = no test found. "Not device-verified" = code exists, never run on a phone.
 
 ### 10.1 Functional requirements

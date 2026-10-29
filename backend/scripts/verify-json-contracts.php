@@ -179,7 +179,7 @@ if ($adminToken === null || $secretaryToken === null || $pbToken === null) {
 $incidentId = 1;
 $dispatchId = 1;
 $dispatchWithRouteId = 12;
-$mapPackageId = 1; // none seeded — exercises the 404 error-envelope path instead
+$mapPackageId = 999999; // no such package (the demo DB now has real ones) — exercises the 404 error-envelope path
 $smsPhone = '09175550101';
 
 // --- Every GET route in routes/*.php, driven by an appropriate role --------

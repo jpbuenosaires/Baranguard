@@ -506,7 +506,7 @@ stateDiagram-v2
 
 # Part 4: Scenario Walk-Throughs (for checking)
 
-Each scenario is one realistic story you can follow step by step and compare with the app. "Rules" points to Part 3, "State" to Part 2, "Evidence" to the automated suite that exercises it on a disposable database. None of these has been run in a browser or on a device by an agent (see `docs/HANDOFF.md`). Where a UAT ID is given it comes from `docs/chapter4-instruments/09-consolidated-uat.html`.
+Each scenario is one realistic story you can follow step by step and compare with the app. "Rules" points to Part 3, "State" to Part 2, "Evidence" to the automated suite that exercises it on a disposable database. None of these has been run in a browser or on a device by an agent (see `docs/HANDOFF.md`). Where a UAT ID is given it comes from the per-role UAT forms `docs/chapter4-instruments/09a`-`09d`.
 
 | # | Scenario | Roles |
 |---|---|---|

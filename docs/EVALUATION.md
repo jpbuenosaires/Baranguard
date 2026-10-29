@@ -109,8 +109,8 @@ Database `baranguard_uiseed` (Barangay Dao only, **simulated data**; the project
 (`backend\scripts\reset-ch4.ps1 -Profile uat -PointAppTo uat`). Ground truth for each build:
 `backend/storage/uat-seed-manifest.json` (key `uat_fixtures`). It never touches the real `baranguard`.
 
-Source of the scenarios: `docs/chapter4-instruments/09-consolidated-uat.html` (form BG-UAT-02).
-The ISO/IEC 25010 answer sheets (12a-d) rate the system after a short facilitator-guided task set on the
+Source of the scenarios: the per-role UAT forms `docs/chapter4-instruments/09a`-`09d` (forms BG-UAT-02-T, -CT, -S, -PB).
+The per-group ISO/IEC 25010 questionnaires (`11a`-`11d`, forms BG-EV-02-A to -D) rate the system after a short facilitator-guided task set on the
 same setup and need no data of their own.
 
 ### How to run a session

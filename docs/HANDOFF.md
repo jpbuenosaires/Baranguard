@@ -124,7 +124,7 @@ Exit: every item has a dated result; failures become Phase 2 tasks.
 
 ### Phase 2 - Fix what Phase 1 finds (1-2 weeks, AGENT)
 
-Always: SOS replay then 500 (replay row inserted before device lookup); four
+Always (SOS replay-then-500 and the STOP confirmation reply fixed 2026-10-29): four
 open mobile P1s (SOS enqueue ordering, enqueue-before-send, patrol-service,
 offline-clear); retry a failed acknowledge on critical alerts; the
 order-sensitive web map test; make `verify-sprint1-remaining.sh` and
@@ -137,8 +137,8 @@ of a dispatch (new state, L); a notification list screen; TalkBack labels,
 contrast and font-size cleanup.
 
 Skipped on purpose (state as limitations): Keystore-encrypted login token,
-Do-Not-Disturb bypass, phone-built SMS for incident and position, STOP
-confirmation reply, phone-number masking.
+Do-Not-Disturb bypass, phone-built SMS for incident and position,
+phone-number masking.
 
 ### Phase 3 - UAT (2-3 weeks)
 
