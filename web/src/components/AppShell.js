@@ -334,7 +334,7 @@ const NAV_ITEMS = [
 
   { key: 'dispatch', label: 'Dispatch Center', roles: ['admin', 'secretary'], icon: icons.radio, countKey: 'pendingIncidents', group: 'Operations' },
   { key: 'incident-management', label: 'Incident Management', roles: ['admin', 'secretary'], icon: icons.alertTriangle, group: 'Operations' },
-  { key: 'gis', label: 'Live Map', roles: ['admin', 'punong_barangay'], icon: icons.map, group: 'Operations' },
+  { key: 'gis', label: 'Live Map', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.map, group: 'Operations' },
 
   // There is no browsable incident-records list: DILG BIMSS's KPIS module
   // is the mandated case ledger (REFERENCE.md §1). The per-incident detail

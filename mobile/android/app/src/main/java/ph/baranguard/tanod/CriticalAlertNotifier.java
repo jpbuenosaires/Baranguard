@@ -62,13 +62,13 @@ final class CriticalAlertNotifier {
         return "BARANGUARD ALERT";
     }
 
-    static final String GENERIC_BODY = "Unlock your phone and open Baranguard to see the details.";
+    static final String GENERIC_BODY = "Open Baranguard to see the details.";
 
     private CriticalAlertNotifier() {}
 
     /**
      * C4 (2026-09-19 device session): the system heads-up notification
-     * stayed posted after the in-app "ACKNOWLEDGE ALERT" dismissed only
+     * stayed posted after the in-app "Acknowledge" dismissed only
      * the overlay — `setAutoCancel(true)` above only clears it on a TAP,
      * not on an in-app acknowledge. Called from
      * `FullScreenAlertPlugin.dismiss()`, itself called by

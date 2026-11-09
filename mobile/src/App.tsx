@@ -32,7 +32,7 @@ import {
   personOutline,
 } from 'ionicons/icons';
 import CriticalAlertOverlay from './components/CriticalAlertOverlay';
-import SosHoldButton from './components/SosHoldButton';
+import { SosInHeaderContext } from './components/sosHeaderContext';
 const AccomplishmentsPage = lazy(() => import('./pages/accomplishments'));
 const AssignmentDetailPage = lazy(() => import('./pages/assignment-detail'));
 const AssignmentsPage = lazy(() => import('./pages/assignments'));
@@ -55,6 +55,7 @@ const SchoolCheckinPage = lazy(() => import('./pages/school-checkin'));
 import { getSessionRole, type AppRole } from './services/role';
 import { hasStoredSession, onSessionExpired } from './services/session';
 import { registerCriticalAlertListeners, checkForPendingNativeAlert } from './services/criticalAlertStore';
+import { startPendingAckRetry } from './services/alertAckRetry';
 import { startSyncScheduler } from './services/syncScheduler';
 import { useDispatchOffers } from './services/useDispatchOffers';
 import { useActiveSosCount } from './services/adminSosCount';
@@ -254,7 +255,7 @@ const TabbedShell: React.FC = () => {
 
   return (
     <>
-    {!isHome && <SosHoldButton raised={isAssignmentDetail || isNewIncident} />}
+    <SosInHeaderContext.Provider value={true}>
     <IonTabs>
       <IonRouterOutlet>
         <Route path="home" element={<HomePage />} />
@@ -351,6 +352,7 @@ const TabbedShell: React.FC = () => {
         </IonTabButton>
       </IonTabBar>
     </IonTabs>
+    </SosInHeaderContext.Provider>
     </>
   );
 };
@@ -538,6 +540,7 @@ const App: React.FC = () => {
   useEffect(() => {
     registerCriticalAlertListeners();
     void checkForPendingNativeAlert();
+    startPendingAckRetry();
     startSyncScheduler();
     startSosFallbackContactResumeRefresh();
     startSchoolCacheResumeRefresh();

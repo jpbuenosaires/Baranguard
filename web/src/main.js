@@ -45,7 +45,7 @@ const PAGE_ROLES = {
   dashboard: ['admin', 'punong_barangay'],
   dispatch: ['admin', 'secretary'],
   'incident-management': ['admin', 'secretary'],
-  gis: ['admin', 'punong_barangay'],
+  gis: ['admin', 'secretary', 'punong_barangay'], // Secretary = back-up dispatcher (2026-11-08): read-only map, no Call button
   // 2026-09-05 merge of W9 Statistical Reports + W5 Historical Heatmap
   // into one tabbed screen — see pages/analytics.js. Same role pair both
   // already had, so (unlike `personnel` below) no per-tab role gating.

@@ -370,7 +370,7 @@ const AccomplishmentsPage: React.FC = () => {
 
   return (
     <IonPage>
-      <MobileHeader title="My Accomplishments" showBack defaultBackHref="/tabs/profile" />
+      <MobileHeader title="My accomplishments" showBack defaultBackHref="/tabs/profile" />
       <IonContent className="content-bg">
         <IonRefresher slot="fixed" onIonRefresh={(e) => void pullRefresh(() => e.detail.complete())}>
           <IonRefresherContent />
@@ -408,7 +408,7 @@ const AccomplishmentsPage: React.FC = () => {
               {pill ? (
                 <span className={`status-pill ${pill.className}`}>{pill.label}</span>
               ) : (
-                <span className="status-pill status-pill--neutral">
+                <span className="status-pill status-pill--neutral wf-pill--sentence">
                   {statusFresh ? 'Not submitted yet' : 'Status unavailable offline'}
                 </span>
               )}

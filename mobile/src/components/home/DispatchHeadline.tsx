@@ -4,6 +4,9 @@ import { alertCircleOutline, arrowForwardOutline, shieldCheckmarkOutline } from 
 import { Chip } from '../ui';
 import tacticalFeedback from '../../utils/tacticalFeedback';
 import type { DispatchLocalRow } from '../../services/db/localSchema';
+import { incidentTypeLabel } from '../../utils/dispatchOfferFormat';
+import { formatIncidentCode } from '../../utils/incidentCode';
+import { priorityChip } from '../../utils/navScene';
 
 interface Props {
   topDispatch: DispatchLocalRow | null;
@@ -42,13 +45,18 @@ const DispatchHeadline: React.FC<Props> = ({ topDispatch, activeDispatchCount })
           Active call #{topDispatch.server_dispatch_id ?? topDispatch.local_id.slice(0, 6)}
         </span>
         <Chip tone={topDispatch.priority === 'critical' ? 'critical' : topDispatch.priority === 'high' ? 'warning' : 'info'}>
-          {topDispatch.priority.toUpperCase()} priority
+          {priorityChip(topDispatch.priority).label} priority
         </Chip>
       </div>
 
       <h2 className="console-mission-title">
-        {topDispatch.redacted_incident_type ? topDispatch.redacted_incident_type.replace(/_/g, ' ') : 'INCIDENT REPORT'}
+        {topDispatch.redacted_incident_type ? incidentTypeLabel(topDispatch.redacted_incident_type) : 'Incident report'}
       </h2>
+
+      {(() => {
+        const code = formatIncidentCode({ displayId: topDispatch.incident_display_id, serverIncidentId: topDispatch.server_incident_id });
+        return code ? <p className="console-mission-desc">{code}</p> : null;
+      })()}
 
       {activeDispatchCount > 1 && (
         <p className="console-mission-desc">1 of {activeDispatchCount} active calls assigned to you.</p>

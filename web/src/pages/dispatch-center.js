@@ -25,7 +25,7 @@
  */
 
 import {
-  getIncidents, getDispatches, getDutyStatus, getUsers, getTanodDirectory, getGpsLive, getTanodSos,
+  getIncidents, getDispatches, getDutyStatus, getUsers, getTanodDirectory, getGpsLive, openGpsStream, mergeGpsFixes, getTanodSos,
   cancelDispatch, acknowledgeTanodSos, resolveTanodSos, logout, ApiClientError,
 } from '../api/apiClient.js';
 import { getDispatchOffers, openDispatchOffer, cancelDispatchOffer } from '../services/shellWorkflowApi.js';
@@ -166,7 +166,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   const bName = user.barangayName ? `Brgy. ${user.barangayName}, ` : '';
   const pageHeader = PageHeader({
     title: 'Dispatch Center',
-    subtitle: `${bName}Pilar, Sorsogon Emergency Operations`,
+    subtitle: `${bName}Pilar, Sorsogon Emergency Operations${user.role === 'secretary' ? ' · Back-up dispatcher' : ''}`,
     icon: icons.radio,
   });
   header.appendChild(pageHeader.el);
@@ -197,6 +197,8 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   let activeDrawerIncidentId = null;
   let isLegendCollapsed = false;
   let pollTimer = null;
+  let stream = null;
+  let streamOpen = false;
   let staleBannerEl = null;
   let staleBannerTextEl = null;
   let livePillEl = null;
@@ -217,7 +219,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   // The Secretary is the back-up dispatcher (2026-10-17): same board, same dispatch and resolve rights.
   const isAdmin = user.role === 'admin' || user.role === 'secretary';
 
-  const POLL_INTERVAL_MS = 15000;
+  const POLL_INTERVAL_MS = 5000; // 2026-11-06: was 15000
 
   // Read-only route display (2026-09-13) — which dispatch's route, if
   // any, is currently drawn on the map. Survives updateQueueView()'s
@@ -248,7 +250,11 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
 
   const onQueueChanged = () => { load(false); shell.refreshNavCounts?.(); };
 
+  const liveLabel = () => (streamOpen ? 'Live · pushed' : 'Live · 5s sync');
+  let isStale = false;
+
   function setStale(on) {
+    isStale = on;
     if (staleBannerEl) {
       staleBannerEl.hidden = !on;
       if (on) {
@@ -258,7 +264,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     }
     if (livePillEl) {
       livePillEl.classList.toggle('is-stale', on);
-      livePillTextEl.textContent = on ? 'Updates paused' : 'Live · 15s sync';
+      livePillTextEl.textContent = on ? 'Updates paused' : liveLabel();
     }
   }
   // Hints only: the poll result remains the source of truth.
@@ -297,6 +303,8 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
     sosToneTimer = null;
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = null;
+    if (stream) stream.close();
+    stream = null;
     if (liveElapsedTimer) clearInterval(liveElapsedTimer);
     liveElapsedTimer = null;
     if (liveMap) liveMap.destroy();
@@ -373,13 +381,15 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         eligibleTanods,
         openSos: openSos.map((s) => ({ ...s, fullName: tanodNames.get(s.userId), contactNumber: tanodContacts.get(s.userId) })),
         // Map pins match the header counts: Online (on duty) + Dispatched (responding); off-duty tanods are not shown.
-        gpsItems: gpsItems.filter((g) => onDutyUserIds.has(g.userId) || respondingUserIds.has(g.userId)),
+        gpsItems: mergeGpsFixes(latestData?.gpsItems || [], gpsItems.filter((g) => onDutyUserIds.has(g.userId) || respondingUserIds.has(g.userId)), false),
+        liveUserIds: new Set([...onDutyUserIds, ...respondingUserIds]),
         tanodNames,
       };
 
       renderPopulated(body, latestData);
       lastGoodAt = new Date();
       setStale(false);
+      if (!stream) startStream();
     } catch (err) {
       if (layoutEl) {
         // Keep the last good data on screen but never pretend it is live.
@@ -390,6 +400,76 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const message = err instanceof ApiClientError ? err.message : 'Something went wrong loading the Dispatch Center.';
       renderError(body, message, () => load(true));
     }
+  }
+
+  function startStream() {
+    const onItems = (items) => {
+      if (!latestData || !liveMap) return;
+      latestData.gpsItems = mergeGpsFixes(latestData.gpsItems, items.filter((g) => latestData.liveUserIds.has(g.userId)), true);
+      drawTanodPins(latestData);
+    };
+    stream = openGpsStream(user.barangayId, {
+      onSnapshot: onItems,
+      onPosition: onItems,
+      onState: (state) => {
+        streamOpen = state === 'open';
+        if (livePillEl) setStale(isStale);
+      },
+    });
+  }
+
+  /** Tanod pins and their lines to assigned incidents; shared by the poll render and pushed positions. */
+  function drawTanodPins({ activeDispatches, openSos, gpsItems }) {
+    // Build lookup of which Tanods are currently dispatched to which incident
+    const dispatchByTanodId = new Map();
+    for (const group of activeDispatches) {
+      for (const d of group.dispatches || []) {
+        if (d.tanodId) {
+          dispatchByTanodId.set(d.tanodId, {
+            incidentId: group.incidentId,
+            incidentCode: formatIncidentCode(group),
+            incidentLat: group.latitude,
+            incidentLng: group.longitude,
+          });
+        }
+      }
+    }
+
+    // Update LiveMap Tanod Pins with real Available vs Dispatched status + rich popup metadata
+    liveMap.setMarkers(gpsItems.map((g) => {
+      const activeDisp = dispatchByTanodId.get(g.userId);
+      const hasActiveSos = openSos.some((s) => s.userId === g.userId && s.status !== 'resolved');
+      return {
+        userId: g.userId,
+        fullName: g.fullName,
+        latitude: g.latitude,
+        longitude: g.longitude,
+        ageSeconds: g.ageSeconds,
+        isStale: g.isStale,
+        status: activeDisp ? 'dispatched' : 'available',
+        isDispatched: Boolean(activeDisp),
+        hasActiveSos,
+        incidentId: activeDisp?.incidentId || null,
+        incidentCode: activeDisp?.incidentCode || null,
+        onViewIncident: (incId) => navigate('incident-detail', incId),
+      };
+    }));
+
+    // Draw dashed tactical connection lines between Dispatched Tanods and their assigned Incident pins
+    const dispatchLinks = [];
+    for (const g of gpsItems) {
+      const activeDisp = dispatchByTanodId.get(g.userId);
+      if (activeDisp && g.latitude != null && g.longitude != null && activeDisp.incidentLat != null && activeDisp.incidentLng != null) {
+        dispatchLinks.push({
+          fromLng: g.longitude,
+          fromLat: g.latitude,
+          toLng: activeDisp.incidentLng,
+          toLat: activeDisp.incidentLat,
+        });
+      }
+    }
+    liveMap.setDispatchLinks(dispatchLinks);
+    return dispatchByTanodId;
   }
 
   function renderPopulated(container, data) {
@@ -554,7 +634,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       mapMetaRow.className = 'dispatch-map-header__meta';
       const livePill = document.createElement('span');
       livePill.className = 'dispatch-map-live-pill';
-      livePill.innerHTML = `<span class="dispatch-map-live-dot" aria-hidden="true"></span><span>Live · 15s sync</span>`;
+      livePill.innerHTML = `<span class="dispatch-map-live-dot" aria-hidden="true"></span><span>${liveLabel()}</span>`;
       livePillEl = livePill;
       livePillTextEl = livePill.lastElementChild;
       mapSummaryPillEl = document.createElement('span');
@@ -823,40 +903,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       </div>
     `;
 
-    // Build lookup of which Tanods are currently dispatched to which incident
-    const dispatchByTanodId = new Map();
-    for (const group of activeDispatches) {
-      for (const d of group.dispatches || []) {
-        if (d.tanodId) {
-          dispatchByTanodId.set(d.tanodId, {
-            incidentId: group.incidentId,
-            incidentCode: formatIncidentCode(group),
-            incidentLat: group.latitude,
-            incidentLng: group.longitude,
-          });
-        }
-      }
-    }
-
-    // Update LiveMap Tanod Pins with real Available vs Dispatched status + rich popup metadata
-    liveMap.setMarkers(gpsItems.map((g) => {
-      const activeDisp = dispatchByTanodId.get(g.userId);
-      const hasActiveSos = openSos.some((s) => s.userId === g.userId && s.status !== 'resolved');
-      return {
-        userId: g.userId,
-        fullName: g.fullName,
-        latitude: g.latitude,
-        longitude: g.longitude,
-        ageSeconds: g.ageSeconds,
-        isStale: g.isStale,
-        status: activeDisp ? 'dispatched' : 'available',
-        isDispatched: Boolean(activeDisp),
-        hasActiveSos,
-        incidentId: activeDisp?.incidentId || null,
-        incidentCode: activeDisp?.incidentCode || null,
-        onViewIncident: (incId) => navigate('incident-detail', incId),
-      };
-    }));
+    const dispatchByTanodId = drawTanodPins(data);
 
     liveMap.setSosMarkers(
       openSos.map((s) => ({
@@ -921,21 +968,6 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       },
       (incidentId) => navigate('incident-detail', incidentId)
     );
-
-    // Draw dashed tactical connection lines between Dispatched Tanods and their assigned Incident pins
-    const dispatchLinks = [];
-    for (const g of gpsItems) {
-      const activeDisp = dispatchByTanodId.get(g.userId);
-      if (activeDisp && g.latitude != null && g.longitude != null && activeDisp.incidentLat != null && activeDisp.incidentLng != null) {
-        dispatchLinks.push({
-          fromLng: g.longitude,
-          fromLat: g.latitude,
-          toLng: activeDisp.incidentLng,
-          toLat: activeDisp.incidentLat,
-        });
-      }
-    }
-    liveMap.setDispatchLinks(dispatchLinks);
 
     // Update Map Header Summary Pill & Interactive Legend Counts
     const availMapCount = gpsItems.filter((g) => !dispatchByTanodId.has(g.userId) && g.latitude != null && g.longitude != null).length;

@@ -80,6 +80,7 @@ mysql_exec() {
 cleanup() {
   step "Cleanup"
   [ -n "${SERVER_PID:-}" ] && { kill "$SERVER_PID" 2>/dev/null; taskkill //F //PID "$SERVER_PID" 2>/dev/null; }
+  . "$(dirname "$0")/lib/stop-php-server.sh" && stop_php_server "${API_PORT}"
   for pid in $(netstat -ano 2>/dev/null | grep "127.0.0.1:${API_PORT} " | grep LISTENING | awk '{print $NF}' | sort -u); do
     taskkill //F //PID "$pid" 2>/dev/null
   done
@@ -132,6 +133,9 @@ export DEVICE_SECRET_MASTER_KEY="$("$PHP_BIN" -r 'echo bin2hex(random_bytes(32))
 # service account in backend/.env and genuinely exercises the not-configured
 # path regardless of what credentials this machine has. SEMAPHORE_API_KEY unset.
 export FCM_SERVICE_ACCOUNT_PATH=''
+# Same for the SMS gateway: a real .env switches it on, and then this suite would drive the REAL
+# gateway phone (adb) instead of exercising the not-configured path it asserts below.
+export GSM_GATEWAY_ENABLED=''
 "$PHP_BIN" -S "127.0.0.1:${API_PORT}" "$BACKEND_DIR/public/dev-router.php" >"$BACKEND_DIR/scripts/.s4p23chk-server.log" 2>&1 &
 SERVER_PID=$!
 sleep 2
@@ -181,11 +185,11 @@ expect_eq "$KEY1B" "" "Re-registration does NOT re-return message_encryption_key
 SECRETREF1B=$(db_one "SELECT device_secret_ref FROM mobile_device WHERE device_id='$DEV1';")
 expect_eq "$SECRETREF1B" "$SECRETREF1" "Re-registration keeps the EXACT SAME wrapped secret (verified in DB, not just the response)"
 
-step "3. GET /system/health reports fcm/sms_gsm_gateway as not_configured, gsm_ingestion as configured (neutral, never healthy without a probe)"
+step "3. GET /system/health reports fcm/sms_gsm_gateway as not_configured; gsm_ingestion is a live heartbeat check (healthy or unhealthy, never a bare 'configured')"
 HEALTH=$(body_of GET /system/health "$ADMIN")
 expect_contains "$HEALTH" '"fcm":"not_configured"' "fcm: not_configured (no service account on this machine)"
 expect_contains "$HEALTH" '"sms_gsm_gateway":"not_configured"' "sms_gsm_gateway: not_configured (GSM_GATEWAY_ENABLED unset on this test run)"
-expect_contains "$HEALTH" '"gsm_ingestion":"configured"' "gsm_ingestion: configured, not healthy (INTERNAL_SERVICE_TOKEN is set; no liveness probe exists)"
+case "$HEALTH" in *'"gsm_ingestion":"healthy"'*|*'"gsm_ingestion":"unhealthy"'*) pass "gsm_ingestion: healthy or unhealthy from the daemon heartbeat (token is set; depends on whether the ingest daemon is running on this machine)";; *) fail "gsm_ingestion should be a heartbeat result, got: $HEALTH";; esac
 
 # ---------------------------------------------------------------------------
 step "4. Rule 12 ladder — target WITH a device: 2 FCM attempts then SMS, all recorded"

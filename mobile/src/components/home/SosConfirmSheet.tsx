@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { IonIcon, IonModal, IonSpinner } from '@ionic/react';
+import { IonIcon, IonModal, IonSpinner, IonToggle } from '@ionic/react';
 import { checkmarkCircleOutline, cloudOfflineOutline, radioOutline, warningOutline } from 'ionicons/icons';
 import { isSosSilent, setSosSilent } from '../../utils/tacticalFeedback';
 import { shouldDismissOnDrag, sosResultHeadline, type SosResult } from '../../utils/sosSheet';
@@ -83,21 +83,18 @@ const SosConfirmSheet: React.FC<Props> = ({ isOpen, raisingSos, result, error, o
               <IonIcon icon={warningOutline} />
             </div>
             <h2 className="sos-sheet__title">Send SOS to HQ and nearby tanods?</h2>
-            <p className="sos-sheet__desc">
-              Your location goes to Barangay HQ and the tanods near you. If there is no signal, the SOS is saved on this
-              phone and sent when you are online.
-            </p>
-            <label className="sos-sheet__silent">
-              <input
-                type="checkbox"
-                checked={silent}
-                onChange={(e) => {
-                  setSilent(e.target.checked);
-                  setSosSilent(e.target.checked);
-                }}
-              />
-              <span>Silent SOS (vibrate only, no siren)</span>
-            </label>
+            <p className="sos-sheet__desc">Sends your location to HQ and nearby tanods. Saved and sent later if there is no signal.</p>
+            <IonToggle
+              className="sos-sheet__silent"
+              justify="space-between"
+              checked={silent}
+              onIonChange={(e) => {
+                setSilent(e.detail.checked);
+                setSosSilent(e.detail.checked);
+              }}
+            >
+              Silent SOS (vibrate only, no siren)
+            </IonToggle>
           </>
         )}
 

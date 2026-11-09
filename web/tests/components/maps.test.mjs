@@ -51,7 +51,10 @@ describe('LiveMap', () => {
     live.setMarkers([{ userId: 4, fullName: 'Jose', latitude: 12.918, longitude: 123.667, ageSeconds: 5, isStale: false }]);
     live.setSosMarkers([{ sosId: 91, latitude: 12.918, longitude: 123.667, status: 'active' }]);
     await settle();
-    assert.equal(markerEls().filter((el) => el.className.includes('--sos')).length, 1);
+    // Seen failing once under a full parallel run (2026-10-07/28) and never reproduced
+    // since; the message lists every marker so the next failure explains itself.
+    const sos = markerEls().filter((el) => el.className.includes('--sos'));
+    assert.equal(sos.length, 1, `expected 1 SOS marker; markers: ${markerEls().map((el) => el.className).join(' | ')}`);
   });
 
   test('a boundary set before the style loads is applied once it does', async () => {

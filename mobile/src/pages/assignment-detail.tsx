@@ -28,7 +28,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { IonButton, IonContent, IonIcon, IonPage } from '@ionic/react';
+import { IonButton, IonContent, IonIcon, IonPage, IonToast } from '@ionic/react';
 import { documentTextOutline } from 'ionicons/icons';
 import { type FocusTarget, type LiveMapCanvasHandle } from '../components/LiveMapCanvas';
 import MobileHeader from '../components/MobileHeader';
@@ -63,6 +63,7 @@ import { STATUS_LABEL } from '../utils/dispatchStages';
 import { useSelfPosition } from '../utils/useSelfPosition';
 import { computeNavigationState, type NavigationState } from '../utils/routeProgress';
 import { bearingLabel, distanceMeters, formatDistance } from '../utils/geo';
+import { formatIncidentCode } from '../utils/incidentCode';
 
 
 
@@ -89,6 +90,7 @@ const AssignmentDetailPage: React.FC = () => {
   const [navState, setNavState] = useState<NavigationState | null>(null);
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
   const [copiedCoords, setCopiedCoords] = useState(false);
+  const [routeUpdatedToast, setRouteUpdatedToast] = useState(false);
   const [backupContact, setBackupContact] = useState<string | null>(null);
 
   useEffect(() => {
@@ -288,13 +290,14 @@ const AssignmentDetailPage: React.FC = () => {
       const straight = result.straightLine
         ? ` Straight-line distance: ${formatDistance(result.straightLine.distanceM)} (not a road route; time is a rough guess, about ${Math.max(1, Math.round(result.straightLine.roughDurationS / 60))} min).`
         : '';
-      setNote(
-        result.routeStatus === 'available'
-          ? 'Route updated.'
-          : result.routeStatus === 'stale'
+      // Success is a brief toast; stale/unavailable stay in the banner.
+      if (result.routeStatus === 'available') setRouteUpdatedToast(true);
+      else
+        setNote(
+          result.routeStatus === 'stale'
             ? `Routing unavailable. Showing last known road route (may be outdated).${straight}`
             : `Routing unavailable, no road route.${straight}`
-      );
+        );
     } catch (error) {
       setNote(
         error instanceof ApiError && error.isOffline
@@ -380,7 +383,7 @@ const AssignmentDetailPage: React.FC = () => {
         subtitle={
           navigationActive
             ? (row?.redacted_incident_type ? `${row.redacted_incident_type.replace(/_/g, ' ')} Guidance` : 'Tactical Guidance')
-            : 'Field Assignment Detail'
+            : (row ? formatIncidentCode({ displayId: row.incident_display_id, serverIncidentId: row.server_incident_id }) ?? undefined : undefined)
         }
         showBack
         defaultBackHref="/tabs/assignments"
@@ -400,6 +403,8 @@ const AssignmentDetailPage: React.FC = () => {
           ) : undefined
         }
       />
+
+      <IonToast isOpen={routeUpdatedToast} message="Route updated." duration={2000} position="top" onDidDismiss={() => setRouteUpdatedToast(false)} />
 
       <IonContent scrollY={!navigationActive} className="dispatch-content">
         {loading ? (

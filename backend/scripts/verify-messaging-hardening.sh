@@ -64,6 +64,7 @@ mysql_exec() {
 cleanup() {
   step "Cleanup"
   [ -n "${SERVER_PID:-}" ] && { kill "$SERVER_PID" 2>/dev/null; taskkill //F //PID "$SERVER_PID" 2>/dev/null; }
+  . "$(dirname "$0")/lib/stop-php-server.sh" && stop_php_server "${API_PORT}"
   for pid in $(netstat -ano 2>/dev/null | grep "127.0.0.1:${API_PORT} " | grep LISTENING | awk '{print $NF}' | sort -u); do
     taskkill //F //PID "$pid" 2>/dev/null
   done
@@ -130,6 +131,7 @@ api() {
     curl -s -X "$1" "${BASE_URL}${2}" -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" -H "Idempotency-Key: $key"
   fi
 }
+api_code() { curl -s -o /dev/null -w '%{http_code}' -X "$1" "${BASE_URL}${2}" -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" -H "Idempotency-Key: $(uuid)" -d "$3"; }
 unread_of() { api GET /sms/conversations | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); foreach($d["items"] as $i){ if($i["phone_number"]===$argv[1]) echo $i["unread_count"]; }' "$1"; }
 
 step "4. Inbound human text over the internal endpoint, then Conversations"
@@ -161,15 +163,24 @@ step "6. Broadcast is queued (not sent in the request), deduped, and subscribers
 mysql_exec "$VALDB" -e "INSERT INTO sms_subscriber (barangay_id, contact_number, consent_at, consent_source, created_at) VALUES (1,'09176660001',UTC_TIMESTAMP(),'staff_entry',UTC_TIMESTAMP()),(1,'09176660002',UTC_TIMESTAMP(),'staff_entry',UTC_TIMESTAMP());"
 R1=$(api POST /sms/broadcast '{"message":"Advisory: road closed.","scope":"subscribers"}')
 expect_eq "$(echo "$R1" | jget queued)" "2" "broadcast queues 2 recipients"
-expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM sms_log WHERE status='queued' AND message_body LIKE 'Advisory: road closed.%'")" "2" "2 queued sms_log rows (nothing sent inside the request)"
-expect_contains "$(mysql_exec -N -s "$VALDB" -e "SELECT message_body FROM sms_log WHERE status='queued' AND message_body LIKE 'Advisory%' LIMIT 1")" "Reply STOP to unsubscribe." "subscriber broadcast carries the opt-out line"
+expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM sms_log WHERE status='queued' AND message_body LIKE '%Advisory: road closed.%'")" "2" "2 queued sms_log rows (nothing sent inside the request)"
+expect_contains "$(mysql_exec -N -s "$VALDB" -e "SELECT message_body FROM sms_log WHERE status='queued' AND message_body LIKE '%Advisory%' LIMIT 1")" "Reply STOP to unsubscribe." "subscriber broadcast carries the opt-out line"
+expect_contains "$(mysql_exec -N -s "$VALDB" -e "SELECT message_body FROM sms_log WHERE status='queued' AND message_body LIKE '%Advisory%' LIMIT 1")" "Brgy " "subscriber broadcast names the sending barangay"
+R1B=$(api POST /sms/broadcast '{"message":"Advisory: bus stop moved to the plaza.","scope":"subscribers"}')
+expect_contains "$(mysql_exec -N -s "$VALDB" -e "SELECT message_body FROM sms_log WHERE status='queued' AND message_body LIKE '%bus stop moved%' LIMIT 1")" "Reply STOP to unsubscribe." "a text that merely contains the word stop still gets the opt-out line"
 R2=$(api POST /sms/broadcast '{"message":"Advisory: road closed.","scope":"subscribers"}')
 expect_eq "$(echo "$R2" | jget duplicate)" "1" "same body+audience under a NEW key within 10 min is confirmed as a duplicate"
-expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM sms_log WHERE message_body LIKE 'Advisory: road closed.%'")" "2" "the duplicate queued nothing more"
+expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM sms_log WHERE message_body LIKE '%Advisory: road closed.%'")" "2" "the duplicate queued nothing more"
+
+SUBS=$(api POST /sms/subscribers '{"contact_number":"0917 666-0003","consent_source":"staff_entry"}')
+expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM sms_subscriber WHERE contact_number='+639176660003'")" "1" "subscriber number is normalised to +639 form"
+expect_eq "$(api_code POST /sms/subscribers '{"contact_number":"+639176660003","consent_source":"staff_entry"}')" "409" "same number in the other spelling is a duplicate"
+expect_eq "$(api_code POST /sms/subscribers '{"contact_number":"+639176660001","consent_source":"staff_entry"}')" "409" "a stored 09 number is matched by its +63 spelling"
+expect_eq "$(api_code POST /sms/subscribers '{"contact_number":"abc","consent_source":"staff_entry"}')" "400" "a non-mobile subscriber number is refused"
 
 step "7. Notification worker drains the outbox (gateway not configured -> honest failed)"
 ( cd "$BACKEND_DIR" && "$PHP_BIN" scripts/notification-worker.php --once ) | sed 's/^/  /'
-expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM sms_log WHERE message_body LIKE 'Advisory: road closed.%' AND status='failed' AND failure_reason='GSM_GATEWAY_NOT_CONFIGURED'")" "2" "queued rows were processed by notification-worker --once"
+expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM sms_log WHERE message_body LIKE '%Advisory: road closed.%' AND status='failed' AND failure_reason='GSM_GATEWAY_NOT_CONFIGURED'")" "2" "queued rows were processed by notification-worker --once"
 
 step "8. dispatch-offers list returns server_time"
 SRV=$(api GET /dispatch-offers | jget server_time)
@@ -190,6 +201,17 @@ expect_eq "$LAST" "3" "daemon advanced past the rejected envelope to _id 3 (422 
 expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM sms_log WHERE sender_number='+639175551234' AND status='received' AND message_body='Magandang gabi po'")" "1" "daemon stored the human text"
 expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM sms_log WHERE status='rejected' AND failure_reason='ENVELOPE_REJECTED_SOS' AND message_body IS NULL AND sender_number='+639175551234'")" "1" "the dropped envelope was recorded as rejected, body not stored"
 expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM sms_log WHERE sender_number='+639175559999' AND message_body='Ikatlo'")" "1" "the message after the bad envelope was not blocked"
+
+step "10. Ingest daemon: a phone reset (inbox _id restarts below last_id) does not hide a new text"
+printf '%s
+' 'Row: 0 _id=2, address=+639175557777, date=1700000009000, body=Pagkatapos ng reset' > "$FIX"
+printf '{"last_id": 3, "last_date": 1700000002000, "fails": {}}' > "$STATE"
+( cd "$BACKEND_DIR" && "$PHP_BIN" scripts/gsm-ingest-daemon.php --once --source="$FIX" ) | sed 's/^/  /'
+expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM sms_log WHERE sender_number='+639175557777' AND message_body='Pagkatapos ng reset'")" "1" "a text with a lower _id but a newer date is still stored"
+printf '%s
+' 'Row: 0 _id=2, address=+639175557777, date=1700000001000, body=Lumang text' > "$FIX"
+( cd "$BACKEND_DIR" && "$PHP_BIN" scripts/gsm-ingest-daemon.php --once --source="$FIX" ) >/dev/null
+expect_eq "$(mysql_exec -N -s "$VALDB" -e "SELECT COUNT(*) FROM sms_log WHERE message_body='Lumang text'")" "0" "an old row (lower _id and older date) is still skipped"
 rm -f "$FIX" "$STATE"; [ -f "$STATE.msgchk.bak" ] && mv "$STATE.msgchk.bak" "$STATE"
 
 echo

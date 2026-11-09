@@ -51,11 +51,9 @@ export default function DispatchFilterBar({
           onClick={() => onFilterChange('critical')}
         >
           <span>Critical</span>
-          {counts.critical > 0 && (
-            <span className="dispatch-segment-badge dispatch-segment-badge--urgent">
-              {counts.critical}
-            </span>
-          )}
+          <span className={`dispatch-segment-badge${counts.critical > 0 ? ' dispatch-segment-badge--urgent' : ''}`}>
+            {counts.critical}
+          </span>
         </button>
 
         <button
@@ -66,9 +64,7 @@ export default function DispatchFilterBar({
           onClick={() => onFilterChange('en_route')}
         >
           <span>En Route</span>
-          {counts.en_route > 0 && (
-            <span className="dispatch-segment-badge">{counts.en_route}</span>
-          )}
+          <span className="dispatch-segment-badge">{counts.en_route}</span>
         </button>
 
         <button
@@ -79,9 +75,7 @@ export default function DispatchFilterBar({
           onClick={() => onFilterChange('assigned')}
         >
           <span>Assigned</span>
-          {counts.assigned > 0 && (
-            <span className="dispatch-segment-badge">{counts.assigned}</span>
-          )}
+          <span className="dispatch-segment-badge">{counts.assigned}</span>
         </button>
       </div>
 

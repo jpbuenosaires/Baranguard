@@ -6,7 +6,7 @@ export const DEFAULT_PEEK_PX = 76;
 export const MIN_PEEK_PX = 52;
 export const SELECTED_DRAWER_PX = 215;
 export const DRAWER_EXPANDED_VH = 0.65;
-/** Bottom edge of the filter rail (top 52px, about 58px tall) plus a gap. */
+/** Bottom edge of the top-left rail + GPS chip (wrapped under the rail on a 360dp phone) plus a gap. */
 export const RAIL_CLEARANCE_PX = 120;
 export const STATUS_LINE_HEIGHT_PX = 48;
 const GAP_PX = 8;

@@ -14,7 +14,7 @@ import {
 } from 'ionicons/icons';
 import type { NearbyIncident, NearbyTanod } from '../../services/apiService';
 import type { DevicePosition } from '../../services/geolocation';
-import { bearingLabel, distanceMeters, formatDistance, formatRelativeAge } from '../../utils/geo';
+import { bearingLabel, distanceMeters, formatDistanceDirection, formatRelativeAge } from '../../utils/geo';
 import tacticalFeedback from '../../utils/tacticalFeedback';
 import type { DrawerMode, QuickFilterTab, SelectedItem } from '../../utils/mapFilters';
 import { Chip } from '../ui';
@@ -125,7 +125,7 @@ const MapDrawer: React.FC<Props> = (p) => {
 
   const distanceText = (lat: number, lng: number): string | null =>
     position
-      ? `${formatDistance(distanceMeters(position.latitude, position.longitude, lat, lng))} · ${bearingLabel(position.latitude, position.longitude, lat, lng)}`
+      ? formatDistanceDirection(distanceMeters(position.latitude, position.longitude, lat, lng), bearingLabel(position.latitude, position.longitude, lat, lng))
       : null;
 
   const clearFilters = () => {

@@ -11,7 +11,7 @@ const base = {
   priority: 'high',
   statusLabel: 'En Route',
   locationLine: 'Purok 2',
-  telemetry: '300 m away, bearing N',
+  telemetry: '300 m away, north',
   age: '5 min ago',
   synced: true,
   serverDispatchId: 12,

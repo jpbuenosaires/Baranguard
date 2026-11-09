@@ -18,7 +18,7 @@
   align-items: center;
 }
 .intake-loc-icon { color: var(--color-primary); font-size: 1.2rem; flex-shrink: 0; }
-.intake-pill-sm { font-size: 0.68rem; margin-top: 2px; }
+.intake-pill-sm { font-size: 0.68rem; margin-top: 2px; text-transform: none; letter-spacing: normal; }
 .intake-spinner { width: 16px; height: 16px; }
 .intake-btn-icon { font-size: 1.1rem; }
 .intake-btn-touch.intake-btn-touch--recording { border-color: var(--color-critical); color: var(--color-critical); }
@@ -112,18 +112,17 @@
 /* Less dead space between Home cards. */
 .h4-home { gap: var(--spacing-sm); }
 
-/* Emergency lines: full-width rows under the status card. */
-.h4-dials { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+/* Emergency lines: one row of three equal buttons (icon, label, number) under the status card. */
+.h4-dials { gap: var(--spacing-xs); }
 .h4-dial {
-  flex-direction: row;
-  justify-content: flex-start;
-  min-height: 56px;
-  padding: var(--spacing-sm) var(--spacing-md);
-  gap: var(--spacing-md);
-  text-align: left;
+  min-width: 0;
+  font: inherit;
+  cursor: pointer;
+  gap: 2px;
+  padding: var(--spacing-sm) var(--spacing-xs);
 }
-.h4-dial__label { flex: 1; color: var(--color-text-primary); }
-.h4-dial__number { font-size: var(--text-md); font-weight: 800; color: var(--color-link, var(--color-primary)); font-variant-numeric: tabular-nums; }
+.h4-dial__label { color: var(--color-text-primary); font-size: var(--text-xs); font-weight: 700; }
+.h4-dial__number { font-size: var(--text-xs); font-weight: 800; color: var(--color-link, var(--color-primary)); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* SOS confirm sheet: neutral surface, one saturated Confirm, quiet Cancel. */
 .tactical-sos-modal { --background: var(--color-surface); }
@@ -198,12 +197,21 @@
 /* ---- Report form (audit 2026-10-15) ---- */
 .intake-textarea-box { resize: none; }
 
-/* Quick phrases: right-edge fade shows the row scrolls. */
-.intake-template-strip {
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-  padding-right: 28px;
+/* Quick phrases wrap onto several lines instead of a cut-off scrolling row. */
+.intake-template-strip { flex-wrap: wrap; overflow-x: visible; }
+.intake-template-chip { flex-shrink: 1; white-space: normal; text-align: left; }
+
+/* Incident type: four compact tiles per row so the Location card starts on the first screen. */
+.intake-grid-overhaul { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.intake-tile-chip {
+  min-height: var(--touch-min-size, 48px);
+  padding: var(--spacing-sm) 2px;
+  gap: 2px;
+  line-height: 1.15;
+  hyphens: auto;
+  overflow-wrap: anywhere;
 }
+.intake-tile-chip__icon { font-size: var(--text-lg); }
 
 /* Submit stays visible above the safe area while the form scrolls. */
 .intake-overhaul-container > .h4-submit {
@@ -216,41 +224,35 @@
   border-top: 1px solid var(--color-border);
 }
 
-/* Persistent SOS control (all Tanod screens but Home) and the sheet's silent toggle. */
+/* SOS hold control in the top app bar (all Tanod screens but Home), so it never covers page controls. */
 .sos-hold-btn {
-  position: fixed;
-  left: var(--spacing-md);
-  bottom: calc(82px + env(safe-area-inset-bottom, 0px));
-  z-index: 900;
-  min-width: 56px;
-  min-height: 56px;
+  flex: 0 0 auto;
+  min-width: 72px;
+  min-height: 48px;
   padding: 0 var(--spacing-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--spacing-xs);
-  border: 2px solid var(--color-white);
-  border-radius: 28px;
+  border: 0;
+  border-radius: 24px;
   background: var(--color-critical-solid, var(--color-critical));
   color: var(--color-white);
   font-size: var(--text-sm);
   font-weight: 800;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
   touch-action: none;
   user-select: none;
 }
-.sos-hold-btn--raised { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
 .sos-hold-btn--holding { transform: scale(1.12); transition: transform 0.8s linear; }
 .sos-hold-btn:disabled { opacity: 0.7; }
+/* Silent SOS switch: IonToggle wraps label and track, so the whole row is the tap target. */
 .sos-sheet__silent {
   display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  min-height: 44px;
+  width: 100%;
+  min-height: 48px;
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
 }
-.sos-sheet__silent input { width: 22px; height: 22px; }
 
 /* 44px minimum for Ionic small buttons (Retry on failed SOS, sync queue). */
 ion-button[size="small"] { --padding-top: 10px; --padding-bottom: 10px; min-height: 44px; }

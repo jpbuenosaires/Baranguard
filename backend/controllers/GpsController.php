@@ -60,6 +60,15 @@ final class GpsController
 {
     private const MAX_RANGE_DAYS = 366;
     private const STALE_AFTER_SECONDS = 120;
+
+    /** GET /gps/stream: how often the server looks for new fixes, in microseconds (0.5 s). */
+    public const STREAM_LOOK_MICROS = 500000;
+    /** A stream is closed after this long; the client reopens it with its current token. */
+    public const STREAM_MAX_SECONDS = 300;
+    /** Keep-alive comment: keeps proxies from dropping the connection and lets the server notice a closed client within this many seconds (a closed client is only detected on a write). */
+    public const STREAM_PING_SECONDS = 3;
+    /** How often the stream re-checks that the session is still valid. */
+    public const STREAM_AUTH_RECHECK_SECONDS = 15;
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
     private const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
@@ -91,6 +100,18 @@ final class GpsController
         }
         AuthMiddleware::requireTenant($identity, (int) $barangayIdParam);
 
+        Http::send(200, ['items' => self::liveItems($pdo, (int) $identity['barangay_id'])]);
+    }
+
+    /**
+     * Latest position of every active same-barangay Tanod, with freshness.
+     * Shared by GET /gps/live and the first event of GET /gps/stream so the
+     * two can never disagree about the shape.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private static function liveItems(PDO $pdo, int $barangayId): array
+    {
         $stmt = $pdo->prepare(
             "SELECT gt.user_id, u.full_name, gt.dispatch_id, gt.latitude, gt.longitude,
                     gt.accuracy_m, gt.recorded_at, gt.received_at
@@ -102,28 +123,157 @@ final class GpsController
                )
              ORDER BY u.full_name ASC"
         );
-        $stmt->execute(['barangay_id' => $identity['barangay_id']]);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
+        $stmt->execute(['barangay_id' => $barangayId]);
         $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
-        $items = array_map(static function (array $row) use ($now): array {
-            $recordedAt = new \DateTimeImmutable($row['recorded_at'], new \DateTimeZone('UTC'));
-            $ageSeconds = $now->getTimestamp() - $recordedAt->getTimestamp();
-            return [
-                'user_id' => (int) $row['user_id'],
-                'full_name' => $row['full_name'],
-                'dispatch_id' => $row['dispatch_id'] !== null ? (int) $row['dispatch_id'] : null,
-                'latitude' => (float) $row['latitude'],
-                'longitude' => (float) $row['longitude'],
-                'accuracy_m' => (float) $row['accuracy_m'],
-                'recorded_at' => $row['recorded_at'],
-                'received_at' => $row['received_at'],
-                'age_seconds' => $ageSeconds,
-                'is_stale' => $ageSeconds >= GpsController::STALE_AFTER_SECONDS,
-            ];
-        }, $rows);
+        return array_map(static fn (array $row): array => self::liveItem($row, $now), $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
 
-        Http::send(200, ['items' => $items]);
+    /** @param array<string,mixed> $row */
+    private static function liveItem(array $row, \DateTimeImmutable $now): array
+    {
+        $recordedAt = new \DateTimeImmutable((string) $row['recorded_at'], new \DateTimeZone('UTC'));
+        $ageSeconds = $now->getTimestamp() - $recordedAt->getTimestamp();
+        return [
+            'user_id' => (int) $row['user_id'],
+            'full_name' => $row['full_name'],
+            'dispatch_id' => $row['dispatch_id'] !== null ? (int) $row['dispatch_id'] : null,
+            'latitude' => (float) $row['latitude'],
+            'longitude' => (float) $row['longitude'],
+            'accuracy_m' => (float) $row['accuracy_m'],
+            'recorded_at' => $row['recorded_at'],
+            'received_at' => $row['received_at'],
+            'age_seconds' => $ageSeconds,
+            'is_stale' => $ageSeconds >= GpsController::STALE_AFTER_SECONDS,
+        ];
+    }
+
+    /**
+     * GET /gps/stream?barangay_id= -- the same positions as /gps/live, pushed
+     * as Server-Sent Events the moment a phone's fix is stored, instead of
+     * waiting for the dashboard's next poll (2026-11-06, "real real time").
+     *
+     * Events: `snapshot` ({items}, once, same shape as /gps/live), `position`
+     * ({items}, the new fixes, latest per Tanod), `auth_expired` (the session
+     * was revoked/expired/suspended mid-stream; client must re-login),
+     * `reconnect` (the stream reached STREAM_MAX_SECONDS; open a new one with
+     * the current token). A `: ping` comment every STREAM_PING_SECONDS keeps
+     * proxies (Cloudflare closes idle connections at about 100 s) open and
+     * lets the server notice a closed client quickly.
+     *
+     * Same authentication, role, tenant and Tanod filter as /gps/live; the
+     * session row is re-checked every STREAM_AUTH_RECHECK_SECONDS so a logout,
+     * suspension or deactivation ends the stream within that window (Rule 12).
+     * The stream is bounded (STREAM_MAX_SECONDS) so a worker thread is never
+     * held forever, and opening one is rate limited. It sends only what
+     * /gps/live already sends: no narrative, names beyond full_name, or
+     * anything new (Rules 1 and 8).
+     *
+     * @param array{user_id:int,barangay_id:int,role:string,session_id:int} $identity
+     */
+    public static function stream(PDO $pdo, array $identity): void
+    {
+        AuthMiddleware::requireRole($identity, ['admin', 'secretary', 'punong_barangay', 'tanod']);
+
+        $barangayIdParam = Http::query('barangay_id');
+        if ($barangayIdParam === null || !ctype_digit($barangayIdParam)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'barangay_id is required.');
+        }
+        AuthMiddleware::requireTenant($identity, (int) $barangayIdParam);
+
+        if (!RateLimiter::check($pdo, 'gps_stream:user:' . $identity['user_id'], 300, 40)) {
+            throw new ApiError(429, 'RATE_LIMITED', 'Too many live-stream connections recently. Please wait before reconnecting.');
+        }
+
+        $barangayId = (int) $identity['barangay_id'];
+        // Take the high-water mark BEFORE the snapshot so no fix can fall
+        // between the two (a fix in both is harmless: the client merges by user).
+        $lastTrackId = (int) $pdo->query('SELECT COALESCE(MAX(track_id), 0) FROM gps_track')->fetchColumn();
+
+        @ini_set('zlib.output_compression', '0');
+        @ini_set('implicit_flush', '1');
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        set_time_limit(0);
+        ignore_user_abort(false);
+        http_response_code(200);
+        header('Content-Type: text/event-stream; charset=utf-8');
+        header('Cache-Control: no-cache, no-transform');
+        header('X-Accel-Buffering: no');
+
+        $emit = static function (string $event, array $data): void {
+            echo 'event: ' . $event . "\n";
+            echo 'data: ' . json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n\n";
+            flush();
+        };
+
+        try {
+            $emit('snapshot', ['items' => self::liveItems($pdo, $barangayId)]);
+
+            $newRows = $pdo->prepare(
+                "SELECT gt.track_id, gt.user_id, u.full_name, gt.dispatch_id, gt.latitude, gt.longitude,
+                        gt.accuracy_m, gt.recorded_at, gt.received_at
+                 FROM gps_track gt
+                 JOIN user u ON u.user_id = gt.user_id
+                 WHERE gt.track_id > :last AND u.barangay_id = :barangay_id
+                   AND u.role = 'tanod' AND u.is_active = 1
+                 ORDER BY gt.track_id ASC
+                 LIMIT 200"
+            );
+            $sessionStmt = $pdo->prepare(
+                'SELECT s.revoked_at, s.expires_at, u.is_active, u.is_suspended
+                 FROM auth_session s JOIN user u ON u.user_id = s.user_id
+                 WHERE s.session_id = :sid LIMIT 1'
+            );
+
+            $started = $lastPing = $lastAuth = time();
+            while (!connection_aborted()) {
+                $newRows->execute(['last' => $lastTrackId, 'barangay_id' => $barangayId]);
+                $rows = $newRows->fetchAll(PDO::FETCH_ASSOC);
+                if ($rows !== []) {
+                    $latest = [];
+                    foreach ($rows as $row) {
+                        $lastTrackId = max($lastTrackId, (int) $row['track_id']);
+                        // Latest fix per Tanod by capture time (a queued older fix must not
+                        // overwrite a newer one that arrived first).
+                        $uid = (int) $row['user_id'];
+                        if (!isset($latest[$uid]) || strcmp((string) $row['recorded_at'], (string) $latest[$uid]['recorded_at']) >= 0) {
+                            $latest[$uid] = $row;
+                        }
+                    }
+                    $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+                    $emit('position', ['items' => array_values(array_map(static fn (array $r): array => self::liveItem($r, $now), $latest))]);
+                    $lastPing = time();
+                }
+
+                $t = time();
+                if ($t - $lastAuth >= self::STREAM_AUTH_RECHECK_SECONDS) {
+                    $sessionStmt->execute(['sid' => $identity['session_id']]);
+                    $s = $sessionStmt->fetch(PDO::FETCH_ASSOC);
+                    $valid = $s !== false && $s['revoked_at'] === null
+                        && strtotime((string) $s['expires_at'] . ' UTC') > $t
+                        && (int) $s['is_active'] === 1 && (int) $s['is_suspended'] === 0;
+                    if (!$valid) {
+                        $emit('auth_expired', []);
+                        break;
+                    }
+                    $lastAuth = $t;
+                }
+                if ($t - $lastPing >= self::STREAM_PING_SECONDS) {
+                    echo ": ping\n\n";
+                    flush();
+                    $lastPing = $t;
+                }
+                if ($t - $started >= self::STREAM_MAX_SECONDS) {
+                    $emit('reconnect', []);
+                    break;
+                }
+                usleep(self::STREAM_LOOK_MICROS);
+            }
+        } catch (\Throwable $e) {
+            error_log('[baranguard] gps stream ended: ' . $e->getMessage());
+        }
+        exit;
     }
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */

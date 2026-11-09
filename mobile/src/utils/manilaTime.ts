@@ -129,10 +129,10 @@ export function formatMinutes(total: number): string {
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
-/** Time of day in Manila for an ISO instant, e.g. "08:15 AM". */
+/** Time of day in Manila for an ISO instant, e.g. "8:15 AM". */
 export function formatManilaTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-PH', {
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
     timeZone: 'Asia/Manila',
   });
@@ -143,7 +143,7 @@ export function formatManilaDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-PH', {
     month: 'short',
     day: 'numeric',
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
     timeZone: 'Asia/Manila',
   });

@@ -8,13 +8,12 @@ export type NextStatus = 'en_route' | 'arrived' | 'completed';
 
 export interface NextAction {
   label: string;
-  hint: string;
 }
 
 const ACTIONS: Record<NextStatus, NextAction> = {
-  en_route: { label: 'Start navigation, go en route', hint: 'Next: head to the scene.' },
-  arrived: { label: 'Mark arrived', hint: 'Next: tell the desk you are on scene.' },
-  completed: { label: 'Mark completed', hint: 'Next: finish once you are done responding.' },
+  en_route: { label: 'Start navigation, go en route' },
+  arrived: { label: 'Mark arrived' },
+  completed: { label: 'Mark completed' },
 };
 
 export function nextActionFor(next: string | null): NextAction | null {

@@ -50,6 +50,13 @@ class LocalGsmOutboundClient
 {
     private const RECEIVER_ACTION = 'ph.baranguard.smsgateway.SEND';
     private const RECEIVER_COMPONENT = 'ph.baranguard.smsgateway/.SendSmsReceiver';
+    // The Infinix (HiOS) puts a background app in a "Hiber/broadcast restricted" queue: a broadcast to the
+    // gateway app 15 s after it left the foreground was silently NOT delivered (result=0, nothing sent).
+    // Bringing the app to the front right before each send fixes it (checked on the device 2026-11-07).
+    private const WAKE_COMPONENT = 'ph.baranguard.smsgateway/.MainActivity';
+    // The app appends every RESULT line here (the phone's log buffer loses it within ~2 min, the carrier
+    // result takes ~60 s). adb's shell user can read it.
+    private const RESULT_FILE = '/sdcard/Android/data/ph.baranguard.smsgateway/files/results.log';
     // Real device, 2026-09-23: `am broadcast` waiting on this receiver's
     // goAsync() finish() (itself gated on the carrier's own sent-status
     // callback) took up to ~60s under this specific phone's OEM
@@ -63,7 +70,7 @@ class LocalGsmOutboundClient
     private const BROADCAST_TIMEOUT_SECONDS = 12;
     /** Sentinel our own PowerShell wrapper script exits with on a real timeout kill — distinct from any real adb.exe exit code. */
     private const TIMEOUT_EXIT_CODE = 124;
-    private const RESULT_POLL_ATTEMPTS = 10;
+    private const RESULT_POLL_ATTEMPTS = 4;
     private const RESULT_POLL_DELAY_MICROSECONDS = 700_000; // 0.7s between polls, ~7s total.
     // Each poll attempt's own bound (not yet device-tuned — a stuck adb
     // connection during a `logcat -d` dump should never be able to hang
@@ -190,6 +197,11 @@ class LocalGsmOutboundClient
         $adbArgs[] = 'shell';
         $adbArgs[] = $remoteCommand;
 
+        $wakeArgs = $this->deviceSerial !== null ? ['-s', $this->deviceSerial] : [];
+        array_push($wakeArgs, 'shell', 'am start -n ' . self::WAKE_COMPONENT);
+        self::runWithTimeout($this->adbPath, $wakeArgs, 5); // best effort: a failure here shows up as an undelivered broadcast below
+        usleep(400_000);
+
         // `adb shell am broadcast` waits for the receiver's `goAsync()`
         // PendingResult to finish before returning — and this receiver's
         // `finish()` is only called once the SMS's own carrier-confirmed
@@ -199,16 +211,26 @@ class LocalGsmOutboundClient
         // gateway must not hang whatever request triggered a send
         // (possibly a Tanod's own emergency POST) — bounded via
         // `runWithTimeout()`.
+        $startedAt = microtime(true);
         [$exitCode, $output] = self::runWithTimeout($this->adbPath, $adbArgs, self::BROADCAST_TIMEOUT_SECONDS);
+        $elapsed = microtime(true) - $startedAt;
 
         if ($exitCode === self::TIMEOUT_EXIT_CODE) {
-            throw new GsmGatewayException("adb/the gateway phone did not respond within " . self::BROADCAST_TIMEOUT_SECONDS . "s — killed. " . $output);
+            // Only THIS process stopped waiting; the broadcast may already have been delivered,
+            // so this is "unconfirmed", not "failed" (Rule 6).
+            throw new GsmUnconfirmedException("The gateway phone did not answer within " . self::BROADCAST_TIMEOUT_SECONDS . "s (correlation_id={$correlationId}); the SMS may still have been sent. " . $output, $correlationId);
         }
         if ($exitCode !== 0) {
             throw new GsmGatewayException('adb could not reach the gateway phone: ' . $output);
         }
 
-        $status = $this->pollForResult($correlationId);
+        if (self::broadcastNotDelivered($output, $elapsed)) {
+            throw new GsmGatewayException("The gateway app did not receive the send (it was asleep or is not installed on the phone); nothing was sent (correlation_id={$correlationId}).");
+        }
+
+        // The app answers inside the broadcast result ("Broadcast completed: result=1, data=\"RESULT ... status=sent ...\"");
+        // older builds only logged it, so fall back to polling logcat.
+        $status = self::statusFromBroadcastOutput($output, $correlationId) ?? $this->pollForResult($correlationId);
         if ($status === 'sent') {
             return ['gateway_message_id' => $correlationId];
         }
@@ -219,7 +241,7 @@ class LocalGsmOutboundClient
         // No result line within the poll window: the carrier result may just
         // be slow (~60 s observed). The SMS may well have gone out, so this is
         // "unconfirmed", not "failed" (Rule 6: claim neither).
-        throw new GsmUnconfirmedException("No delivery confirmation from the gateway phone within " . (self::RESULT_POLL_ATTEMPTS * self::RESULT_POLL_DELAY_MICROSECONDS / 1_000_000) . "s (correlation_id={$correlationId}); it may still have been sent.");
+        throw new GsmUnconfirmedException("No delivery confirmation from the gateway phone within " . (self::RESULT_POLL_ATTEMPTS * self::RESULT_POLL_DELAY_MICROSECONDS / 1_000_000) . "s (correlation_id={$correlationId}); it may still have been sent.", $correlationId);
     }
 
     /** POSIX single-quote wrapping for a token that will be parsed by the REMOTE Android shell (via `adb shell <one string>`), not this workstation's own. */
@@ -376,42 +398,81 @@ class LocalGsmOutboundClient
         return $result;
     }
 
+    /**
+     * Settles earlier `pending` sends: the phone's carrier result can arrive ~60 s after the send
+     * (seen on the Infinix/Globe), long after dispatch() stopped waiting. One logcat read for all ids.
+     *
+     * @param list<string> $correlationIds
+     * @return array<string,'sent'|'failed'> only the ids the phone has answered for
+     */
+    public function lookupResults(array $correlationIds): array
+    {
+        if ($correlationIds === [] || !$this->isConfigured()) {
+            return [];
+        }
+        $output = $this->readResultLog();
+        $found = [];
+        foreach ($correlationIds as $id) {
+            $status = self::statusFromBroadcastOutput($output, $id);
+            if ($status !== null) {
+                $found[$id] = $status;
+            }
+        }
+        return $found;
+    }
+
+    /**
+     * `am broadcast` that returns at once with result=0 and no data never ran the receiver (a running one
+     * waits for the carrier and answers with data). Known not sent, so the caller records `failed`.
+     */
+    private static function broadcastNotDelivered(string $output, float $elapsedSeconds): bool
+    {
+        return $elapsedSeconds < 2.0
+            && str_contains($output, 'Broadcast completed: result=0')
+            && !str_contains($output, 'data=');
+    }
+
+    /**
+     * Live, side-effect-free check for Service Health: the phone is attached over adb and the gateway
+     * app is installed on it. Sends nothing. (Proving a send needs a real SMS; sms_log shows those.)
+     */
+    public function probe(): bool
+    {
+        if (!$this->isConfigured()) {
+            return false;
+        }
+        $serial = $this->deviceSerial !== null ? ['-s', $this->deviceSerial] : [];
+        [$code, $out] = self::runWithTimeout($this->adbPath, [...$serial, 'shell', 'pm path ph.baranguard.smsgateway'], 6);
+        return $code === 0 && str_contains($out, 'package:');
+    }
+
+    /** The app's own result file plus the (short-lived) logcat lines, as one text; '' if the phone is unreachable. */
+    private function readResultLog(): string
+    {
+        $serial = $this->deviceSerial !== null ? ['-s', $this->deviceSerial] : [];
+        [$fileCode, $fileText] = self::runWithTimeout($this->adbPath, [...$serial, 'shell', 'cat ' . self::RESULT_FILE], 6);
+        [$logCode, $logText] = self::runWithTimeout($this->adbPath, [...$serial, 'logcat', '-d', 'BaranguardSmsGateway:I', '*:S'], 6);
+        return ($fileCode === 0 ? $fileText : '') . "
+" . ($logCode === 0 ? $logText : '');
+    }
+
+    /** @return 'sent'|'failed'|null null = the output carries no answer for this correlation id */
+    private static function statusFromBroadcastOutput(string $output, string $correlationId): ?string
+    {
+        if (preg_match('/RESULT correlation_id=' . preg_quote($correlationId, '/') . ' status=(sent|failed)/', $output, $m) === 1) {
+            return $m[1];
+        }
+        return null;
+    }
+
     /** @return 'sent'|'failed'|'unknown' */
     private function pollForResult(string $correlationId): string
     {
-        $logcatArgs = [];
-        if ($this->deviceSerial !== null) {
-            $logcatArgs[] = '-s';
-            $logcatArgs[] = $this->deviceSerial;
-        }
-        $logcatArgs[] = 'logcat';
-        $logcatArgs[] = '-d';
-        $logcatArgs[] = '-t';
-        $logcatArgs[] = '200';
-
         for ($attempt = 0; $attempt < self::RESULT_POLL_ATTEMPTS; $attempt++) {
             usleep(self::RESULT_POLL_DELAY_MICROSECONDS);
-            // A code-review finding caught that this used to be a plain,
-            // unbounded exec() — unlike the broadcast call above, a frozen
-            // or dropped adb connection here could hang the SOS-triggering
-            // request indefinitely. Same runWithTimeout() wrapper, a
-            // shorter per-attempt cap: a stuck poll should move on to the
-            // next attempt (or give up after RESULT_POLL_ATTEMPTS), not
-            // hang the whole request.
-            [$exitCode, $output] = self::runWithTimeout($this->adbPath, $logcatArgs, self::POLL_TIMEOUT_SECONDS);
-            if ($exitCode !== 0) {
-                continue;
-            }
-            foreach (explode("\n", $output) as $line) {
-                if (strpos($line, "BaranguardSmsGateway") === false) {
-                    continue;
-                }
-                if (strpos($line, "RESULT correlation_id={$correlationId} status=sent") !== false) {
-                    return 'sent';
-                }
-                if (strpos($line, "RESULT correlation_id={$correlationId} status=failed") !== false) {
-                    return 'failed';
-                }
+            $status = self::statusFromBroadcastOutput($this->readResultLog(), $correlationId);
+            if ($status !== null) {
+                return $status;
             }
         }
         return 'unknown';

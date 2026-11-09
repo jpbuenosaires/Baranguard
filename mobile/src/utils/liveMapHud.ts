@@ -47,10 +47,11 @@ export interface BasemapChip {
 }
 
 /** Which basemap is really in use. `deviceOnline` is navigator.onLine. */
-export function basemapChip(status: { kind: BasemapKind; version?: string }, deviceOnline: boolean): BasemapChip {
+export function basemapChip(status: { kind: BasemapKind }, deviceOnline: boolean): BasemapChip {
   switch (status.kind) {
     case 'offline':
-      return { label: status.version ? `Offline map ${status.version}` : 'Offline map', tone: 'success' };
+      // The package version is an internal id; Profile shows it.
+      return { label: 'Offline map ready', tone: 'success' };
     case 'online':
       return deviceOnline
         ? { label: 'Online map', tone: 'neutral' }

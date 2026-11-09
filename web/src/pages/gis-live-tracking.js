@@ -42,7 +42,7 @@
  */
 
 import {
-  getGpsLive, getTanodSos, getDutyStatus, getDispatches, getUsers, getIncidents, logout, ApiClientError,
+  getGpsLive, openGpsStream, mergeGpsFixes, getTanodSos, getDutyStatus, getDispatches, getUsers, getIncidents, logout, ApiClientError,
 } from '../api/apiClient.js';
 import { LiveMap, formatAge, PILAR_COMMUNITY_POIS } from '../components/LiveMap.js';
 import { AppShell } from '../components/AppShell.js';
@@ -52,7 +52,7 @@ import { escapeHtml } from '../utils/escapeHtml.js';
 import { formatIncidentCode } from '../services/tanodWorkflowUi.js';
 import { formatManilaTime, formatManilaTimeSeconds } from '../utils/manilaTime.js';
 
-const POLL_INTERVAL_MS = 15000;
+const POLL_INTERVAL_MS = 5000; // 2026-11-06: was 15000; live positions should trail the phone by seconds, not tens of seconds
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
 // What the quick filter is currently showing, in plain words.
 const FILTER_LABELS = {
@@ -115,6 +115,9 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
 
   let liveMap = null;
   let timer = null;
+  let stream = null;
+  let streamOpen = false;
+  let lastData = null; // last poll payload, so a pushed position re-renders without refetching
   let rosterFilter = 'all';
   let renderCurrentRosterAndMap = () => {};
   let tanodRosterById = new Map();
@@ -144,6 +147,8 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     return value ? formatManilaTime(value, null) : null;
   }
 
+  const liveLabel = () => (streamOpen ? 'Live · pushed' : 'Live · 5s sync');
+
   function setStale(on) {
     isStale = on;
     if (staleBannerEl) {
@@ -154,7 +159,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     const pill = mapSubtitleEl?.querySelector('.dispatch-map-live-pill');
     if (pill) {
       pill.classList.toggle('is-stale', on);
-      pill.lastChild.textContent = on ? 'Updates paused' : 'Live · 15s sync';
+      pill.lastChild.textContent = on ? 'Updates paused' : liveLabel();
     }
   }
   const onBrowserOffline = () => { if (layoutEl) setStale(true); };
@@ -169,6 +174,8 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     window.removeEventListener('offline', onBrowserOffline);
     window.removeEventListener('online', onBrowserOnline);
     if (timer) clearInterval(timer);
+    if (stream) stream.close();
+    stream = null;
     if (liveMap) liveMap.destroy();
   }
 
@@ -186,9 +193,12 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
       ]);
       if (usersRes) tanodRosterById = new Map(usersRes.items.map((u) => [u.userId, u]));
       const openSos = sosItems.filter((s) => s.status !== 'resolved');
-      renderPopulated(body, gpsItems, openSos, dutyStatuses, dispatchesRes.items, incidentsRes?.items || []);
+      const gps = lastData ? mergeGpsFixes(lastData.gpsItems, gpsItems, false) : gpsItems;
+      lastData = { gpsItems: gps, openSos, dutyStatuses, dispatches: dispatchesRes.items, incidents: incidentsRes?.items || [] };
+      renderPopulated(body, gps, openSos, dutyStatuses, lastData.dispatches, lastData.incidents);
       lastGoodAt = new Date();
       setStale(false);
+      if (!stream) startStream();
     } catch (err) {
       if (layoutEl) {
         setStale(true);
@@ -199,6 +209,22 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
         renderError(body, message, () => load(true));
       }
     }
+  }
+
+  function startStream() {
+    const onItems = (items) => {
+      if (!lastData || !layoutEl) return;
+      lastData.gpsItems = mergeGpsFixes(lastData.gpsItems, items, true);
+      renderPopulated(body, lastData.gpsItems, lastData.openSos, lastData.dutyStatuses, lastData.dispatches, lastData.incidents);
+    };
+    stream = openGpsStream(user.barangayId, {
+      onSnapshot: onItems,
+      onPosition: onItems,
+      onState: (state) => {
+        streamOpen = state === 'open';
+        if (layoutEl) setStale(isStale);
+      },
+    });
   }
 
   function renderPopulated(container, gpsItems, openSos, dutyStatuses, dispatches, incidents = []) {
@@ -531,7 +557,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     updateFilterTabsSelection();
 
     mapSubtitleEl.innerHTML = `
-      <span class="dispatch-map-live-pill"><span class="dispatch-map-live-dot" aria-hidden="true"></span>Live · 15s sync</span>
+      <span class="dispatch-map-live-pill"><span class="dispatch-map-live-dot" aria-hidden="true"></span>${liveLabel()}</span>
       <span>Showing ${gpsItems.length} field personnel with a location in your barangay</span>
       <span class="gis-updated-at">Updated ${escapeHtml(formatManilaTimeSeconds(new Date()))}</span>
     `;

@@ -136,13 +136,20 @@ if ($cfSvc) {
 # to click twice and never doubles up. The ingest daemon also holds a lock
 # file, so a second copy exits on its own.
 $backendRoot = Split-Path -Parent $PSScriptRoot
-function Start-BaranguardWorker($label, $script, $argsList, $taskName) {
-    if ($taskName -and (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)) {
-        Write-Host "[OK] $label is run by Scheduled Task '$taskName'."
-        return
-    }
+function Start-BaranguardWorker($label, $script, $argsList, $taskName, $longRunning = $false) {
     $running = Get-CimInstance Win32_Process -Filter "Name = 'php.exe'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -like "*$script*" }
+    if ($taskName -and (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)) {
+        # A logon-only task (the ingest daemon) does not restart itself, so start it
+        # now if nothing is running; the every-minute tasks need no help.
+        if ($longRunning -and -not $running) {
+            Start-ScheduledTask -TaskName $taskName
+            Write-Host "[OK] $label started through Scheduled Task '$taskName'."
+        } else {
+            Write-Host "[OK] $label is run by Scheduled Task '$taskName'."
+        }
+        return
+    }
     if ($running) {
         Write-Host "[OK] $label is already running."
         return
@@ -150,7 +157,7 @@ function Start-BaranguardWorker($label, $script, $argsList, $taskName) {
     Start-Process -FilePath $phpExe -ArgumentList (@("scripts\$script") + $argsList) -WorkingDirectory $backendRoot -WindowStyle Hidden
     Write-Host "[OK] $label started."
 }
-Start-BaranguardWorker "GSM inbound daemon (SOS-by-SMS, inbound texts)" "gsm-ingest-daemon.php" @("--daemon") "BaranguardGsmIngest"
+Start-BaranguardWorker "GSM inbound daemon (SOS-by-SMS, inbound texts)" "gsm-ingest-daemon.php" @("--daemon") "BaranguardGsmIngest" $true
 Start-BaranguardWorker "Notification worker (SOS re-alert, ack timeout, SMS outbox)" "notification-worker.php" @("--daemon") "BaranguardNotificationWorker"
 Start-BaranguardWorker "Dispatch offer sweeper" "dispatch-offer-sweeper.php" @("--daemon") "BaranguardDispatchOfferSweeper"
 

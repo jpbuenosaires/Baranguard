@@ -349,7 +349,7 @@ const NewIncidentPage: React.FC = () => {
   return (
     <IonPage>
       <MobileHeader
-        title="Report Incident"
+        title="Report incident"
         showBack
         defaultBackHref="/tabs/home"
       />
@@ -411,9 +411,7 @@ const NewIncidentPage: React.FC = () => {
           <div className="intake-block">
             <div className="intake-block-header">
               <span className="intake-block-title">What Happened <span className="h4-required">(required)</span></span>
-              <span className="intake-char-count">
-                {narrative.length} chars
-              </span>
+              {narrative.length > 0 && <span className="intake-char-count">{narrative.length} chars</span>}
             </div>
 
             <textarea

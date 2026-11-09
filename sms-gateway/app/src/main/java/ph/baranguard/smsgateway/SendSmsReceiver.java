@@ -44,7 +44,10 @@ public class SendSmsReceiver extends BroadcastReceiver {
 
         if (correlationId == null) correlationId = "unknown";
         if (to == null || to.trim().isEmpty() || body == null || body.isEmpty()) {
-            Log.e(TAG, "RESULT correlation_id=" + correlationId + " status=failed reason=missing_to_or_body");
+            String line = "RESULT correlation_id=" + correlationId + " status=failed reason=missing_to_or_body";
+            Log.e(TAG, line);
+            record(context, line);
+            try { setResultCode(2); setResultData(line); } catch (RuntimeException ignored) { }
             return;
         }
 
@@ -94,9 +97,17 @@ public class SendSmsReceiver extends BroadcastReceiver {
                         } catch (Exception ignored) {
                             // Already unregistered — fine.
                         }
-                        Log.i(TAG, "RESULT correlation_id=" + finalCorrelationId
+                        String line = "RESULT correlation_id=" + finalCorrelationId
                             + " status=" + (anyFailure[0] ? "failed" : "sent")
-                            + " parts=" + partCount);
+                            + " parts=" + partCount;
+                        Log.i(TAG, line);
+                        record(appContext, line);
+                        // The workstation reads this from `adb shell am broadcast`'s own output
+                        // ("Broadcast completed: result=N, data=..."). Logcat is a fallback only:
+                        // the Infinix on Android 16 drops this app's Info lines, so a real send
+                        // was never confirmed through it.
+                        pendingResult.setResultCode(anyFailure[0] ? 2 : 1);
+                        pendingResult.setResultData(line);
                         pendingResult.finish();
                     }
                 }
@@ -126,8 +137,34 @@ public class SendSmsReceiver extends BroadcastReceiver {
                     // Already unregistered — fine.
                 }
             }
-            Log.e(TAG, "RESULT correlation_id=" + finalCorrelationId + " status=failed reason=exception:" + e.getMessage());
+            String line = "RESULT correlation_id=" + finalCorrelationId + " status=failed reason=exception:" + e.getMessage();
+            Log.e(TAG, line);
+            record(appContext, line);
+            pendingResult.setResultCode(2);
+            pendingResult.setResultData(line);
             pendingResult.finish();
+        }
+    }
+
+    /**
+     * Appends the RESULT line to <external files dir>/results.log. The carrier result can arrive about a
+     * minute after the send, and this phone's log buffer no longer holds the line by then, so the
+     * workstation reads this file instead (`adb shell cat`). Kept small: halved when over 64 KB.
+     */
+    private static void record(Context context, String line) {
+        try {
+            java.io.File dir = context.getExternalFilesDir(null);
+            if (dir == null) return;
+            java.io.File file = new java.io.File(dir, "results.log");
+            if (file.length() > 64 * 1024) {
+                byte[] all = java.nio.file.Files.readAllBytes(file.toPath());
+                java.nio.file.Files.write(file.toPath(), java.util.Arrays.copyOfRange(all, all.length / 2, all.length));
+            }
+            try (java.io.FileWriter w = new java.io.FileWriter(file, true)) {
+                w.write(line + "\n");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "could not record result: " + e.getMessage());
         }
     }
 

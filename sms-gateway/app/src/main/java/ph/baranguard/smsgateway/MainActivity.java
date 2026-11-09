@@ -33,6 +33,15 @@ public class MainActivity extends Activity {
             + "SEND_SMS permission: " + (granted ? "GRANTED" : "NOT GRANTED — run:\n"
                 + "adb shell pm grant ph.baranguard.smsgateway android.permission.SEND_SMS")
         );
+        // Android 15+ draws edge to edge: without this the first lines sit under the app bar.
+        final int basePad = padding;
+        android.util.TypedValue bar = new android.util.TypedValue();
+        final int barHeight = getTheme().resolveAttribute(android.R.attr.actionBarSize, bar, true)
+            ? android.util.TypedValue.complexToDimensionPixelSize(bar.data, getResources().getDisplayMetrics()) : 0;
+        view.setOnApplyWindowInsetsListener((v, insets) -> {
+            v.setPadding(basePad, basePad + barHeight + insets.getSystemWindowInsetTop(), basePad, basePad);
+            return insets;
+        });
         setContentView(view);
     }
 }

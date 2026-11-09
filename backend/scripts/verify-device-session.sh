@@ -78,6 +78,7 @@ mysql_exec() {
 cleanup() {
   step "Cleanup"
   [ -n "${SERVER_PID:-}" ] && { kill "$SERVER_PID" 2>/dev/null; taskkill //F //PID "$SERVER_PID" 2>/dev/null; }
+  . "$(dirname "$0")/lib/stop-php-server.sh" && stop_php_server "${API_PORT}"
   for pid in $(netstat -ano 2>/dev/null | grep "127.0.0.1:${API_PORT} " | grep LISTENING | awk '{print $NF}' | sort -u); do
     taskkill //F //PID "$pid" 2>/dev/null
   done
@@ -170,7 +171,8 @@ expect_eq "$(kind_of_jti "$JTI_ADM_BAD")" "web" "Admin with a malformed X-Device
 step "7. Sliding renewal respects the 7-day absolute cap for device sessions"
 # Age the device session: issued 6d22h ago (cap in 2h), 1h from expiry (renewal threshold is remaining < 50% of 24h).
 mysql_exec "$VALDB" -e "UPDATE auth_session SET issued_at = UTC_TIMESTAMP() - INTERVAL 166 HOUR, expires_at = UTC_TIMESTAMP() + INTERVAL 1 HOUR WHERE jti='$JTI_DEV';"
-HDR=$(curl -s -D - -o /dev/null "${BASE_URL}/notifications" -H "Authorization: Bearer $T_DEV" | grep -i "^X-Renewed-Token:" | cut -d' ' -f2 | tr -d '')
+HDR=$(curl -s -D - -o /dev/null "${BASE_URL}/notifications" -H "Authorization: Bearer $T_DEV" | grep -i "^X-Renewed-Token:" | cut -d' ' -f2 | tr -d '
+')
 [ -n "$HDR" ] && pass "Renewal issued (remaining 1h < 50% of 24h)" || fail "No X-Renewed-Token on a renewable device session"
 EXP_IN=$(exp_in "$JTI_DEV"); CAP_IN=$(cap_in "$JTI_DEV")
 # 2h to the cap: renewed expiry must land AT the cap (~7200s), NOT at +24h.

@@ -3,6 +3,7 @@ import { describe, test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { api, mountPage, settle, cleanup, text } from '../harness/render.mjs';
 import { maps } from '../harness/env.mjs';
+import { installStream, sseFrame, gpsRow } from '../harness/sse.mjs';
 import { renderGisLiveTrackingPage } from '../../src/pages/gis-live-tracking.js';
 
 describePage({
@@ -61,7 +62,7 @@ describe('Live Map: stale data and SOS wording (audit 2026-10-09)', () => {
   test('a failed background poll shows the paused banner and the pill stops claiming live', async () => {
     const polls = [];
     const original = globalThis.setInterval;
-    globalThis.setInterval = (fn, ms, ...rest) => { if (ms === 15000) polls.push(fn); return original(fn, ms, ...rest); };
+    globalThis.setInterval = (fn, ms, ...rest) => { if (ms === 5000) polls.push(fn); return original(fn, ms, ...rest); };
     const ctx = mountPage(renderGisLiveTrackingPage, { role: 'admin' });
     globalThis.setInterval = original;
     await settle();
@@ -147,3 +148,87 @@ describe('Live Map: Roster Search & Filter Tabs', () => {
   });
 });
 
+
+describe('Live Map: server-pushed positions', () => {
+  let stub;
+  afterEach(() => { stub?.restore(); stub = null; cleanup(); });
+
+  const sqlNow = (offsetSeconds = 0) => new Date(Date.now() + offsetSeconds * 1000).toISOString().slice(0, 19).replace('T', ' ');
+  const farApart = () => api.on('GET', '/gps/live', () => ({ status: 200, body: { items: [
+    gpsRow(4, 12.95, 123.70, { full_name: 'Jose Reyes', recorded_at: sqlNow(-30), age_seconds: 30 }),
+    gpsRow(5, 12.90, 123.62, { full_name: 'Maria Dela Cruz', recorded_at: sqlNow(-30), age_seconds: 30 }),
+  ] } }));
+  const tanodPositions = () => maps.at(-1).markers
+    .filter((m) => m.getElement().className.includes('--tanod') && !m.getElement().className.includes('cluster'))
+    .map((m) => m.getLngLat());
+  const at = (lat, lng) => tanodPositions().some((p) => Math.abs(p.lat - lat) < 1e-9 && Math.abs(p.lng - lng) < 1e-9);
+  const pill = (ctx) => text(ctx.root.querySelector('.dispatch-map-live-pill'));
+
+  test('opens the stream after the first load, says "pushed" while it is open and moves a marker without refetching anything else', async () => {
+    farApart();
+    stub = installStream();
+    const ctx = mountPage(renderGisLiveTrackingPage, { role: 'admin' });
+    await settle();
+    assert.equal(stub.conns.length, 1);
+    assert.equal(stub.conns[0].query.barangay_id, '1');
+    assert.match(pill(ctx), /Live · pushed/);
+    assert.ok(at(12.95, 123.70) && at(12.90, 123.62));
+
+    const before = ['/gps/live', '/tanod-sos', '/duty-status', '/dispatch', '/incidents'].map((p) => api.callsTo('GET', p).length);
+    stub.conns[0].push(sseFrame('position', { items: [gpsRow(4, 12.99, 123.75, { full_name: 'Jose Reyes', recorded_at: sqlNow(), age_seconds: 0 })] }));
+    await settle();
+
+    assert.ok(at(12.99, 123.75), 'the pushed fix moved the marker');
+    assert.ok(!at(12.95, 123.70), 'and the old position is gone');
+    assert.ok(at(12.90, 123.62), 'tanods the push did not mention stay on the map');
+    assert.deepEqual(['/gps/live', '/tanod-sos', '/duty-status', '/dispatch', '/incidents'].map((p) => api.callsTo('GET', p).length), before, 'no other resource was refetched');
+    assert.match(text(ctx.root), /Jose Reyes/);
+    assert.match(text(ctx.root), /Maria Dela Cruz/);
+  });
+
+  test('a snapshot frame merges the same way', async () => {
+    farApart();
+    stub = installStream();
+    mountPage(renderGisLiveTrackingPage, { role: 'admin' });
+    await settle();
+    stub.conns[0].push(sseFrame('snapshot', { items: [gpsRow(5, 12.80, 123.55, { full_name: 'Maria Dela Cruz', recorded_at: sqlNow(), age_seconds: 0 })] }));
+    await settle();
+    assert.ok(at(12.80, 123.55));
+    assert.ok(at(12.95, 123.70));
+  });
+
+  test('an older poll answer cannot pull a marker back from a newer pushed fix', async () => {
+    farApart();
+    stub = installStream();
+    const polls = [];
+    const original = globalThis.setInterval;
+    globalThis.setInterval = (fn, ms, ...rest) => { if (ms === 5000) polls.push(fn); return original(fn, ms, ...rest); };
+    mountPage(renderGisLiveTrackingPage, { role: 'admin' });
+    globalThis.setInterval = original;
+    await settle();
+    stub.conns[0].push(sseFrame('position', { items: [gpsRow(4, 12.99, 123.75, { full_name: 'Jose Reyes', recorded_at: sqlNow(), age_seconds: 0 })] }));
+    await settle();
+    await polls.at(-1)();
+    await settle();
+    assert.ok(at(12.99, 123.75), 'the poll still reports the 30-second-old fix; the pushed one wins');
+    assert.equal(api.callsTo('GET', '/gps/stream').length, 1, 'polling does not reopen the stream');
+  });
+
+  test('when the stream is refused the pill honestly says polling, and the 5 s poll still runs', async () => {
+    stub = installStream({ respond: () => ({ status: 429, body: { error: { code: 'RATE_LIMITED', message: 'slow down' } } }) });
+    const ctx = mountPage(renderGisLiveTrackingPage, { role: 'admin' });
+    await settle();
+    assert.match(pill(ctx), /Live · 5s sync/);
+    assert.match(text(ctx.root), /Jose Reyes/, 'the poll data is still shown');
+  });
+
+  test('leaving the page closes the stream together with the timer', async () => {
+    stub = installStream();
+    const ctx = mountPage(renderGisLiveTrackingPage, { role: 'admin' });
+    await settle();
+    assert.equal(stub.conns[0].signal.aborted, false);
+    ctx.handle.stop();
+    assert.equal(stub.conns[0].signal.aborted, true);
+    assert.ok(stub.conns[0].cancelled);
+  });
+});

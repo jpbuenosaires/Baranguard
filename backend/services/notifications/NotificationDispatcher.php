@@ -427,11 +427,16 @@ final class NotificationDispatcher
         return self::TYPE_LABELS[$incidentType] ?? ucfirst(str_replace('_', ' ', $incidentType));
     }
 
-    /** Coarse place: the landmark text (<= 40 chars) with the barangay, else the barangay alone. */
+    /** Coarse place: the landmark text (<= 40 chars) with the barangay unless the text already names it, else the barangay alone. */
     private static function placeLabel(?string $locationDescription, string $barangayName): string
     {
         $desc = trim((string) $locationDescription);
-        return $desc === '' ? $barangayName : mb_substr($desc, 0, 40) . ", {$barangayName}";
+        if ($desc === '') {
+            return $barangayName;
+        }
+        $desc = mb_substr($desc, 0, 40);
+        $named = $barangayName !== '' && preg_match('/\b' . preg_quote($barangayName, '/') . '\b/iu', $desc) === 1;
+        return $named ? $desc : "{$desc}, {$barangayName}";
     }
 
     private static function coordsForSms($lat, $lng): string
@@ -439,11 +444,18 @@ final class NotificationDispatcher
         return $lat === null || $lng === null ? '' : sprintf(' (%.4f,%.4f)', (float) $lat, (float) $lng);
     }
 
-    /** Keeps an SMS in one GSM-7 segment where possible: ASCII fixes for common typographic chars, drops anything else outside GSM-7. */
+    /** Keeps an SMS in one GSM-7 segment where possible: ASCII fixes for common typographic chars, accents stripped to the base letter (Jose, not Jos), anything else outside GSM-7 dropped. */
     public static function gsm7(string $text): string
     {
         $text = strtr($text, ["\u{2018}" => "'", "\u{2019}" => "'", "\u{201C}" => '"', "\u{201D}" => '"',
-            "\u{2013}" => '-', "\u{2014}" => '-', "\u{2026}" => '...', "\u{00A0}" => ' ']);
+            "\u{2013}" => '-', "\u{2014}" => '-', "\u{2026}" => '...', "\u{00A0}" => ' ', "\u{202F}" => ' ']);
+        // ext-intl (Normalizer) is not installed on the XAMPP PHP, so a fixed Latin-1 table; ñ/Ñ are GSM-7 and stay.
+        static $map = null;
+        $map ??= array_combine(
+            mb_str_split('ÀÁÂÃÄÅàáâãäåÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖòóôõöÙÚÛÜùúûüÝýÿÇç'),
+            str_split('AAAAAAaaaaaaEEEEeeeeIIIIiiiiOOOOOoooooUUUUuuuuYyyCc')
+        );
+        $text = strtr($text, $map);
         return preg_replace('/[^\x20-\x7E\n\x{00F1}\x{00D1}]/u', '', $text) ?? '';
     }
 

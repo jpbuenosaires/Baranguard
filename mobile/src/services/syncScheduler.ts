@@ -41,6 +41,7 @@ import { Network } from '@capacitor/network';
 import { runSyncPass, type SyncSummary } from './syncService';
 import { ApiError, type DutyStatus } from './apiService';
 import { isTanodSession } from './role';
+import { setTrackingDuty } from './trackingRate';
 
 const ON_DUTY_INTERVAL_MS = 60000;
 
@@ -175,6 +176,7 @@ export function subscribeSyncSummary(listener: (summary: SyncSummary) => void): 
  */
 export function setKnownDutyStatus(status: DutyStatus | null): void {
   knownDutyStatus = status;
+  setTrackingDuty(status);
 }
 
 /** The duty status Home last reported (null until Home has learned it). */

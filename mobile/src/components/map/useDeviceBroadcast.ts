@@ -3,9 +3,8 @@ import { postGps } from '../../services/apiService';
 import { saveGpsPointLocally } from '../../services/db/gpsTrackRepository';
 import { getCurrentPosition, watchPosition, type DevicePosition } from '../../services/geolocation';
 import { getKnownDutyStatus } from '../../services/syncScheduler';
+import { broadcastIntervalMs } from '../../services/trackingRate';
 import { uuid } from '../../services/uuid';
-
-const MIN_BROADCAST_INTERVAL_MS = 15000;
 
 export type BroadcastState = 'unknown' | 'confirmed' | 'saved';
 
@@ -26,7 +25,7 @@ export function useDeviceBroadcast() {
       const duty = getKnownDutyStatus();
       if (duty !== 'on_duty' && duty !== 'responding') return;
       const now = Date.now();
-      if (now - lastBroadcastAt.current < MIN_BROADCAST_INTERVAL_MS) return;
+      if (now - lastBroadcastAt.current < broadcastIntervalMs()) return;
       lastBroadcastAt.current = now;
 
       try {

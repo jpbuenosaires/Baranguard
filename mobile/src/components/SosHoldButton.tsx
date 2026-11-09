@@ -6,8 +6,8 @@ import { useSosFlow } from './home/useSosFlow';
 
 const HOLD_MS = 800;
 
-/** Compact SOS control for every Tanod screen except Home (which has its own dock). Hold to open the same confirm sheet. */
-const SosHoldButton: React.FC<{ raised?: boolean }> = ({ raised }) => {
+/** Compact SOS control in the top app bar of every Tanod screen except Home (which has its own dock). Hold to open the same confirm sheet. */
+const SosHoldButton: React.FC = () => {
   const sos = useSosFlow();
   const timer = useRef<number | null>(null);
   const [holding, setHolding] = useState(false);
@@ -32,7 +32,7 @@ const SosHoldButton: React.FC<{ raised?: boolean }> = ({ raised }) => {
     <>
       <button
         type="button"
-        className={`sos-hold-btn${holding ? ' sos-hold-btn--holding' : ''}${raised ? ' sos-hold-btn--raised' : ''}`}
+        className={`sos-hold-btn${holding ? ' sos-hold-btn--holding' : ''}`}
         aria-label="Emergency SOS. Hold to open confirmation."
         disabled={sos.raisingSos}
         onPointerDown={startHold}

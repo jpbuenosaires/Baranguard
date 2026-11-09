@@ -35,9 +35,13 @@
              workstation side is the only thing that ever sends this
              broadcast — same physical-adb-access trust boundary as
              gsm-ingest-daemon.php's read side. -->
+        <!-- android:permission=DUMP: only a caller holding it may send. adb's shell user
+             holds DUMP (that is how the workstation reaches this), an ordinary installed
+             app does not, so no other app on this phone can use its SIM through here. -->
         <receiver
             android:name=".SendSmsReceiver"
-            android:exported="true">
+            android:exported="true"
+            android:permission="android.permission.DUMP">
             <intent-filter>
                 <action android:name="ph.baranguard.smsgateway.SEND" />
             </intent-filter>

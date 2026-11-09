@@ -96,11 +96,17 @@ final class Fake extends LocalGsmOutboundClient
     {
         return $this->go();
     }
+    public function lookupResults(array $ids): array
+    {
+        return $this->mode === 'answers' ? array_fill_keys($ids, 'sent') : ($this->mode === 'answers_failed' ? array_fill_keys($ids, 'failed') : []);
+    }
     private function go(): array
     {
         return match ($this->mode) {
             'ok' => ['gateway_message_id' => 'abc'],
+            'slow' => (function () { usleep(300000); return ['gateway_message_id' => 'slow']; })(),
             'unconfirmed' => throw new GsmUnconfirmedException('no confirmation'),
+            'unconfirmed_id' => throw new GsmUnconfirmedException('no confirmation', 'cid-test-1'),
             default => throw new GsmGatewayException('adb down'),
         };
     }
@@ -122,6 +128,46 @@ $q2 = $svc->queueOutbound($pdo, 'manual', '+639170000002', 'queued 2', 1);
 $mk('unconfirmed')->drainQueued($pdo);
 check(one($pdo, 'SELECT status FROM sms_log WHERE log_id = ?', [$q2]) === 'pending', 'drainQueued with no confirmation leaves pending');
 check($mk('ok')->drainQueued($pdo) === ['sent' => 0, 'pending' => 0, 'failed' => 0], 'pending rows are never re-sent by the drain');
+
+// drain time budget: a long outbox must hand control back (SOS escalation runs between passes)
+$pdo->exec("UPDATE sms_log SET status='failed' WHERE status='queued'");
+for ($i = 0; $i < 4; $i++) { $svc->queueOutbound($pdo, 'manual', '+639170000002', "budget $i", 1); }
+$bd = $mk('slow')->drainQueued($pdo, 60, 0.5);
+$left = (int) one($pdo, "SELECT COUNT(*) FROM sms_log WHERE status='queued'");
+check($bd['sent'] >= 1 && $bd['sent'] < 4 && $left === 4 - $bd['sent'], 'drainQueued stops at its time budget and leaves the rest queued');
+$mk('ok')->drainQueued($pdo);
+
+// the gateway app answers inside the adb broadcast output; logcat is only a fallback
+$sfo = new ReflectionMethod(LocalGsmOutboundClient::class, 'statusFromBroadcastOutput');
+$sfo->setAccessible(true);
+$ok = "Broadcasting: Intent {...}
+Broadcast completed: result=1, data=\"RESULT correlation_id=abc123 status=sent parts=1\"";
+check($sfo->invoke(null, $ok, 'abc123') === 'sent', 'broadcast output with status=sent -> sent');
+check($sfo->invoke(null, str_replace('sent parts=1', 'failed reason=x', $ok), 'abc123') === 'failed', 'broadcast output with status=failed -> failed');
+check($sfo->invoke(null, $ok, 'other999') === null && $sfo->invoke(null, 'Broadcast completed: result=0', 'abc123') === null, 'no answer for this correlation id -> null (falls back to logcat)');
+
+// pending rows keep their send id and are settled once the phone answers (carrier result can take ~60 s)
+$pid = $mk('unconfirmed_id')->sendOutbound($pdo, 'manual', false, null, null, '+639170000002', 'late', 1);
+check($pid['status'] === 'pending' && one($pdo, 'SELECT gateway_message_id FROM sms_log WHERE log_id = ?', [$pid['log_id']]) === 'cid-test-1', 'pending row keeps the send id');
+check($mk('none')->reconcilePending($pdo) === ['sent' => 0, 'failed' => 0] && one($pdo, 'SELECT status FROM sms_log WHERE log_id = ?', [$pid['log_id']]) === 'pending', 'no answer from the phone yet -> stays pending');
+$rc = $mk('answers')->reconcilePending($pdo);
+check($rc['sent'] >= 1 && one($pdo, 'SELECT status FROM sms_log WHERE log_id = ?', [$pid['log_id']]) === 'sent' && one($pdo, 'SELECT sent_at IS NOT NULL FROM sms_log WHERE log_id = ?', [$pid['log_id']]) == 1, 'phone answered status=sent -> row settled to sent with sent_at');
+$pid2 = $mk('unconfirmed_id')->sendOutbound($pdo, 'manual', false, null, null, '+639170000002', 'late2', 1);
+$mk('answers_failed')->reconcilePending($pdo);
+check(one($pdo, 'SELECT status FROM sms_log WHERE log_id = ?', [$pid2['log_id']]) === 'failed', 'phone answered status=failed -> row settled to failed');
+check($mk('answers')->reconcilePending($pdo) === ['sent' => 0, 'failed' => 0], 'settled rows are not touched again');
+
+// a broadcast the sleeping gateway app never received returns at once with result=0 and no data
+$nd = new ReflectionMethod(LocalGsmOutboundClient::class, 'broadcastNotDelivered');
+$nd->setAccessible(true);
+check($nd->invoke(null, 'Broadcast completed: result=0', 0.3) === true, 'instant result=0 with no data -> not delivered');
+check($nd->invoke(null, 'Broadcast completed: result=0', 9.0) === false && $nd->invoke(null, 'Broadcast completed: result=1, data="RESULT x status=sent"', 0.3) === false, 'a slow result=0 (older app build) or any answer with data is not treated as undelivered');
+
+// Service Health roll-up for the Notification Dispatcher card
+$nc = [\Baranguard\Controllers\SystemHealthController::class, 'notificationConfigStatus'];
+check($nc('healthy', 'not_configured') === 'healthy' && $nc('unhealthy', 'healthy') === 'healthy', 'dispatcher is Working when either transport is proven working');
+check($nc('configured', 'unhealthy') === 'configured' && $nc('not_configured', 'configured') === 'configured', 'dispatcher is "set up" when one transport is untestable and none is proven');
+check($nc('unhealthy', 'not_configured') === 'unhealthy' && $nc('unhealthy', 'unhealthy') === 'unhealthy' && $nc('not_configured', 'not_configured') === 'not_configured', 'dispatcher is Not working only when the set-up transports are failing');
 
 // ---- 3. Message content ----------------------------------------------------
 $pdo->exec("INSERT INTO incident (barangay_id, incident_type, priority, raw_narrative, status, source, latitude, longitude, location_description, display_id, created_at, updated_at)
@@ -170,8 +216,17 @@ check(str_contains($mNf['sms'], 'NO LOCATION'), 'SOS SMS says NO LOCATION when t
 check(!str_contains($mLk['body'], 'Msg Tanod') && !preg_match('/\d+\.\d{3}/', $mLk['body']) && str_contains($mLk['body'], 'Last known location'), 'SOS push body: no name, no coordinates, says last known');
 check(strlen($mLk['sms']) <= 160 && strlen($mNf['sms']) <= 160, 'SOS SMS within 160 chars');
 
+// placeLabel: no "Dao, Dao" when the landmark text already names the barangay
+$place = new ReflectionMethod(NotificationDispatcher::class, 'placeLabel');
+$place->setAccessible(true);
+check($place->invoke(null, 'Service lane, Dao', 'Dao') === 'Service lane, Dao'
+    && $place->invoke(null, 'near dao chapel', 'Dao') === 'near dao chapel'
+    && $place->invoke(null, 'Daoang street', 'Dao') === 'Daoang street, Dao'
+    && $place->invoke(null, '', 'Dao') === 'Dao', 'placeLabel skips the barangay when the text already names it (word match, any case)');
+
 // gsm7
-check(NotificationDispatcher::gsm7("Caf\u{e9} \u{201C}x\u{201D} \u{2013} ok\u{2026} \u{1F525}") === 'Caf "x" - ok... ', 'gsm7 maps typographic chars and drops emoji/non-GSM');
+check(NotificationDispatcher::gsm7("Caf\u{e9} \u{201C}x\u{201D} \u{2013} ok\u{2026} \u{1F525}") === 'Cafe "x" - ok... ', 'gsm7 maps typographic chars, strips accents, drops emoji/non-GSM');
+check(NotificationDispatcher::gsm7("Jos\u{e9} Pe\u{f1}a \u{c0}ngel\u{202F}x") === "Jose Pe\u{f1}a Angel x", 'gsm7 keeps names readable: José -> Jose, ñ kept, narrow no-break space -> space');
 
 // ---- 4. SOS escalation -----------------------------------------------------
 $pdo->exec("UPDATE tanod_sos SET triggered_at = UTC_TIMESTAMP() WHERE sos_id = $sosLk");

@@ -13,7 +13,7 @@
  *    - Buckets reports into "Today's Shift", "Yesterday", and dated section ledgers.
  * 4. Tactical Blotter Card Architecture:
  *    - Severity color indicators (Red = Critical, Amber = High, Blue = Normal).
- *    - Integrated monospace Case #, category icon, and right-aligned Sync badge.
+ *    - Integrated Case # (tabular numerals), category icon, and right-aligned Sync badge.
  *    - Clean narrative excerpt with high-contrast text conforming to WCAG 2.2 AA.
  * 5. Human-Readable Telemetry Chips:
  *    - Dropped noisy decimal coordinates in favor of clean [📍 GPS Fixed] and [📷 X photos] chips.
@@ -56,6 +56,7 @@ import { runSyncPassExclusive } from '../services/syncScheduler';
 import type { IncidentLocalRow } from '../services/db/localSchema';
 import tacticalFeedback from '../utils/tacticalFeedback';
 import { formatIncidentCode, localReportRef } from '../utils/incidentCode';
+import { formatManilaTime } from '../utils/manilaTime';
 
 // Wording comes from SyncLabel only. A duplicate means the server already has the report, so it is "Sent".
 const SYNC_STATE_MAP: Record<SyncState, { state: UiSyncState; willRetry: boolean }> = {
@@ -107,7 +108,7 @@ function formatIncidentType(rawType: string): string {
 function formatTimeOnly(dateStr: string): string {
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return formatManilaTime(dateStr);
 }
 
 function getDateGroup(dateStr: string): string {
@@ -268,7 +269,7 @@ const MyReportsPage: React.FC = () => {
 
   return (
     <IonPage>
-      <MobileHeader title="My Reports" showBack defaultBackHref="/tabs/profile" />
+      <MobileHeader title="My reports" showBack defaultBackHref="/tabs/profile" />
 
       <IonContent className="ion-padding content-bg">
         <IonRefresher slot="fixed" onIonRefresh={handleRefresh}>

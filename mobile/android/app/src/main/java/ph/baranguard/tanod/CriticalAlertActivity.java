@@ -141,6 +141,7 @@ public class CriticalAlertActivity extends AppCompatActivity {
 
         Button openButton = new Button(this);
         openButton.setText("Open Baranguard");
+        openButton.setAllCaps(false); // sentence case, not the Material button default
         openButton.setOnClickListener(v -> {
             if (notificationId != null && notificationType != null) {
                 pendingAlert = new PendingAlert(notificationId, notificationType, title, body);

@@ -8,6 +8,7 @@ import type { SmsFallbackInput } from '../../services/smsFallbackState';
 import tacticalFeedback from '../../utils/tacticalFeedback';
 import { runSosSmsFallback } from '../../utils/sosFallbackSms';
 import { positionWithin, SOS_FIX_WAIT_MS } from '../../utils/sosPosition';
+import { noteSosRaised } from '../../services/trackingRate';
 import { uuid } from '../../services/uuid';
 import type { SosResult } from '../../utils/sosSheet';
 
@@ -76,6 +77,7 @@ export function useSosFlow() {
         ? { latitude: position.latitude, longitude: position.longitude }
         : {};
 
+      noteSosRaised(); // the SOS is raised the moment it is attempted, sent or queued
       try {
         await postSos({ ...payload, clientEventId });
         setSosFallbackOutcome(null);

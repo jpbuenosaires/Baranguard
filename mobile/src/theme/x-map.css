@@ -43,7 +43,7 @@
 /* ODbL credit: under the zoom buttons (top-right), clear of the bottom drawer, recenter FAB and top-left HUD/rail. */
 .lm-canvas__credit {
   position: absolute;
-  top: 78px;
+  top: 108px; /* below the filter rail (top 52px, about 46px tall), which used to cover it */
   right: max(10px, env(safe-area-inset-right, 0px));
   z-index: 8;
   max-width: 60%;
@@ -231,4 +231,24 @@
   font-size: var(--text-xs);
   font-weight: 600;
   color: var(--color-text-secondary);
+}
+
+/* --- Top-left: filter rail and GPS chip share one wrapping row ------------------
+   Beside each other when the screen is wide enough; on a 360dp phone the chip wraps
+   directly under the rail instead of sitting in its own band above it. */
+.lm-topleft {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 52px; /* clear of the zoom buttons (top-right) */
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+  pointer-events: none; /* map stays pannable between the two; the rail re-enables itself */
+}
+.lm-topleft .lm-rail,
+.lm-topleft .live-map-hud-status {
+  position: static;
 }

@@ -67,10 +67,10 @@ const PrivacyPage: React.FC = () => {
           </ul>
 
           <h2>How long it is kept</h2>
-          <p>Written incident narratives are deleted after 90 days, unless a record is under legal hold.</p>
+          <p>Written incident narratives are deleted after one year, unless a record is under legal hold.</p>
           <p>
-            Other records, including accomplishment reports, availability, school check-ins and referrals: [To be set
-            by the barangay council].
+            Other records, including accomplishment reports, availability, school check-ins and referrals: one year for
+            now. The barangay council still has to confirm this period.
           </p>
 
           <h2>Your rights and who to ask</h2>
@@ -78,8 +78,8 @@ const PrivacyPage: React.FC = () => {
             Under the Data Privacy Act (RA 10173) you may ask what is held about you, ask for a copy, ask for
             corrections, object, and complain to the National Privacy Commission.
           </p>
-          <p>Data Protection Officer: [To be filled by the barangay: name and contact].</p>
-          <p>Effective date: [To be filled by the barangay].</p>
+          <p>Data Protection Officer: Not yet named by the barangay.</p>
+          <p>Effective date: Not yet set by the barangay.</p>
 
           <Button
             fullWidth

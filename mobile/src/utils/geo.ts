@@ -50,10 +50,27 @@ export function bearingLabel(
   return COMPASS_POINTS[index];
 }
 
-/** "350m" under 1km, "1.4km" at or above — matches how the web dashboard formats distances. */
+/** "350 m" under 1 km, "1.4 km" at or above. */
 export function formatDistance(meters: number): string {
-  if (meters < 1000) return `${Math.round(meters)}m`;
-  return `${(meters / 1000).toFixed(1)}km`;
+  if (meters < 1000) return `${Math.round(meters)} m`;
+  return `${(meters / 1000).toFixed(1)} km`;
+}
+
+const COMPASS_WORDS: Record<string, string> = {
+  N: 'north', NNE: 'north-northeast', NE: 'northeast', ENE: 'east-northeast',
+  E: 'east', ESE: 'east-southeast', SE: 'southeast', SSE: 'south-southeast',
+  S: 'south', SSW: 'south-southwest', SW: 'southwest', WSW: 'west-southwest',
+  W: 'west', WNW: 'west-northwest', NW: 'northwest', NNW: 'north-northwest',
+};
+
+/** Compass label ("S") as a word ("south"); unknown labels pass through. */
+export function compassWord(label: string): string {
+  return COMPASS_WORDS[label] ?? label;
+}
+
+/** "29.2 km south" — distance plus direction as a word. */
+export function formatDistanceDirection(meters: number, label: string): string {
+  return `${formatDistance(meters)} ${compassWord(label)}`;
 }
 
 /** Formats age in seconds into concise tactical time (e.g., 'Just now', '15m ago', '2h ago', '10d ago'). */

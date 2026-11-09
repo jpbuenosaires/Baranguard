@@ -17,8 +17,10 @@ import {
 import { isCacheStale } from '../../services/db/dispatchRepository';
 import type { DispatchLocalRow } from '../../services/db/localSchema';
 import type { DevicePosition } from '../../services/geolocation';
-import { bearingLabel, distanceMeters, formatDistance, formatRelativeAge } from '../../utils/geo';
+import { bearingLabel, distanceMeters, formatDistanceDirection, formatRelativeAge } from '../../utils/geo';
+import { formatIncidentCode } from '../../utils/incidentCode';
 import { dispatchStatusLabel } from '../../utils/dispatchList';
+import { DEFAULT_DISPATCH_SUMMARY } from '../../utils/dispatchStages';
 
 function getCategoryIcon(type?: string | null) {
   const normalized = (type ?? '').toLowerCase();
@@ -67,7 +69,10 @@ export default function DispatchCard({
   const hasCoords = row.latitude !== null && row.longitude !== null;
   const distanceStr =
     hasCoords && position
-      ? `${formatDistance(distanceMeters(position.latitude, position.longitude, row.latitude!, row.longitude!))} · ${bearingLabel(position.latitude, position.longitude, row.latitude!, row.longitude!)}`
+      ? formatDistanceDirection(
+          distanceMeters(position.latitude, position.longitude, row.latitude!, row.longitude!),
+          bearingLabel(position.latitude, position.longitude, row.latitude!, row.longitude!),
+        )
       : hasCoords
         ? 'Location available'
         : 'Location not set';
@@ -77,6 +82,7 @@ export default function DispatchCard({
     : null;
 
   const dispatchNo = row.server_dispatch_id ?? row.local_id.slice(0, 6);
+  const incidentCode = formatIncidentCode({ displayId: row.incident_display_id, serverIncidentId: row.server_incident_id });
 
   return (
     <article key={row.local_id} className={`dispatch-card dispatch-card--p4 ${cardUrgencyClass}`}>
@@ -105,11 +111,11 @@ export default function DispatchCard({
           ) : isHigh ? (
             <span className="dispatch-badge dispatch-badge--high">
               <IonIcon icon={alertCircleOutline} aria-hidden="true" />
-              <span>High Priority</span>
+              <span>High priority</span>
             </span>
           ) : (
             <span className="dispatch-badge dispatch-badge--routine">
-              <span>Normal</span>
+              <span>Normal priority</span>
             </span>
           )}
 
@@ -120,7 +126,7 @@ export default function DispatchCard({
 
         <div className="dispatch-card__id-age">
           <span className="dispatch-card__id">
-            #{dispatchNo}
+            {incidentCode ?? `#${dispatchNo}`}
           </span>
           {elapsedSeconds !== null && (
             <span className="dispatch-card__age">
@@ -149,11 +155,10 @@ export default function DispatchCard({
           </div>
         </div>
 
-        {/* Rich Incident Situation Excerpt */}
-        <p className="dispatch-card__summary">
-          {row.redacted_incident_summary ||
-            'Patrol dispatched to check the area and assist with the incident.'}
-        </p>
+        {/* The default instruction repeats on every card, so the list shows only real summaries. */}
+        {row.redacted_incident_summary && row.redacted_incident_summary !== DEFAULT_DISPATCH_SUMMARY && (
+          <p className="dispatch-card__summary">{row.redacted_incident_summary}</p>
+        )}
 
         {stale && (
           <div className="dispatch-card__telemetry-row dispatch-card__telemetry-row--stale">

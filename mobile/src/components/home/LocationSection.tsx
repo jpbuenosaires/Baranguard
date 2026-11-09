@@ -19,10 +19,10 @@ interface Props {
 }
 
 function accuracyPill(accuracyM: number | null): { label: string; className: string } {
-  if (accuracyM === null) return { label: 'Manual Pin', className: 'status-pill--info' };
-  if (accuracyM < 10) return { label: `High (±${accuracyM.toFixed(0)}m)`, className: 'status-pill--success' };
-  if (accuracyM <= 30) return { label: `Moderate (±${accuracyM.toFixed(0)}m)`, className: 'status-pill--pending' };
-  return { label: `Coarse (±${accuracyM.toFixed(0)}m)`, className: 'status-pill--critical' };
+  if (accuracyM === null) return { label: 'Manual pin', className: 'status-pill--info' };
+  if (accuracyM < 10) return { label: `Good fix, ±${accuracyM.toFixed(0)} m`, className: 'status-pill--success' };
+  if (accuracyM <= 30) return { label: `Fair fix, ±${accuracyM.toFixed(0)} m`, className: 'status-pill--pending' };
+  return { label: `Coarse fix, ±${accuracyM.toFixed(0)} m`, className: 'status-pill--critical' };
 }
 
 /** Smart tactical location: GPS fix or map pin. */
@@ -43,7 +43,7 @@ const LocationSection: React.FC<Props> = ({
       </span>
       {location && (
         <button type="button" onClick={onClear} disabled={saving} className="intake-clear-btn">
-          Clear Tag
+          Clear location
         </button>
       )}
     </div>

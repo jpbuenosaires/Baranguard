@@ -84,6 +84,7 @@ mysql_exec() {
 cleanup() {
   step "Cleanup"
   [ -n "${SERVER_PID:-}" ] && kill "$SERVER_PID" 2>/dev/null
+  . "$(dirname "$0")/lib/stop-php-server.sh" && stop_php_server "${API_PORT}"
   # Belt-and-braces: `(cd dir && php -S ...) &` backgrounds the subshell,
   # not always the php process itself, so $! can outlive `kill "$SERVER_PID"`
   # as an orphan holding the port. Sweep by port too.

@@ -146,7 +146,8 @@ class FakeMarker {
   setPopup(popup) { this.popup = popup; return this; }
   getPopup() { return this.popup; }
   togglePopup() { return this; }
-  addTo(map) { this.map = map; map.container.appendChild(this.element); map.markers.push(this); return this; }
+  // Real MapLibre's Marker.addTo() calls this.remove() first, so re-adding a marker never duplicates it.
+  addTo(map) { this.remove(); this.map = map; map.container.appendChild(this.element); map.markers.push(this); return this; }
   getElement() { return this.element; }
   remove() { this.element.remove(); if (this.map) this.map.markers = this.map.markers.filter((m) => m !== this); return this; }
 }

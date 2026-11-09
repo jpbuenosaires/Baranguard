@@ -30,6 +30,6 @@ describe('mapStatusLine', () => {
       tone: 'neutral',
     });
     expect(combineStatus({ text: 'Updated 14:05', offline: false }, { label: 'No map', tone: 'warning' }).tone).toBe('warning');
-    expect(combineStatus({ text: 'Offline', offline: true }, { label: 'Offline map v1', tone: 'success' }).tone).toBe('warning');
+    expect(combineStatus({ text: 'Offline', offline: true }, { label: 'Offline map ready', tone: 'success' }).tone).toBe('warning');
   });
 });

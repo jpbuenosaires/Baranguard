@@ -345,6 +345,8 @@ export function buildRoutes(scenario) {
       { user_id: 4, full_name: tanodName(4), dispatch_id: 7002, latitude: 12.9180, longitude: 123.6670, accuracy_m: 9.5, recorded_at: sqlAgo(0.5), received_at: sqlAgo(0.4), age_seconds: 30, is_stale: false },
       { user_id: 5, full_name: tanodName(5), dispatch_id: 7001, latitude: 12.9174, longitude: 123.6657, accuracy_m: 38, recorded_at: sqlAgo(9), received_at: sqlAgo(9), age_seconds: 540, is_stale: true },
     ] }) },
+    // Server-push positions: an open stream that stays silent; stream tests override it with a controllable body.
+    { method: 'GET', path: '/gps/stream', alwaysOk: true, handler: () => ({ status: 200, headers: { 'Content-Type': 'text/event-stream' }, raw: new ReadableStream({}) }) },
     { method: 'GET', path: '/gps/history', handler: ({ query }) => ok(paginate(empty ? [] : [{ track_id: 1, user_id: 4, dispatch_id: null, latitude: 12.918, longitude: 123.667, accuracy_m: 10, recorded_at: sqlAgo(5), received_at: sqlAgo(5) }], query)) },
     { method: 'GET', path: '/tanod-sos', handler: ({ query }) => ok({ items: sos.filter((s) => !query.status || s.status === query.status) }) },
     { method: 'PATCH', path: '/tanod-sos/:id/acknowledge', handler: ({ params }) => ok({ sos_id: Number(params.id), status: 'acknowledged' }) },

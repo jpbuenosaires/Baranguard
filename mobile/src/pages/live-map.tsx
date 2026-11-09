@@ -13,7 +13,7 @@ import { useNearbyPolling } from '../components/map/useNearbyPolling';
 import type { NearbyIncident, NearbyTanod } from '../services/apiService';
 import { ensureMapPackageDownloaded } from '../services/mapPackageService';
 import { loadSession } from '../services/session';
-import { bearingLabel, distanceMeters, formatDistance } from '../utils/geo';
+import { bearingLabel, distanceMeters, formatDistanceDirection } from '../utils/geo';
 import tacticalFeedback from '../utils/tacticalFeedback';
 import { basemapChip, freshnessLine } from '../utils/liveMapHud';
 import { combinedLastOk } from '../utils/liveMapPolicy';
@@ -64,10 +64,7 @@ const LiveMapPage: React.FC = () => {
   const { nearby, nearbyTanods, deviceOnline, incidentsAt, tanodsAt, fetchFailing, nowMs } = useNearbyPolling(position);
 
   const freshness = freshnessLine(combinedLastOk(incidentsAt, tanodsAt, position !== null), fetchFailing, nowMs);
-  const basemapInfo = basemapChip(
-    basemap.kind === 'offline' ? { kind: 'offline', version: basemap.version } : { kind: basemap.kind },
-    deviceOnline
-  );
+  const basemapInfo = basemapChip(basemap, deviceOnline);
 
   const statusLine = combineStatus(freshness, basemapInfo);
 
@@ -130,7 +127,7 @@ const LiveMapPage: React.FC = () => {
     const targetLng = selectedItem.item.longitude;
     const dist = distanceMeters(position.latitude, position.longitude, targetLat, targetLng);
     const bearing = bearingLabel(position.latitude, position.longitude, targetLat, targetLng);
-    return `${formatDistance(dist)} · ${bearing}`;
+    return formatDistanceDirection(dist, bearing);
   }, [selectedItem, position]);
 
   // Unique available incident types
@@ -208,41 +205,57 @@ const LiveMapPage: React.FC = () => {
             aria-hidden="true"
           />
 
-          {/* Floating Top-Left Status HUD Pill */}
-          <div className="live-map-hud-status" role="status" aria-live="polite">
-            <span
-              className={`live-map-status-dot ${
-                positionError
-                  ? 'live-map-status-dot--error'
-                  : isLive
-                  ? 'live-map-status-dot--live'
-                  : 'live-map-status-dot--stale'
-              }`}
-              aria-hidden="true"
+          {/* Top-left: filter rail, GPS state beside it when it fits, else wrapped just under it. */}
+          <div className="lm-topleft">
+            <MapFilterRail
+              quickFilter={quickFilter}
+              incidentCount={nearby.length}
+              tanodCount={nearbyTanods.length}
+              criticalCount={criticalCount}
+              isFilterActive={isFilterActive}
+              onSelectAll={resetFilters}
+              onSelectTab={setQuickFilter}
+              onOpenAdvanced={() => {
+                setTempAdvancedFilters(advancedFilters);
+                setIsFilterModalOpen(true);
+              }}
             />
-            <IonIcon
-              icon={
-                !position || positionError || !isLive || broadcastState === 'saved'
-                  ? positionError || !position
-                    ? alertCircleOutline
-                    : timeOutline
-                  : checkmarkCircleOutline
-              }
-              aria-hidden="true"
-            />
-            <span>
-              {positionError
-                ? 'No GPS fix'
-                : !position
-                ? 'Acquiring GPS…'
-                : !isLive
-                ? 'Location stale'
-                : broadcastState === 'saved'
-                ? 'Saved on phone, will send'
-                : broadcastState === 'confirmed'
-                ? `Sharing location · ±${position.accuracyM.toFixed(0)}m`
-                : `GPS fix · ±${position.accuracyM.toFixed(0)}m`}
-            </span>
+
+            <div className="live-map-hud-status" role="status" aria-live="polite">
+              <span
+                className={`live-map-status-dot ${
+                  positionError
+                    ? 'live-map-status-dot--error'
+                    : isLive
+                    ? 'live-map-status-dot--live'
+                    : 'live-map-status-dot--stale'
+                }`}
+                aria-hidden="true"
+              />
+              <IonIcon
+                icon={
+                  !position || positionError || !isLive || broadcastState === 'saved'
+                    ? positionError || !position
+                      ? alertCircleOutline
+                      : timeOutline
+                    : checkmarkCircleOutline
+                }
+                aria-hidden="true"
+              />
+              <span>
+                {positionError
+                  ? 'No GPS fix'
+                  : !position
+                  ? 'Acquiring GPS…'
+                  : !isLive
+                  ? 'Location stale'
+                  : broadcastState === 'saved'
+                  ? 'Saved on phone, will send'
+                  : broadcastState === 'confirmed'
+                  ? `Sharing location · ±${position.accuracyM.toFixed(0)}m`
+                  : `GPS fix · ±${position.accuracyM.toFixed(0)}m`}
+              </span>
+            </div>
           </div>
 
           {/* One status line (data freshness and basemap) kept above the drawer, clear of the filter rail.
@@ -253,19 +266,6 @@ const LiveMapPage: React.FC = () => {
             </div>
           )}
 
-          <MapFilterRail
-            quickFilter={quickFilter}
-            incidentCount={nearby.length}
-            tanodCount={nearbyTanods.length}
-            criticalCount={criticalCount}
-            isFilterActive={isFilterActive}
-            onSelectAll={resetFilters}
-            onSelectTab={setQuickFilter}
-            onOpenAdvanced={() => {
-              setTempAdvancedFilters(advancedFilters);
-              setIsFilterModalOpen(true);
-            }}
-          />
 
           {/* Floating Pill when 0 Markers match active filter */}
           {isFilterActive && filteredIncidents.length === 0 && filteredTanods.length === 0 && (

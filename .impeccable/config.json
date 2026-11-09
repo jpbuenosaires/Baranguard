@@ -20,6 +20,12 @@
         ],
         "createdAt": "2026-10-18T20:42:31.546Z",
         "reason": "Agent triage: Georgia/Arial deliberately match the existing printed evaluation forms (06); print document, not a branded UI. User has not reviewed."
+      },
+      {
+        "rule": "overused-font",
+        "value": "arial",
+        "createdAt": "2026-11-05T04:23:16.107Z",
+        "reason": "Claude: Arial is intentional in docs/chapter4-instruments/16-needs-expected-answers.html, a plain table meant to be copied into Google Docs/Word, where a standard document font pastes cleanly"
       }
     ]
   }

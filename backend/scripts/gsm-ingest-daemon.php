@@ -47,9 +47,10 @@ declare(strict_types=1);
  *                                      lets this script's parsing/dispatch logic run and be
  *                                      verified with no phone attached.
  *
- * State: `backend/storage/gsm-ingest-state.json` — `{"last_id": N}`, the
- * highest SMS-inbox `_id` this daemon has FINISHED with (forwarded
- * successfully, or conclusively not-for-us). A transient failure
+ * State: `backend/storage/gsm-ingest-state.json` — `{"last_id": N, "last_date": ms}`, the
+ * highest SMS-inbox `_id` and `date` this daemon has FINISHED with (forwarded
+ * successfully, or conclusively not-for-us). A row is skipped only when neither
+ * its `_id` nor its `date` is newer (so a phone reset cannot hide a new SOS). A transient failure
  * (network blip, workstation-side 5xx) does NOT advance past that
  * message — the next poll retries it. A message that isn't valid JSON,
  * or whose `message_type` isn't one of the four inbound types, is
@@ -118,13 +119,13 @@ function loadState(string $stateFile): array
 }
 
 /** @param array<string,int> $fails server-error counts per inbox _id (head-of-line guard) */
-function saveState(string $stateFile, int $lastId, array $fails = []): void
+function saveState(string $stateFile, int $lastId, array $fails = [], int $lastDate = 0): void
 {
     $dir = dirname($stateFile);
     if (!is_dir($dir)) {
         mkdir($dir, 0750, true);
     }
-    file_put_contents($stateFile, json_encode(['last_id' => $lastId, 'fails' => (object) $fails], JSON_PRETTY_PRINT));
+    file_put_contents($stateFile, json_encode(['last_id' => $lastId, 'last_date' => $lastDate, 'fails' => (object) $fails], JSON_PRETTY_PRINT));
 }
 
 function out(string $line): void
@@ -279,14 +280,31 @@ function pollOnce(
 
     $state = loadState($stateFile);
     $lastId = (int) $state['last_id'];
+    // A row is old only if BOTH its _id and its date are not newer than the last one
+    // handled: if the gateway phone is reset or its newest texts are deleted, _ids can
+    // restart at or below $lastId and an id-only check would drop new SOS texts.
+    // State written before last_date existed: take it from the rows already handled.
+    if (isset($state['last_date'])) {
+        $lastDate = (int) $state['last_date'];
+    } else {
+        $lastDate = 0;
+        foreach ($rows as $r) {
+            if ($r['id'] <= $lastId) {
+                $lastDate = max($lastDate, $r['date']);
+            }
+        }
+    }
 
     $fails = is_array($state['fails'] ?? null) ? $state['fails'] : [];
     $forwarded = 0;
     $skipped = 0;
 
     foreach ($rows as $row) {
-        if ($row['id'] <= $lastId) {
+        if ($row['id'] <= $lastId && $row['date'] <= $lastDate) {
             continue; // Already handled in a previous poll.
+        }
+        if ($row['id'] <= $lastId) {
+            out("[sms _id={$row['id']}] inbox _id went backwards (phone reset or texts deleted); accepting it by date.");
         }
 
         $addressMasked = preg_replace('/\d(?=\d{4})/', '*', $row['address']) ?? '(unreadable)';
@@ -306,7 +324,7 @@ function pollOnce(
                 out("[sms _id={$row['id']} from={$addressMasked}] human text stored for SMS Monitor.");
             }
             unset($fails[$row['id']]);
-            $lastId = $row['id'];
+            $lastId = max($lastId, $row['id']); $lastDate = max($lastDate, $row['date']);
             $skipped++;
             continue;
         }
@@ -315,7 +333,7 @@ function pollOnce(
         if ($path === null) {
             out("[sms _id={$row['id']} from={$addressMasked}] SKIPPED — message_type '{$envelope['message_type']}' is not a valid INBOUND type.");
             reportText($baseUrl, $token, $row, 'INVALID_MESSAGE_TYPE');
-            $lastId = $row['id'];
+            $lastId = max($lastId, $row['id']); $lastDate = max($lastDate, $row['date']);
             $skipped++;
             continue;
         }
@@ -336,7 +354,7 @@ function pollOnce(
             $resultId = is_array($result['body']) ? (reset($result['body']) ?: '?') : '?';
             out("[sms _id={$row['id']} type={$envelope['message_type']} from={$addressMasked}] forwarded to {$path} -> {$result['status']} (result={$resultId})");
             unset($fails[$row['id']]);
-            $lastId = $row['id'];
+            $lastId = max($lastId, $row['id']); $lastDate = max($lastDate, $row['date']);
             $forwarded++;
         } elseif ($result['status'] === 422) {
             // §6/EnvelopeException: "deliberately generic — no detail that
@@ -346,7 +364,7 @@ function pollOnce(
             // uses elsewhere) — terminal for THIS message either way.
             out("[sms _id={$row['id']} type={$envelope['message_type']}] SKIPPED — envelope rejected (expired/replayed/unknown device/tampered — indistinguishable by design).");
             reportText($baseUrl, $token, $row, 'ENVELOPE_REJECTED_' . strtoupper($envelope['message_type']));
-            $lastId = $row['id'];
+            $lastId = max($lastId, $row['id']); $lastDate = max($lastDate, $row['date']);
             $skipped++;
         } else {
             // Head-of-line guard: one envelope that keeps 5xx-ing must not block every
@@ -358,12 +376,12 @@ function pollOnce(
             }
             out("[sms _id={$row['id']}] GIVING UP after " . MAX_SERVER_FAILURES . " attempts; recorded as rejected so later messages are not blocked.");
             reportText($baseUrl, $token, $row, 'FORWARD_FAILED_HTTP_' . $result['status']);
-            $lastId = $row['id'];
+            $lastId = max($lastId, $row['id']); $lastDate = max($lastDate, $row['date']);
             $skipped++;
         }
     }
 
-    saveState($stateFile, $lastId, $fails);
+    saveState($stateFile, $lastId, $fails, $lastDate);
     return [$forwarded, $skipped];
 }
 
@@ -401,13 +419,19 @@ if ($options['daemon']) {
 }
 
 do {
+    $pollOk = true;
     try {
         [$forwarded, $skipped] = pollOnce($adbPath, $deviceSerial, $sourceFile, $stateFile, $baseUrl, $token);
         if ($forwarded > 0 || $skipped > 0) {
             out("poll complete — {$forwarded} forwarded, {$skipped} skipped.");
         }
     } catch (RuntimeException $e) {
+        $pollOk = false;
         out('poll FAILED — ' . $e->getMessage());
+    }
+    // Liveness for Service Health: only a real run against a real phone counts (never --source fixtures).
+    if ($sourceFile === null) {
+        @file_put_contents(dirname($stateFile) . '/gsm-ingest-heartbeat.json', json_encode(['at' => time(), 'ok' => $pollOk]), LOCK_EX);
     }
 
     if ($options['daemon']) {

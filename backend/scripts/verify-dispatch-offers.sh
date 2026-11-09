@@ -72,6 +72,7 @@ TMP_DIR="$(mktemp -d)"
 cleanup() {
   step "Cleanup"
   for port in $NIGHT_PORT $DAY_PORT $FAULT_PORT; do
+    . "$(dirname "$0")/lib/stop-php-server.sh" && stop_php_server "${port}"
     for pid in $(netstat -ano 2>/dev/null | grep "127.0.0.1:${port} " | grep LISTENING | awk '{print $NF}' | sort -u); do
       taskkill //F //PID "$pid" >/dev/null 2>&1
     done

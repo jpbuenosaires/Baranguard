@@ -112,10 +112,7 @@ const LoginPage: React.FC = () => {
               <IonIcon icon={shield} />
             </div>
             <h1 className="mobile-login-title">BARANGUARD</h1>
-            <p className="mobile-login-subtitle">Field Responder Console</p>
-            <div className="mobile-login-badge">
-              <span>Barangay Peacekeeping Action Team</span>
-            </div>
+            <p className="mobile-login-subtitle">Field Responder Console · Barangay Peacekeeping Action Team</p>
           </div>
 
           {/* 2. Integrated Bottom Input Card */}
@@ -168,16 +165,17 @@ const LoginPage: React.FC = () => {
                   disabled={busy}
                   className="mobile-login-submit"
                 >
-                  {busy ? <IonSpinner name="dots" /> : 'Sign In to Console'}
+                  {busy ? <IonSpinner name="dots" /> : 'Sign in'}
                 </IonButton>
               </form>
             </div>
 
             {/* 3. Diagnostic & Network Footer */}
             <div className="mobile-login-footer">
-              <div className="mobile-login-network-pill" role="status" aria-label={isOnline ? 'Workstation Network Connected' : 'Offline Mode'}>
+              {/* The phone's network state only (useOnline), not a server probe, so it never claims the server is reachable. */}
+              <div className="mobile-login-network-pill" role="status">
                 <span className={`mobile-login-dot ${isOnline ? 'mobile-login-dot--online' : 'mobile-login-dot--offline'}`} aria-hidden="true" />
-                <span>{isOnline ? 'Workstation Network Connected' : 'Offline · Check Cellular / Wi-Fi'}</span>
+                <span>{isOnline ? 'Connected to a network' : 'No connection · check mobile data or Wi-Fi'}</span>
               </div>
               <p className="mobile-login-help-text">Tanod &amp; Chief Tanod Field Personnel Only</p>
             </div>

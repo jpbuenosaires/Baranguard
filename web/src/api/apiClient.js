@@ -150,6 +150,19 @@ export function __setSessionForTests(session) {
 
 // --- Low-level request helper ----------------------------------------------
 
+/** Sliding renewal (§6): keep the token with the latest expiry. */
+function applyRenewedToken(response, session) {
+  const renewed = response.headers.get('X-Renewed-Token');
+  // Only renew the session this call was made with: a logout or a fresh
+  // sign-in while the call was in flight must not be overwritten.
+  if (renewed && session && inMemorySession && inMemorySession.token === session.token) {
+    const payload = decodeJwtPayload(renewed);
+    if (payload && typeof payload.exp === 'number') {
+      writeSession({ ...session, token: renewed, expiresAt: new Date(payload.exp * 1000).toISOString() });
+    }
+  }
+}
+
 // `expireOn401: false` is for the one call whose 401 is a business answer,
 // not a dead session: change-password answers 401 for a wrong CURRENT
 // password, which must not sign the user out (it used to).
@@ -192,16 +205,7 @@ async function request(method, path, { query, body, auth = true, idempotencyKey,
     throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the Baranguard server. Check your connection and try again.');
   }
 
-  // Sliding renewal (§6): keep the token with the latest expiry.
-  const renewed = response.headers.get('X-Renewed-Token');
-  // Only renew the session this call was made with: a logout or a fresh
-  // sign-in while the call was in flight must not be overwritten.
-  if (renewed && session && inMemorySession && inMemorySession.token === session.token) {
-    const payload = decodeJwtPayload(renewed);
-    if (payload && typeof payload.exp === 'number') {
-      writeSession({ ...session, token: renewed, expiresAt: new Date(payload.exp * 1000).toISOString() });
-    }
-  }
+  applyRenewedToken(response, session);
 
   let json = null;
   const text = await response.text();
@@ -710,10 +714,8 @@ function mapDispatch(row) {
 
 // --- GPS (W4 GIS Live Tracking) ---------------------------------------------
 
-/** @returns {Promise<Array<object>>} */
-export async function getGpsLive(barangayId) {
-  const json = await request('GET', '/gps/live', { query: { barangay_id: barangayId }, auth: true });
-  return json.items.map((row) => ({
+function mapGpsRow(row) {
+  return {
     userId: row.user_id,
     fullName: row.full_name,
     dispatchId: row.dispatch_id,
@@ -724,7 +726,152 @@ export async function getGpsLive(barangayId) {
     receivedAt: row.received_at,
     ageSeconds: row.age_seconds,
     isStale: row.is_stale,
-  }));
+  };
+}
+
+/** @returns {Promise<Array<object>>} */
+export async function getGpsLive(barangayId) {
+  const json = await request('GET', '/gps/live', { query: { barangay_id: barangayId }, auth: true });
+  return json.items.map(mapGpsRow);
+}
+
+/**
+ * Keeps whichever fix for a user is newer (by recordedAt), so a poll answer
+ * that was in flight while the stream pushed cannot move a marker backwards.
+ * Users only in `base` are kept when `keepMissing` (stream merge); a poll
+ * replaces the user list but still prefers a newer pushed fix.
+ */
+export function mergeGpsFixes(base, incoming, keepMissing) {
+  const time = (g) => { const t = Date.parse(g.recordedAt); return Number.isNaN(t) ? 0 : t; };
+  const byId = new Map(base.map((g) => [g.userId, g]));
+  const out = keepMissing ? new Map(byId) : new Map();
+  for (const g of incoming) {
+    const cur = byId.get(g.userId);
+    out.set(g.userId, cur && time(cur) > time(g) ? cur : g);
+  }
+  return [...out.values()];
+}
+
+const GPS_STREAM_BACKOFF_MS = [1000, 2000, 5000, 10000];
+const GPS_STREAM_SLOW_RETRY_MS = 30000; // 403/404/429: do not hammer the server
+const GPS_STREAM_IDLE_MS = 45000; // the server pings every 15 s
+
+/**
+ * Server-push positions (GET /gps/stream, text/event-stream). EventSource
+ * cannot send an Authorization header, so the stream is read with fetch()
+ * and the SSE frames are parsed here. Reconnects with backoff, never throws
+ * into the page; the page keeps its own poll as the fallback.
+ * @param {number} barangayId
+ * @param {{onSnapshot?: (items: object[]) => void, onPosition?: (items: object[]) => void, onState?: (state: 'open'|'connecting'|'closed') => void}} handlers
+ * @returns {{close: () => void}}
+ */
+export function openGpsStream(barangayId, { onSnapshot, onPosition, onState } = {}) {
+  let closed = false;
+  let controller = null;
+  let state = null;
+  let failures = 0;
+  let sleepTimer = null;
+  let wake = null;
+  let idleTimer = null;
+  let reader = null;
+
+  // abort alone does not release a pending read() in every runtime, so cancel the reader too
+  const drop = () => { controller?.abort(); reader?.cancel().catch(() => {}); };
+  const setState = (next) => {
+    if (next === state || (closed && next !== 'closed')) return;
+    state = next;
+    try { onState?.(next); } catch { /* a page callback must not kill the stream */ }
+  };
+  const deliver = (fn, rawData) => {
+    let items;
+    try { items = JSON.parse(rawData, reviveUtcTimestamps).items; } catch { return; }
+    if (!Array.isArray(items) || closed) return;
+    try { fn?.(items.map(mapGpsRow)); } catch { /* same */ }
+  };
+
+  /** One connection. Returns 'stop' | 'now' (reconnect at once) | 'slow' | 'retry'. */
+  async function attempt() {
+    const session = readSession(); // an expired session notifies the app itself
+    if (!session) return 'stop';
+    controller = new AbortController();
+    setState('connecting');
+    reader = null;
+    try {
+      const response = await fetch(`${BASE_URL}/gps/stream?barangay_id=${encodeURIComponent(barangayId)}`, {
+        method: 'GET',
+        headers: { Accept: 'text/event-stream', Authorization: `Bearer ${session.token}` },
+        signal: controller.signal,
+      });
+      if (closed) return 'stop';
+      applyRenewedToken(response, session);
+      if (response.status === 401) {
+        if (inMemorySession && inMemorySession.token === session.token) expireSession('unauthorized');
+        return 'stop';
+      }
+      if (!response.ok || !response.body) return [403, 404, 429].includes(response.status) ? 'slow' : 'retry';
+
+      setState('open');
+      failures = 0;
+      reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(drop, GPS_STREAM_IDLE_MS);
+        const { done, value } = await reader.read();
+        if (done) return 'retry';
+        // shortcut: only CRLF/LF framing (the server's), a lone CR is not handled; upgrade if a proxy rewrites frames
+        buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n');
+        let end;
+        while ((end = buffer.indexOf('\n\n')) !== -1) {
+          const frame = buffer.slice(0, end);
+          buffer = buffer.slice(end + 2);
+          let event = 'message';
+          const data = [];
+          for (const line of frame.split('\n')) {
+            if (line.startsWith(':')) continue; // comment, e.g. ": ping"
+            if (line.startsWith('event:')) event = line.slice(6).trim();
+            else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
+          }
+          if (event === 'snapshot') deliver(onSnapshot, data.join('\n'));
+          else if (event === 'position') deliver(onPosition, data.join('\n'));
+          else if (event === 'auth_expired') {
+            if (inMemorySession && inMemorySession.token === session.token) expireSession('unauthorized');
+            return 'stop';
+          } else if (event === 'reconnect') return 'now';
+        }
+      }
+    } catch {
+      return 'retry'; // network error, abort (idle or close()), unreadable body
+    } finally {
+      clearTimeout(idleTimer);
+      drop();
+    }
+  }
+
+  (async () => {
+    while (!closed) {
+      const outcome = await attempt();
+      if (closed || outcome === 'stop') break;
+      let waitMs = 0;
+      if (outcome === 'slow') waitMs = GPS_STREAM_SLOW_RETRY_MS;
+      else if (outcome === 'retry') waitMs = GPS_STREAM_BACKOFF_MS[Math.min(failures++, GPS_STREAM_BACKOFF_MS.length - 1)];
+      setState(outcome === 'slow' ? 'closed' : 'connecting');
+      if (waitMs) await new Promise((resolve) => { wake = resolve; sleepTimer = setTimeout(resolve, waitMs); });
+    }
+    setState('closed');
+  })().catch(() => setState('closed'));
+
+  return {
+    close() {
+      closed = true;
+      clearTimeout(sleepTimer);
+      clearTimeout(idleTimer);
+      wake?.();
+      drop();
+      setState('closed');
+    },
+  };
 }
 
 // --- Tanod SOS --------------------------------------------------------------

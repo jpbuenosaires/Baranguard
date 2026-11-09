@@ -203,6 +203,8 @@ const ProfilePage: React.FC = () => {
 
   const totalUnsynced =
     localStats.unsyncedIncidents + localStats.unsyncedGps + localStats.pendingQueue;
+  // Compact all-clear only when online with nothing unconfirmed; offline or waiting keeps the full box.
+  const allSent = totalUnsynced === 0 && isOnline === true;
 
   return (
     <IonPage>
@@ -214,10 +216,10 @@ const ProfilePage: React.FC = () => {
             <div className="profile-avatar-circle" aria-hidden="true">{initials}</div>
             <div className="profile-identity__body">
               <h2 className="profile-identity__name">{session?.fullName || 'Tanod Officer'}</h2>
-              <p className="profile-identity__role">Security responder, Brgy {barangayName}</p>
+              <p className="profile-identity__role">Barangay Tanod, Brgy {barangayName}</p>
               <span className="profile-verified-badge">
                 <IonIcon icon={shieldCheckmarkOutline} aria-hidden="true" />
-                Active Duty
+                Active account
               </span>
               <p className="profile-identity__line">Barangay post: {barangayName} HQ</p>
               <p className="profile-identity__line">Active dispatches: {localStats.dispatches}</p>
@@ -314,52 +316,66 @@ const ProfilePage: React.FC = () => {
               </span>
             </div>
 
-            {totalUnsynced === 0 ? (
-              <Banner tone="success" role="status">
-                <strong>Nothing waiting to send.</strong> Your incident reports, GPS tracks and status updates have all
-                been sent.
-              </Banner>
-            ) : (
-              <Banner tone="warning" role="status">
-                <strong>
-                  {totalUnsynced} record{totalUnsynced === 1 ? '' : 's'} not sent yet.
-                </strong>{' '}
-                Saved on this phone. Tap below to send when connected.
-              </Banner>
-            )}
-
-            {totalUnsynced > 0 && (
-              <div className="profile-sync-badge-row">
-                {localStats.unsyncedIncidents > 0 && (
-                  <span className="profile-sync-chip">
-                    <IonIcon icon={documentTextOutline} />
-                    {localStats.unsyncedIncidents} Incident(s)
-                  </span>
-                )}
-                {localStats.unsyncedGps > 0 && (
-                  <span className="profile-sync-chip">
-                    <IonIcon icon={syncOutline} />
-                    {localStats.unsyncedGps} GPS Log(s)
-                  </span>
-                )}
-                {localStats.pendingQueue > 0 && (
-                  <span className="profile-sync-chip">
-                    <IonIcon icon={shieldCheckmarkOutline} />
-                    {localStats.pendingQueue} Status Update(s)
-                  </span>
-                )}
+            {allSent ? (
+              <div className="profile-sync-allclear" role="status">
+                <span className="profile-sync-allclear__text">
+                  <IonIcon icon={checkmarkCircleOutline} aria-hidden="true" />
+                  All sent
+                </span>
+                <Button variant="secondary" icon={syncOutline} loading={syncing} onClick={handleManualSync}>
+                  Check
+                </Button>
               </div>
-            )}
+            ) : (
+              <>
+                {totalUnsynced === 0 ? (
+                  <Banner tone="success" role="status">
+                    <strong>Nothing waiting to send.</strong> Your incident reports, GPS tracks and status updates have all
+                    been sent.
+                  </Banner>
+                ) : (
+                  <Banner tone="warning" role="status">
+                    <strong>
+                      {totalUnsynced} record{totalUnsynced === 1 ? '' : 's'} not sent yet.
+                    </strong>{' '}
+                    Saved on this phone. Tap below to send when connected.
+                  </Banner>
+                )}
 
-            <Button
-              fullWidth
-              icon={syncOutline}
-              loading={syncing}
-              disabled={!isOnline}
-              onClick={handleManualSync}
-            >
-              {totalUnsynced > 0 ? `Sync records now (${totalUnsynced})` : 'Check connection'}
-            </Button>
+                {totalUnsynced > 0 && (
+                  <div className="profile-sync-badge-row">
+                    {localStats.unsyncedIncidents > 0 && (
+                      <span className="profile-sync-chip">
+                        <IonIcon icon={documentTextOutline} />
+                        {localStats.unsyncedIncidents} Incident(s)
+                      </span>
+                    )}
+                    {localStats.unsyncedGps > 0 && (
+                      <span className="profile-sync-chip">
+                        <IonIcon icon={syncOutline} />
+                        {localStats.unsyncedGps} GPS Log(s)
+                      </span>
+                    )}
+                    {localStats.pendingQueue > 0 && (
+                      <span className="profile-sync-chip">
+                        <IonIcon icon={shieldCheckmarkOutline} />
+                        {localStats.pendingQueue} Status Update(s)
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <Button
+                  fullWidth
+                  icon={syncOutline}
+                  loading={syncing}
+                  disabled={!isOnline}
+                  onClick={handleManualSync}
+                >
+                  {totalUnsynced > 0 ? `Sync records now (${totalUnsynced})` : 'Check connection'}
+                </Button>
+              </>
+            )}
 
             {storage && (
               <>

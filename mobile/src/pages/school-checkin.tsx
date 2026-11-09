@@ -150,7 +150,7 @@ const SchoolCheckinPage: React.FC = () => {
 
   return (
     <IonPage>
-      <MobileHeader title="School Check-in" showBack defaultBackHref="/tabs/profile" />
+      <MobileHeader title="School check-in" showBack defaultBackHref="/tabs/profile" />
       <IonContent style={{ '--background': 'var(--color-bg)' }}>
         <IonRefresher slot="fixed" onIonRefresh={(e) => void reload().finally(() => e.detail.complete())}>
           <IonRefresherContent />

@@ -28,6 +28,7 @@ import {
 } from '@ionic/react';
 import {
   calendarOutline,
+  chevronForwardOutline,
   swapHorizontalOutline,
   hourglassOutline,
 } from 'ionicons/icons';
@@ -191,7 +192,7 @@ const MyShiftsPage: React.FC = () => {
 
   return (
     <IonPage>
-      <MobileHeader title="My Shifts" showBack defaultBackHref="/tabs/profile" />
+      <MobileHeader title="My shifts" showBack defaultBackHref="/tabs/profile" />
 
       <IonContent className="ion-padding content-bg">
         <IonRefresher slot="fixed" onIonRefresh={(e) => void load().finally(() => e.detail.complete())}>
@@ -205,31 +206,33 @@ const MyShiftsPage: React.FC = () => {
             </Banner>
           )}
           {/* Availability entry point — the desk builds the roster from what Tanods submit here. */}
-          <button
-            type="button"
-            className="profile-nav-card"
-            onClick={() => {
-              tacticalFeedback.onTap();
-              navigate('/tabs/availability');
-            }}
-          >
-            <div className="profile-nav-card__icon-box profile-nav-card__icon-box--green">
-              <IonIcon icon={calendarOutline} />
-            </div>
-            <div className="profile-nav-card__body">
-              <div className="profile-nav-card__title-row">
-                <h3 className="profile-nav-card__title">My Availability</h3>
-              </div>
-              <p className="profile-nav-card__sub">
-                Tell the desk which days and hours you can serve. Only shifts the desk has published appear below.
-              </p>
-            </div>
-          </button>
+          {/* Same row pattern as the Profile list (the old profile-nav-card class had no styles). */}
+          <ul className="profile-list">
+            <li>
+              <button
+                type="button"
+                className="profile-row"
+                onClick={() => {
+                  tacticalFeedback.onTap();
+                  navigate('/tabs/availability');
+                }}
+              >
+                <span className="profile-row__icon" aria-hidden="true">
+                  <IonIcon icon={calendarOutline} />
+                </span>
+                <span className="profile-row__text">
+                  <span className="profile-row__title">Set my availability</span>
+                  <span className="profile-row__sub">When you can serve</span>
+                </span>
+                <IonIcon icon={chevronForwardOutline} className="profile-row__chevron" aria-hidden="true" />
+              </button>
+            </li>
+          </ul>
 
           {/* Roster Glance Overview Metric Banner (Dynamic for Schedule vs Swaps) */}
           {!loading && !error && (
             activeTab === 'schedule' ? (
-              shifts.length > 0 && (
+              upcoming.length > 0 && (
                 <div className="roster-glance-banner roster-next" role="region" aria-label="Next shift">
                   <div className="roster-next__label">Next shift</div>
                   {nextShiftTiming ? (
@@ -260,8 +263,8 @@ const MyShiftsPage: React.FC = () => {
                       {pendingSwapCount > 0
                         ? `${pendingSwapCount} Swap Request${pendingSwapCount > 1 ? 's' : ''} Awaiting Review`
                         : swapRequests.length > 0
-                          ? 'All Swap Requests Resolved'
-                          : 'No Swap Requests'}
+                          ? 'All swap requests resolved'
+                          : 'No swap requests'}
                     </div>
                     <div className="roster-glance-sub">
                       {pendingSwapCount > 0
@@ -303,7 +306,7 @@ const MyShiftsPage: React.FC = () => {
                   setActiveTab('swaps');
                 }}
               >
-                <span>Swap Requests</span>
+                <span>Swap requests</span>
                 <span className="roster-segment-count">{swapRequests.length}</span>
               </button>
             </div>

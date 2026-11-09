@@ -18,12 +18,9 @@
  * already verified server-side in Phase 1/2). Its failure does NOT keep
  * the overlay up — §2 Rule 7/15's offline-first stance applies here too:
  * a Tanod dismissing an alert while the workstation is unreachable must
- * still be able to dismiss it and act. The ack is fire-and-forget in that
- * case; nothing about the alert's own record is lost, since acknowledgment
- * is a distinct, idempotent, always-retriable call the server already
- * supports (§6 "the endpoint is idempotent for an already-acknowledged
- * target") — a background retry is straightforward follow-up work, not
- * something this overlay needs to solve.
+ * still be able to dismiss it and act. A failed ack is remembered and
+ * re-sent later by `alertAckRetry.ts` (the server's endpoint is idempotent,
+ * §6 "the endpoint is idempotent for an already-acknowledged target").
  *
  * NOT DEVICE-VERIFIED — see criticalAlertStore.ts's own note.
  */
@@ -33,7 +30,7 @@ import { useNavigate } from 'react-router-dom';
 import { IonButton, IonIcon } from '@ionic/react';
 import { warningOutline } from 'ionicons/icons';
 import { subscribeToCriticalAlert, dismissCriticalAlert, setSosTapHandler, type CriticalAlert } from '../services/criticalAlertStore';
-import { acknowledgeNotification } from '../services/apiService';
+import { acknowledgeAlert } from '../services/alertAckRetry';
 import { loadSession } from '../services/session';
 import { incidentTypeLabel } from '../utils/dispatchOfferFormat';
 import { formatManilaTime } from '../utils/manilaTime';
@@ -77,7 +74,7 @@ const CriticalAlertOverlay: React.FC = () => {
   const handleAcknowledge = async () => {
     setAcknowledging(true);
     try {
-      await acknowledgeNotification(alert.notificationId);
+      await acknowledgeAlert(alert.notificationId);
     } catch {
       // Fire-and-forget on failure
     } finally {
@@ -106,7 +103,7 @@ const CriticalAlertOverlay: React.FC = () => {
     try {
       const session = await loadSession();
       if (session?.role === 'admin') target = '/tabs/dispatch';
-      await acknowledgeNotification(alert.notificationId);
+      await acknowledgeAlert(alert.notificationId);
     } catch {
       // Fire-and-forget on failure, same as handleAcknowledge
     } finally {
@@ -122,7 +119,7 @@ const CriticalAlertOverlay: React.FC = () => {
     let admin = false;
     try {
       admin = (await loadSession())?.role === 'admin';
-      await acknowledgeNotification(alert.notificationId);
+      await acknowledgeAlert(alert.notificationId);
     } catch {
       // Fire-and-forget on failure, same as handleAcknowledge
     } finally {
@@ -166,8 +163,11 @@ const CriticalAlertOverlay: React.FC = () => {
             disabled={acknowledging}
             onClick={isSos ? handleOpenSos : handleAcknowledge}
             className="critical-alert-overlay__btn"
+            aria-label={acknowledging ? undefined : 'Acknowledge alert'}
+            // Ionic's md button uppercases its label; sentence case for this one button only.
+            style={{ textTransform: 'none' }}
           >
-            {acknowledging ? 'Acknowledging…' : 'Acknowledge Alert'}
+            {acknowledging ? 'Acknowledging…' : 'Acknowledge'}
           </IonButton>
         </div>
       </div>

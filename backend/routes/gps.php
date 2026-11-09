@@ -10,6 +10,7 @@ use Baranguard\Controllers\GpsController;
 
 return [
     ['GET', '#^/gps/live$#', [GpsController::class, 'live'], true],
+    ['GET', '#^/gps/stream$#', [GpsController::class, 'stream'], true],
     ['GET', '#^/gps/history$#', [GpsController::class, 'history'], true],
     ['POST', '#^/gps$#', [GpsController::class, 'create'], true],
 ];

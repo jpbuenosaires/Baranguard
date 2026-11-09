@@ -47,7 +47,7 @@ import {
   listRecentFinishedDispatches,
 } from '../services/db/dispatchRepository';
 import type { DispatchLocalRow } from '../services/db/localSchema';
-import { bearingLabel, distanceMeters, formatDistance } from '../utils/geo';
+import { bearingLabel, distanceMeters, formatDistanceDirection } from '../utils/geo';
 import { sortDispatches } from '../utils/dispatchList';
 import { updatedLine } from '../utils/manilaFormat';
 import { useSelfPosition } from '../utils/useSelfPosition';
@@ -153,7 +153,7 @@ const AssignmentsPage: React.FC = () => {
 
     return {
       counts,
-      closestFormatted: closestDist !== Infinity ? `${formatDistance(closestDist)} · ${closestBearing}` : null,
+      closestFormatted: closestDist !== Infinity ? formatDistanceDirection(closestDist, closestBearing) : null,
     };
   }, [rows, position]);
 

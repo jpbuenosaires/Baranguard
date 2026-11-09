@@ -81,7 +81,7 @@
    All sizing tokens across the system are declared in `rem`, so altering this
    percentage proportionally scales typography, spacing, controls, and layout.
    It defaults to 100% to preserve browser font scaling and user accessibility preferences. */
-html { font-size: 100%; }
+html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ display-scaled laptops without browser zoom */
 
 /**
  * ─── THEME (light / dark) ───────────────────────────────────────────────

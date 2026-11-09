@@ -87,6 +87,10 @@ do {
                 out("SMS outbox: sent={$sms['sent']} unconfirmed={$sms['pending']} failed={$sms['failed']}.");
             }
         }
+        $settled = (new SmsGatewayService())->reconcilePending($pdo);
+        if ($settled['sent'] + $settled['failed'] > 0) {
+            out("SMS confirmations: {$settled['sent']} now sent, {$settled['failed']} failed (were unconfirmed).");
+        }
     } catch (Throwable $e) {
         fwrite(STDERR, gmdate('c') . ' notification-worker pass failed: ' . $e->getMessage() . PHP_EOL);
         if (!$options['daemon']) {

@@ -11,6 +11,6 @@ New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $phpExe = (Get-Command php.exe -ErrorAction SilentlyContinue).Source
 if (-not $phpExe) { $phpExe = "C:\xampp\php\php.exe" }
 
-Push-Location $backendDir
-& $phpExe "scripts\gsm-ingest-daemon.php" "--daemon" 2>&1 | Add-Content -Path (Join-Path $logDir "gsm-ingest.log")
-Pop-Location
+# No console for php (see scheduled-notification-worker.ps1); the daemon's output goes straight to the log.
+Start-Process -FilePath $phpExe -ArgumentList "scripts\gsm-ingest-daemon.php","--daemon" -WorkingDirectory $backendDir `
+    -NoNewWindow -Wait -RedirectStandardOutput (Join-Path $logDir "gsm-ingest.log") -RedirectStandardError (Join-Path $logDir "gsm-ingest.err.log")

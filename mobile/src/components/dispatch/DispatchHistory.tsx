@@ -1,9 +1,13 @@
 /** Recent finished dispatches on the Dispatches list (Phase 6 split; markup unchanged). */
+import { useState } from 'react';
 import type { DispatchLocalRow } from '../../services/db/localSchema';
 import { dispatchStatusLabel } from '../../utils/dispatchList';
 import { formatIncidentCode } from '../../utils/incidentCode';
 import { formatManilaDateTime } from '../../utils/manilaFormat';
-import { Chip } from '../ui';
+import { Button, Chip } from '../ui';
+
+/** Finished calls shown before "Show more". */
+const HISTORY_PREVIEW = 10;
 
 export default function DispatchHistory({
   history,
@@ -12,11 +16,13 @@ export default function DispatchHistory({
   history: DispatchLocalRow[];
   onOpen: (row: DispatchLocalRow) => void;
 }) {
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? history : history.slice(0, HISTORY_PREVIEW);
   return (
     <section className="dispatch-history" aria-label="Recent history">
       <h3 className="dispatch-empty-title dispatch-history__title">Recent history</h3>
       <div className="dispatch-card-list">
-        {history.map((h) => (
+        {shown.map((h) => (
           <article
             key={h.local_id}
             className="dispatch-card dispatch-card--p4 dispatch-card--history dispatch-card__open"
@@ -44,6 +50,11 @@ export default function DispatchHistory({
           </article>
         ))}
       </div>
+      {!showAll && history.length > HISTORY_PREVIEW && (
+        <Button variant="ghost" fullWidth onClick={() => setShowAll(true)}>
+          Show more ({history.length - HISTORY_PREVIEW})
+        </Button>
+      )}
     </section>
   );
 }

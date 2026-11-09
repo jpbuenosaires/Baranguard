@@ -1,0 +1,39 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=390">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0}body{width:390px;height:844px;overflow:hidden;background:#f4f2ec;font-family:Roboto,sans-serif;color:#16181d}
+.status{height:28px;background:#16181d;color:#fff;font-size:12px;display:flex;justify-content:space-between;padding:6px 16px}
+.bar{height:64px;background:#fbfaf6;display:flex;align-items:center;padding:0 16px;gap:12px;border-bottom:1px solid #e2ddd0}
+.bar h1{font:800 26px 'Barlow Condensed';letter-spacing:.5px;text-transform:uppercase}.bar .sub{font-size:12px;color:#5b5e66;margin-left:auto;display:flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:#1f8a4c}
+.board{margin:12px 12px 0;background:#fbfaf6;border-radius:14px;overflow:hidden;box-shadow:0 1px 0 #d9d3c3,0 2px 6px rgba(0,0,0,.06)}
+.stripes{height:10px;background:linear-gradient(#c8102e 0 33%,#ffc72c 33% 66%,#0038a8 66%)}
+.board .in{padding:14px 16px 16px}.k{font:600 13px 'Barlow Condensed';letter-spacing:1.5px;color:#c8102e;text-transform:uppercase;display:flex;justify-content:space-between}
+.k span:last-child{color:#16181d;background:#ffc72c;padding:1px 8px;border-radius:4px}
+.dest{font:800 44px/1 'Barlow Condensed';text-transform:uppercase;margin:8px 0 2px}.via{font:600 20px 'Barlow Condensed';color:#3b3e46;text-transform:uppercase}
+.stops{display:flex;margin:16px 0 14px;position:relative}.stops:before{content:'';position:absolute;left:10px;right:10px;top:9px;height:4px;background:#d9d3c3}
+.s{flex:1;position:relative;font:600 12px 'Barlow Condensed';text-transform:uppercase;letter-spacing:.5px;color:#7a7d85}.s i{display:block;width:22px;height:22px;border-radius:50%;background:#fbfaf6;border:4px solid #d9d3c3;margin-bottom:6px}
+.s.on{color:#c8102e}.s.on i{border-color:#c8102e;background:#c8102e}
+.go{height:52px;border-radius:26px;background:#c8102e;color:#fff;font:700 16px Roboto;display:flex;align-items:center;justify-content:center;gap:8px}
+.card{margin:10px 12px 0;background:#fff;border-radius:14px;padding:14px 16px;display:flex;align-items:center;gap:12px}
+.av{width:44px;height:44px;border-radius:50%;background:#0038a8;color:#fff;font:700 16px Roboto;display:flex;align-items:center;justify-content:center}
+.card b{display:block;font-size:16px}.card small{color:#5b5e66;font-size:13px}.chip{margin-left:auto;font-size:13px;font-weight:500;background:#e3f3e9;color:#1d6b3e;padding:6px 10px;border-radius:8px}
+.row{margin:10px 12px 0;display:grid;grid-template-columns:1fr 1fr;gap:10px}.tile{background:#fff;border-radius:14px;padding:12px 14px}.tile small{display:block;color:#5b5e66;font-size:12px}.tile b{font-size:15px}
+.fab{position:absolute;right:16px;bottom:104px;height:56px;padding:0 20px;border-radius:16px;background:#0038a8;color:#fff;font:500 15px Roboto;display:flex;align-items:center;gap:8px;box-shadow:0 3px 8px rgba(0,0,0,.25)}
+.sos{position:absolute;left:12px;right:200px;bottom:104px;height:56px;border-radius:16px;background:#fbfaf6;border:2px solid #c8102e;color:#c8102e;font:800 20px 'Barlow Condensed';display:flex;align-items:center;justify-content:center;letter-spacing:1px}
+.nav{position:absolute;bottom:0;left:0;right:0;height:80px;background:#fbfaf6;border-top:1px solid #e2ddd0;display:flex;justify-content:space-around;padding-top:12px}
+.nav div{font-size:12px;font-weight:500;color:#5b5e66;text-align:center;width:64px}.nav i{display:block;margin:0 auto 4px;width:56px;height:30px;border-radius:15px;background:transparent}
+.nav .a{color:#16181d}.nav .a i{background:#ffe9a8}
+</style></head><body>
+<div class="status"><span>5:53</span><span>LTE 55%</span></div>
+<div class="bar"><h1>Baranguard</h1><div class="sub"><span class="dot"></span>Online · synced</div></div>
+<div class="board"><div class="stripes"></div><div class="in">
+<div class="k"><span>Active call · INC-2026-067</span><span>Normal</span></div>
+<div class="dest">Service Lane, Dao</div><div class="via">Vandalism · 29 km south</div>
+<div class="stops"><div class="s on"><i></i>Assigned</div><div class="s"><i></i>En route</div><div class="s"><i></i>On scene</div><div class="s"><i></i>Done</div></div>
+<div class="go">Start route · go en route</div></div></div>
+<div class="card"><div class="av">ER</div><div><b>Elmer Reyes</b><small>Tanod · Barangay Dao</small></div><div class="chip">On duty · 1h 12m</div></div>
+<div class="row"><div class="tile"><small>GPS</small><b>Sharing live</b></div><div class="tile"><small>Waiting to send</small><b>Nothing</b></div></div>
+<div class="sos">SOS</div><div class="fab">＋ Report</div>
+<div class="nav"><div class="a"><i></i>Home</div><div><i></i>Dispatches</div><div><i></i>Map</div><div><i></i>Profile</div></div>
+</body></html>

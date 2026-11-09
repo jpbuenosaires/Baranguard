@@ -90,12 +90,13 @@ const MapFilterRail: React.FC<Props> = ({
       <span className="lm-rail-label">Incidents</span>
     </button>
 
+    {/* Red only when there is something critical; a zero count stays neutral. */}
     <button
       type="button"
       role="tab"
       aria-selected={quickFilter === 'critical'}
       aria-label={`Critical only — ${criticalCount} critical`}
-      className={`lm-rail-btn lm-rail-btn--critical ${quickFilter === 'critical' ? 'lm-rail-btn--active lm-rail-btn--critical-active' : ''}`}
+      className={`lm-rail-btn ${criticalCount > 0 ? 'lm-rail-btn--critical' : ''} ${quickFilter === 'critical' ? `lm-rail-btn--active ${criticalCount > 0 ? 'lm-rail-btn--critical-active' : ''}` : ''}`}
       onClick={() => {
         tacticalFeedback.onSelection();
         onSelectTab('critical');

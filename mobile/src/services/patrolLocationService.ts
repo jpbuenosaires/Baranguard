@@ -24,15 +24,22 @@
 
 import { registerPlugin } from '@capacitor/core';
 import { ensureLocationPermission } from './geolocation';
+import { reapplyTrackingRate, resetTrackingRate, setFastModeSink } from './trackingRate';
 
 export interface PatrolLocationPlugin {
   start(): Promise<{ started: boolean }>;
   stop(): Promise<{ stopped: boolean }>;
+  setFastMode(options: { enabled: boolean }): Promise<void>;
   requestBatteryOptimizationExemption(): Promise<{ alreadyExempt: boolean; dialogShown?: boolean }>;
   requestBackgroundLocationPermission(): Promise<{ granted: boolean }>;
 }
 
 const PatrolLocation = registerPlugin<PatrolLocationPlugin>('PatrolLocation');
+
+// FAST/NORMAL GPS rate (trackingRate.ts); best-effort, a native failure never breaks the app.
+setFastModeSink((enabled) => {
+  PatrolLocation.setFastMode({ enabled }).catch(() => undefined);
+});
 
 /**
  * Starts the foreground GPS service. Never throws — duty status itself is
@@ -47,6 +54,7 @@ export async function startPatrolTracking(): Promise<boolean> {
     if (!(await ensureLocationPermission())) return false;
     const result = await PatrolLocation.start();
     if (result.started) {
+      reapplyTrackingRate(); // the service always starts in NORMAL
       // Best-effort, never blocks going on duty — C7 (docs/REMAINING.md):
       // shows the OS's own battery-optimization-exemption dialog so a
       // locked-screen shift is less likely to have this foreground service
@@ -94,4 +102,5 @@ export async function stopPatrolTracking(): Promise<void> {
   } catch {
     // Best-effort — stopping a service that isn't running is a no-op we don't need to distinguish from a real error here.
   }
+  resetTrackingRate(); // duty end / sign-out: never stay FAST
 }

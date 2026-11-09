@@ -56,7 +56,6 @@ const DispatchNextCard: React.FC<Props> = ({
 
       {action ? (
         <>
-          <p className="p4d-next__hint">{action.hint}</p>
           <Button size="lg" fullWidth icon={checkmarkCircleOutline} loading={updating} disabled={blocked !== null} onClick={onAdvance}>
             {action.label}
           </Button>

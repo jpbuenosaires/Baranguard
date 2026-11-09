@@ -1,12 +1,11 @@
 /** Text for the navigation sheet's destination line. Uses only data the dispatch row already has. */
-import { formatDistance } from './geo';
+import { compassWord, formatDistance } from './geo';
 
-/** "Bearing S · 29.5 km straight-line", or null when neither part is known. */
+/** "29.5 km south, straight-line", or null when neither part is known. */
 export function sceneSubline(bearing: string | null, distanceM: number | null): string | null {
-  const parts: string[] = [];
-  if (bearing) parts.push(`Bearing ${bearing}`);
-  if (distanceM !== null) parts.push(`${formatDistance(distanceM)} straight-line`);
-  return parts.length ? parts.join(' · ') : null;
+  const direction = bearing ? compassWord(bearing) : null;
+  if (distanceM === null) return direction ? `Heading ${direction}` : null;
+  return `${formatDistance(distanceM)}${direction ? ` ${direction}` : ''}, straight-line`;
 }
 
 /** Priority chip wording: sentence case, strong tone for high and critical. */

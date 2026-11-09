@@ -461,3 +461,17 @@
   line-height: 18px;
   text-align: center;
 }
+
+/* My availability: ended periods folded under a collapsed "Past periods (N)" section. */
+.wf-past__summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.wf-past__summary:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+.wf-past__list { display: flex; flex-direction: column; gap: 14px; }

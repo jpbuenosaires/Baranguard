@@ -74,6 +74,13 @@ public class PatrolLocationPlugin extends Plugin {
         call.resolve(result);
     }
 
+    /** FAST (active dispatch/SOS) or NORMAL GPS rate; ignored when the service is not running. */
+    @PluginMethod
+    public void setFastMode(PluginCall call) {
+        PatrolLocationService.setFastMode(Boolean.TRUE.equals(call.getBoolean("enabled", false)));
+        call.resolve();
+    }
+
     /**
      * Shows the OS's own "ignore battery optimizations" system dialog for
      * this app — C7 (docs/REMAINING.md): a locked-screen patrol shift is

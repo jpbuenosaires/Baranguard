@@ -57,7 +57,29 @@ adb shell am broadcast -a ph.baranguard.smsgateway.SEND \
 adb logcat -d -t 100 | grep BaranguardSmsGateway
 ```
 
-Look for `RESULT correlation_id=manual-test-1 status=sent`.
+The broadcast prints `Broadcast completed: result=1, data="RESULT correlation_id=manual-test-1 status=sent parts=1"`
+(`result=2` and `status=failed` on failure). The same line is also logged, but the Infinix on Android 16 drops
+this app's Info log lines, so read the broadcast output, not logcat.
+
+## Known behaviour on the Infinix gateway phone (checked 2026-11-07)
+
+- **It must be woken before each send.** HiOS puts a background app in a broadcast-restricted queue: a send
+  broadcast 15 s after the app left the foreground was silently not delivered. `LocalGsmOutboundClient` runs
+  `am start -n ph.baranguard.smsgateway/.MainActivity` right before every broadcast, which fixes it. If you
+  send by hand, do the same first.
+- **The carrier result takes about 60 s** (Globe). The backend therefore records the send as `pending` at
+  once and the notification worker settles it to `sent` or `failed` on a later pass (needs
+  `GSM_GATEWAY_ENABLED=true` in `backend/.env`).
+- **Results are kept in a file**, `/sdcard/Android/data/ph.baranguard.smsgateway/files/results.log`
+  (`adb shell cat` it), because the phone's logcat loses the line within about two minutes.
+
+## Who can send through it
+
+`SendSmsReceiver` is exported but guarded by `android:permission="android.permission.DUMP"` (2026-11-07):
+adb's shell user holds it, so the workstation can send; an ordinary installed app cannot. Checked on the
+gateway phone: a broadcast from `adb shell` ran the receiver, the same broadcast as the Tanod app's uid
+(`run-as ph.baranguard.tanod`) did not. If sending ever stops after a reinstall, re-run the `pm grant`
+and `monkey` lines above.
 
 ## Why a separate project, not a new Capacitor plugin in `mobile/`
 

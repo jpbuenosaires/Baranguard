@@ -91,6 +91,7 @@ mysql_exec() {
 cleanup() {
   step "Cleanup"
   [ -n "${SERVER_PID:-}" ] && kill "$SERVER_PID" 2>/dev/null
+  . "$(dirname "$0")/lib/stop-php-server.sh" && stop_php_server "${API_PORT}"
   mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`;" 2>/dev/null
   mysql_exec -e "DROP USER IF EXISTS '$APP_USER'@'localhost';" 2>/dev/null
   echo "Stopped the test PHP server, dropped $VALDB and user '$APP_USER'."

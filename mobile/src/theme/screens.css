@@ -678,3 +678,8 @@
   justify-content: center;
 }
 
+
+/* Login: sentence/title case instead of the uppercase transforms in app.css and Ionic md buttons. */
+.mobile-login-submit {
+  text-transform: none;
+}

@@ -5,6 +5,8 @@ namespace Baranguard\Controllers;
 
 use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
+use Baranguard\Services\Notifications\FcmClient;
+use Baranguard\Services\Notifications\LocalGsmOutboundClient;
 use Baranguard\Services\Routing\OrsClient;
 use PDO;
 
@@ -75,7 +77,7 @@ final class SystemHealthController
             $db = 'unhealthy';
         }
 
-        $fcmStatus = self::fcmCredentialStatus();
+        $fcmStatus = self::fcmStatus();
         // 2026-09-23: Semaphore removed, replaced by the local GSM
         // gateway (`LocalGsmOutboundClient`) — 'healthy' means the
         // deployment has explicitly opted in (GSM_GATEWAY_ENABLED=true),
@@ -85,9 +87,9 @@ final class SystemHealthController
         // live probe" pattern as before — see this class's own doc block.
         // F-05 (2026-10-09): nothing records a gateway heartbeat, so a flag is
         // only 'configured' (neutral), never 'healthy' (Rule 6).
-        $smsStatus = baranguard_env('GSM_GATEWAY_ENABLED') === 'true' ? 'configured' : 'not_configured';
+        $smsStatus = self::gatewayStatus();
         $orsStatus = self::orsStatus();
-        $gsmStatus = self::envConfiguredStatus('INTERNAL_SERVICE_TOKEN'); // 'configured' or 'not_configured'
+        $gsmStatus = self::ingestStatus();
 
         // Migration 0017/0020: remember what this probe saw, but only
         // when it differs from the last thing recorded. See
@@ -129,9 +131,7 @@ final class SystemHealthController
             'sms_gsm_gateway' => $smsStatus,
             // Kept for the existing web topbar tooltip (AppShell.js) —
             // additive, not a breaking rename.
-            'notification_config' => ($fcmStatus === 'configured' || $smsStatus === 'configured')
-                ? 'configured'
-                : ($fcmStatus === 'unhealthy' ? 'unhealthy' : 'not_configured'),
+            'notification_config' => self::notificationConfigStatus($fcmStatus, $smsStatus),
             'backup_last_success' => self::latestBackupTimestamp(),
             // Sprint 7's backup/restore-drill box closed the gap this
             // field used to document: `scripts/restore-drill.sh` now
@@ -257,6 +257,91 @@ final class SystemHealthController
     {
         $value = baranguard_env($envVar);
         return ($value !== false && trim((string) $value) !== '') ? 'configured' : 'not_configured';
+    }
+
+    /**
+     * Notification Dispatcher: Working when at least one alert transport is proven working, Not working when
+     * the only transports that are set up are failing, Set up when they are set up but untestable.
+     */
+    public static function notificationConfigStatus(string $fcm, string $sms): string
+    {
+        if ($fcm === 'healthy' || $sms === 'healthy') {
+            return 'healthy';
+        }
+        if ($fcm === 'configured' || $sms === 'configured') {
+            return 'configured';
+        }
+        return ($fcm === 'unhealthy' || $sms === 'unhealthy') ? 'unhealthy' : 'not_configured';
+    }
+
+    /**
+     * Outbound SMS gateway: a live check that the gateway phone is attached over adb and its app is
+     * installed (LocalGsmOutboundClient::probe), reused for a short time because it shells out to adb.
+     * 'healthy' means "can be reached", not "a text was delivered" (that is what sms_log shows).
+     */
+    public static function gatewayStatus(): string
+    {
+        if (baranguard_env('GSM_GATEWAY_ENABLED') !== 'true') {
+            return 'not_configured';
+        }
+        return self::cachedProbe('gateway-health.json', 30, 10, static fn (): bool => (new LocalGsmOutboundClient())->probe());
+    }
+
+    /**
+     * Inbound SMS ingestion: the daemon (gsm-ingest-daemon.php) stamps storage/gsm-ingest-heartbeat.json on
+     * every poll with whether it could read the phone. Fresh and ok = healthy; stale or failing = unhealthy.
+     */
+    public static function ingestStatus(): string
+    {
+        $token = baranguard_env('INTERNAL_SERVICE_TOKEN');
+        if ($token === false || trim((string) $token) === '') {
+            return 'not_configured';
+        }
+        $file = dirname(__DIR__) . '/storage/gsm-ingest-heartbeat.json';
+        $beat = is_file($file) ? json_decode((string) @file_get_contents($file), true) : null;
+        if (is_array($beat) && ($beat['ok'] ?? false) === true && time() - (int) ($beat['at'] ?? 0) <= self::INGEST_HEARTBEAT_MAX_AGE_SECONDS) {
+            return 'healthy';
+        }
+        return 'unhealthy';
+    }
+
+    /** The daemon polls every 10 s by default; three missed polls and it is considered down. */
+    private const INGEST_HEARTBEAT_MAX_AGE_SECONDS = 45;
+
+    /**
+     * Push: the key file must be valid (fcmCredentialStatus), then Google's OAuth endpoint must accept it
+     * (FcmClient::verifyCredentials; nothing is sent to a device). 'healthy' = credentials accepted, not
+     * "a push reached a phone".
+     */
+    public static function fcmStatus(): string
+    {
+        $file = self::fcmCredentialStatus();
+        if ($file !== 'configured') {
+            return $file;
+        }
+        return self::cachedProbe('fcm-health.json', 900, 45, static fn (): bool => (new FcmClient())->verifyCredentials());
+    }
+
+    /**
+     * Runs a boolean probe at most once per $okTtl seconds (or $failTtl after a failure), keyed to the
+     * probe name; a stale or unreadable cache simply re-probes.
+     *
+     * @param callable():bool $probe
+     * @return 'healthy'|'unhealthy'
+     */
+    private static function cachedProbe(string $name, int $okTtl, int $failTtl, callable $probe): string
+    {
+        $cacheFile = dirname(__DIR__) . '/storage/' . $name;
+        $cached = is_file($cacheFile) ? json_decode((string) @file_get_contents($cacheFile), true) : null;
+        if (is_array($cached) && in_array($cached['status'] ?? null, ['healthy', 'unhealthy'], true)) {
+            $ttl = $cached['status'] === 'healthy' ? $okTtl : $failTtl;
+            if (time() - (int) ($cached['at'] ?? 0) < $ttl) {
+                return $cached['status'];
+            }
+        }
+        $status = $probe() ? 'healthy' : 'unhealthy';
+        @file_put_contents($cacheFile, json_encode(['at' => time(), 'status' => $status]), LOCK_EX);
+        return $status;
     }
 
     /**

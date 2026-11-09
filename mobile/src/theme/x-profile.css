@@ -74,3 +74,19 @@
 .privacy-notice h2 { margin: var(--spacing-md) 0 0; font-size: var(--text-md); font-weight: 700; color: var(--color-text-primary); }
 .privacy-notice p, .privacy-notice ul { margin: 0; font-size: var(--text-md); color: var(--color-text-primary); }
 .privacy-notice ul { padding-left: var(--spacing-lg); display: flex; flex-direction: column; gap: var(--spacing-xs); }
+
+/* UI polish 2026-11-05 (C1/C2/K1). Loaded after ui.css and x-forms.css, so these win. */
+/* C1: disabled Submit month keeps the normal button outline, not the dashed drop-zone look. */
+.p4w-dock-secondary .ui-btn:disabled:not(.ui-btn--loading) { border: 1px solid var(--color-border); }
+/* C2: sentence case for the "Not submitted yet" chip only. */
+.status-pill.wf-pill--sentence { text-transform: none; letter-spacing: normal; }
+/* K1: Refresh school list reads as the app's ghost secondary action, not an underlined web link. */
+.ui-btn.wf-link-btn { text-decoration: none; padding: 0 var(--spacing-md); align-self: flex-start; }
+
+/* My reports: incident code in the body font, digits aligned (overrides x-forms.css mono). */
+.report-blotter-code { font-family: inherit; font-variant-numeric: tabular-nums; }
+
+/* Profile: compact all-clear sync line (nothing waiting, online). */
+.profile-sync-allclear { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-md); }
+.profile-sync-allclear__text { display: inline-flex; align-items: center; gap: var(--spacing-xs); font-size: var(--text-md); font-weight: 600; color: var(--color-success); }
+.profile-sync-allclear__text ion-icon { font-size: 1.25rem; }

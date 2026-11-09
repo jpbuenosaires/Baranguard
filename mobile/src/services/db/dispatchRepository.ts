@@ -16,6 +16,7 @@ import type { DispatchLocalRow } from './localSchema';
 import type { DispatchEntry } from '../apiService';
 import { uuid } from '../uuid';
 import { resolveMissingIncidentCodes } from '../incidentCodeService';
+import { setTrackingDispatches } from '../trackingRate';
 
 /**
  * How long a cached dispatch snapshot is treated as fresh before the UI
@@ -94,6 +95,16 @@ async function writeDispatchesToCache(entries: DispatchEntry[]): Promise<void> {
   });
   // GET /dispatch carries no display_id: fetch it in the background.
   void resolveMissingIncidentCodes();
+  void refreshTrackingRate();
+}
+
+/** Tells the GPS-rate policy which dispatches are active; called after every write to `dispatch_local`. */
+async function refreshTrackingRate(): Promise<void> {
+  try {
+    setTrackingDispatches((await listActiveCachedDispatches()).map((row) => row.status));
+  } catch {
+    // Local DB unavailable: leave the rate as it was.
+  }
 }
 
 // Home, Dispatches, Profile, the offer cards and the sync scheduler each
@@ -114,6 +125,7 @@ export function cacheDispatchesFromServer(entries: DispatchEntry[]): Promise<voi
 export async function clearSyncedDispatchCache(): Promise<void> {
   const db = await openLocalDatabase();
   await db.run('DELETE FROM dispatch_local WHERE synced = 1', [], false);
+  void refreshTrackingRate();
 }
 
 /** Non-terminal cached assignments, newest first — M5's list. */
@@ -189,6 +201,7 @@ export async function applyLocalStatusChange(
     [newStatus, now, clientEventId, localId],
     /* transaction */ false
   );
+  void refreshTrackingRate();
 
   return { clientEventId };
 }
@@ -220,6 +233,7 @@ export async function revertLocalStatusChange(
     [prev.status, localId, attemptedStatus],
     /* transaction */ false
   );
+  void refreshTrackingRate();
 }
 
 /** Marks a cached dispatch's pending status change as confirmed by the server. */

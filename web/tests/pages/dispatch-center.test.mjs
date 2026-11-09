@@ -3,6 +3,7 @@ import { describe, test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { api, mountPage, settle, cleanup, text, click, type, buttonByText, $, $$, window } from '../harness/render.mjs';
 import { maps } from '../harness/env.mjs';
+import { installStream, sseFrame, gpsRow } from '../harness/sse.mjs';
 import { renderDispatchCenterPage } from '../../src/pages/dispatch-center.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -343,7 +344,7 @@ describe('Dispatch Center: stale data, SOS handling and routing (audit 2026-10-0
   async function mountWithPoll() {
     const polls = [];
     const original = globalThis.setInterval;
-    globalThis.setInterval = (fn, ms, ...rest) => { if (ms === 15000) polls.push(fn); return original(fn, ms, ...rest); };
+    globalThis.setInterval = (fn, ms, ...rest) => { if (ms === 5000) polls.push(fn); return original(fn, ms, ...rest); };
     const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
     globalThis.setInterval = original;
     await settle();
@@ -368,7 +369,7 @@ describe('Dispatch Center: stale data, SOS handling and routing (audit 2026-10-0
     api.overrides.length = 0;
     await poll();
     assert.equal(banner.hidden, true);
-    assert.match(text($('.dispatch-map-live-pill', ctx.root)), /Live · 15s sync/);
+    assert.match(text($('.dispatch-map-live-pill', ctx.root)), /Live · pushed/);
   });
 
   test('the browser going offline only hints: banner appears', async () => {
@@ -466,5 +467,55 @@ describe('Dispatch Center: stale data, SOS handling and routing (audit 2026-10-0
     await settle();
     assert.doesNotMatch(text($('.dispatch-queue-card', ctx.root)), /Location pinned on map|Barangay Area/);
     assert.match(text($('.dispatch-queue-card', ctx.root)), /Location not recorded/);
+  });
+});
+
+describe('Dispatch Center: server-pushed positions', () => {
+  let stub;
+  afterEach(() => { stub?.restore(); stub = null; cleanup(); });
+
+  const sqlNow = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
+  const positions = () => maps.at(-1).markers
+    .filter((m) => m.getElement().className.includes('--tanod') && !m.getElement().className.includes('cluster'))
+    .map((m) => m.getLngLat());
+  const at = (lat, lng) => positions().some((p) => Math.abs(p.lat - lat) < 1e-9 && Math.abs(p.lng - lng) < 1e-9);
+
+  test('a pushed fix moves the tanod pin without refetching the board; an unrelated (off-duty) tanod is ignored', async () => {
+    api.on('GET', '/gps/live', () => ({ status: 200, body: { items: [
+      gpsRow(4, 12.95, 123.70, { full_name: 'Jose Reyes', recorded_at: '2026-01-01 00:00:00' }),
+      gpsRow(5, 12.90, 123.62, { full_name: 'Maria Dela Cruz', recorded_at: '2026-01-01 00:00:00' }),
+    ] } }));
+    stub = installStream();
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    assert.match(text($('.dispatch-map-live-pill', ctx.root)), /Live · pushed/);
+    assert.ok(at(12.95, 123.70));
+
+    const before = ['/gps/live', '/incidents', '/dispatch', '/tanod-sos'].map((p) => api.callsTo('GET', p).length);
+    stub.conns[0].push(sseFrame('position', { items: [
+      gpsRow(4, 12.99, 123.75, { full_name: 'Jose Reyes', recorded_at: sqlNow(), age_seconds: 0 }),
+      gpsRow(6, 12.50, 123.10, { full_name: 'Off Duty', recorded_at: sqlNow(), age_seconds: 0 }),
+    ] }));
+    await settle();
+
+    assert.ok(at(12.99, 123.75), 'pin moved');
+    assert.ok(at(12.90, 123.62), 'other pins stay');
+    assert.ok(!at(12.50, 123.10), 'a tanod who is not on duty or responding is not drawn');
+    assert.deepEqual(['/gps/live', '/incidents', '/dispatch', '/tanod-sos'].map((p) => api.callsTo('GET', p).length), before);
+  });
+
+  test('leaving the page closes the stream; a refused stream leaves the "5s sync" pill', async () => {
+    stub = installStream();
+    const ctx = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    ctx.handle.stop();
+    assert.equal(stub.conns[0].signal.aborted, true);
+    stub.restore();
+    cleanup();
+
+    stub = installStream({ respond: () => ({ status: 403, body: { error: { code: 'FORBIDDEN', message: 'no' } } }) });
+    const ctx2 = mountPage(renderDispatchCenterPage, { role: 'admin' });
+    await settle();
+    assert.match(text($('.dispatch-map-live-pill', ctx2.root)), /Live · 5s sync/);
   });
 });

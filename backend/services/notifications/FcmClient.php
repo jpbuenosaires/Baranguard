@@ -96,6 +96,24 @@ final class FcmClient
      *         "retry once, then SMS" rule), so this class does not need a
      *         second exception type.
      */
+    /**
+     * Live credential check for Service Health: Google's OAuth endpoint accepts the service account
+     * (a real, side-effect-free call; nothing is sent to any device). False on any failure.
+     */
+    public function verifyCredentials(): bool
+    {
+        $account = $this->loadAccount();
+        if ($account === false) {
+            return false;
+        }
+        try {
+            $this->accessToken($account);
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
     public function send(string $fcmToken, string $title, string $body, array $data): array
     {
         $account = $this->loadAccount();

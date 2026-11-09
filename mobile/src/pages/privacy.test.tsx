@@ -16,5 +16,6 @@ describe('Privacy notice page', () => {
     expect(screen.getByRole('heading', { level: 1, name: /privacy notice/i })).toBeTruthy();
     expect(screen.getByText('Draft.')).toBeTruthy();
     expect(screen.getByRole('button', { name: /read the full notice/i })).toBeTruthy();
+    expect(screen.queryByText(/To be filled/)).toBeNull();
   });
 });

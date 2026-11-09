@@ -44,12 +44,19 @@ function Write-Step($msg) { Write-Host ""; Write-Host "=== $msg ===" -Foreground
 
 function Install-BaranguardTask($taskName, $scriptName, $trigger, $timeLimit = (New-TimeSpan -Hours 1), $restart = $false) {
     $scriptPath = Join-Path $backendDir "scripts\$scriptName"
-    $action = New-ScheduledTaskAction -Execute "powershell.exe" `
-        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" `
+    # conhost --headless: no console window flashes for the every-minute jobs (Windows 11).
+    $action = New-ScheduledTaskAction -Execute "conhost.exe" `
+        -Argument "--headless powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$scriptPath`"" `
         -WorkingDirectory $backendDir
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
         -StartWhenAvailable -ExecutionTimeLimit $timeLimit
-    if ($restart) { $settings.RestartCount = 999; $settings.RestartInterval = (New-TimeSpan -Minutes 1) }
+    # Set via the cmdlet's own parameters: assigning $settings.RestartInterval on PS 5.1
+    # serialises "00:01:00" and Task Scheduler rejects the XML.
+    if ($restart) {
+        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+            -StartWhenAvailable -ExecutionTimeLimit $timeLimit `
+            -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
+    }
 
     $existing = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     if ($existing) {
@@ -90,7 +97,8 @@ Install-BaranguardTask "BaranguardNotificationWorker" "scheduled-notification-wo
 
 Write-Step "6. GSM inbound daemon (at logon, runs until logoff)"
 # Without it, the SOS-by-SMS fallback and every inbound text go nowhere.
-$ingestTrigger = New-ScheduledTaskTrigger -AtLogOn
+# -User scopes the trigger to this account; the any-user form needs an elevated prompt.
+$ingestTrigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
 Install-BaranguardTask "BaranguardGsmIngest" "scheduled-gsm-ingest.ps1" $ingestTrigger (New-TimeSpan -Seconds 0) $true
 Start-ScheduledTask -TaskName "BaranguardGsmIngest" -ErrorAction SilentlyContinue
 

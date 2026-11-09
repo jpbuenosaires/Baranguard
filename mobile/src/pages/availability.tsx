@@ -263,7 +263,7 @@ const AvailabilityPage: React.FC = () => {
     return (
       <IonPage>
         <MobileHeader
-          title={isEdit ? 'Edit Availability' : 'New Availability'}
+          title={isEdit ? 'Edit availability' : 'New availability'}
           rightSlot={
             <button type="button" className="mobile-topbar__theme-toggle" aria-label="Close editor" disabled={saving} onClick={closeEditor}>
               <IonIcon icon={closeOutline} />
@@ -457,9 +457,65 @@ const AvailabilityPage: React.FC = () => {
   }
 
   // ------------------------------------------------------------------ list ---
+  const renderRow = (row: AvailabilityLocalRow) => {
+    const windows = parseLocalWindows(row);
+    const dayCount = new Set(windows.map((w) => w.date)).size;
+    const ended = isPeriodPast(row.period_end);
+    const period = formatPeriodLabel(row.period_start, row.period_end);
+    const chip =
+      deriveWorkflowSyncState(row) === 'synced' ? (
+        <span className="ui-sync ui-sync--success" role="status">
+          <IonIcon icon={checkmarkCircleOutline} aria-hidden="true" />
+          <span>Submitted</span>
+        </span>
+      ) : (
+        <SyncChip row={row} />
+      );
+    const body = (
+      <>
+        <div className="wf-card__head">
+          <div>
+            <h3 className="wf-card__title">{period}</h3>
+            <p className="wf-card__sub">
+              {dayCount} day{dayCount === 1 ? '' : 's'} · {windows.length} window{windows.length === 1 ? '' : 's'}
+              {ended ? ' · period ended' : ''}
+            </p>
+          </div>
+          {chip}
+        </div>
+        {row.last_sync_error && row.synced === 0 && (
+          <span className="wf-muted">The desk could not save this yet: {row.last_sync_error}</span>
+        )}
+        {!ended && (
+          <span className="wf-btn wf-btn--small wf-card__edit">
+            <IonIcon icon={createOutline} aria-hidden="true" />
+            <span>Edit</span>
+          </span>
+        )}
+      </>
+    );
+    return ended ? (
+      <div key={row.local_id} className="wf-card wf-card--ended">
+        {body}
+      </div>
+    ) : (
+      <button
+        key={row.local_id}
+        type="button"
+        className="wf-card wf-card--tap"
+        aria-label={`Edit availability, ${period}`}
+        onClick={() => openEdit(row)}
+      >
+        {body}
+      </button>
+    );
+  };
+  const pastRows = rows.filter((r) => isPeriodPast(r.period_end));
+  const currentRows = rows.filter((r) => !isPeriodPast(r.period_end));
+
   return (
     <IonPage>
-      <MobileHeader title="My Availability" showBack defaultBackHref="/tabs/profile" />
+      <MobileHeader title="My availability" showBack defaultBackHref="/tabs/profile" />
       <IonContent style={{ '--background': 'var(--color-bg)' }}>
         <IonRefresher slot="fixed" onIonRefresh={(e) => void refresh().finally(() => e.detail.complete())}>
           <IonRefresherContent />
@@ -467,7 +523,7 @@ const AvailabilityPage: React.FC = () => {
         <div className="wf-page">
           <div className="ui-banner wf-info-note" role="status">
             <div className="ui-banner__body">
-              You set your own windows and can change them any time. Only published shifts appear in My Shifts.
+              You set your own windows and can change them any time. Only published shifts appear in My shifts.
             </div>
           </div>
 
@@ -489,59 +545,15 @@ const AvailabilityPage: React.FC = () => {
               body="Submit the days and hours you can serve so the desk can build the roster."
             />
           ) : (
-            rows.map((row) => {
-              const windows = parseLocalWindows(row);
-              const dayCount = new Set(windows.map((w) => w.date)).size;
-              const ended = isPeriodPast(row.period_end);
-              const period = formatPeriodLabel(row.period_start, row.period_end);
-              const chip =
-                deriveWorkflowSyncState(row) === 'synced' ? (
-                  <span className="ui-sync ui-sync--success" role="status">
-                    <IonIcon icon={checkmarkCircleOutline} aria-hidden="true" />
-                    <span>Submitted</span>
-                  </span>
-                ) : (
-                  <SyncChip row={row} />
-                );
-              const body = (
-                <>
-                  <div className="wf-card__head">
-                    <div>
-                      <h3 className="wf-card__title">{period}</h3>
-                      <p className="wf-card__sub">
-                        {dayCount} day{dayCount === 1 ? '' : 's'} · {windows.length} window{windows.length === 1 ? '' : 's'}
-                        {ended ? ' · period ended' : ''}
-                      </p>
-                    </div>
-                    {chip}
-                  </div>
-                  {row.last_sync_error && row.synced === 0 && (
-                    <span className="wf-muted">The desk could not save this yet: {row.last_sync_error}</span>
-                  )}
-                  {!ended && (
-                    <span className="wf-btn wf-btn--small wf-card__edit">
-                      <IonIcon icon={createOutline} aria-hidden="true" />
-                      <span>Edit</span>
-                    </span>
-                  )}
-                </>
-              );
-              return ended ? (
-                <div key={row.local_id} className="wf-card wf-card--ended">
-                  {body}
-                </div>
-              ) : (
-                <button
-                  key={row.local_id}
-                  type="button"
-                  className="wf-card wf-card--tap"
-                  aria-label={`Edit availability, ${period}`}
-                  onClick={() => openEdit(row)}
-                >
-                  {body}
-                </button>
-              );
-            })
+            <>
+              {currentRows.map(renderRow)}
+              {pastRows.length > 0 && (
+                <details className="wf-past">
+                  <summary className="wf-past__summary">Past periods ({pastRows.length})</summary>
+                  <div className="wf-past__list">{pastRows.map(renderRow)}</div>
+                </details>
+              )}
+            </>
           )}
         </div>
       </IonContent>

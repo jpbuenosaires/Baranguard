@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.location.Location;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import androidx.annotation.Nullable;
@@ -75,16 +76,26 @@ public class PatrolLocationService extends Service {
     private static final String PREFS_NAME = "CapacitorStorage";
     private static final String SESSION_KEY = "baranguard.session";
     private static final String API_BASE_URL_KEY = "baranguard.effectiveApiBaseUrl";
-    private static final long UPDATE_INTERVAL_MS = 30000;
+    private static final long UPDATE_INTERVAL_MS = 10000; // 2026-11-06: was 30000
     // A standing Tanod need not burn GPS: no update until they move this far.
     private static final float MIN_UPDATE_DISTANCE_M = 10f;
+    // FAST mode (active dispatch or SOS): high accuracy, a fix every ~2 s.
+    private static final long FAST_UPDATE_INTERVAL_MS = 2000;
+    private static final long FAST_MIN_UPDATE_INTERVAL_MS = 1000;
+    private static final float FAST_MIN_UPDATE_DISTANCE_M = 3f;
+
+    /** The running service, so the plugin can switch modes; null whenever the service is not running. */
+    private static volatile PatrolLocationService instance;
 
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
+    // Instance field on purpose: every service start/restart begins NORMAL, FAST is never persisted.
+    private boolean fastMode = false;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        instance = this;
         createNotificationChannel();
         startForeground(NOTIFICATION_ID, buildNotification());
         startLocationUpdates();
@@ -101,6 +112,7 @@ public class PatrolLocationService extends Service {
 
     @Override
     public void onDestroy() {
+        if (instance == this) instance = null;
         if (fusedLocationClient != null && locationCallback != null) {
             fusedLocationClient.removeLocationUpdates(locationCallback);
         }
@@ -114,11 +126,39 @@ public class PatrolLocationService extends Service {
         return null;
     }
 
-    private void startLocationUpdates() {
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
-        LocationRequest request = new LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, UPDATE_INTERVAL_MS)
+    /** Switches NORMAL/FAST without stopping the foreground service or its notification. A stopped service ignores it. */
+    static void setFastMode(final boolean enabled) {
+        final PatrolLocationService service = instance;
+        if (service == null) return;
+        new Handler(Looper.getMainLooper()).post(new Runnable() {
+            @Override
+            public void run() {
+                service.applyMode(enabled);
+            }
+        });
+    }
+
+    private void applyMode(boolean enabled) {
+        if (instance != this || fastMode == enabled || fusedLocationClient == null || locationCallback == null) return;
+        fastMode = enabled;
+        fusedLocationClient.removeLocationUpdates(locationCallback);
+        requestUpdates();
+    }
+
+    private LocationRequest buildRequest() {
+        if (fastMode) {
+            return new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, FAST_UPDATE_INTERVAL_MS)
+                .setMinUpdateIntervalMillis(FAST_MIN_UPDATE_INTERVAL_MS)
+                .setMinUpdateDistanceMeters(FAST_MIN_UPDATE_DISTANCE_M)
+                .build();
+        }
+        return new LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, UPDATE_INTERVAL_MS)
             .setMinUpdateDistanceMeters(MIN_UPDATE_DISTANCE_M)
             .build();
+    }
+
+    private void startLocationUpdates() {
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         locationCallback = new LocationCallback() {
             @Override
             public void onLocationResult(LocationResult result) {
@@ -128,8 +168,12 @@ public class PatrolLocationService extends Service {
                 }
             }
         };
+        requestUpdates();
+    }
+
+    private void requestUpdates() {
         try {
-            fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper());
+            fusedLocationClient.requestLocationUpdates(buildRequest(), locationCallback, Looper.getMainLooper());
         } catch (SecurityException e) {
             // ACCESS_FINE_LOCATION was revoked after this service started
             // (e.g. from Android Settings mid-shift) — stop cleanly rather

@@ -36,7 +36,8 @@ export function formatShiftElapsed(diffMs: number): string {
   const diffMins = Math.floor(Math.max(0, diffMs) / 60000);
   const hours = Math.floor(diffMins / 60);
   const mins = diffMins % 60;
-  return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+  if (hours === 0) return `${mins} min`;
+  return mins === 0 ? `${hours} h` : `${hours} h ${mins} min`;
 }
 
 /** Message under the duty card when the duty status could not be fetched. */
@@ -45,4 +46,10 @@ export function dutyStatusErrorMessage(offline: boolean, hasCached: boolean): st
   return hasCached
     ? 'Offline — showing your last known status.'
     : 'Offline — duty status unknown until you reconnect.';
+}
+
+/** Groups an 11-digit PH mobile number (09xx...) as 4-3-4; any other format is shown as given. */
+export function formatPhMobile(raw: string): string {
+  const m = /^(09\d{2})(\d{3})(\d{4})$/.exec(raw.trim());
+  return m ? `${m[1]} ${m[2]} ${m[3]}` : raw;
 }

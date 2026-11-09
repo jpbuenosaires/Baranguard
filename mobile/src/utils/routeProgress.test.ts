@@ -217,7 +217,7 @@ describe('formatRemainingTime', () => {
 
 describe('formatNavDistance', () => {
   it('formats meters under 1km', () => {
-    expect(formatNavDistance(350)).toBe('350m');
+    expect(formatNavDistance(350)).toBe('350 m');
   });
 
   it('formats kilometers', () => {

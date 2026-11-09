@@ -49,6 +49,7 @@ final class SmsGatewayService
 {
     private const MAX_ENVELOPE_LIFETIME_SECONDS = 1800; // 30 minutes: caps how long a captured envelope stays exploitable even before message_id replay-dedup is considered.
     private const CLOCK_SKEW_TOLERANCE_SECONDS = 300; // 5 minutes.
+    private const DRAIN_BUDGET_SECONDS = 40; // per drainQueued() pass; see there.
     private const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
 
     private EnvelopeCrypto $crypto;
@@ -377,7 +378,11 @@ final class SmsGatewayService
             return ['status' => 'sent', 'gateway_message_id' => $result['gateway_message_id']];
         } catch (GsmGatewayException $e) {
             $reason = mb_strlen($e->getMessage()) > 255 ? mb_substr($e->getMessage(), 0, 254) . '...' : $e->getMessage();
-            return ['status' => $e instanceof GsmUnconfirmedException ? 'pending' : 'failed', 'failure_reason' => $reason];
+            if ($e instanceof GsmUnconfirmedException) {
+                // Keep the send id on the row: reconcilePending() settles it when the phone answers.
+                return ['status' => 'pending', 'failure_reason' => $reason] + ($e->correlationId !== null ? ['gateway_message_id' => $e->correlationId] : []);
+            }
+            return ['status' => 'failed', 'failure_reason' => $reason];
         }
     }
 
@@ -398,7 +403,7 @@ final class SmsGatewayService
      *
      * @return array{sent:int,pending:int,failed:int}
      */
-    public function drainQueued(PDO $pdo, int $limit = 60): array
+    public function drainQueued(PDO $pdo, int $limit = 60, float $budgetSeconds = self::DRAIN_BUDGET_SECONDS): array
     {
         $rows = $pdo->query(
             "SELECT log_id, message_type, receiver_number, message_body FROM sms_log
@@ -409,7 +414,13 @@ final class SmsGatewayService
         $done = $pdo->prepare(
             'UPDATE sms_log SET status = :status, sent_at = :sent_at, gateway_message_id = :gw, failure_reason = :reason WHERE log_id = :id'
         );
+        // Serial adb sends take 1-50 s each: stop after a time budget so the worker pass returns
+        // to SOS escalation; the rest stay `queued` for the next pass.
+        $deadline = microtime(true) + $budgetSeconds;
         foreach ($rows as $row) {
+            if (microtime(true) >= $deadline) {
+                break;
+            }
             $claim->execute(['id' => $row['log_id']]);
             if ($claim->rowCount() !== 1) {
                 continue;
@@ -420,6 +431,46 @@ final class SmsGatewayService
                 'gw' => $r['gateway_message_id'] ?? null, 'reason' => $r['failure_reason'] ?? null, 'id' => $row['log_id'],
             ]);
             $count[$r['status']]++;
+        }
+        return $count;
+    }
+
+    /**
+     * Settles `pending` outbound rows whose send id the phone has since answered for:
+     * `sent` (the SIM accepted it, still NOT carrier delivery) or `failed`. Rows older than
+     * $maxAgeMinutes are left as `pending`: the phone's log no longer holds their answer.
+     *
+     * @return array{sent:int,failed:int}
+     */
+    public function reconcilePending(PDO $pdo, int $maxAgeMinutes = 30): array
+    {
+        $rows = $pdo->query(
+            "SELECT log_id, gateway_message_id FROM sms_log
+              WHERE direction = 'outbound' AND status = 'pending' AND gateway_message_id IS NOT NULL
+                AND created_at >= UTC_TIMESTAMP() - INTERVAL " . (int) $maxAgeMinutes . " MINUTE
+              ORDER BY log_id LIMIT 100"
+        )->fetchAll(PDO::FETCH_ASSOC);
+        $count = ['sent' => 0, 'failed' => 0];
+        if ($rows === []) {
+            return $count;
+        }
+        $answers = $this->resolveOutboundClient()->lookupResults(array_map(static fn (array $r): string => (string) $r['gateway_message_id'], $rows));
+        $upd = $pdo->prepare(
+            "UPDATE sms_log SET status = :status, sent_at = :sent_at, failure_reason = :reason
+              WHERE log_id = :id AND status = 'pending'"
+        );
+        foreach ($rows as $row) {
+            $status = $answers[(string) $row['gateway_message_id']] ?? null;
+            if ($status === null) {
+                continue;
+            }
+            $upd->execute([
+                'status' => $status,
+                'sent_at' => $status === 'sent' ? gmdate('Y-m-d H:i:s') : null,
+                'reason' => $status === 'failed' ? 'The gateway phone reported the send failed.' : null,
+                'id' => $row['log_id'],
+            ]);
+            $count[$status] += $upd->rowCount();
         }
         return $count;
     }

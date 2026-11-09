@@ -509,7 +509,7 @@ final class SmsController
                  WHERE u.barangay_id = :barangay_id AND u.role = 'tanod' AND u.is_active = 1
                    AND EXISTS (
                        SELECT 1 FROM duty_status ds
-                       WHERE ds.user_id = u.user_id AND ds.status = 'on_duty'
+                       WHERE ds.user_id = u.user_id AND ds.status IN ('on_duty','responding')
                          AND ds.changed_at = (SELECT MAX(ds2.changed_at) FROM duty_status ds2 WHERE ds2.user_id = u.user_id)
                    )
                    AND u.contact_number IS NOT NULL AND u.contact_number != ''"
@@ -544,10 +544,22 @@ final class SmsController
             Http::send(200, ['recipient_count' => $prior['recipient_count'] ?? 0, 'queued' => $prior['queued'] ?? 0, 'duplicate' => true]);
         }
 
-        // Subscribers must be told how to withdraw (RA 10173).
+        // Subscribers must know who is texting and how to withdraw (RA 10173).
+        // The opt-out line is added unless the text already carries one ("reply stop"/"tigil").
         $outText = $message;
-        if ($scope === 'subscribers' && stripos($message, 'stop') === false) {
-            $outText = rtrim($message) . ' Reply STOP to unsubscribe.';
+        if ($scope === 'subscribers') {
+            $nameStmt = $pdo->prepare('SELECT name FROM barangay WHERE barangay_id = :b');
+            $nameStmt->execute(['b' => $identity['barangay_id']]);
+            $brgy = (string) $nameStmt->fetchColumn();
+            if ($brgy !== '' && stripos($outText, $brgy) === false) {
+                $outText = "Brgy {$brgy}: " . ltrim($outText);
+            }
+            if (!preg_match('/reply\s+stop|\btigil\b/i', $message)) {
+                $outText = rtrim($outText) . ' Reply STOP to unsubscribe. / Sagot TIGIL para huminto.';
+            }
+            if (mb_strlen($outText) > self::MAX_MESSAGE_LENGTH) {
+                throw new ApiError(400, 'VALIDATION_ERROR', 'message is too long once the sender name and opt-out line are added (max ' . self::MAX_MESSAGE_LENGTH . ' characters in total).');
+            }
         }
 
         // Outbox: rows are `queued` and sent by notification-worker.php, so this
@@ -659,10 +671,14 @@ final class SmsController
         if (!is_string($number) || trim($number) === '') {
             throw new ApiError(400, 'VALIDATION_ERROR', 'contact_number is required.');
         }
-        $number = trim($number);
-        if (mb_strlen($number) > 32) {
-            throw new ApiError(400, 'VALIDATION_ERROR', 'contact_number must be at most 32 characters.');
+        // PH mobile only (09XXXXXXXXX or +639XXXXXXXXX, spaces/dashes tolerated), stored as +639XXXXXXXXX so the
+        // same resident cannot be subscribed twice in two spellings. The 09 form is also looked up below.
+        $number = preg_replace('/[\s\-().]/', '', trim($number)) ?? '';
+        if (!preg_match('/^(\+63|0)9\d{9}$/', $number)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'contact_number must be a PH mobile number in 09XXXXXXXXX or +639XXXXXXXXX format.');
         }
+        $local = '0' . substr($number, -10);
+        $number = '+63' . substr($number, -10);
 
         $source = $body['consent_source'] ?? null;
         if (!is_string($source) || !in_array($source, self::CONSENT_SOURCES, true)) {
@@ -676,9 +692,9 @@ final class SmsController
 
         $existingStmt = $pdo->prepare(
             'SELECT subscriber_id, opted_out_at FROM sms_subscriber
-              WHERE barangay_id = :barangay_id AND contact_number = :contact_number LIMIT 1'
+              WHERE barangay_id = :barangay_id AND contact_number IN (:contact_number, :local_number) LIMIT 1'
         );
-        $existingStmt->execute(['barangay_id' => $identity['barangay_id'], 'contact_number' => $number]);
+        $existingStmt->execute(['barangay_id' => $identity['barangay_id'], 'contact_number' => $number, 'local_number' => $local]);
         $existing = $existingStmt->fetch(PDO::FETCH_ASSOC);
 
         if ($existing !== false) {

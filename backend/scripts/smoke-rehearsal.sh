@@ -7,7 +7,7 @@ db=$1; u=$2; pw=$3
 case $db in baranguard|baranguard_uiseed) echo "refusing real DB"; exit 2;; esac
 M=/c/xampp/mysql/bin/mysql.exe; R=(-uroot -h127.0.0.1 -P"${DB_PORT:-3306}")
 AU=smoke_tmp_user; AP=$(php -r 'echo bin2hex(random_bytes(8));'); PORT=${API_PORT:-18099}
-cleanup(){ [ -n "${PID:-}" ] && kill "$PID" 2>/dev/null; "$M" "${R[@]}" -e "DROP USER IF EXISTS '$AU'@'localhost'"; }
+cleanup(){ [ -n "${PID:-}" ] && kill "$PID" 2>/dev/null; . "$(dirname "$0")/lib/stop-php-server.sh" && stop_php_server "$PORT"; "$M" "${R[@]}" -e "DROP USER IF EXISTS '$AU'@'localhost'"; }
 trap cleanup EXIT
 "$M" "${R[@]}" -e "DROP USER IF EXISTS '$AU'@'localhost'; CREATE USER '$AU'@'localhost' IDENTIFIED BY '$AP'; GRANT ALL ON \`$db\`.* TO '$AU'@'localhost'; FLUSH PRIVILEGES"
 export DB_HOST=127.0.0.1 DB_PORT=${DB_PORT:-3306} DB_USER=$AU DB_PASSWORD=$AP DB_NAME=$db CORS_ALLOWED_ORIGIN='*' JWT_EXPIRES_IN_MINUTES=15

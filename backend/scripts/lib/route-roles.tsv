@@ -1,0 +1,107 @@
+# Reviewed role matrix for verify-auth-sweep.sh: METHOD<TAB>path<TAB>roles allowed by the handler's requireRole().
+# Generated 2026-10-29 from the code and checked against docs/REFERENCE.md section 3. Empty = role checked indirectly.
+# If a handler's roles change on purpose, update the matching line here in the same commit.
+POST	/accomplishment-entries	tanod
+PATCH	/accomplishment-entries/1	tanod
+GET	/accomplishment-reports	tanod,admin,secretary,punong_barangay
+GET	/accomplishment-reports/1	tanod,admin,secretary,punong_barangay
+POST	/accomplishment-reports/1/submit	tanod
+POST	/accomplishment-reports/1/return	
+GET	/audit-log	admin
+POST	/auth/login	
+POST	/auth/logout	
+POST	/auth/change-password	
+POST	/availability	tanod
+GET	/availability	tanod,admin,secretary,punong_barangay
+PATCH	/availability/1	
+GET	/barangays	
+POST	/devices/register	tanod,admin
+PATCH	/devices/sweep-device-0001/deactivate	tanod,admin
+GET	/dispatch-offers	admin,secretary,punong_barangay,tanod
+POST	/dispatch-offers	admin,secretary
+POST	/dispatch-offers/1/accept	tanod
+PATCH	/dispatch-offers/1/cancel	admin,secretary
+POST	/dispatch	admin,secretary
+GET	/dispatch	admin,secretary,tanod,punong_barangay
+PATCH	/dispatch/1/cancel	admin,secretary
+PATCH	/dispatch/1/status	admin,tanod
+GET	/dispatch/1/route	admin,tanod
+GET	/duty-status	tanod
+POST	/duty-status	tanod
+GET	/gps/live	admin,secretary,punong_barangay,tanod
+GET	/gps/stream	admin,secretary,punong_barangay,tanod
+GET	/gps/history	admin
+POST	/gps	tanod
+GET	/incidents/nearby	tanod
+GET	/incidents/1	admin,secretary,tanod,punong_barangay
+GET	/incidents/1/evidence/1/download	admin,secretary,tanod
+GET	/incidents/1/evidence	admin,secretary,tanod
+POST	/incidents/1/evidence	tanod
+PATCH	/incidents/1/status	admin,secretary
+PATCH	/incidents/1/lifecycle	secretary
+PATCH	/incidents/1/related	admin,secretary
+PATCH	/incidents/1	admin,secretary
+GET	/incidents	admin,secretary,tanod,punong_barangay
+POST	/incidents	admin,secretary,tanod
+GET	/map-packages/1/download	tanod
+GET	/map-packages/1	admin,tanod
+POST	/map-packages	admin
+GET	/notifications	
+POST	/notifications/ack-all	tanod,admin,secretary,punong_barangay
+POST	/notifications/1/ack	tanod,admin,secretary,punong_barangay
+GET	/public/transparency	
+POST	/incidents/1/referrals	tanod,admin,secretary
+GET	/incidents/1/referrals	tanod,admin,secretary,punong_barangay
+GET	/referrals	admin,secretary,punong_barangay
+GET	/reports/summary	admin,punong_barangay
+GET	/reports/heatmap	admin,punong_barangay
+GET	/reports/nav-counts	admin
+GET	/reports/export	admin,punong_barangay
+GET	/reports/export/download	admin,punong_barangay
+GET	/reports/digest	admin,punong_barangay
+GET	/reports/digest/download	admin,punong_barangay
+GET	/reports/school-term	admin,secretary,punong_barangay
+GET	/schools	admin,secretary,punong_barangay,tanod
+POST	/schools	admin,secretary
+PATCH	/schools/1	admin,secretary
+GET	/school-checkins	admin,secretary,punong_barangay
+POST	/school-checkins	tanod
+GET	/search	admin,secretary,tanod,punong_barangay
+GET	/system-settings	admin
+PATCH	/system-settings	admin
+POST	/shift-swap-requests	tanod
+GET	/shift-swap-requests	admin,secretary,tanod
+PATCH	/shift-swap-requests/1	admin,secretary
+DELETE	/shift-swap-requests/1	tanod
+POST	/shifts	admin,secretary
+GET	/shifts	admin,secretary,punong_barangay,tanod
+POST	/shifts/publish	
+PATCH	/shifts/1	admin,secretary
+GET	/sms/logs	admin
+GET	/sms/conversations	admin
+GET	/sms/conversations/639170000000/messages	admin
+PATCH	/sms/conversations/639170000000/resolve	admin
+POST	/sms/send	admin
+POST	/sms/broadcast	admin
+GET	/sms/subscribers	admin
+POST	/sms/subscribers	admin
+PATCH	/sms/subscribers/1/opt-out	admin
+GET	/ssz-term-reports	admin,secretary,punong_barangay
+POST	/ssz-term-reports	admin,secretary
+GET	/ssz-term-reports/1	admin,secretary,punong_barangay
+PATCH	/ssz-term-reports/1	admin,secretary
+POST	/ssz-term-reports/1/prepare	
+POST	/ssz-term-reports/1/mark-submitted	admin,secretary
+POST	/sync/batch	tanod
+GET	/system/health	admin
+GET	/system/health/history	admin
+GET	/tanod-sos/fallback-contact	tanod,admin
+GET	/tanod-sos	admin,secretary,punong_barangay
+POST	/tanod-sos	tanod
+PATCH	/tanod-sos/1/acknowledge	
+PATCH	/tanod-sos/1/resolve	
+GET	/users	admin
+GET	/users/directory	admin,secretary
+POST	/users	admin
+GET	/users/1	
+PATCH	/users/1	

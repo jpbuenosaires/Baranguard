@@ -397,7 +397,7 @@ function renderSubscribersTab(container) {
   const numberInput = document.createElement('input');
   numberInput.type = 'tel';
   numberInput.className = 'sms-subscriber-input';
-  numberInput.placeholder = 'Mobile number';
+  numberInput.placeholder = 'Mobile number, e.g. 09171234567';
   numberInput.setAttribute('aria-label', 'Subscriber mobile number');
   numberInput.required = true;
 
@@ -1632,7 +1632,15 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
   counterWrap.setAttribute('aria-live', 'polite');
   counterWrap.textContent = '0 / 160 characters · 1 text message';
 
-  msgField.append(msgLabel, textarea, counterWrap);
+  // Residents get the barangay name in front and the STOP/TIGIL line at the end (added by the
+  // server, about 60 more characters), so the count above is for the typed text only.
+  const subscriberNote = document.createElement('p');
+  subscriberNote.className = 'note';
+  subscriberNote.textContent = 'For residents, “Brgy <name>:” is added at the start and “Reply STOP to unsubscribe. / Sagot TIGIL para huminto.” at the end (about 60 more characters, so it may use one more text message).';
+  subscriberNote.hidden = true;
+  scopeSelect.addEventListener('change', () => { subscriberNote.hidden = scopeSelect.value !== 'subscribers'; });
+
+  msgField.append(msgLabel, textarea, counterWrap, subscriberNote);
 
   // Live Device Preview Box
   const previewBox = document.createElement('div');
@@ -1718,7 +1726,7 @@ function buildBroadcastModal(onSuccess, onCancel, initialText = '') {
       });
       showToast(result.duplicate
         ? `Same message already queued a moment ago for ${result.recipientCount} recipient${result.recipientCount === 1 ? '' : 's'}. Not sent again.`
-        : `Broadcast queued for ${result.recipientCount} recipient${result.recipientCount === 1 ? '' : 's'}. They go out over the next minute; watch the Activity Log.`, {
+        : `Broadcast queued for ${result.recipientCount} recipient${result.recipientCount === 1 ? '' : 's'}. They are sent one after another (about 2 seconds each); watch the Activity Log.`, {
         variant: 'success',
       });
       onSuccess();

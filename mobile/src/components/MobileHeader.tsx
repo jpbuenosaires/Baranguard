@@ -10,7 +10,7 @@
 
 import { usePendingSyncCount } from '../services/usePendingSyncCount';
 import { visibleInterval } from '../utils/visibleInterval';
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import {
   IonButtons,
   IonBackButton,
@@ -21,6 +21,8 @@ import {
 import { moonOutline, shield, sunnyOutline } from 'ionicons/icons';
 import { checkHealth } from '../services/apiService';
 import SyncQueueModal from './SyncQueueModal';
+import SosHoldButton from './SosHoldButton';
+import { SosInHeaderContext } from './sosHeaderContext';
 import { isCurrentlyDark, toggleTheme, THEME_CHANGED_EVENT } from '../utils/theme';
 
 interface MobileHeaderProps {
@@ -31,6 +33,8 @@ interface MobileHeaderProps {
   rightSlot?: React.ReactNode;
   hideThemeToggle?: boolean;
   hideStatusIndicator?: boolean;
+  /** Home has its own SOS dock, so it hides the top-bar SOS. */
+  hideSos?: boolean;
 }
 
 export const MobileHeader: React.FC<MobileHeaderProps> = ({
@@ -41,7 +45,9 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
   rightSlot,
   hideThemeToggle = false,
   hideStatusIndicator = false,
+  hideSos = false,
 }) => {
+  const sosInHeader = useContext(SosInHeaderContext) && !hideSos;
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [dark, setDark] = useState<boolean>(() => isCurrentlyDark());
@@ -98,6 +104,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
 
             <div className="mobile-topbar__actions">
               {rightSlot}
+              {sosInHeader && <SosHoldButton />}
               {!hideThemeToggle && (
                 <button
                   type="button"

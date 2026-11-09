@@ -74,7 +74,7 @@ const HomePage: React.FC = () => {
     const saved = localStorage.getItem('baranguard.shiftStartTime');
     return saved ? parseInt(saved, 10) : null;
   });
-  const [shiftElapsed, setShiftElapsed] = useState<string>('0m');
+  const [shiftElapsed, setShiftElapsed] = useState<string>('0 min');
   const [todayIncidentCount, setTodayIncidentCount] = useState<number>(0);
   const [deskContact, setDeskContact] = useState<string | null>(null);
 
@@ -192,7 +192,7 @@ const HomePage: React.FC = () => {
       const interval = setInterval(updateTimer, 30000);
       return () => clearInterval(interval);
     } else {
-      setShiftElapsed('0m');
+      setShiftElapsed('0 min');
       setShiftStartTime(null);
       localStorage.removeItem('baranguard.shiftStartTime');
     }
@@ -477,7 +477,7 @@ const HomePage: React.FC = () => {
 
   return (
     <IonPage>
-      <MobileHeader title="Baranguard" subtitle="Dashboard" />
+      <MobileHeader title="Baranguard" subtitle="Dashboard" hideSos />
 
       <IonContent className="h4-content">
         <div className="console-overhaul-container console-overhaul-container--docked-sos h4-home">

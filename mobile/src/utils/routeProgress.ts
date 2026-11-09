@@ -356,6 +356,6 @@ export function formatRemainingTime(seconds: number): string {
 
 /** Formats distance: "350m" under 1km, "1.4 km" at or above. */
 export function formatNavDistance(meters: number): string {
-  if (meters < 1000) return `${Math.round(meters)}m`;
+  if (meters < 1000) return `${Math.round(meters)} m`;
   return `${(meters / 1000).toFixed(1)} km`;
 }

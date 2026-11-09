@@ -22,8 +22,8 @@ describe('freshnessLine', () => {
 });
 
 describe('basemapChip', () => {
-  it('names the offline package version', () =>
-    expect(basemapChip({ kind: 'offline', version: 'v3' }, false).label).toBe('Offline map v3'));
+  it('says the offline map is ready without the internal package id', () =>
+    expect(basemapChip({ kind: 'offline' }, false).label).toBe('Offline map ready'));
   it('online tiles with signal', () => expect(basemapChip({ kind: 'online' }, true).label).toBe('Online map'));
   it('online tiles without signal warns', () => expect(basemapChip({ kind: 'online' }, false).tone).toBe('warning'));
   it('loading and unavailable', () => {

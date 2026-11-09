@@ -11,10 +11,10 @@ import { Banner, Button } from '../ui';
 import type { NearbyIncident, RouteData } from '../../services/apiService';
 import type { DispatchLocalRow } from '../../services/db/localSchema';
 import type { DevicePosition } from '../../services/geolocation';
-import { formatDistance, formatRelativeAge } from '../../utils/geo';
+import { compassWord, formatDistance, formatRelativeAge } from '../../utils/geo';
 import { formatIncidentCode } from '../../utils/incidentCode';
 import tacticalFeedback from '../../utils/tacticalFeedback';
-import { STAGES, STAGE_ORDER, STATUS_LABEL, type NextDispatchStatus, type NoteKind } from '../../utils/dispatchStages';
+import { DEFAULT_DISPATCH_SUMMARY, STAGES, STAGE_LABEL, STAGE_ORDER, STATUS_LABEL, type NextDispatchStatus, type NoteKind } from '../../utils/dispatchStages';
 
 export interface BriefingViewProps {
   row: DispatchLocalRow;
@@ -86,7 +86,7 @@ export default function BriefingView({
           ? row.redacted_incident_summary.split(/[\n.]/)[0].trim() || 'Incident location'
           : 'Incident location'
       }
-      telemetry={distanceM !== null ? `${formatDistance(distanceM)} away, bearing ${bearing ?? 'N'}` : 'Locating...'}
+      telemetry={distanceM !== null ? `${formatDistance(distanceM)} away${bearing ? `, ${compassWord(bearing)}` : ''}` : 'Locating...'}
       age={formatRelativeAge(elapsedSeconds)}
       synced={row.synced !== 0}
       serverDispatchId={row.server_dispatch_id}
@@ -121,11 +121,22 @@ export default function BriefingView({
           );
         })}
       </div>
+      {/* Names under the segments; the title above already announces the stage, so screen readers skip these. */}
+      <div className="dispatch-stage-labels" aria-hidden="true">
+        {STAGES.map((s, idx) => (
+          <span
+            key={s}
+            className={`dispatch-stage-label${idx === currentStageIndex ? ' dispatch-stage-label--current' : ''}`}
+          >
+            {STAGE_LABEL[s]}
+          </span>
+        ))}
+      </div>
     </div>
 
     <CollapsibleSection title="Details" defaultOpen>
       <p className="dispatch-briefing-body">
-        {row.redacted_incident_summary || 'Patrol dispatched to check the area and assist with the incident.'}
+        {row.redacted_incident_summary || DEFAULT_DISPATCH_SUMMARY}
       </p>
       {focusTarget && (
         <div className="dispatch-coords-strip">
@@ -156,7 +167,7 @@ export default function BriefingView({
     </CollapsibleSection>
 
     {focusTarget && (
-      <CollapsibleSection title="Route and map">
+      <CollapsibleSection title="Route and map" defaultOpen={row.status !== 'completed' && row.status !== 'cancelled'}>
         <div className="dispatch-map-preview-card">
           <LiveMapCanvas
             ref={mapRef}
