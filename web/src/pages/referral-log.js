@@ -1,9 +1,9 @@
 /**
- * referral-log.js — Referral Log (contract §5 / §10): which incidents the
+ * referral-log.js — Referral Log: which incidents the
  * barangay delegated to which office (PNP, BFP, ambulance, VAW desk, ...)
  * and when.
  *
- * Overhauled with:
+ * Features:
  *   - 5-Card Interactive Agency KPI Command Strip with persistent baseline counts
  *   - Full-width search bar, multi-column sort controls & stateful filter reset
  *   - WCAG 2.2 AA semantic agency badges for PNP, BFP, EMS, DOH, DPWH, VAW, LGU, Brgy

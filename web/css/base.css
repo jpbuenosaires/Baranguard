@@ -1,28 +1,23 @@
 /**
- * base.css — global design tokens + shared primitives only (§8 "Design
- * System"). Everything screen/component-specific lives co-located with
- * its owning .js file (AppShell.css next to AppShell.js, login.css next
- * to login.js, etc.). index.html loads every stylesheet explicitly (no
- * bundler per §1) — check there for the current file list.
+ * base.css — global design tokens + shared primitives only. Everything
+ * screen/component-specific lives co-located with its owning .js file
+ * (AppShell.css next to AppShell.js, login.css next to login.js, etc.).
+ * index.html loads every stylesheet explicitly (no bundler) — check there for
+ * the current file list.
  *
- * ─── UI SCALE KNOB ────────────────────────────────────────────────────
- * `html { font-size: 75% }` below is the single control for how large
- * the whole interface renders. Every size token here is in `rem`, so
- * changing that one percentage scales fonts, spacing, radii, icons and
+ * ─── UI SCALE KNOB ───────────────────────────────────────────────────────
+ * The `html { font-size: ... }` percentage below is the single control for
+ * how large the whole interface renders. Every size token here is in `rem`,
+ * so changing that one percentage scales fonts, spacing, radii, icons and
  * component dimensions together, in proportion.
  *
- * Why 75%: the Figma reference is authored at a 16px root, but viewed at
- * 100% browser zoom on a real 1080p+ workstation it reads oversized for
- * an operational dispatch console — the same design at 75% zoom is what
- * actually feels right. Rather than ask every user to zoom out, the
- * design is reproduced faithfully at its documented rem values and the
- * root is scaled once, here. A token that reads `1rem` still means
- * "16px in the reference design"; it just renders at 12px.
+ * Why scaled down: the design is authored at a 16px root, but at 100%
+ * browser zoom on a real 1080p+ workstation it reads oversized for an
+ * operational dispatch console. A token that reads `1rem` still means "16px
+ * in the design"; it just renders smaller.
  *
- * To tune: raise/lower this one value (e.g. 80% for slightly larger).
- * Never hand-adjust individual token values to change overall size —
- * that's what caused the earlier drift where some values were trimmed
- * and others weren't.
+ * To tune: raise/lower that one value. Never hand-adjust individual token
+ * values to change overall size.
  *
  * Percentage (not a px value) on purpose: it scales from whatever root
  * size the user's browser is set to, so someone who has raised their
@@ -32,17 +27,12 @@
  * Exceptions that stay in px, deliberately: 1px borders (a 0.75px
  * border renders blurry or disappears), and `50%`/`999px` radii which
  * are shape declarations, not sizes.
- * ──────────────────────────────────────────────────────────────────────
+ * ─────────────────────────────────────────────────────────────────────────
  *
- * Design tokens are pulled from the Figma Make export's theme.css (same
- * hex values, --radius: 0.75rem base scale) and its precise Tailwind
- * class breakdown for type/spacing.
- *
- * "Never hardcode a hex value, pixel spacing, or font name in a
- * component file" (§8) — that rule is about page/component JS. The
- * utility layout classes below exist specifically so pages don't need
- * to: ad-hoc `style.cssText` layout strings in JS can never respond to
- * a media query, which is what broke responsiveness before.
+ * "Never hardcode a hex value, pixel spacing, or font name in a component
+ * file" — that rule is about page/component JS. The utility layout classes
+ * below exist so pages don't need to: ad-hoc `style.cssText` layout strings
+ * in JS can never respond to a media query.
  */
 
 /* Inter, self-hosted (latin subset, SIL OFL 1.1, see assets/fonts/Inter-OFL-LICENSE.txt)
@@ -77,16 +67,12 @@
   src: url("../assets/fonts/inter-latin-700.woff2") format("woff2");
 }
 
-/* UI scale knob: `html { font-size: 100% }` operates as the single root scale knob.
-   All sizing tokens across the system are declared in `rem`, so altering this
-   percentage proportionally scales typography, spacing, controls, and layout.
-   It defaults to 100% to preserve browser font scaling and user accessibility preferences. */
-html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ display-scaled laptops without browser zoom */
+/* The root font-size below is the UI scale knob (see the file header). */
+html { font-size: 80%; } /* 80% so the dashboard fits on 125%+ display-scaled laptops without browser zoom */
 
 /**
- * ─── THEME (light / dark) ───────────────────────────────────────────────
- * §1.1/§7.1 of the UI/UX review. Three states, same contract Artifacts
- * use and documented here so it isn't rediscovered per file:
+ * ─── THEME (light / dark) ────────────────────────────────────────────────
+ * Three states:
  *   - No `data-theme` attribute + OS light  -> :root's own light values.
  *   - No `data-theme` attribute + OS dark   -> the `prefers-color-scheme`
  *     block below.
@@ -96,21 +82,18 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
  * means "text/icon sitting on a saturated brand color" (a primary
  * button's label, an icon-badge's glyph), which does not change between
  * themes because the saturated background it sits on doesn't either.
- * `--color-surface` is the new, separate token for "elevated panel/card/
- * table background" — equal to white in light mode, a dark slate in dark
- * mode. Every existing `background: var(--color-white)` that meant
- * "surface," not "literal white," was migrated to `--color-surface` as
- * part of this pass (see DEVLOG for the full audit).
+ * `--color-surface` is the separate token for "elevated panel/card/table
+ * background" — equal to white in light mode, a dark slate in dark mode.
  * The sidebar's own navy is already a dark surface by design in BOTH
- * themes (§8's original spec), so `--color-navy` and the sidebar-local
- * tokens (`--color-surface-blue`, the nav item's own white-on-navy text)
- * are deliberately NOT re-themed — they were never light-mode colors to
- * begin with.
- * ─────────────────────────────────────────────────────────────────────── */
+ * themes, so `--color-navy` and the sidebar-local tokens
+ * (`--color-surface-blue`, the nav item's own white-on-navy text) are
+ * deliberately NOT re-themed.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
 
 :root {
-  /* Paper (2026-10-12): every printed form is A4. The on-screen preview
-     sheet uses the same size and margin as the @page rule below. */
+/* Paper: every printed form is A4. The on-screen preview sheet uses the
+   same size and margin as the @page rule below. */
   --paper-a4-short: 210mm;
   --paper-a4-long: 297mm;
   --paper-margin: 12mm;
@@ -122,36 +105,33 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
   --color-border: #E2E8F0;        --color-text-primary: #0F172A;
   --color-text-secondary: #475569;
 
-  /* ─── SOLID FILLS (audit A1) ──────────────────────────────────────────
-     These carry WHITE text/glyphs on a saturated fill, so they must stay
-     dark in BOTH themes — exactly the distinction --color-white vs
-     --color-surface already draws for the other direction.
-     The plain --color-* status tokens below get LIGHTER in dark mode
-     (correct for text on a dark ground, backwards for a fill under white
-     text): before this split, the SOS banner sat at 2.77:1 in dark mode
-     and the KPI icon glyphs at 1.67:1. Locked at their light values, all
-     of these clear their thresholds in both themes — critical 4.83:1 for
-     text, the rest 5.0-6.7:1 against the 3:1 graphic threshold.
-     Use these ONLY as a background under white content; never as text. */
+/* ─── SOLID FILLS ────────────────────────────────────────────────────────
+   These carry WHITE text/glyphs on a saturated fill, so they must stay
+   dark in BOTH themes — exactly the distinction --color-white vs
+   --color-surface already draws for the other direction.
+   The plain --color-* status tokens below get LIGHTER in dark mode
+   (correct for text on a dark ground, backwards for a fill under white
+   text). Locked at their light values, all of these clear their
+   thresholds in both themes — critical 4.83:1 for text, the rest
+   5.0-6.7:1 against the 3:1 graphic threshold.
+   Use these ONLY as a background under white content; never as text. */
   --color-critical-solid: #DC2626;
   --color-success-solid: #15803D;
   --color-warning-solid: #B45309;
   --color-info-solid: #0E7490;
   --color-accent-solid: #1D4ED8;
 
-  /* ─── TEXT-SAFE STATUS COLOURS (audit A2) ─────────────────────────────
-     The plain status tokens are tuned as FILLS. Used as text on a light
-     surface they fail AA (success 3.30:1, warning 3.19:1, info 3.68:1,
-     accent 3.68:1). These are the same hues at text weight; dark mode
-     redefines them upward, where the plain tokens already read fine. */
-  /* 2026-09-06 UI/UX audit: was #15803D, annotated 5.02:1 but measuring
-     4.54:1 on white — the weakest member of this family, and thin enough
-     that any tinted background behind it (the new .role-badge--tanod,
-     4.40:1) drops under AA. Darkened one step to green-800. Raising a
-     token only ever adds contrast, so every other site improves too. */
+/* ─── TEXT-SAFE STATUS COLOURS ───────────────────────────────────────────
+   The plain status tokens are tuned as FILLS. Used as text on a light
+   surface they fail AA (success 3.30:1, warning 3.19:1, info 3.68:1,
+   accent 3.68:1). These are the same hues at text weight; dark mode
+   redefines them upward, where the plain tokens already read fine. */
+/* Darker than #15803D, which measures 4.54:1 on white and lets any tinted
+   background behind it (.role-badge--tanod, 4.40:1) drop under AA. One step
+   darker (green-800); raising a token only ever adds contrast. */
   --color-success-text: #166534;  /* 5.94:1 on white */
-  /* 2026-10-09: was #0E7490 (5.36:1 on white) but 4.47:1 on the 15% info
-     tint KPI chips use; #0E708B is 5.66:1 on white, 4.72:1 on that tint. */
+/* #0E708B is 5.66:1 on white and 4.72:1 on the 15% info tint KPI chips use
+   (#0E7490 was 4.47:1 there). */
   --color-info-text: #0E708B;
   --color-link: #1D4ED8;          /* 6.70:1 on white */
 
@@ -163,41 +143,34 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
   --pill-critical-text: #991B1B;
   --pill-info-text: #1D4ED8;
   --pill-neutral-text: #1E293B;
-  /* Tertiary — placeholders, timestamps, uppercase .label text, and the
-     disabled-state text color, per the source's own neutral table.
-     Darkened from the source's literal #94A3B8 (contrast ratio ~3.0:1 on
-     --color-bg, fails WCAG AA's 4.5:1 for normal text) to slate-500
-     #64748B (~4.6:1) — a deliberate, logged deviation from the Figma
-     source for accessibility, not a token drift. */
+/* Tertiary — placeholders, timestamps, uppercase .label text, and the
+   disabled-state text color. Slate-500 #64748B (~4.6:1 on --color-bg)
+   rather than #94A3B8 (~3.0:1), which fails WCAG AA's 4.5:1 for normal
+   text. */
   --color-text-tertiary: #64748B;
   --color-disabled-bg: #CBD5E1;
-  /* audit A2: the disabled label was --color-text-tertiary on the disabled
-     fill = 3.86:1. Secondary on the same fill is 5.10:1 and still reads as
-     clearly inactive, because "disabled" is carried by the flat grey fill
-     and the not-allowed cursor, not by making the text unreadable. */
+/* The disabled label uses secondary text: tertiary on the disabled fill is
+   3.86:1, secondary is 5.10:1 and still reads as clearly inactive, because
+   "disabled" is carried by the flat grey fill and the not-allowed cursor,
+   not by making the text unreadable. */
   --color-disabled-text: #475569;
-  /* audit 2026-10-09 (05 contrast table): the plain warning/success/info
-     fills were 3.19/3.30/3.68:1 against white, failing AA both as text and
-     under white text, and 31 page rules use them as text. Same hues, darker
-     (HSL lightness only), measured 4.78/4.78/4.76:1 on white and
-     4.57/4.57/4.55:1 on --color-bg. Was #D97706 / #16A34A / #0891B2. */
+/* The plain warning/success/info fills were 3.19/3.30/3.68:1 against white,
+   failing AA both as text and under white text, and many page rules use
+   them as text. Same hues, darker (HSL lightness only): 4.78/4.78/4.76:1 on
+   white and 4.57/4.57/4.55:1 on --color-bg. */
   --color-critical: #DC2626;      --color-warning: #AC5F05;
   --color-success: #12843C;       --color-info: #077D9A;
-  /* §6.4: same reasoning as --color-text-tertiary above — the pending
-     pill's text was hardcoded #92400E directly in .status-pill--pending
-     because --color-warning itself only reaches ~3.2:1 against
-     --tint-warning-bg (fails WCAG AA). Promoted to a real token here so
-     dark mode can define its own readable value instead of inheriting a
-     light-mode-only hardcoded hex. */
+/* Same reasoning as --color-text-tertiary above: --color-warning itself
+   only reaches ~3.2:1 against --tint-warning-bg (fails WCAG AA), so the
+   pending pill's text is a real token and dark mode can define its own
+   readable value instead of inheriting a light-mode-only hardcoded hex. */
   --color-warning-text: #78350F;
   /* Selected/hover row tint — distinct from --color-bg. */
   --color-row-active-bg: #EFF6FF;
-  /* 2026-09-06 UI/UX audit: both were referenced but never defined.
-     Aliased onto tokens that already carry a correct dark remap rather
-     than introducing two new colours, which would need a fresh contrast
-     audit this pass cannot run. --color-surface-hover backs
-     .gis-floating-activity__item:hover; --color-primary-strong backs
-     .card-header__icon--action:focus-visible. */
+/* Aliased onto tokens that already carry a correct dark remap rather than
+   introducing new colours. --color-surface-hover backs
+   .gis-floating-activity__item:hover; --color-primary-strong backs
+   .card-header__icon--action:focus-visible. */
   --color-surface-hover: var(--color-row-active-bg);
   --color-primary-strong: var(--color-primary-hover);
   --color-border-blue: #BFDBFE;
@@ -253,22 +226,17 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
   --spacing-xs: 0.25rem;  --spacing-sm: 0.5rem;  --spacing-sm-md: 0.75rem;
   --spacing-md: 1rem;     --spacing-lg: 1.5rem;  --spacing-xl: 2rem;
   --spacing-2xl: 3rem;
-  /* Page gutter around every screen (2026-10-17): top, sides, bottom, as on SMS Monitor. */
+/* Page gutter around every screen: top, sides, bottom, as on SMS Monitor. */
   --page-padding: 0.375rem 0.625rem 0.5rem;
-  /* 2026-09-06 UI/UX audit: 20px is a real step this app converged on by
-     itself — 16 card/modal-header rules across five stylesheets had each
-     hand-written 1.25rem for the same job. It sits between md(16) and
-     lg(24), which the 8px rhythm skips. Added because the usage already
-     existed, not to widen the scale on principle. */
+/* 20px is a real step this app converged on by itself (many card/modal-header
+   rules across stylesheets hand-wrote 1.25rem for the same job). It sits
+   between md(16) and lg(24), which the 8px rhythm skips. */
   --spacing-md-lg: 1.25rem;
 
-  /* Semantic container padding. The audit found SIX near-identical
-     paddings on card/panel/banner containers — 0.75/0.875/1/1.125rem
-     vertical against 1/1.125/1.25rem horizontal, 30 rules across a grid
-     of values nobody could have chosen deliberately. That variance is
-     what made some screens read as roomier than others. Two steps now,
-     and every card-like container picks one. Max movement for any rule
-     that changed: 2px. */
+/* Semantic container padding: two steps, and every card-like container
+   picks one, instead of a spread of near-identical values (0.75/0.875/1/
+   1.125rem vertical against 1/1.125/1.25rem horizontal) that made some
+   screens read as roomier than others. */
   --pad-panel: var(--spacing-sm-md) var(--spacing-md);
   --pad-panel-lg: var(--spacing-md) var(--spacing-md-lg);
 
@@ -278,12 +246,10 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
   --font-size-label: 0.75rem; --font-size-13: 0.8125rem; --font-size-sm: 0.875rem; --font-size-md: 1rem;
   --font-size-lg: 1.125rem;   --font-size-xl: 1.25rem;  --font-size-2xl: 1.5rem;
   --font-size-3xl: 1.875rem;
-  /* Alias of --font-size-label. 2026-09-06 UI/UX audit: 50 declarations
-     across 8 page stylesheets already referenced --font-size-xs; it had
-     never been defined, so 43 fell back to a literal and 7 (which carried
-     no fallback) dropped entirely and rendered at the inherited 16px.
-     Defined here rather than rewritten at every call site — "xs" is the
-     name the rest of the scale implies, and --font-size-label predates it. */
+/* Alias of --font-size-label. Many page stylesheets reference
+   --font-size-xs ("xs" is the name the rest of the scale implies, and
+   --font-size-label predates it); left undefined, a use with no fallback
+   would drop and render at the inherited 16px. */
   --font-size-xs: var(--font-size-label);
 
   /* Monospace stack: ONLY for true code (audit JSON viewer, runbook box,
@@ -291,24 +257,12 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
   --font-mono: "SFMono-Regular", "JetBrains Mono", "Cascadia Mono", Consolas,
                "Liberation Mono", Menlo, monospace;
 
-  /* Interactive control heights. 2026-09-06 UI/UX audit.
-     Page stylesheets carried 20+ `height` overrides for filter-row
-     controls in five different values (36px/38px/2.25rem/2.375rem/34px),
-     in a mix of px and rem. Measured in the browser, almost none of them
-     rendered: the `min-height` on input/select/button below wins over a
-     smaller `height`, so everything was already 40px EXCEPT the handful
-     of selectors that also set min-height — Incident Management's filter
-     row and Citizen Reports' search box, which sat at 38px while the
-     select beside that search box sat at 40px.
-
-     So the fix is to make the declarations say what the app already does,
-     not to resurrect a dense tier nobody was seeing. Two tiers:
-       --control-height            every text control and button
-       --control-height-prominent  the detail-pane CTAs (Dispatch /
-                                   Resolve / Create Incident / Convert to
-                                   Incident), four selectors across two
-                                   files that had each independently
-                                   landed on 42px and DO render at it. */
+/* Interactive control heights. The `min-height` on input/select/button
+   below wins over a smaller `height`, so these declare what the app
+   already does instead of per-page `height` overrides. Two tiers:
+     --control-height            every text control and button
+     --control-height-prominent  the detail-pane CTAs (Dispatch / Resolve /
+                                 Create Incident / Convert to Incident) */
   --control-height: 2.5rem;
   --control-height-prominent: 2.625rem;
 
@@ -318,36 +272,32 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
   --shadow-card: 0 1px 2px rgba(15,23,42,.05);
   --shadow-elevated: 0 10px 15px -3px rgba(15,23,42,.10), 0 4px 6px -4px rgba(15,23,42,.10);
   --shadow-floating: 0 20px 25px -5px rgba(15,23,42,.12), 0 8px 10px -6px rgba(15,23,42,.10);
-  /* Aliases the audit found in use but undefined. --shadow-modal was
-     silently producing NO shadow on .personnel-modal and .sms-modal;
-     --shadow-sm the same on .insight-tile:hover. Both map onto the
-     existing scale rather than introducing new shadow values. */
+/* Aliases for tokens that are referenced but not otherwise defined
+   (--shadow-modal on .personnel-modal and .sms-modal; --shadow-sm on
+   .insight-tile:hover). Both map onto the existing scale rather than
+   introducing new shadow values. */
   --shadow-sm: var(--shadow-card);
   --shadow-modal: var(--shadow-floating);
 
-  /* ─── PREMIUM POLISH LAYER (UI/UX improvement pass) ─────────────────── */
-  /* Glassmorphism pass (2026-09-05): these three tokens existed before but
-     were barely wired up. Scope is deliberately MODERATE — chrome/
-     containers only (sidebar, topbar, .card, KpiCard, ConfirmDialog, Menu,
-     Toast, login hero). DataTable rows/cells, form inputs, and
-     .status-pill fills stay on the plain --color-surface/--color-bg/tint
-     backgrounds they already use — those carry small, dense, audited-
-     contrast text (§2 Rule 6/6.4 in the working reference), and a blurred
-     translucent background under that text is a real legibility risk on
-     an operational console. Do not "complete" the look by extending glass
-     there without redoing that contrast audit first. */
+/* ─── PREMIUM POLISH LAYER ─────────────────────────────────────────────── */
+/* Glassmorphism: scope is deliberately MODERATE — chrome/containers only
+   (sidebar, topbar, .card, KpiCard, ConfirmDialog, Menu, Toast, login
+   hero). DataTable rows/cells, form inputs, and .status-pill fills stay on
+   the plain --color-surface/--color-bg/tint backgrounds: they carry small,
+   dense text whose contrast was audited, and a blurred translucent
+   background under it is a real legibility risk on an operational console.
+   Do not extend glass there without redoing that contrast audit first. */
   --glass-bg: rgba(255,255,255,0.72);
   --glass-border: var(--color-border);
   --glass-blur: 12px;
-  /* D-24: ended at #3B82F6 (white 3.68:1); #2563EB is 5.17:1, so a label
-     near either end of a wide primary button still clears AA. */
+/* Ends at #2563EB (white 5.17:1; #3B82F6 was 3.68:1), so a label near
+   either end of a wide primary button still clears AA. */
   --gradient-hero: linear-gradient(135deg, #1E3A6E 0%, #1D4ED8 50%, #2563EB 100%);
-  /* D-12: the deep navy AppShell.css and login.css used as a literal. */
+/* The deep navy AppShell.css and login.css use. */
   --color-navy-deep: #162D58;
-  /* D-12: the sidebar's own palette, previously literal hex in AppShell.css.
-     Deliberately not re-themed (the sidebar is dark navy in both themes).
-     White on the badge fill is 4.83:1 (was #EF4444, 3.76:1 for 11px bold
-     text); the focus ring blue is 4.8:1 against the sidebar bottom. */
+/* The sidebar's own palette. Deliberately not re-themed (the sidebar is
+   dark navy in both themes). White on the badge fill is 4.83:1 (11px bold
+   text); the focus ring blue is 4.8:1 against the sidebar bottom. */
   --sidebar-bg-start: #102038;
   --sidebar-bg-end: #0C1626;
   --sidebar-text-accent: #93C5FD;
@@ -355,7 +305,7 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
   --sidebar-focus: #3B82F6;
   --sidebar-active-start: #2563EB;
   --sidebar-active-end: #1D4ED8;
-  /* D-11: the teal KPI accent in dark mode had no token. */
+/* The teal KPI accent in dark mode. */
   --dark-accent-teal: #2DD4BF;
   --gradient-card-hover: linear-gradient(135deg, rgba(59,130,246,0.04), rgba(29,78,216,0.02));
   --glow-primary: 0 0 20px rgba(59,130,246,0.25);
@@ -394,7 +344,7 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
   --status-responding-bg: color-mix(in srgb, var(--color-info) 14%, transparent);
   --status-responding-border: color-mix(in srgb, var(--color-info) 30%, transparent);
 
-  /* D-08: was --color-text-secondary, 4.29:1 on the dark neutral tint. */
+/* Not --color-text-secondary: 4.29:1 on the dark neutral tint. */
   --status-offduty-text: var(--pill-neutral-text);
   --status-offduty-bg: var(--tint-neutral-bg);
   --status-offduty-border: color-mix(in srgb, var(--color-border) 60%, transparent);
@@ -404,14 +354,14 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
   --pad-table-cell-x: 0.875rem;
   --pad-roster-item: 0.5rem 0.625rem;
 
-  /* D-17: referenced but never defined (AppShell.css role tag, LiveMap.css,
-     personnel.css, incident-detail.css print modal). Aliases, no new values. */
+/* Referenced elsewhere (AppShell.css role tag, LiveMap.css, personnel.css,
+   incident-detail.css print modal). Aliases, no new values. */
   --radius-full: 9999px;
   --radius-xs: 0.25rem;
   --shadow-lg: var(--shadow-floating);
   --color-critical-subtle: var(--tint-critical-bg);
 
-  /* Canonical Aliases & Missing Token Fallbacks (Phase 1 Token Consolidation) */
+/* Canonical Aliases & Missing Token Fallbacks */
   --color-danger: var(--color-critical);
   --color-critical-text: var(--pill-critical-text);
   --color-neutral-text: var(--pill-neutral-text);
@@ -435,14 +385,13 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
   --timeline-node-pending: #94A3B8;
   --timeline-connector: #CBD5E1;
 
-  /* ─── LAYERING SCALE (audit 2026-10-09 D-16) ──────────────────────────
-     Toasts sat at 300, under the shared modal (400), ConfirmDialog (400),
-     every page modal (999-1000) and the fullscreen maps / print modal
-     (9999), so a save error raised while a modal was open was invisible.
-     One ordered scale now. Page stylesheets still carry literal values
-     (max 9999); --z-confirm and --z-toast sit above that maximum so a
-     confirmation or a toast is never hidden by any page layer.
-       sticky < dropdown < drawer < modal < fullscreen < confirm < toast */
+/* ─── LAYERING SCALE ─────────────────────────────────────────────────────
+   Toasts must sit above every modal, or a save error raised while a modal
+   is open is invisible. One ordered scale:
+     sticky < dropdown < drawer < modal < fullscreen < confirm < toast
+   Page stylesheets still carry literal values (max 9999); --z-confirm and
+   --z-toast sit above that maximum so a confirmation or a toast is never
+   hidden by any page layer. */
   --z-raised: 10;
   --z-popover: 30;
   --z-sticky: 50;
@@ -473,27 +422,22 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
 :root[data-theme="dark"] { --is-dark-theme: 1; }
 
 /* The dark palette's VALUES live here, in :root, exactly once. The two
-   blocks below only REMAP --color-* onto them.
-   Why: the dark palette used to be written out twice — once in the
-   `prefers-color-scheme` block and again in `[data-theme="dark"]` — and
-   the two copies drifted the moment one was edited (the audit's contrast
-   corrections were applied to the media-query copy and silently missed
-   the toggle copy, which is precisely the bug this structure removes).
-   A colour now changes in one place and both paths follow. */
+   blocks below only REMAP --color-* onto them, so a colour changes in one
+   place and both paths (`prefers-color-scheme` and `[data-theme="dark"]`)
+   follow. */
 :root {
   --dark-surface: #1E293B;        --dark-bg: #0F172A;
   --dark-border: #334155;         --dark-text-primary: #F1F5F9;
   --dark-text-secondary: #94A3B8;
-  /* audit A2: was #7C8BA3 = 4.23:1 on the dark surface — failed AA for
-     placeholders, timestamps and every uppercase .label. Now 5.62:1. */
+/* 5.62:1 on the dark surface (placeholders, timestamps, every uppercase
+   .label). */
   --dark-text-tertiary: #93A2B4;
   --dark-disabled-bg: #334155;    --dark-disabled-text: #CBD5E1;
   --dark-critical: #F87171;       --dark-warning: #FBBF24;
   --dark-warning-text: #FDE68A;
   --dark-success: #4ADE80;        --dark-info: #38BDF8;
-  /* audit A2: white-on-primary was 3.68:1 at rest and 2.54:1 on hover —
-     the hover state was LIGHTER, the wrong direction under white text.
-     Now 5.17:1 at rest, deepening to 6.70:1 on hover. */
+/* White-on-primary is 5.17:1 at rest, deepening to 6.70:1 on hover (the
+   hover state must not get LIGHTER under white text). */
   --dark-primary: #2563EB;        --dark-primary-hover: #1D4ED8;
   --dark-accent: #60A5FA;
   /* In dark mode the plain status tokens already read well as text, so
@@ -504,13 +448,12 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
   --dark-divider: #263449;
   --dark-chart-line-1: #60A5FA;   --dark-chart-line-2: #4ADE80;
   --dark-chart-grid: #334155;     --dark-chart-axis-text: #93A2B4;
-  /* D-26: three donut slices were under the 3:1 graphics threshold on the
-     dark surface (cat-1 2.83, cat-7 2.26, cat-9 2.57). Same hues, lighter:
-     3.16 / 3.13 / 3.16. */
+/* Donut slices lightened to clear the 3:1 graphics threshold on the dark
+   surface: cat-1 3.16, cat-7 3.13, cat-9 3.16. */
   --dark-chart-cat-1: #336DEC;    --dark-chart-cat-7: #DF2929;
   --dark-chart-cat-9: #8C51EF;
-  /* audit A2: pill text on the dark tints — info was 2.78:1, critical
-     4.07:1, neutral 4.29:1. These clear AA at 7.70 / 5.93 / 7.40. */
+/* Pill text on the dark tints clears AA: info 7.70, critical 5.93,
+   neutral 7.40. */
   --dark-pill-info-text: #BAE6FD;
   --dark-pill-critical-text: #FCA5A5;
   --dark-pill-neutral-text: #CBD5E1;
@@ -703,9 +646,9 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
 }
 
 /* Skip-navigation link — off-screen until keyboard focus lands on it (the
-   first Tab press on any authenticated page), per §6.1 of the UI/UX
-   review. Points at #page-main, which AppShell.js's `content` element
-   carries as an id specifically for this to target. */
+   first Tab press on any authenticated page). Points at #page-main, which
+   AppShell.js's `content` element carries as an id specifically for this
+   to target. */
 .skip-link {
   position: absolute;
   top: -3rem;
@@ -735,11 +678,10 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
   flex-shrink: 0;
   color: var(--color-white);
 }
-/* .icon-badge--brand / --hero now render the real Baranguard logo mark
+/* .icon-badge--brand / --hero render the real Baranguard logo mark
    (assets/logo.svg) as an <img> — the mark already carries its own white
-   backing plate and navy fill baked into the file, so these no longer
-   need a gradient/tint background behind a glyph, just sizing + a
-   consistent rounded shape. */
+   backing plate and navy fill, so these need just sizing + a consistent
+   rounded shape. */
 .icon-badge--brand {
   width: 2.5rem; height: 2.5rem;
   border-radius: var(--radius-md);
@@ -756,9 +698,8 @@ html { font-size: 80%; } /* 2026-11-02: 80% so the dashboard fits on 125%+ displ
   background: rgba(255, 255, 255, 0.2);
 }
 /* All four carry a WHITE glyph (.icon-badge sets color: --color-white), so
-   they take the locked -solid fills. On the plain status tokens these sat
-   at 1.67-2.54:1 in dark mode — the glyph was very nearly invisible
-   (audit A1). On the solid fills they are 5.0-6.7:1 in both themes. */
+   they take the locked -solid fills (5.0-6.7:1 in both themes; the plain
+   status tokens sat at 1.67-2.54:1 in dark mode). */
 .icon-badge--kpi { width: 3rem; height: 3rem; border-radius: var(--radius-lg); }
 .icon-badge--kpi.accent-blue { background: var(--color-accent-solid); }
 .icon-badge--kpi.accent-green { background: var(--color-success-solid); }
@@ -817,10 +758,9 @@ h3 { font-size: var(--font-size-lg); font-weight: 700; }
 input, select, textarea {
   font-family: inherit;
   font-size: var(--font-size-sm);
-  /* audit A7: fields rendered 34px tall. 2.5rem against the 87.5% root is
-     40px — comfortable on the tablets these screens run on in a barangay
-     hall, and matching the button min-height so a field and the button
-     beside it line up. Excludes checkbox/radio, sized separately below. */
+/* 2.5rem matches the button min-height so a field and the button beside it
+   line up, and is comfortable on the tablets these screens run on in a
+   barangay hall. Excludes checkbox/radio, sized separately below. */
   min-height: var(--control-height);
   padding: var(--spacing-sm) var(--spacing-sm-md);
   border: 1px solid var(--color-border);
@@ -828,10 +768,9 @@ input, select, textarea {
   background-color: var(--color-bg);
   color: var(--color-text-primary);
   width: 100%;
-  /* border-color/box-shadow: pre-existing focus feedback. background-
-     color/color: §7.1 theme-transition, added here rather than in the
-     blanket rule below (a second `transition` shorthand would replace
-     this one, not merge with it). */
+/* border-color/box-shadow: focus feedback. background-color/color: theme
+   transition, added here rather than in the blanket rule below (a second
+   `transition` shorthand would replace this one, not merge with it). */
   transition: border-color .15s ease, box-shadow .15s ease, background-color .2s ease, color .2s ease;
 }
 
@@ -843,14 +782,11 @@ select {
   background-position: right 0.75rem center;
   padding-right: 2.5rem;
 }
-/* 2026-09-06 UI/UX audit: the chevron above is a data-URI, so its stroke
-   is a literal hex that no token can reach — and there was no dark-mode
-   counterpart, leaving a #64748B arrow on the #1E293B dark surface for
-   every stock select in the app. Three page stylesheets had each patched
-   their OWN selects locally; this covers the rest (Analytics and Dashboard
-   date ranges, Settings, Citizen Reports status, Incident filter, Map
-   Packages, Scheduler, Swap Requests) in one place. Colour is
-   --dark-text-secondary (#94A3B8) expressed as %23-escaped hex. */
+/* The chevron above is a data-URI, so its stroke is a literal hex that no
+   token can reach; without a dark-mode counterpart a #64748B arrow sits on
+   the #1E293B dark surface for every stock select. This covers every stock
+   select in one place. Colour is --dark-text-secondary (#94A3B8) expressed
+   as %23-escaped hex. */
 [data-theme="dark"] select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
@@ -870,9 +806,9 @@ input:focus, select:focus, textarea:focus {
 }
 input::placeholder, textarea::placeholder { color: var(--color-text-tertiary); }
 
-/* audit A7: the native checkbox rendered 13x13 — roughly half WCAG 2.2's
-   24x24 minimum target. `accent-color` keeps the platform control (and its
-   own focus/indeterminate behaviour) rather than rebuilding it from a
+/* The native checkbox would render ~13x13, roughly half WCAG 2.2's 24x24
+   minimum target. `accent-color` keeps the platform control (and its own
+   focus/indeterminate behaviour) rather than rebuilding it from a
    pseudo-element, which is what usually breaks keyboard support. The
    `width` reset is needed because the rule above sets 100% on all inputs. */
 input[type="checkbox"], input[type="radio"] {
@@ -959,7 +895,7 @@ button.danger {
   color: var(--color-critical);
 }
 /* --color-critical-solid, not --color-critical: this is white text on a
-   saturated fill, so the fill must stay dark in dark mode (audit A1). */
+   saturated fill, so the fill must stay dark in dark mode. */
 button.danger:hover { background: var(--color-critical-solid); color: var(--color-white); }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
 
@@ -1011,16 +947,15 @@ button.icon-btn:hover { background: var(--color-row-active-bg); color: var(--col
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
   padding: var(--spacing-lg);
-  /* box-shadow: pre-existing hover-lift. border-color: §7.1 theme-
-     transition. */
+/* box-shadow: hover-lift. border-color: theme transition. */
   transition: box-shadow .15s ease, border-color .2s ease, transform .2s ease, background-color .2s ease;
 }
 .card:hover {
   box-shadow: var(--shadow-card-hover);
   transform: translateY(-2px);
 }
-/* §2 Rule 6: a blur that silently no-ops must not leave a see-through
-   card behind — fall back to the pre-glass opaque sheen instead. */
+/* A blur that silently no-ops must not leave a see-through card behind —
+   fall back to the opaque sheen instead. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .card {
     background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg) 100%);
@@ -1079,16 +1014,16 @@ button.icon-btn:hover { background: var(--color-row-active-bg); color: var(--col
 @media (prefers-reduced-motion: reduce) {
   .skeleton { animation: none; }
 }
-/* Named skeleton shapes, so pages stop hand-writing
-   `style="height:14px;width:60%"` on every placeholder (audit A4 — those
-   raw pixel values were among the 27 that ignored the root scale). */
+/* Named skeleton shapes, so pages don't hand-write
+   `style="height:14px;width:60%"` on every placeholder (raw pixel values
+   ignore the root scale). */
 .skeleton--line { height: 0.875rem; width: 60%; margin-bottom: var(--spacing-sm-md); }
 .skeleton--figure { height: 2rem; width: 40%; }
 .skeleton--block { height: 8rem; border-radius: var(--radius-sm); }
 .skeleton--chart { height: 11rem; }
 .skeleton--row { height: 2.75rem; border-radius: var(--radius-sm); }
 
-/* Inline field-level validation message (audit W2/W15) — distinct from
+/* Inline field-level validation message — distinct from
    .state-block--error, which takes over a whole panel. */
 .app-inline-error {
   color: var(--color-critical);
@@ -1096,13 +1031,11 @@ button.icon-btn:hover { background: var(--color-row-active-bg); color: var(--col
   flex-basis: 100%;
 }
 
-/* Vertical rhythm between the dashboard's stacked rows — replaces the
-   per-row `style.marginTop = '16px'` those grids used to carry. */
+/* Vertical rhythm between the dashboard's stacked rows. */
 .dashboard-row { margin-top: var(--spacing-md); }
 .dashboard-row:first-child { margin-top: 0; }
 .dashboard-freshness { font-variant-numeric: tabular-nums; white-space: nowrap; }
-/* Breakdown list rows (By Status, Tanods On Duty) — replaces the
-   per-row `style.fontSize` / `style.fontWeight` those loops used to set. */
+/* Breakdown list rows (By Status, Tanods On Duty). */
 .breakdown-row { font-size: var(--font-size-sm); }
 .breakdown-row__value { font-weight: 600; font-variant-numeric: tabular-nums; }
 /* Panel heading inside a report card, where the full card-header
@@ -1111,8 +1044,7 @@ button.icon-btn:hover { background: var(--color-row-active-bg); color: var(--col
 .report-section-title { display: block; margin-bottom: var(--spacing-sm-md); }
 /* Opts a control out of the global `width: 100%` on inputs/selects, for
    the cases where it should size to its content (a date field or a Tanod
-   picker sitting inline in a filter bar or a table cell). Replaces the
-   per-element `style.width = 'auto'` those sites used to set. */
+   picker sitting inline in a filter bar or a table cell). */
 .input--auto { width: auto; }
 /* Skeletons that fill their container rather than taking a fixed shape.
    `min-height` floor for the same reason `.gis-page__map-wrapper--fill`
@@ -1121,7 +1053,7 @@ button.icon-btn:hover { background: var(--color-row-active-bg); color: var(--col
    loading state). */
 .skeleton--fill { height: 100%; min-height: 28rem; border-radius: var(--radius-xl); }
 
-/* ─── Premium motion (UI/UX improvement pass) ─────────────────────────── */
+/* ─── Premium motion ─────────────────────────────────────────────────────── */
 @keyframes fade-in-up {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -1144,13 +1076,10 @@ button.icon-btn:hover { background: var(--color-row-active-bg); color: var(--col
   100% { background-position: 0% 50%; }
 }
 
-/* §6.5: blanket reduced-motion coverage for every animation/transition
-   added across the app this pass (page transitions, chart reveals, card
-   stagger, status-pill pulse, button press) — not just .skeleton's own
-   narrower rule above, which predates this pass and is left as-is.
-   Placed here (base.css, loaded on every page) rather than repeated per
-   component file, so nothing new can be added later without this
-   already covering it. */
+/* Blanket reduced-motion coverage for every animation/transition in the
+   app (page transitions, chart reveals, card stagger, status-pill pulse,
+   button press). Placed here (base.css, loaded on every page) rather than
+   repeated per component file, so nothing added later escapes it. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -1160,19 +1089,16 @@ button.icon-btn:hover { background: var(--color-row-active-bg); color: var(--col
   }
 }
 
-/* §7.1: smooth color transition when the theme changes (toggle click or a
-   live OS `prefers-color-scheme` change) — applied broadly rather than
-   per-component so no future surface needs its own copy of this rule.
-   The blanket reduced-motion override immediately above already collapses
-   this to near-zero duration under that preference, so no second guard is
-   needed here.
-   DELIBERATELY excludes button/input/select/textarea/.card — each of
-   those already has its own, more specific `transition` shorthand earlier
-   in this file (press feedback, focus glow, hover shadow), and `transition`
-   is a shorthand: a second blanket declaration at equal specificity would
-   REPLACE those, not add to them, silently deleting the existing
-   animation. Each of those four was extended in place instead — search
-   this file for ".2s ease" to find where. */
+/* Smooth color transition when the theme changes (toggle click or a live OS
+   `prefers-color-scheme` change) — applied broadly rather than
+   per-component. The blanket reduced-motion override above already
+   collapses this to near-zero duration under that preference.
+   DELIBERATELY excludes button/input/select/textarea/.card — each of those
+   already has its own, more specific `transition` shorthand earlier in this
+   file (press feedback, focus glow, hover shadow), and `transition` is a
+   shorthand: a second blanket declaration at equal specificity would
+   REPLACE those, not add to them. Each of those four was extended in place
+   instead — search this file for ".2s ease" to find where. */
 html, body, .status-pill,
 .sidebar, .topbar, .page-header, .data-table-wrap, .confirm-dialog {
   transition: background-color .2s ease, color .2s ease, border-color .2s ease;
@@ -1198,21 +1124,13 @@ html, body, .status-pill,
 /* ==========================================================================
    Role badge — ONE definition for "what role is this user".
 
-   2026-09-06 UI/UX audit: Personnel's .user-role-badge and Settings'
-   .settings-role-pill rendered the SAME fact two ways — a 12px 600-weight
-   rounded rectangle vs an 11px 700-weight uppercase pill — and, worse,
-   with different colours per role. Admin was chart-cat-6 on Personnel and
-   primary on Settings; Secretary primary vs info; Tanod info vs success.
-   The same person's role changed colour depending on which screen you
-   were looking at.
-
-   One shape (pill + uppercase, matching .status-pill's existing
-   convention in this file) and one colour per role, each distinct and
-   each on a text-safe token:
+   One shape (pill + uppercase, matching .status-pill's convention in this
+   file) and one colour per role, each distinct and each on a text-safe
+   token, so a person's role never changes colour between screens:
      admin -> primary · secretary -> info · punong_barangay -> warning ·
      tanod -> success
-   Modifiers use the API's own role values (§3), so
-   .role-badge--punong_barangay, never the old ad-hoc "--pb".
+   Modifiers use the API's own role values, so .role-badge--punong_barangay,
+   never an ad-hoc "--pb".
    ========================================================================== */
 .role-badge {
   display: inline-flex;
@@ -1250,11 +1168,9 @@ html, body, .status-pill,
 }
 .role-badge--punong_barangay {
   background: color-mix(in srgb, var(--color-warning) 8%, transparent);
-  /* --color-warning-TEXT, not --color-warning-solid: the working
-     reference §6 defines *-solid as a saturated FILL for white text, and
-     it stays dark in dark mode. Settings' old .settings-role-pill--pb
-     used -solid and so rendered dark amber text on a dark tint;
-     Personnel's badge had it right. Keeping the correct one. */
+/* --color-warning-TEXT, not --color-warning-solid: *-solid is a saturated
+   FILL for white text and stays dark in dark mode, which would render dark
+   amber text on a dark tint. */
   color: var(--color-warning-text);
   border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
 }
@@ -1265,24 +1181,13 @@ html, body, .status-pill,
 }
 
 /* ==========================================================================
-   Stat card grid — ONE definition for the 4-up count row.
+   Stat card grid — ONE definition for the 4-up count row (Audit Log,
+   Service Health, Map Packages).
 
-   2026-09-06 UI/UX audit: Audit Log, Service Health and Map Packages each
-   had their own near-identical copy (.audit-stat-*, .health-stat-*,
-   .map-pkg-stat-*), and the copies had drifted where nobody would notice
-   them side by side but everybody notices them screen to screen:
-
-     - value size          1.5rem on two, 1.25rem on Map Packages
-     - active focus ring   1px on Audit Log, 1.5px on Service Health
-     - hover/active states  Map Packages had neither
-     - transition          `all` on one, an explicit property list on another
-     - tone variants       three different subsets of primary/info/warning/
-                           success/critical/neutral
-
-   The union of the tone variants is defined here so no screen loses one.
-   This is distinct from the StatStrip COMPONENT (big number + inline
-   label, no card) — that one stays as it is; this is the bordered
-   4-column grid.
+   The union of the tone variants (primary/info/warning/success/critical/
+   neutral) is defined here so no screen loses one. This is distinct from
+   the StatStrip COMPONENT (big number + inline label, no card); this is the
+   bordered 4-column grid.
    ========================================================================== */
 .stat-card-grid {
   display: grid;
@@ -1356,15 +1261,8 @@ html, body, .status-pill,
 
 /* ==========================================================================
    Filter chip — ONE definition for the standalone "All / Pending /
-   Converted" style filters.
-
-   2026-09-06 UI/UX audit: three screens each had their own. Citizen
-   Reports and Personnel were the SAME design drifted apart (padding
-   0.375/0.75rem vs 0.375/0.625rem, gap 0.375 vs 0.25rem); Dispatch
-   Center's .queue-filter-chip was the same affordance drawn as a pill
-   with a different type size. All three already agreed on the active
-   state — primary fill, primary border, white text — which is the
-   giveaway that they were meant to be one thing.
+   Converted" style filters. Active state: primary fill, primary border,
+   white text.
 
    NOT merged, on purpose: .sms-filter-chip. Despite the name it is a
    segmented control (flex:1, borderless, sitting inside a shared track),
@@ -1495,8 +1393,7 @@ html, body, .status-pill,
 .form-stack { display: flex; flex-direction: column; gap: var(--spacing-sm-md); }
 
 /* Shared by every page-level "date range" dropdown + progressive-
-   disclosure custom-range row (admin-dashboard.js, statistical-reports.js)
-   — 2026-09-06 UX pass. `.range-picker-custom-row` also carries
+   disclosure custom-range row. `.range-picker-custom-row` also carries
    `.filter-bar` for its own flex/gap/wrap; that class's own unconditional
    `display: flex` is an AUTHOR rule, which beats the browser's default
    `[hidden] { display: none }` (a UA-stylesheet rule) regardless of
@@ -1613,8 +1510,8 @@ svg.is-spinning {
   }
 }
 
-/* D-25 / X-18: the focus ring above is a box-shadow, which Windows High
-   Contrast (forced colours) removes, leaving no visible focus at all. */
+/* The focus ring above is a box-shadow, which Windows High Contrast
+   (forced colours) removes, leaving no visible focus at all. */
 @media (forced-colors: active) {
   :focus-visible { outline: 2px solid CanvasText !important; outline-offset: 2px; }
   [tabindex="-1"]:focus-visible,

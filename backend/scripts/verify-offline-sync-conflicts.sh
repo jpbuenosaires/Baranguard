@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # Baranguard — thesis objective 2 (offline-first sync): pins down what
 # POST /sync/batch actually does when a record created/changed offline reaches
-# a server whose state has moved on. Companion to docs/OFFLINE_SYNC_CONFLICT_RULES.md
-# (every [PASS] line here backs a row in that document; a [FAIL] means the
-# document is wrong or the product changed).
+# a server whose state has moved on.
 #
 # This suite adds only what verify-sprint3.sh does NOT already cover (same-event
 # replay of incident/gps and the 2-day-old GPS case are covered there):
@@ -15,11 +13,11 @@
 #   SOS pointing at a no-longer-active dispatch; client event times (created_offline_at) and
 #   implausible incident dates (step 7b).
 #
-# It changes no product code (it only exercises it). Server-side "state moved on" is produced through
+# Server-side "state moved on" is produced through
 # the real Admin endpoints where one exists (PATCH /dispatch/:id/cancel,
 # PATCH /dispatch/:id/status with override_reason); where none exists
 # (incident resolved, session clock) it is a direct SQL UPDATE on the
-# disposable database, and the document says so.
+# disposable database.
 #
 # Safe to run: disposable database, disposable app-user, throwaway port.
 # The real `baranguard` database and backend/.env are never touched.

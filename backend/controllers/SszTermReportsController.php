@@ -11,8 +11,7 @@ use Baranguard\Middleware\AuthMiddleware;
 use PDO;
 
 /**
- * Safer School Zones Annex D term report (docs/FEATURE_CONTRACT_2026-10.md
- * section 7, migration 0033).
+ * Safer School Zones Annex D term report.
  *
  *   POST  /ssz-term-reports               admin|secretary: create draft + snapshot
  *   GET   /ssz-term-reports               admin|secretary|punong_barangay
@@ -23,18 +22,18 @@ use PDO;
  *   POST  /ssz-term-reports/:id/mark-submitted
  *                                         admin|secretary: prepared -> submitted
  *
- * Annex D is printed and signed on paper (2026-10-12): the app tracks no
- * signatures or approvals, so there is no approved status (migration 0041).
+ * Annex D is printed and signed on paper: the app tracks no signatures or
+ * approvals, so there is no approved status.
  *
  * Every write needs an Idempotency-Key. `POST` stores it in
  * `client_request_id` (a retry returns the original, 200). The state-changing
- * writes replay off `audit_log.idempotency_key` (migration 0019): a retry of
- * an already-applied key returns the report as it now stands (200) instead of
- * failing with 409 on the transition it already made. An illegal transition
- * with a NEW key is 409.
+ * writes replay off `audit_log.idempotency_key`: a retry of an already-applied
+ * key returns the report as it now stands (200) instead of failing with 409
+ * on the transition it already made. An illegal transition with a NEW key is
+ * 409.
  *
  * ANNEX D COMPUTATION ({@see self::compute()}) -- all day-bucketing is done
- * in PHP against a fixed +08:00 (Rule 11), never CONVERT_TZ():
+ * in PHP against a fixed +08:00, never CONVERT_TZ():
  *   - total_tanods            active users with role tanod in the barangay
  *   - total_schools           active schools
  *   - total_deployment_days   DISTINCT Manila dates of school_checkin.checked_in_at
@@ -55,10 +54,10 @@ use PDO;
  * coordinates or contact data. Audit metadata is {report_id, status}
  * (+ the idempotency key) -- never counts of a person.
  *
- * `other_institutions` and recording: PATCH may hand-edit it while draft.
- * Preparing a draft recomputes every count, and recomputes
- * `other_institutions` too unless the report was already edited
- * (version > 1), in which case the edited wording is kept.
+ * `other_institutions`: PATCH may hand-edit it while draft. Preparing a
+ * draft recomputes every count, and recomputes `other_institutions` too
+ * unless the report was already edited (version > 1), in which case the
+ * edited wording is kept.
  */
 final class SszTermReportsController
 {

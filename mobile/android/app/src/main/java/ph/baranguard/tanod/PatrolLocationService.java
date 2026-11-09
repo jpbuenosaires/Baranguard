@@ -32,14 +32,14 @@ import java.util.UUID;
 import org.json.JSONObject;
 
 /**
- * PatrolLocationService — Mobile Improvement Plan Phase 4.1: keeps GPS
+ * PatrolLocationService — keeps GPS
  * broadcasting to the workstation while a Tanod is on duty, even with the
  * app backgrounded or the screen locked.
  *
  * WHY A NATIVE SERVICE, NOT JUST live-map.tsx's EXISTING WATCH: that
  * screen's own header comment is explicit — its GPS broadcast is
  * "FOREGROUND-ONLY... starts when this screen mounts, stops when it
- * unmounts" — a deliberate Sprint-3-era scope decision. The moment the
+ * unmounts". The moment the
  * app is backgrounded or the Tanod is on a different screen, that JS
  * timer/watch stops. A foreground Service is the standard Android
  * mechanism for exactly this gap: it survives backgrounding (and, with
@@ -47,19 +47,16 @@ import org.json.JSONObject;
  * survives the WebView being suspended too), at the cost of a persistent,
  * always-visible notification — which Android REQUIRES for a foreground
  * service and which is also the honest thing to show a Tanod: tracking
- * that isn't visibly disclosed is exactly the kind of thing §2 Rule 6
- * forbids, emergency-response justification or not.
+ * must be visibly disclosed, emergency-response justification or not.
  *
  * SCOPE DECISION, STATED PLAINLY: a point that fails to POST (offline,
  * server error) is DROPPED, not queued. Full parity with the JS side's
  * offline-queue architecture (`gps_track_local`, SQLCipher-encrypted)
  * would mean re-implementing encrypted local storage and the sync
  * reconciliation logic in native Java — real scope, disproportionate to
- * what this pass asks for. A moving patrol reports a new point every
- * ~30s; losing one point to a transient network blip is an acceptable
- * tradeoff the foreground JS path doesn't have to make (and doesn't
- * make — `gps_track_local` there IS queued). This tradeoff is intentional
- * and logged, not an oversight.
+ * what this service needs. Losing one point to a transient network blip
+ * is an acceptable tradeoff the foreground JS path doesn't have to make
+ * (`gps_track_local` there IS queued). This tradeoff is intentional.
  *
  * Reads the session token and API base URL directly from the
  * "CapacitorStorage" SharedPreferences file — the same file
@@ -76,7 +73,7 @@ public class PatrolLocationService extends Service {
     private static final String PREFS_NAME = "CapacitorStorage";
     private static final String SESSION_KEY = "baranguard.session";
     private static final String API_BASE_URL_KEY = "baranguard.effectiveApiBaseUrl";
-    private static final long UPDATE_INTERVAL_MS = 10000; // 2026-11-06: was 30000
+    private static final long UPDATE_INTERVAL_MS = 10000;
     // A standing Tanod need not burn GPS: no update until they move this far.
     private static final float MIN_UPDATE_DISTANCE_M = 10f;
     // FAST mode (active dispatch or SOS): high accuracy, a fix every ~2 s.

@@ -1,15 +1,12 @@
 /**
- * storageMaintenance.ts — on-device storage usage telemetry, and the
- * evidence-cleanup rule that keeps it from growing forever (Mobile
- * Improvement Plan Phase 3.3).
+ * storageMaintenance.ts — on-device storage usage telemetry, and the evidence-cleanup rule that keeps it
+ * from growing forever.
  *
- * Deliberately does NOT report the encrypted SQLite database's own file
- * size: `@capacitor-community/sqlite` manages that file's path internally
- * and exposes no size/stat API this app can call without guessing at an
- * unverified internal path — reporting a made-up number would be exactly
- * the kind of fabricated diagnostic §2 Rule 6 forbids. What IS measured
- * here (evidence attachments, offline map packages) is what this app's
- * OWN `@capacitor/filesystem` writes can actually account for.
+ * Deliberately does NOT report the encrypted SQLite database's own file size:
+ * `@capacitor-community/sqlite` manages that file's path internally and exposes no size/stat API this app
+ * can call without guessing at an unverified internal path, and a made-up number would be a fabricated
+ * diagnostic. What IS measured here (evidence attachments, offline map packages) is what this app's OWN
+ * `@capacitor/filesystem` writes can account for.
  */
 
 import { Directory, Filesystem } from '@capacitor/filesystem';
@@ -69,7 +66,7 @@ export interface PruneResult {
 /**
  * Clears the on-disk binary (never the database ROW) for evidence
  * confirmed-uploaded 30+ days ago. Metadata — sha256, byte_size, type,
- * timestamps — stays for history (M14 "My Reports" still shows the
+ * timestamps — stays for history (My Reports still shows the
  * record); only the local copy of bytes already safely on the
  * workstation is removed, freeing space on a field device that has no
  * reason to keep re-holding a photo the server has long since confirmed.

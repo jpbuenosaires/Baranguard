@@ -23,7 +23,7 @@ function buildPoolConfig() {
     connectionLimit: Number(process.env.DB_CONN_LIMIT || 10),
     queueLimit: 0,
     dateStrings: false,
-    timezone: 'Z', // store/read DATETIME as UTC per Master Reference Rule 31
+    timezone: 'Z', // store/read DATETIME as UTC
   };
 }
 

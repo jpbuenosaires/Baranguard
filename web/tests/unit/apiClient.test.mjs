@@ -1,5 +1,5 @@
 /**
- * apiClient.js is the ONE /api/v1 boundary (§4): auth header, error
+ * apiClient.js is the ONE /api/v1 boundary: auth header, error
  * envelope, UTC timestamp revival, sliding token renewal, idempotency
  * header and the hand-written snake_case -> camelCase mapping all live
  * here, so every page depends on it being exactly right.

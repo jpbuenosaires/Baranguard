@@ -2,8 +2,8 @@
 declare(strict_types=1);
 
 /**
- * retention-job.php — Sprint 7's retention job runner (§11's retention
- * table; §2 Rules 11, 17 and 25).
+ * retention-job.php — retention job runner (see RetentionService for the
+ * rules and periods).
  *
  * Usage (from `backend/`):
  *   php scripts/retention-job.php --dry-run     # count only, delete nothing
@@ -25,11 +25,10 @@ declare(strict_types=1);
  * a week catches up on the next run.
  *
  * CLI-ONLY, deliberately: there is no HTTP endpoint that triggers
- * retention, and there should not be. §6 documents no such endpoint, and
- * a web-reachable "delete everything past its date" action is a
- * liability with no operational upside on a single-workstation LAN
- * system (Rule 7). Same no-HTTP-surface reasoning applies to every
- * background job.
+ * retention, and there should not be. A web-reachable "delete everything
+ * past its date" action is a liability with no operational upside on a
+ * single-workstation LAN system. Same no-HTTP-surface reasoning applies to
+ * every background job.
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -91,11 +90,10 @@ if ($options['dry_run']) {
     out("Purged {$totalPurged} record(s); {$totalHeld} protected by legal hold. ({$elapsed}s)");
 }
 
-// Rule 11 / §11: "a database deletion is not considered complete while
-// retained backups still contain the same data outside their documented
-// backup lifecycle." This job cannot see backup files, so it says so on
-// every run rather than letting an operator infer that running it means
-// the data is gone everywhere.
+// A database deletion is not complete while retained backups still contain
+// the same data. This job cannot see backup files, so it says so on every
+// run rather than letting an operator infer that running it means the data
+// is gone everywhere.
 out('');
 out('Reminder: backups are NOT covered by this job. Per §11 and Rule 11, an');
 out('encrypted backup produced by scripts/backup.sh still holds whatever it');

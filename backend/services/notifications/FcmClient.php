@@ -5,17 +5,12 @@ namespace Baranguard\Services\Notifications;
 
 /**
  * FcmClient — the ONLY place this codebase talks to Firebase Cloud
- * Messaging. §1: "Firebase Cloud Messaging (FCM) HTTP v1 via backend
- * notification service." HTTP v1 (not the deprecated legacy server-key
- * API, which Google shut down in June 2024) means authenticating as a
- * service account: sign a short-lived JWT with the account's private key,
- * exchange it for an OAuth2 access token, then call
+ * Messaging (HTTP v1). HTTP v1 means authenticating as a service account:
+ * sign a short-lived JWT with the account's private key, exchange it for an
+ * OAuth2 access token, then call
  * `https://fcm.googleapis.com/v1/projects/{project_id}/messages:send`
- * with that token. No Composer dependency exists in this repo (same
- * reasoning as Jwt.php), so both the JWT signing and the HTTP calls are
- * hand-rolled here against Google's documented contracts, using
- * `openssl_sign`/`curl` directly rather than the `firebase/php-jwt` or
- * `google/auth` packages.
+ * with that token. No Composer dependency, so the JWT signing and HTTP
+ * calls are hand-rolled with `openssl_sign`/`curl`.
  *
  * Configuration (see .env.example): FCM_SERVICE_ACCOUNT_PATH, a path to a
  * downloaded service-account JSON key file. The project id is read FROM
@@ -24,14 +19,8 @@ namespace Baranguard\Services\Notifications;
  * has no Firebase project wired up", which is what makes
  * `GET /system/health` report `fcm: not_configured` rather than
  * `unhealthy`, and what makes `NotificationDispatcher` skip straight to
- * SMS for every target — never a hard failure of the parent request
- * (§2 Rule 27/the SOS class doc: "a missing transport is never allowed to
- * fail the request").
- *
- * Credentials: a Firebase service account is wired on the production
- * workstation (see DEVLOG.md / HANDOFF.md for current verification
- * status); with none configured this class reports "not configured"
- * rather than failing.
+ * SMS for every target. A missing transport is never allowed to fail the
+ * parent request.
  */
 final class FcmClient
 {
@@ -73,8 +62,7 @@ final class FcmClient
         $message = [
             'token' => $fcmToken,
             'data' => $critical ? $data + ['title' => $title, 'body' => $body] : $data,
-            // Rule 5's "critical alerts use ... the app's notification/overlay
-            // behavior" needs the OS to wake the app promptly.
+            // Critical alerts need the OS to wake the app promptly.
             'android' => $critical ? ['priority' => 'high', 'ttl' => '300s'] : ['priority' => 'high'],
         ];
         if (!$critical) {
@@ -92,9 +80,7 @@ final class FcmClient
      * @return array{provider_message_id:string}
      * @throws FcmException on any failure — configuration, auth, or send.
      *         NotificationDispatcher treats every failure identically
-     *         (Rule 12 does not distinguish failure causes for the
-     *         "retry once, then SMS" rule), so this class does not need a
-     *         second exception type.
+     *         (retry once, then SMS), so there is no second exception type.
      */
     /**
      * Live credential check for Service Health: Google's OAuth endpoint accepts the service account

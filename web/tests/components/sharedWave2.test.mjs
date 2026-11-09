@@ -1,6 +1,5 @@
 /**
- * Shared-component fixes from the 2026-10-09 web audit, wave 2:
- * site-wide SOS bar + repeating tone, "Updates paused", Manila clock, shared
+ * Shared components: site-wide SOS bar + repeating tone, "Updates paused", Manila clock, shared
  * modal/tab accessibility, theme-change signal, toasts, menus, dialogs,
  * PageHeader h1, and 401 reporting from the secondary API clients.
  */

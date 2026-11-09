@@ -6,23 +6,12 @@ namespace Baranguard\Lib;
 use PDO;
 
 /**
- * Shared audit_log writer (§2 Rule 17: "Administrative actions are
- * auditable ... device changes, configuration changes ...").
+ * Shared audit_log writer for administrative actions.
  *
- * Extracted 2026-09-02, when the mobile device/map-package endpoints
- * would have become the THIRD and FOURTH copy of the same private
- * `audit()` method (AuthController and CitizenReportsController each grew
- * their own). Deliberately additive: those two existing controllers are
- * NOT rewritten to use this — they are already built and tested, and this
- * project's rules say not to restructure completed work just for
- * tidiness. New controllers use this; if those two are ever touched for
- * another reason, they can migrate then.
- *
- * §2 Rule 17 also fixes what may go in `$metadata`: "Audit metadata is
- * allow-listed and contains identifiers/statuses only, never raw
- * narrative or credentials." Callers are responsible for honoring that —
- * this helper deliberately does not try to sanitize, because a filter
- * here would create false confidence that anything passed in is safe.
+ * `$metadata` is allow-listed: identifiers/statuses only, never raw
+ * narrative or credentials. Callers are responsible for honoring that —
+ * this helper deliberately does not sanitize, because a filter here would
+ * create false confidence that anything passed in is safe.
  */
 final class Audit
 {

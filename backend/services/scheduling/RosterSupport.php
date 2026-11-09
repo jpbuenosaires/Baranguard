@@ -9,17 +9,17 @@ use PDO;
 
 /**
  * Small shared helpers for the roster / availability / accomplishment
- * controllers (docs/FEATURE_CONTRACT_2026-10.md sections 3, 4 and 8), so
- * the Idempotency-Key replay, device-ownership and Asia/Manila day-bucketing
- * logic exists exactly once. Day bucketing is done in PHP against a fixed
- * +08:00, never CONVERT_TZ() (REFERENCE.md Rule 11).
+ * controllers, so the Idempotency-Key replay, device-ownership and
+ * Asia/Manila day-bucketing logic exists exactly once. Day bucketing is done
+ * in PHP against a fixed +08:00, never CONVERT_TZ() (tz tables are not
+ * loaded on stock XAMPP).
  */
 final class RosterSupport
 {
     public const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
     public const MANILA_OFFSET = '+08:00';
 
-    /** Web writes carry an `Idempotency-Key` UUID header (Rule 3). */
+    /** Web writes carry an `Idempotency-Key` UUID header. */
     public static function requireIdempotencyKey(): string
     {
         $key = Http::header('Idempotency-Key');

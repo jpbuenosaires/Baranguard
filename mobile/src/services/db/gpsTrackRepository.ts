@@ -1,11 +1,9 @@
 /**
- * gpsTrackRepository.ts — the local staging table for `gps_track_local`
- * (§5), M7 Live Map's GPS broadcast buffer.
+ * gpsTrackRepository.ts — the local staging table for `gps_track_local`, the Live Map's GPS broadcast
+ * buffer.
  *
- * `geolocation.ts` writes here whenever a live `POST /gps` attempt fails
- * (offline, per §2 Rule 15's "degrade, not crash" requirement);
- * `syncService.ts` drains unsynced rows via `/sync/batch`'s `gps_tracks[]`
- * once connectivity returns.
+ * `geolocation.ts` writes here whenever a live `POST /gps` attempt fails (offline: degrade, don't crash);
+ * `syncService.ts` drains unsynced rows via `/sync/batch`'s `gps_tracks[]` once connectivity returns.
  */
 
 import { openLocalDatabase } from './localDatabase';
@@ -21,7 +19,7 @@ export interface NewGpsPoint {
   dispatchId?: number | null;
 }
 
-/** Stages one GPS point locally with a fresh, stable client_event_id (§5 sync invariants). */
+/** Stages one GPS point locally with a fresh, stable client_event_id. */
 export async function saveGpsPointLocally(point: NewGpsPoint): Promise<{ localId: string; clientEventId: string }> {
   const db = await openLocalDatabase();
   const localId = uuid();
@@ -38,8 +36,7 @@ export async function saveGpsPointLocally(point: NewGpsPoint): Promise<{ localId
 }
 
 /**
- * Rows not yet confirmed by the server, oldest first (§5 sync invariants:
- * "processes oldest-first"). Capped rows (`permanent_failure`) are excluded;
+ * Rows not yet confirmed by the server, oldest first. Capped rows (`permanent_failure`) are excluded;
  * `limit` bounds how much of a long offline backlog one pass will take on.
  */
 export async function listUnsyncedGpsPoints(limit?: number): Promise<GpsTrackLocalRow[]> {

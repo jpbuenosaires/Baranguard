@@ -1,6 +1,6 @@
 /**
- * backNavigation.ts - pure decision logic for the Android hardware back button
- * (Phase 1 UI overhaul, 2026-10-14). The listener itself lives in App.tsx; this
+ * backNavigation.ts - pure decision logic for the Android hardware back button.
+ * The listener itself lives in App.tsx; this
  * file only decides WHAT to do so the order can be unit-tested.
  *
  * Order: (a) an open overlay is dismissed first; (b) else go back if the

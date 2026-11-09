@@ -1,37 +1,32 @@
 /**
- * service-health.js — W20 Service Health / Recovery (§9): "Roles: Admin
- * only · API: GET /system/health (local-only) · Shows MariaDB, API,
- * routing, GSM ingestion, notification configuration, and
- * backup/last-restore-test status. This is operational diagnostics, not
- * a public endpoint." (Routing is OpenRouteService (ORS), not the
- * self-hosted OSRM this spec line originally named, and not Google's
- * Routes API either — Google was ruled out because it requires a
- * billing account with a card on file even for free-tier use, which
- * this deployment doesn't have. 2026-09-13 architecture decisions, see
- * OrsClient.php's own doc block.)
+ * service-health.js — Service Health / Recovery. Admin only; GET
+ * /system/health (local-only). Shows MariaDB, API, routing, GSM ingestion,
+ * notification configuration, and backup/last-restore-test status. This is
+ * operational diagnostics, not a public endpoint. Routing is
+ * OpenRouteService (ORS), not Google's Routes API (which needs a billing
+ * account with a card on file even for free-tier use); see OrsClient.php's
+ * own doc block.
  *
  * THE POINT OF THIS SCREEN IS HONESTY ABOUT WHAT ISN'T WIRED UP.
- * §6 gives three coarse statuses, and the distinction between two of
- * them carries the whole meaning:
+ * The API gives coarse statuses, and the distinction between them carries
+ * the whole meaning:
  *   healthy         — checked, and it answered live probes.
  *   unhealthy       — CONFIGURED, checked, and it failed. Action Required!
  *   configured      — set up, but nothing here can test it (FCM, GSM gateway,
- *                     GSM ingestion). Neutral, NOT healthy (Rule 6).
+ *                     GSM ingestion). Neutral, NOT healthy.
  *   not_configured  — never wired up on this deployment. NOT a fault.
  * So `not_configured` renders neutral with an explanation, never as a
- * red error. Equally, it is never shown green: §8 forbids a fabricated
+ * red error. Equally, it is never shown green: no fabricated
  * "all systems operational" reading.
  *
- * Overhauled with:
- * - Baranguard Design Tokens & light/dark theme contrast compliance
- * - Live Telemetry Header (pulsing indicator, freshness badge, active refresh)
- * - Operational Status Hero Banner (nominal vs critical failure states)
- * - Interactive Health StatStrip (overall, healthy, alert, unconfigured) with quick-filter
- * - Categorized Subsystem Cards (Core Infrastructure, Intelligence & Routing, Communications)
- * - Disaster Recovery & Business Continuity Hub (encrypted backup & statutory restore drill)
- * - Click-to-inspect Diagnostic & Troubleshooting Modal with operator runbooks
- *
- * kebab-case filename per §4.
+ * Features: design tokens and light/dark contrast; Live Telemetry Header
+ * (pulsing indicator, freshness badge, active refresh); Operational Status
+ * Hero Banner (nominal vs critical failure states); Interactive Health
+ * StatStrip (overall, healthy, alert, unconfigured) with quick-filter;
+ * Categorized Subsystem Cards (Core Infrastructure, Intelligence & Routing,
+ * Communications); Disaster Recovery & Business Continuity Hub (encrypted
+ * backup & statutory restore drill); Click-to-inspect Diagnostic &
+ * Troubleshooting Modal with operator runbooks.
  */
 
 import { getSystemHealth, getSystemHealthHistory, logout, ApiClientError } from '../api/apiClient.js';
@@ -196,7 +191,7 @@ const STATUS_LABEL = {
   not_configured: 'Not set up',
 };
 
-// Rule 6: no probe exists that proves these work end-to-end from the dashboard.
+// No probe exists that proves these work end-to-end from the dashboard.
 const CONFIGURED_TOOLTIP = 'Set up, but this screen cannot test it';
 
 /**
@@ -450,7 +445,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
       freshnessPill.innerHTML = `${icons.clock(13)}<span>Checked ${lastCheckedLabel}</span>`;
     } catch (err) {
       if (background) {
-        // Do not blank the populated screen, but never let old results look current (audit A-31).
+        // Do not blank the populated screen, but never let old results look current.
         freshnessPill.classList.add('is-stale');
         freshnessPill.innerHTML = `${icons.alertTriangle(13)}<span>Cannot reach the server. Showing results from ${lastCheckedLabel || 'an earlier check'}.</span>`;
         return;
@@ -1126,7 +1121,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
 
     renderDomainCards();
 
-    // 4. Disaster Recovery & Business Continuity Hub (§5/§9 W20)
+    // 4. Disaster Recovery & Business Continuity Hub
     const drSection = document.createElement('div');
     drSection.className = 'health-dr-section';
 
@@ -1169,7 +1164,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     );
     backupCard.append(backupHeader, backupField, backupNote, backupSnippet);
 
-    // Card B: Statutory Recovery Verification Drill (§5/§9 W20)
+    // Card B: Statutory Recovery Verification Drill
     const restoreCard = document.createElement('div');
     restoreCard.className = 'health-dr-card';
 
@@ -1208,10 +1203,10 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     );
     restoreCard.append(restoreHeader, restoreField, restoreNote, restoreSnippet);
 
-    // Card C: Notification Delivery Reliability (code-review finding
-    // H-20, 2026-09-24) — Rule 12's FCM-retry-then-SMS ladder is a real
-    // bounded retry policy, but nothing surfaced what happens once BOTH
-    // tiers are exhausted for a target. This is that missing signal.
+    // Card C: Notification Delivery Reliability — the FCM-retry-then-SMS
+    // ladder is a real bounded retry policy, but nothing else surfaced what
+    // happens once BOTH tiers are exhausted for a target; this card shows
+    // that.
     const notifCard = document.createElement('div');
     notifCard.className = 'health-dr-card';
 
@@ -1297,10 +1292,10 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
   }
 
   /**
-   * Dependency-status transitions (migration 0017). Appended after the
+   * Dependency-status transitions. Appended after the
    * current-state cards because it answers the follow-up question, not
    * the first one: the cards say what is true now, this says how stable
-   * that has been — the thing §2 Rule 15's single-point-of-failure risk
+   * that has been — the thing the single-point-of-failure risk
    * actually turns on.
    *
    * Its own async load, with its own failure handling: history is
@@ -1726,7 +1721,7 @@ export function renderServiceHealthPage(root, user, onLoggedOut, navigate) {
     backdrop.appendChild(card);
     document.body.appendChild(backdrop);
 
-    // Focus management (audit X-10): move focus in, trap Tab, restore on close.
+    // Focus management: move focus in, trap Tab, restore on close.
     const opener = document.activeElement;
     const closeModal = () => {
       document.removeEventListener('keydown', handleKey);

@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Route table for /availability (docs/FEATURE_CONTRACT_2026-10.md section 3).
+ * Route table for /availability.
  */
 
 use Baranguard\Controllers\AvailabilityController;

@@ -1,27 +1,18 @@
 /**
- * dispatch-center.js — W3 Dispatch Center (§9): "Split-pane queue + live
- * map. Queue contains pending incidents and active dispatches. The Tanod
- * picker includes only same-barangay active Tanods who are currently
- * eligible for assignment. Critical incident presentation is driven by
- * the incident/dispatch state and disappears when the item is
- * dispatched/resolved; SOS stays until resolved."
+ * dispatch-center.js — Dispatch Center: split-pane queue + live map. The
+ * queue holds pending incidents and active dispatches. The Tanod picker
+ * includes only same-barangay active Tanods who are currently eligible for
+ * assignment. Critical incident presentation is driven by the
+ * incident/dispatch state and disappears when the item is
+ * dispatched/resolved; SOS stays until resolved.
  *
- * This session's W3a (read-only queue + Tanod picker) and W3b
- * (create/cancel actions) together — Admin only per §7 (Punong Barangay
- * gets a read-only dispatch *board*, W3's create/cancel actions are
- * Admin-only, so this page is not offered to PB at all; §9 gives PB no
- * separate W3 variant).
+ * Roles: Admin, plus Secretary as back-up dispatcher (same board, same
+ * dispatch and resolve rights). Punong Barangay is not offered this page.
  *
- * 2026-09-02: migrated both queue lists (Pending Incidents, Active
- * Dispatches) from stacked cards to the shared `DataTable` component —
- * each row's own inline Tanod-picker/Assign or Cancel action now lives
- * in a `data-table__actions` cell instead of a card footer. Priority is
- * now conveyed by the dedicated Priority column's pill color, which
- * replaces the old card-level `dispatch-card--critical`/`--high`
- * left-dot accent (the same signal, in a real column instead of a
- * decorative pseudo-element — nothing lost, just relocated).
- *
- * kebab-case filename per §4.
+ * Both queue lists (Pending Incidents, Active Dispatches) use the shared
+ * `DataTable`; each row's inline Tanod-picker/Assign or Cancel action lives
+ * in a `data-table__actions` cell. Priority is conveyed by the Priority
+ * column's pill color.
  */
 
 import {
@@ -82,7 +73,7 @@ function formatElapsed(timestamp) {
   return `${diffDay}d ago`;
 }
 
-// Dispatch offers (Wave 2): a broadcast to on-duty tanods, up to 3 rounds of
+// Dispatch offers: a broadcast to on-duty tanods, up to 3 rounds of
 // 180 s each (OfferService), then `escalated` = nobody can accept, assign one.
 const OFFER_MAX_ROUNDS = 3;
 const LIVE_OFFER_STATUSES = ['open', 'escalated'];
@@ -114,7 +105,7 @@ function manilaClock(value) {
 // Plain words for a responder's dispatch state (never the raw en_route code).
 const DISPATCH_STATUS_LABELS = SHARED_DISPATCH_STATUS_LABELS;
 
-/** An SOS with no usable coordinates (C-01 `no_fix`, or a null pair on an old row). */
+/** An SOS with no usable coordinates (`no_fix`, or a null pair on an old row). */
 function sosHasNoLocation(sos) {
   return sos.locationSource === 'no_fix' || sos.latitude == null || sos.longitude == null;
 }
@@ -206,7 +197,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   let sosPanelEl = null;
   let soundHintEl = null;
   let sosToneTimer = null;
-  // Stale-data tracking (audit X-01/A-03). `navigator.onLine` is only a hint.
+  // Stale-data tracking. `navigator.onLine` is only a hint.
   let lastGoodAt = null;
   let userGestured = Boolean(typeof navigator !== 'undefined' && navigator.userActivation?.hasBeenActive);
 
@@ -216,12 +207,12 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
   let latestData = null;
   // incidentId -> newest dispatch offer (GET /dispatch-offers is newest-first).
   let offerByIncident = new Map();
-  // The Secretary is the back-up dispatcher (2026-10-17): same board, same dispatch and resolve rights.
+  // The Secretary is the back-up dispatcher: same board, same dispatch and resolve rights.
   const isAdmin = user.role === 'admin' || user.role === 'secretary';
 
-  const POLL_INTERVAL_MS = 5000; // 2026-11-06: was 15000
+  const POLL_INTERVAL_MS = 5000;
 
-  // Read-only route display (2026-09-13) — which dispatch's route, if
+  // Read-only route display — which dispatch's route, if
   // any, is currently drawn on the map. Survives updateQueueView()'s
   // full DOM rebuild on every poll/filter change; synced against fresh
   // data at the end of that function (see below).
@@ -321,11 +312,9 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         // beside pending ones so the Admin can dispatch it. Additive — if it
         // cannot be read the board still works.
         getIncidents({ status: 'reopened', limit: 100 }).catch(() => ({ items: [] })),
-        // 2026-09-13: fetched so grouped dispatch cards (below) can show
-        // the incident's REAL type/location/display id — GET /dispatch's
-        // own rows don't carry those (see mapDispatch()), so a dispatched
-        // card previously fell back to generic "Emergency"/"Location
-        // pinned on map" text regardless of what the incident actually was.
+        // Fetched so grouped dispatch cards (below) can show the incident's
+        // REAL type/location/display id — GET /dispatch's own rows don't
+        // carry those (see mapDispatch()).
         getIncidents({ status: 'dispatched', limit: 100 }),
         getDispatches({ limit: 100 }),
         getDutyStatus(user.barangayId),
@@ -349,12 +338,10 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       const eligibleTanods = usersRes.items.filter((u) => u.isActive && onDutyUserIds.has(u.userId));
       const activeDispatches = dispatchesRes.items.filter((d) => ACTIVE_DISPATCH_STATUSES.includes(d.status));
 
-      // 2026-09-13, docs/REMAINING.md G-backlog "second responder": an
-      // incident can now have more than one concurrent active dispatch.
+      // An incident can have more than one concurrent active dispatch.
       // Group by incidentId into ONE queue item per incident (carrying
       // its own real incident fields plus the full list of responders)
-      // rather than one item per dispatch row — the queue used to render
-      // a second/third full duplicate card for the same incident.
+      // rather than one item per dispatch row.
       const groupsByIncident = new Map();
       for (const dispatch of activeDispatches) {
         if (!groupsByIncident.has(dispatch.incidentId)) {
@@ -801,7 +788,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
       }
     };
 
-    // Acknowledge (Rule 24): tells the tanod HQ has seen it; it does NOT
+    // Acknowledge: tells the tanod HQ has seen it; it does NOT
     // clear the alert, which stays until someone explicitly resolves it.
     const handleAcknowledgeSos = async (sosId) => {
       const sos = openSos.find((s) => s.sosId === sosId);
@@ -1502,7 +1489,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         }
       });
 
-      // "Delegated to" (2026-10, contract §5): records that the incident was
+      // "Delegated to": records that the incident was
       // referred to another party (PNP, BFP, EMS ...). It only writes a
       // referral row; it never changes the dispatch or incident status.
       const delegateBtn = document.createElement('button');
@@ -1576,11 +1563,8 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         });
         card.append(cardHeader, titleRow, locRow, timeRow, dispatchBtn, delegateBtn);
       } else {
-        // Dispatched item — one row per responder (docs/REMAINING.md
-        // G-backlog "second responder": an incident can now have more
-        // than one concurrent active dispatch; this used to render a
-        // full SEPARATE duplicate card per responder on the SAME
-        // incident, which is what this groups away).
+        // Dispatched item — one row per responder (an incident can have more
+        // than one concurrent active dispatch).
         const dispatchedList = document.createElement('div');
         dispatchedList.className = 'queue-incident-card__dispatched-list';
 
@@ -1613,16 +1597,14 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
             actionsGroup.appendChild(locateBtn);
           }
 
-          // Read-only route display (2026-09-13): shows whatever route a
-          // Tanod's own mobile "Get Route" tap already computed —
-          // Dispatch Center never requests a route itself (no
-          // geolocation/coordinate-input concept exists on the web
-          // dashboard, and routing from the Admin's own desk position
-          // wouldn't be operationally meaningful anyway). Only rendered
-          // once a route has been computed at least once (routeStatus
-          // 'available' or 'stale') — never for 'unavailable', same
-          // "no control that looks functional and does nothing"
-          // principle the conditional Locate button above already follows.
+          // Read-only route display: shows whatever route a Tanod's own
+          // mobile "Get Route" tap already computed — Dispatch Center never
+          // requests a route itself (the web dashboard has no geolocation
+          // concept, and routing from the Admin's own desk position wouldn't
+          // be operationally meaningful anyway). Only rendered once a route
+          // has been computed at least once (routeStatus 'available' or
+          // 'stale') — never for 'unavailable', so there is no control that
+          // looks functional and does nothing.
           if (dispatch.routeJson) {
             const routeBtn = document.createElement('button');
             routeBtn.type = 'button';
@@ -1667,9 +1649,8 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
               : '';
             const reason = await promptText({
               title: `Cancel dispatch (${formatDispatchCode(dispatch.dispatchId)})?`,
-              // 2026-09-13: was "The incident will return to the pending
-              // queue" unconditionally — no longer always true once a
-              // second responder can stay active after this cancellation.
+              // Don't promise that the incident returns to the pending queue:
+              // a second responder can stay active after this cancellation.
               description: `This removes ${dispatch.tanodName || 'this responder'} from the incident.${arrivedNote} A reason is required and is kept with the dispatch.`,
               label: 'Reason for cancelling (required)',
               confirmLabel: 'Cancel dispatch',
@@ -1719,7 +1700,7 @@ export function renderDispatchCenterPage(root, user, onLoggedOut, navigate) {
         card.append(cardHeader, titleRow, locRow, timeRow, dispatchedList, addResponderBtn, delegateBtn);
       }
 
-      // Dispatch offer state (Wave 2): a live line under the elapsed time,
+      // Dispatch offer state: a live line under the elapsed time,
       // plus Admin-only broadcast/cancel. Non-identifying data only — counts,
       // round and (once accepted) the responder's name, which the dispatched
       // card already shows.

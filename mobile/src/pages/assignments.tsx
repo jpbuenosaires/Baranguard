@@ -1,31 +1,22 @@
 /**
- * assignments.tsx — M5 Assignments List (§9 Mobile).
+ * assignments.tsx — Assignments List.
  *
- * §9 M5: "Reads cached assignments so the screen still works when the
- * workstation/API is unreachable. Shows stale/cached indicator." On mount,
- * this tries a real `GET /dispatch` refresh (which also repopulates
- * `dispatch_local` via `dispatchRepository.cacheDispatchesFromServer`); if
- * that fails (offline), it falls straight back to whatever is already
- * cached — the screen never blanks just because the workstation is
- * unreachable.
+ * Reads cached assignments so the screen still works when the workstation/API is unreachable, and
+ * shows a stale/cached indicator. On mount it tries a real `GET /dispatch` refresh (which also
+ * repopulates `dispatch_local` via `dispatchRepository.cacheDispatchesFromServer`); if that fails
+ * (offline) it falls straight back to whatever is already cached, so the screen never blanks just
+ * because the workstation is unreachable.
  *
- * UI reference (§9): "card per assignment (priority dot, ID, priority
- * pill, type, location, distance)" with Navigate/Call Dispatch/Mark as
- * Arrived actions, and an explicit "No Active Assignments" empty state.
- * Call Dispatch is still not built: there is no phone number field
- * anywhere in §5/§6 to call. Navigate/Mark-as-Arrived live on M6's detail
- * screen instead, reached by tapping a card.
+ * Card per assignment (priority dot, ID, priority pill, type, location, distance), with an explicit
+ * "No Active Assignments" empty state. Navigate/Mark-as-Arrived live on the detail screen reached by
+ * tapping a card.
  *
- * DISTANCE/BEARING (Mobile Improvement Plan Phase 2.3): this screen now
- * runs its own foreground-only self-position watch (same
- * starts-on-mount/stops-on-unmount contract `geolocation.ts` already
- * documents for M7) purely to compute a live straight-line distance and
- * compass bearing per card (`utils/geo.ts` — haversine, NOT road-routed,
- * same honesty as everywhere else this figure is shown). This screen
- * still never calls `postGps()`; GPS broadcast to the server stays
- * exclusively Live Map's job. When no fix is available yet, or a card's
- * own dispatch has no coordinates, the card says so in words rather than
- * showing a stale or fabricated number (§8: no demo-tell).
+ * DISTANCE/BEARING: this screen runs its own foreground-only self-position watch (starts on mount,
+ * stops on unmount, as `geolocation.ts` documents) purely to compute a live straight-line distance and
+ * compass bearing per card (`utils/geo.ts`: haversine, NOT road-routed). It never calls `postGps()`;
+ * GPS broadcast stays exclusively the Live Map's job. When no fix is available yet, or a card's
+ * dispatch has no coordinates, the card says so in words rather than showing a stale or fabricated
+ * number.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';

@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
-# Baranguard — turn-by-turn routing validation
-# (docs/REMAINING.md §C4, closed 2026-09-13 via OpenRouteService — see
-# OrsClient.php's own doc block for the two earlier architecture
-# decisions this superseded: self-hosted OSRM, then Google Routes API,
-# both abandoned before either shipped, for reasons unrelated to this
-# endpoint's own logic).
+# Baranguard — turn-by-turn routing validation (OpenRouteService; see
+# OrsClient.php's doc block).
 #
 # Proves, over real HTTP against a disposable database:
 #   - GET /dispatch/:id/route validation (lat/lng required + in-range,
 #     mode must be car|foot)
 #   - role/tenant/ownership: own-Tanod succeeds, a DIFFERENT Tanod is
-#     403, cross-tenant Admin is 404 (never 403, per §2 Rule 2)
+#     403, cross-tenant Admin is 404 (never 403)
 #   - when ORS is unconfigured, the endpoint returns 200 with
 #     route_status='unavailable' — never a 500, never blocks the caller
 #   - GET /system/health's `ors` field is `not_configured` when ORS_API_KEY
@@ -25,8 +21,7 @@
 #     real distance/duration/steps)
 #   - a subsequent request from coordinates ORS is known to reject (the
 #     same DEFAULT_CENTER point OrsClient.php's own doc block documents
-#     as unroutable — verified live in the same session this script was
-#     written) KEEPS the prior good route and marks it 'stale', never
+#     as unroutable) KEEPS the prior good route and marks it 'stale', never
 #     discards it
 #   - GET /dispatch's list also decodes the persisted route_json
 #   - GET /system/health's `ors` field is 'healthy'
@@ -53,10 +48,8 @@ step() { echo; echo "=== $1 ==="; }
 expect_eq() { if [ "$1" = "$2" ]; then pass "$3 ($2)"; else fail "$3 — expected '$2', got '$1'"; fi; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -68,7 +61,7 @@ API_PORT="8132"
 BASE_URL="http://127.0.0.1:${API_PORT}/api/v1"
 TEST_PW="Routing#2026Pw"
 
-# Confirmed live (this session) to sit ON ORS's OSM-derived road network
+# Known to sit ON ORS's OSM-derived road network
 # in Pilar, Sorsogon — real street names (Prieto, Smith Street). See
 # OrsClient.php's HEALTH_CHECK_* constants for the same pair.
 ON_ROAD_ORIGIN_LAT="12.918905"; ON_ROAD_ORIGIN_LNG="123.670203"
@@ -82,12 +75,8 @@ echo "Baranguard routing validation — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for c in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$c" ] && { echo "$c"; return; }
   done

@@ -1,23 +1,13 @@
 /**
- * my-reports.tsx — M14 My Incident Reports (Field Incident History).
+ * my-reports.tsx — My Incident Reports: the field responder's own report history.
  *
- * COMPLETE GROUND-UP REDESIGN:
- * Tactical blotter ledger built from scratch for field responders.
- *
- * UX & ACCESSIBILITY ENHANCEMENTS:
- * 1. Sticky Sync Action Banner:
- *    - Immediately notifies Tanods if offline/unsynced reports exist with a 1-tap manual sync trigger.
- * 2. Instant Search & Quick Status Filters:
- *    - Search input for incident type, keyword narrative, or case # combined with All/Synced/Pending pills.
- * 3. Chronological Shift & Date Grouping:
- *    - Buckets reports into "Today's Shift", "Yesterday", and dated section ledgers.
- * 4. Tactical Blotter Card Architecture:
- *    - Severity color indicators (Red = Critical, Amber = High, Blue = Normal).
- *    - Integrated Case # (tabular numerals), category icon, and right-aligned Sync badge.
- *    - Clean narrative excerpt with high-contrast text conforming to WCAG 2.2 AA.
- * 5. Human-Readable Telemetry Chips:
- *    - Dropped noisy decimal coordinates in favor of clean [📍 GPS Fixed] and [📷 X photos] chips.
- *    - Tapping opens the report receipt and verification screen.
+ *  - Sticky sync banner when offline/unsynced reports exist, with a 1-tap manual sync trigger.
+ *  - Search (incident type, narrative keyword, case #) combined with All/Synced/Pending filter pills.
+ *  - Reports grouped by chronological shift/date ("Today's Shift", "Yesterday", dated sections).
+ *  - Cards with a severity indicator (Red = Critical, Amber = High, Blue = Normal), case #, category
+ *    icon, right-aligned sync badge and a narrative excerpt.
+ *  - Telemetry chips (GPS fixed, photo count) instead of noisy decimal coordinates.
+ *  - Tapping opens the report receipt and verification screen.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -424,7 +414,7 @@ const MyReportsPage: React.FC = () => {
                     <span>{group.title}</span>
                   </div>
 
-                  {/* Blotter Cards */}
+                  {/* Report cards */}
                   {group.items.map((row) => {
                     const state = deriveSyncState(row);
                     const syncMeta = SYNC_STATE_MAP[state];

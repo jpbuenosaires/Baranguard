@@ -1,7 +1,6 @@
 /**
- * PageHeader.css — co-located with PageHeader.js. Matches the Figma
- * reference's page header bar: white, full-bleed, border-bottom,
- * px-6 py-4, title + subtitle left, actions right.
+ * PageHeader.css — co-located with PageHeader.js: white, full-bleed,
+ * border-bottom, px-6 py-4, title + subtitle left, actions right.
  */
 
 .page-header {
@@ -100,23 +99,11 @@
 }
 
 /* ==========================================================================
-   Page tab bar — ONE definition for all three tabbed screens.
+   Page tab bar — ONE definition for all tabbed screens (Analytics,
+   Personnel, SMS Monitor).
 
-   2026-09-06 UI/UX audit: Analytics, Personnel and SMS Monitor all shared
-   .page-tabs-bar and then diverged completely below it. Personnel and SMS
-   Monitor had byte-identical segmented-control CSS under two different
-   prefixes (.personnel-tabs-row/.personnel-tab-btn and .sms-tabs-row/
-   .sms-tab-btn) that had already drifted 1px apart in button padding
-   (0.4375rem vs 0.375rem). Analytics used a completely different visual
-   language — a pill-shaped .filter-chip track, which was the "shared"
-   component in this file and yet the one only a single screen used, and
-   which needed 12 !important declarations to hold its own styling against
-   the base button rule.
-
-   The segmented control won: two of the three screens already used it, it
-   reads as a tab bar rather than a filter, and it needs no !important
-   because it does not fight base.css's button defaults. Analytics moved
-   onto it, so all three now look and measure the same.
+   A segmented control: it reads as a tab bar rather than a filter, and
+   needs no !important because it does not fight base.css's button defaults.
    ========================================================================== */
 
 .page-tabs {
@@ -186,7 +173,7 @@
 }
 
 .page-tab__badge {
-  /* D-01: -solid, not the plain token (white on it was 2.77:1 in dark). */
+  /* -solid, not the plain token (white on it was 2.77:1 in dark). */
   background: var(--color-critical-solid);
   color: var(--color-white);
   font-size: var(--font-size-label);

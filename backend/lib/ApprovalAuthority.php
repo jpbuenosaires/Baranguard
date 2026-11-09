@@ -7,14 +7,13 @@ use Baranguard\Middleware\AuthMiddleware;
 use PDO;
 
 /**
- * Who may note/approve what, independent of the account's `role`
- * (docs/FEATURE_CONTRACT_2026-10.md §2). A barangay official such as a
+ * Who may note/approve what, independent of the account's `role`.
+ * A barangay official such as a
  * Kagawad or the Chief Tanod has a web account whose role is one of
  * admin / secretary / punong_barangay; what they may SIGN is a separate,
- * Admin-managed attribute (`user.approval_authority`, a MariaDB SET added
- * by migration 0030). Never inferred from role alone, never a client claim.
+ * Admin-managed attribute (`user.approval_authority`, a MariaDB SET). Never inferred from role alone, never a client claim.
  *
- * 2026-10-17: the preparer of a document MAY also publish, return or file it. The signature
+ * The preparer of a document MAY also publish, return or file it. The signature
  * that counts is the Punong Barangay's on the printed paper; the record keeps who prepared it
  * and the audit log keeps who acted.
  */
@@ -46,10 +45,9 @@ final class ApprovalAuthority
         if ($row === false) {
             return [];
         }
-        // 2026-10-17: nothing to configure. The Chief Tanod (Admin) and the Secretary hold every
-        // sign-off right by role; the segregation rule (a preparer never approves their own
-        // document) still applies. The stored column is dormant for the Punong Barangay: there is
-        // no screen to set it, and a value written by hand is still honoured.
+        // The Chief Tanod (Admin) and the Secretary hold every sign-off right by role.
+        // The stored column is dormant for the Punong Barangay: there is no screen to set
+        // it, and a value written by hand is still honoured.
         if (in_array($row['role'], ['admin', 'secretary'], true)) {
             return self::ALL;
         }

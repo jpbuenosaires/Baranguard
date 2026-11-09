@@ -1,9 +1,8 @@
 /**
- * LocationPickerModal.tsx — the manual "tap to drop a pin" coordinate
- * picker for M3 Log Incident (Mobile Improvement Plan Phase 2.1).
+ * LocationPickerModal.tsx — the manual "tap to drop a pin" coordinate picker for Log Incident.
  *
  * Reuses `LiveMapCanvas.tsx` (the same offline-MBTiles-first/online-OSM-
- * fallback renderer M7 Live Map and M6 Assignment Detail already use)
+ * fallback renderer the Live Map and Assignment Detail already use)
  * rather than a second map implementation. The picked point is rendered
  * through `LiveMapCanvas`'s existing `incidents` marker path (a synthetic
  * single-item array) instead of teaching that shared component a new

@@ -1,5 +1,5 @@
 /**
- * workflowSync.ts — the sync bookkeeping the four 2026-10 write tables share
+ * workflowSync.ts — the sync bookkeeping the four tanod-workflow write tables share
  * (`availability_local`, `accomplishment_entry_local`, `referral_local`,
  * `school_checkin_local`). Each already carries the same three columns the
  * older kinds have — `synced`, `sync_attempts`, `permanent_failure` — so the
@@ -7,7 +7,7 @@
  * reset on manual retry" behaviour lives here once instead of four times.
  *
  * Behaviour deliberately matches `incidentRepository`/`gpsTrackRepository`:
- * rows are never deleted by sync (Rule 7); a row the server keeps rejecting
+ * rows are never deleted by sync; a row the server keeps rejecting
  * stops being retried automatically after `maxAttempts` and waits for a manual
  * retry from the sync modal.
  *
@@ -19,7 +19,7 @@ import { openLocalDatabase } from './localDatabase';
 
 /**
  * What "not yet confirmed by the server" means per table. A school check-in is
- * also unconfirmed while its separate close item is still pending (contract §7).
+ * also unconfirmed while its separate close item is still pending.
  */
 function unsyncedPredicate(table: WorkflowTable): string {
   return table === 'school_checkin_local' ? '(synced = 0 OR checkout_pending = 1)' : 'synced = 0';

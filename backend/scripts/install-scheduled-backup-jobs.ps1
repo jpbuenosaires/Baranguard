@@ -1,29 +1,23 @@
-# Baranguard - registers the Scheduled Tasks C2 box asks for ("nothing
-# is scheduled" -- docs/REMAINING.md section C / "Current priority" item
-# 2), paired with a real B3 restore-drill run (backend/DEVLOG.md
-# 2026-09-26 (35)), plus the periodic PB digest (section G, (37)) since
-# it's the same "needs a Scheduled Task" shape.
+# Baranguard - registers the Scheduled Tasks: daily backup + retention,
+# weekly restore drill, the periodic PB digest, and the background workers
+# below.
 #
 #   BaranguardBackupRetention  daily 02:00      -> scheduled-backup-and-retention.ps1
 #   BaranguardRestoreDrill     weekly Sun 03:00 -> scheduled-restore-drill.ps1
 #   BaranguardDispatchOfferSweeper every minute -> scheduled-dispatch-offer-sweep.ps1
-#                              (night-time dispatch offers, Wave 2)
+#                              (night-time dispatch offers)
 #   BaranguardNotificationWorker every minute -> scheduled-notification-worker.ps1
 #   BaranguardGsmIngest        at logon       -> scheduled-gsm-ingest.ps1 (daemon)
 #   BaranguardPbDigest         weekly Mon 06:00 -> scheduled-pb-digest.ps1 (7-day
 #                              window, so each digest's range starts exactly where
 #                              the previous one's ended)
 #
-# Deliberately NOT elevated / NOT SYSTEM, unlike install-autostart-
-# services.ps1's AI-worker task. Both underlying scripts need
+# Deliberately NOT elevated / NOT SYSTEM. The underlying scripts need
 # backend/.env (ordinary file permissions, no special access) and the
-# workstation is already required to stay logged in and never sleep
-# (docs/SETUP.md 1.7's "must never sleep" note) for the 15-minute JWT
-# polling to work at all -- so "only run while logged on", the default
-# for a task registered without -Principal, is the correct, simpler
-# choice here, and needs no Administrator prompt. Confirmed a bare
-# Register-ScheduledTask call succeeds without elevation on this machine
-# before writing this script (2026-09-26).
+# workstation is already required to stay logged in and never sleep for the
+# 15-minute JWT polling to work at all -- so "only run while logged on", the
+# default for a task registered without -Principal, is the correct, simpler
+# choice here, and needs no Administrator prompt.
 #
 # Idempotent: re-registers (Unregister then Register) if a task with the
 # same name already exists, same convention as install-autostart-
@@ -84,7 +78,7 @@ $digestTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday -At "06:00"
 Install-BaranguardTask "BaranguardPbDigest" "scheduled-pb-digest.ps1" $digestTrigger
 
 Write-Step "4. Dispatch offer sweeper (every minute)"
-# Night-time dispatch offers (Wave 2): escalates/re-broadcasts offers nobody
+# Night-time dispatch offers: escalates/re-broadcasts offers nobody
 # accepted within 180 s. Silent when nothing is due.
 $sweepTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 3650)
 Install-BaranguardTask "BaranguardDispatchOfferSweeper" "scheduled-dispatch-offer-sweep.ps1" $sweepTrigger
@@ -118,6 +112,6 @@ Write-Host '  Unregister-ScheduledTask -TaskName "BaranguardPbDigest" -Confirm:$
 Write-Host ""
 Write-Host "These only run while a user is logged on (no elevation was needed to register" -ForegroundColor Yellow
 Write-Host "them) -- matches this project's existing 'the dispatch PC must never sleep'" -ForegroundColor Yellow
-Write-Host "requirement (docs/SETUP.md 1.7). If this workstation is ever set up to log" -ForegroundColor Yellow
+Write-Host "requirement. If this workstation is ever set up to log" -ForegroundColor Yellow
 Write-Host "off overnight, these tasks would need re-registering with a stored-credential" -ForegroundColor Yellow
 Write-Host "principal instead, which DOES need an elevated prompt." -ForegroundColor Yellow

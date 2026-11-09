@@ -42,7 +42,7 @@
 #    local dev, any localhost port for dev) and the OSM raster tiles. If the
 #    public domain changes, change https://api.baranguardph.win here.
 #  - img-src/connect-src name tile.openstreetmap.org: a third-party tile host
-#    (privacy decision pending, see DEVLOG 2026-10-09, V-05).
+#    (privacy decision pending).
 #  - Referrer-Policy sends only the site origin (never a path) to other hosts:
 #    OpenStreetMap's tile servers answer 403 "Access blocked" to requests with
 #    no Referer, so "no-referrer" blanked every map.

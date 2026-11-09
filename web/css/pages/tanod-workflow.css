@@ -1,8 +1,8 @@
 /**
- * tanod-workflow.css — shared styles for the 2026-10 tanod-workflow pages
- * (Approvals, Accomplishment Reports, Referral Log, Safer School Zones)
- * and the printed-form chrome they share. Tokens only (REFERENCE.md §6);
- * dark mode follows automatically because every colour is a remapped token.
+ * tanod-workflow.css — shared styles for the tanod-workflow pages (Approvals,
+ * Accomplishment Reports, Referral Log, Safer School Zones) and the
+ * printed-form chrome they share. Tokens only; dark mode follows
+ * automatically because every colour is a remapped token.
  *
  * Printed forms render inside `.print-sheet`, which is always light paper
  * (incident-detail.css) — so everything under `.tw-print` uses that sheet's
@@ -363,7 +363,7 @@
   }
 }
 
-/* Printed-form safeguards (audit 2026-10-09 S-05..S-09): loud, never subtle. */
+/* Printed-form safeguards: loud, never subtle. */
 .tw-print__warning {
   margin: 0 0 var(--spacing-sm);
   padding: var(--spacing-sm);
@@ -385,8 +385,8 @@
   text-align: center;
 }
 
-/* Page footer on every printed sheet (audit S-13): "Page N of M" in the
-   page margin box, and a "Printed <Manila time> by <role>" stamp. */
+/* Page footer on every printed sheet: "Page N of M" in the page margin box,
+   and a "Printed <Manila time> by <role>" stamp. */
 @page {
   @bottom-left {
     content: var(--print-stamp, '');

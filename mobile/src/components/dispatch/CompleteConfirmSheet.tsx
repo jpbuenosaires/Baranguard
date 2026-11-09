@@ -1,4 +1,4 @@
-/** Safety confirmation sheet before completing a dispatch (Nielsen heuristic 5). Phase 6 split; markup unchanged. */
+/** Safety confirmation sheet before completing a dispatch (Nielsen heuristic 5). */
 import { useEffect, useRef } from 'react';
 import { IonIcon, IonSpinner } from '@ionic/react';
 import { shieldCheckmarkOutline } from 'ionicons/icons';

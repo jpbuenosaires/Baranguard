@@ -14,42 +14,26 @@ use Baranguard\Services\Scheduling\RosterSupport;
 use PDO;
 
 /**
- * Shifts — Master Reference §6 "Shifts" section, §5
- * `shift_schedule` table, §9 W11 Shift & Roster Scheduler ("Week view
- * uses real start_at/end_at. Overlaps are rejected.").
+ * Shifts (`shift_schedule`; W11 Shift & Roster Scheduler: the week view uses
+ * real start_at/end_at and overlaps are rejected).
  *
- * Resolved decisions, logged in DEVLOG.md:
- *   - **`barangay_id?` in the POST body is accepted but ignored.** Every
- *     other write endpoint in this codebase derives tenant strictly from
- *     the caller's own session (§2 Rule: never trust request JSON for
- *     identity/tenant) — the `?` marking it optional in §6 doesn't carry
- *     license to trust a client-supplied barangay over the Admin's own
- *     token, so this endpoint does the same as `POST /users`/`POST
- *     /incidents`: barangay always comes from `$identity`.
- *   - **Overlap check is a plain time-range intersection**
- *     (`start_at < :end_at AND end_at > :start_at`) for the *same*
- *     Tanod, locked via `SELECT ... FOR UPDATE` before insert/update so
- *     two concurrent requests can't both pass the check and create
- *     overlapping shifts for the same person.
- *   - **`user_id` is nullable** (migration 0003 — see that file's own
- *     doc) so `PATCH /shift-swap-requests/:id` can actually leave a shift
- *     "unassigned" per §6, and so an Admin can directly unassign a shift
- *     via a normal edit (`user_id: null`) without needing the swap-
- *     request flow. A currently-unassigned shift has no user to validate/
- *     lock against.
- *   - **`GET /shifts` ordering**: `start_at ASC` — §6 doesn't state one,
- *     but a week/roster view needs chronological order, not insertion
- *     order.
- *   - version is included in GET /shifts and POST /shifts responses even
- *     though Section 6's documented list item shape omits it. This isn't
- *     an invented field -- version already exists on the table and is
- *     required by the very next endpoint in the same section (PATCH
- *     /shifts/:id's optimistic-concurrency check); a client has no other
- *     way to learn the current version to send back. Treated as a
- *     mechanical spec gap (the paired write endpoint cannot function
- *     without it), not an architectural fork, so fixed without pausing
- *     to ask -- unlike the user_id nullability question, which changed
- *     the schema itself.
+ *   - `barangay_id?` in the POST body is accepted but ignored: tenant always
+ *     comes from `$identity`, never from request JSON (same as `POST
+ *     /users`/`POST /incidents`).
+ *   - The overlap check is a plain time-range intersection
+ *     (`start_at < :end_at AND end_at > :start_at`) for the *same* Tanod,
+ *     locked via `SELECT ... FOR UPDATE` before insert/update so two
+ *     concurrent requests can't both pass the check and create overlapping
+ *     shifts for the same person.
+ *   - `user_id` is nullable so `PATCH /shift-swap-requests/:id` can leave a
+ *     shift "unassigned", and so an Admin can directly unassign a shift via
+ *     a normal edit (`user_id: null`). A currently-unassigned shift has no
+ *     user to validate/lock against.
+ *   - `GET /shifts` is ordered `start_at ASC`: a week/roster view needs
+ *     chronological order.
+ *   - `version` is included in GET /shifts and POST /shifts responses: it is
+ *     required by PATCH /shifts/:id's optimistic-concurrency check, and a
+ *     client has no other way to learn the current version to send back.
  */
 final class ShiftsController
 {
@@ -58,12 +42,10 @@ final class ShiftsController
     private const MAX_LIMIT = 100;
 
     /**
-     * docs/FEATURE_CONTRACT_2026-10.md section 8 (replaces H-17's
-     * `MIN_REST_HOURS` = 8 and "at least 1 Tanod on duty per shift" hard
-     * blocks, both removed): a Tanod may be scheduled for at most this many
-     * hours within one Asia/Manila calendar day (hard 422
-     * `DAILY_HOURS_EXCEEDED`). Barangay coverage is no longer a block; it is
-     * reported as `NO_COVERAGE` warnings by `publish()`.
+     * A Tanod may be scheduled for at most this many hours within one
+     * Asia/Manila calendar day (hard 422 `DAILY_HOURS_EXCEEDED`). Barangay
+     * coverage is not a block; it is reported as `NO_COVERAGE` warnings by
+     * `publish()`.
      */
     public const MAX_DAILY_SCHEDULED_HOURS = 12;
 
@@ -103,7 +85,7 @@ final class ShiftsController
         }
 
         // Idempotency: a retry with the same request_id returns the
-        // original shift instead of creating a duplicate (§6).
+        // original shift instead of creating a duplicate.
         $existingStmt = $pdo->prepare(
             'SELECT shift_id, user_id, patrol_zone, start_at, end_at, version,
                     approval_status, approved_by, approved_at, source_availability_id, pending_reapproval
@@ -143,9 +125,7 @@ final class ShiftsController
             ]);
             $shiftId = (int) $pdo->lastInsertId();
 
-            // Rule 17 names "shift changes" explicitly. This controller
-            // had no audit coverage at all before Sprint 7's
-            // audit-completeness cut.
+            // Shift changes are audited.
             Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'shift_created', 'shift_schedule', $shiftId, [
                 'user_id' => $userId,
                 'patrol_zone' => $patrolZone,
@@ -191,9 +171,8 @@ final class ShiftsController
             $where[] = 'user_id = :user_id';
             $params['user_id'] = $identity['user_id'];
             // A published shift, OR one of the Tanod's own still flagged
-            // pending_reapproval (migration 0035; only rows from approved swaps
-            // before 2026-10-12 — an approved swap now keeps the shift
-            // published) — the Tanod keeps seeing a shift that is still theirs.
+            // pending_reapproval: the Tanod keeps seeing a shift that is
+            // still theirs.
             $where[] = "(approval_status = 'published' OR pending_reapproval = 1)";
         } else {
             $approvalFilter = Http::query('approval_status');
@@ -207,7 +186,7 @@ final class ShiftsController
         }
         // Optional window (Manila calendar dates, inclusive): a shift is returned when it
         // OVERLAPS from..to. Without them the list is unbounded (oldest first, capped by limit),
-        // which hides newer shifts once a barangay has more than `limit` shifts (audit F-09).
+        // which hides newer shifts once a barangay has more than `limit` shifts.
         $fromRaw = Http::query('from');
         $toRaw = Http::query('to');
         if ($fromRaw !== null && $fromRaw !== '') {
@@ -320,7 +299,7 @@ final class ShiftsController
                 self::assertDailyHoursCap($pdo, $newUserId, $newStartAt, $newEndAt, $shiftId);
                 // Availability is checked only when the assignee or the times
                 // change, so a patrol-zone-only edit of an older shift is not
-                // refused over a rule that did not exist when it was made.
+                // refused.
                 $timesOrAssigneeChanged = $newUserId !== $oldUserId
                     || $newStartAt->format('Y-m-d H:i:s') !== (string) $row['start_at']
                     || $newEndAt->format('Y-m-d H:i:s') !== (string) $row['end_at'];
@@ -328,9 +307,9 @@ final class ShiftsController
                     self::assertWithinAvailability($pdo, $newUserId, $newStartAt, $newEndAt);
                 }
             }
-            // Unassigning (user_id -> null) is no longer blocked on coverage
-            // grounds (contract section 8): zero coverage is surfaced as a
-            // NO_COVERAGE warning when the roster is published instead.
+            // Unassigning (user_id -> null) is not blocked on coverage
+            // grounds: zero coverage is surfaced as a NO_COVERAGE warning when
+            // the roster is published.
 
             // A published shift is the roster an approver signed off on. If its
             // assignee or its times change, that approval no longer describes the
@@ -343,10 +322,10 @@ final class ShiftsController
             $approvalSql = $approvalReset
                 ? ", approval_status = 'draft', approved_by = NULL, approved_at = NULL"
                 : '';
-            // A (legacy) shift still flagged pending_reapproval belongs to
-            // the swap's new holder; handing it to someone else clears the
-            // waiting state (the new holder never swapped). A time-only edit
-            // leaves it as it is.
+            // A shift still flagged pending_reapproval belongs to the swap's
+            // new holder; handing it to someone else clears the waiting state
+            // (the new holder never swapped). A time-only edit leaves it as it
+            // is.
             if ($newUserId !== $oldUserId && (int) ($row['pending_reapproval'] ?? 0) === 1) {
                 $approvalSql .= ', pending_reapproval = 0';
             }
@@ -365,9 +344,9 @@ final class ShiftsController
                 'version' => $version,
             ]);
 
-            // Rule 17: "shift changes". A reassignment is the audit event
-            // that actually matters here, so both sides of it are
-            // recorded — identifiers only.
+            // Shift changes are audited. A reassignment is the audit event
+            // that actually matters here, so both sides of it are recorded
+            // (identifiers only).
             Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'shift_updated', 'shift_schedule', $shiftId, [
                 'from_user_id' => $oldUserId,
                 'to_user_id' => $newUserId,
@@ -393,8 +372,8 @@ final class ShiftsController
      */
     public static function assertTanodEligible(PDO $pdo, int $userId, int $barangayId, bool $allowAdmin = false): void
     {
-        // Decision 21: the Chief Tanod is an `admin` account (one account, no
-        // separate login) and may be ROSTERED. Only POST/PATCH /shifts pass
+        // The Chief Tanod is an `admin` account (one account, no separate
+        // login) and may be ROSTERED. Only POST/PATCH /shifts pass
         // $allowAdmin; swap requests stay tanod-to-tanod. The row lock below
         // applies to whichever role matched, so the 12 h/day cap path is
         // serialized for an admin exactly as for a Tanod.
@@ -492,13 +471,13 @@ final class ShiftsController
     }
 
     /**
-     * Owner decision 2026-10-12 (amended 2026-10-17: availability is OPTIONAL, a tanod with
-     * no submitted windows for the days is not restricted): availability is the tanod's own fixed
-     * statement, so a tanod may only be scheduled inside it. Refuses
-     * (422 `OUTSIDE_AVAILABILITY`) a shift for a `tanod` account unless every
+     * Availability is the tanod's own fixed statement, so a tanod may only be
+     * scheduled inside it, and it is OPTIONAL: a tanod with no submitted
+     * windows for the days is not restricted. Refuses (422
+     * `OUTSIDE_AVAILABILITY`) a shift for a `tanod` account unless every
      * minute of [$startAt, $endAt) falls inside the union of the windows the
      * tanod submitted (any `tanod_availability` row of theirs, whatever its
-     * legacy status). Windows are Asia/Manila local times; a window ending
+     * status). Windows are Asia/Manila local times; a window ending
      * 23:59 counts as running to midnight so a night shift can span two
      * consecutive windows (22:00-23:59 then 00:00-06:00).
      *
@@ -528,7 +507,7 @@ final class ShiftsController
         $manila = new \DateTimeZone(RosterSupport::MANILA_OFFSET);
         $windows = [];   // "date start-end" => [startTs, endTs], de-duplicated
         $submitted = $stmt->fetchAll(PDO::FETCH_COLUMN);
-        // Availability is optional (2026-10-17): the Chief Tanod builds the roster, and a tanod
+        // Availability is optional: the Chief Tanod builds the roster, and a tanod
         // who submitted nothing covering these days has no stated limits to respect. Once a
         // submission DOES cover them, its windows are enforced (a day it leaves out is a "no").
         if ($submitted === []) {
@@ -598,27 +577,24 @@ final class ShiftsController
     }
 
     /**
-     * POST /shifts/publish — contract section 3. Admin/Secretary, or a
-     * Punong Barangay holding `approve_roster`, publishes. The roster is
-     * printed and signed on paper (2026-10-12), so no signature is tracked
-     * and a legacy `recorded_from_paper` body field is accepted and ignored.
-     * Moves the named draft
-     * shifts to `published`; already-published ids are reported, not
-     * errors. Any id that is missing or belongs to another barangay makes
-     * the WHOLE call a 404 (existence is never confirmed). Coverage is
-     * reported, never blocked: a `NO_COVERAGE` warning is returned for each
-     * Manila date, within the date span of the named shifts, on which no
-     * published shift with an assigned Tanod overlaps any part of the day.
+     * POST /shifts/publish — Admin/Secretary, or a Punong Barangay holding
+     * `approve_roster`, publishes. The roster is printed and signed on paper,
+     * so no signature is tracked and a `recorded_from_paper` body field is
+     * accepted and ignored. Moves the named draft shifts to `published`;
+     * already-published ids are reported, not errors. Any id that is missing
+     * or belongs to another barangay makes the WHOLE call a 404 (existence is
+     * never confirmed). Coverage is reported, never blocked: a `NO_COVERAGE`
+     * warning is returned for each Manila date, within the date span of the
+     * named shifts, on which no published shift with an assigned Tanod
+     * overlaps any part of the day.
      *
      * Idempotency-Key replay is served off `audit_log` like the other
-     * non-creating writes; the stored metadata is a superset of the
-     * contract's `{count}` (also the id lists and warning dates, all
-     * identifiers/dates, nothing personal) so the replay can return the
-     * ORIGINAL outcome rather than a recomputed one.
+     * non-creating writes; the stored metadata also holds the id lists and
+     * warning dates (identifiers/dates, nothing personal) so the replay can
+     * return the ORIGINAL outcome rather than a recomputed one.
      *
      * Each tanod with a newly published shift gets one `roster_published`
-     * push (migration 0040).
-     * Already-published ids and unassigned shifts notify nobody.
+     * push. Already-published ids and unassigned shifts notify nobody.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -673,7 +649,7 @@ final class ShiftsController
                 throw new ApiError(404, 'NOT_FOUND', 'Shift not found.');
             }
             foreach ($rows as $row) {
-                // Cross-tenant is 404 for the whole call (Rule 2).
+                // Cross-tenant is 404 for the whole call.
                 AuthMiddleware::requireTenant($identity, (int) $row['barangay_id']);
             }
 
@@ -814,16 +790,12 @@ final class ShiftsController
      * Parses one timestamp and normalizes it to UTC for storage.
      * `$defaultTimezone` matters only for a string with NO explicit
      * offset/zone of its own: a client-supplied "2026-09-10T14:30:00"
-     * from an HTML `datetime-local` input carries no offset at all, and
-     * §5 says operational shift times are entered/interpreted in
-     * Asia/Manila — so a fresh client value is parsed with Asia/Manila as
-     * the default. A DB round-trip value (`update()`'s fallback for a
-     * field the caller didn't touch) is already a naive UTC string with
-     * no offset either, so `update()` passes UTC as the default there
-     * instead — same parser, different default per source, per PHP's own
-     * DateTimeImmutable rule that an explicit offset in the string always
-     * wins over the constructor's default timezone regardless of which
-     * default was passed in.
+     * from an HTML `datetime-local` input carries no offset, and operational
+     * shift times are entered/interpreted in Asia/Manila, so a fresh client
+     * value is parsed with Asia/Manila as the default. A DB round-trip value
+     * (`update()`'s fallback for a field the caller didn't touch) is already
+     * a naive UTC string, so `update()` passes UTC as the default there. An
+     * explicit offset in the string always wins over the default timezone.
      */
     public static function parseTimestamp(mixed $raw, \DateTimeZone $defaultTimezone): \DateTimeImmutable
     {

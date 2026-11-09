@@ -2,17 +2,15 @@
 declare(strict_types=1);
 
 /**
- * sms-envelope-build.php — builds one valid §6-shaped encrypted SMS
- * envelope and prints it as JSON on stdout.
+ * sms-envelope-build.php — builds one valid encrypted SMS envelope and
+ * prints it as JSON on stdout.
  *
- * This is test/development tooling, not a production component: the REAL
- * GSM ingestion process (reading messages off the tethered phone) is out
- * of this cut's scope (no hardware exists to build or test one against —
- * see DEVLOG.md). This script exists so `verify-sprint4-phase2-3.sh` (and
- * a human developer) can exercise the real `/internal/sms/*` handlers
- * end-to-end — real AES-256-GCM encryption, real AAD binding, real replay
- * dedup — without needing that hardware. Nothing in `backend/` other than
- * this script and the verify suite ever calls it.
+ * This is test/development tooling, not a production component: the real
+ * ingestion process is `gsm-ingest-daemon.php`. This script lets the verify
+ * suites (and a human developer) exercise the real `/internal/sms/*`
+ * handlers end-to-end — real AES-256-GCM encryption, real AAD binding, real
+ * replay dedup — without a phone. Nothing in `backend/` other than this
+ * script and the verify suites ever calls it.
  *
  * Usage (from backend/):
  *   php scripts/sms-envelope-build.php \
@@ -22,9 +20,7 @@ declare(strict_types=1);
  *     --payload='{"incident_type":"theft",...}' \
  *     [--client-event-id=<uuid>] [--ttl=600]
  *
- * Prints the flat envelope JSON — exactly the body §6 documents for
- * `/sms/incident-fallback` et al. ("body {encrypted_envelope}") — ready to
- * pipe straight into curl.
+ * Prints the flat envelope JSON, ready to pipe straight into curl.
  */
 
 if (PHP_SAPI !== 'cli') {

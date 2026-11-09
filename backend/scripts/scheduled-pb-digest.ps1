@@ -1,8 +1,5 @@
-# Baranguard - Task Scheduler entry point for the periodic PB digest
-# (docs/REMAINING.md section G "Periodic PB digest" -- the content half
-# already existed via GET /reports/export?format=pdf; this is the
-# periodic half, unblocked by C2 proving a Scheduled Task works here
-# without an Administrator prompt).
+# Baranguard - Task Scheduler entry point for the periodic PB digest (the
+# periodic half; the content half is GET /reports/export?format=pdf).
 #
 # Runs backend/scripts/generate-pb-digest.php (no bash/curl involved,
 # unlike the backup/restore-drill wrappers -- this is a pure PHP CLI

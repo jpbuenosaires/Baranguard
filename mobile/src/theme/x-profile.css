@@ -1,4 +1,4 @@
-/* Profile screen (phone audit 2026-10-15): compact identity block, one grouped list, destructive-outline sign out. Tokens only. */
+/* Profile screen: compact identity block, one grouped list, destructive-outline sign out. Tokens only. */
 
 .profile-identity {
   display: flex;
@@ -75,12 +75,12 @@
 .privacy-notice p, .privacy-notice ul { margin: 0; font-size: var(--text-md); color: var(--color-text-primary); }
 .privacy-notice ul { padding-left: var(--spacing-lg); display: flex; flex-direction: column; gap: var(--spacing-xs); }
 
-/* UI polish 2026-11-05 (C1/C2/K1). Loaded after ui.css and x-forms.css, so these win. */
-/* C1: disabled Submit month keeps the normal button outline, not the dashed drop-zone look. */
+/* Loaded after ui.css and x-forms.css, so these win. */
+/* Disabled Submit month keeps the normal button outline, not the dashed drop-zone look. */
 .p4w-dock-secondary .ui-btn:disabled:not(.ui-btn--loading) { border: 1px solid var(--color-border); }
-/* C2: sentence case for the "Not submitted yet" chip only. */
+/* Sentence case for the "Not submitted yet" chip only. */
 .status-pill.wf-pill--sentence { text-transform: none; letter-spacing: normal; }
-/* K1: Refresh school list reads as the app's ghost secondary action, not an underlined web link. */
+/* Refresh school list reads as the app's ghost secondary action, not an underlined web link. */
 .ui-btn.wf-link-btn { text-decoration: none; padding: 0 var(--spacing-md); align-self: flex-start; }
 
 /* My reports: incident code in the body font, digits aligned (overrides x-forms.css mono). */

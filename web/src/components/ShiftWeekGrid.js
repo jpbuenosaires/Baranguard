@@ -1,5 +1,5 @@
 /**
- * ShiftWeekGrid — the Scheduler's weekly roster grid (2026-10-12).
+ * ShiftWeekGrid — the Scheduler's weekly roster grid.
  *
  * One row per tanod, one column per Manila day (Mon–Sun). Each cell shows a
  * thin 24-hour bar of the tanod's fixed availability for that day (shaded
@@ -121,7 +121,7 @@ export function ShiftWeekGrid({
     if (row.userId === null) name.classList.add('text-tertiary');
     tr.appendChild(name);
 
-    // Availability is optional (2026-10-17): a tanod who gave none has no bar and no warning (null = not given).
+    // Availability is optional: a tanod who gave none has no bar and no warning (null = not given).
     const gaveAvailability = row.userId !== null && availability.some((a) => a.userId === row.userId);
     const intervals = row.userId === null ? [] : (gaveAvailability ? availabilityIntervals(availability, row.userId) : null);
     const rowShifts = weekShifts.filter((s) => (s.userId ?? null) === row.userId);

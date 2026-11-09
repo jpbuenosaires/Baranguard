@@ -1,8 +1,7 @@
 /**
  * Tooltip.js — `InfoTip(text)`, a small hover/focus-revealed info card for
  * annotating a KPI figure or a chart/panel header with what it actually
- * means (2026-09-05, dashboard UX pass — user asked for "hovering to
- * certain data... will show a small card").
+ * means.
  *
  * Deliberately CSS-driven, not JS-positioned: the panel is an absolutely
  * positioned child of an `inline-flex; position:relative` wrapper, shown
@@ -23,8 +22,7 @@
  * `hidden` attribute), so a screen reader announces it the same way
  * regardless of the CSS hover/focus state.
  *
- * PascalCase per §4 component-file convention. Plain DOM-returning
- * function, no framework, matching every other component in this app.
+ * Plain DOM-returning function, no framework, matching every other component in this app.
  */
 
 let tipCounter = 0;

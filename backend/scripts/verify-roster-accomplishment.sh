@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Baranguard — roster + approval authority + availability + accomplishment
-# report validation (docs/FEATURE_CONTRACT_2026-10.md sections 2, 3, 4, 8;
-# migrations 0030 / 0031) against a REAL local XAMPP MariaDB + PHP.
+# report validation (migrations 0030 / 0031) against a REAL local XAMPP MariaDB + PHP.
 # Safe to run: everything happens in a disposable database
 # (baranguard_roster_check) with a disposable app user, disposable test
 # accounts and a PHP dev server on a throwaway port (8602). The real
@@ -339,7 +338,7 @@ expect_eq "Barangay-2 admin sees 0 (tenant isolation)" "$(jget "$BODY" total)" "
 api GET "/availability?status=bogus" "$ADMIN_T" ""
 expect_code "Bad status filter" 400
 
-# Owner decision 2026-10-12: availability is the tanod's own fixed statement.
+# Availability is the tanod's own fixed statement.
 # PATCH /availability/:id is retired (410 AVAILABILITY_NOT_REVIEWED) for every
 # caller; nothing is reviewed, accepted or locked.
 for who in "$ADMIN_T:Admin" "$SEC_T:Secretary" "$PB_T:Punong Barangay" "$T1_T:Tanod"; do
@@ -354,7 +353,7 @@ expect_code "PATCH a nonexistent availability (410, no lookup)" 410
 expect_eq "  row untouched: still submitted, version 2, no reviewer" "$(db_one "SELECT CONCAT(status,'|',version,'|',IFNULL(reviewed_by,'NULL')) FROM tanod_availability WHERE avail_id=$AV1_ID;")" "submitted|2|NULL"
 expect_eq "  no availability_reviewed audit row" "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='availability_reviewed';")" "0"
 
-# Legacy rows reviewed before 2026-10-12 stay readable, and are NOT locked.
+# Legacy reviewed rows stay readable, and are NOT locked.
 mysql_exec "$VALDB" -e "UPDATE tanod_availability SET status='accepted', reviewed_by=$ADMIN_ID, reviewed_at=UTC_TIMESTAMP(), review_note='ok' WHERE avail_id=$AV1_ID;"
 api GET "/availability?user_id=$T1_ID" "$ADMIN_T" ""
 expect_eq "Legacy 'accepted' row still listed with its review fields" "$(jget "$BODY" items.0.status)/$(jget "$BODY" items.0.reviewed_by)/$(jget "$BODY" items.0.review_note)" "accepted/$ADMIN_ID/ok"
@@ -403,7 +402,7 @@ dev-rc-t4
 api POST "/availability" "$T4_T" "$SIG_BODY" -H "$D_T4" -H "X-Device-Timestamp: $TS" -H "X-Device-Signature: $SIG"
 expect_code "Same request with a valid signature" 201
 
-# Since 2026-10-12 a tanod can only be scheduled inside their submitted
+# A tanod can only be scheduled inside their submitted
 # availability (422 OUTSIDE_AVAILABILITY, tested in section 14). The roster
 # rules below (overlap, 12h/day cap, publish, swaps) are about something
 # else, so every tanod gets open whole-day availability first.
@@ -553,7 +552,7 @@ api POST "/shifts/publish" "$SEC_T" "{\"shift_ids\":[$S8B]}" -H "Idempotency-Key
 expect_code "Secretary publishes (role, no authority needed)" 200
 expect_eq "  approved_by is the publisher (the secretary)" "$(db_one "SELECT approved_by FROM shift_schedule WHERE shift_id=$S8B;")" "$SEC_ID"
 
-# --- fix review finding 1: material edits to a PUBLISHED shift drop the approval
+# --- material edits to a PUBLISHED shift drop the approval
 api PATCH "/shifts/$S2_ID" "$ADMIN_T" '{"patrol_zone":"Zone R edited","version":2}'
 expect_code "PATCH only patrol_zone on a published shift" 200
 expect_eq "  stays published, approver kept (not a material change)" "$(db_one "SELECT CONCAT(approval_status,'|',approved_by) FROM shift_schedule WHERE shift_id=$S2_ID;")" "published|$PB_ID"
@@ -569,7 +568,7 @@ api PATCH "/shifts/$S2_ID" "$ADMIN_T" "{\"start_at\":\"${D3}T09:00:00+08:00\",\"
 expect_code "Admin moves the start time of a PUBLISHED shift" 200
 expect_eq "  reverted to draft again" "$(db_one "SELECT CONCAT(approval_status,'|',IFNULL(approved_by,'NULL')) FROM shift_schedule WHERE shift_id=$S2_ID;")" "draft|NULL"
 
-# swap on a draft shift is refused (a Tanod cannot even see it); on a published one it works and KEEPS it published (2026-10-12)
+# swap on a draft shift is refused (a Tanod cannot even see it); on a published one it works and KEEPS it published
 api POST "/shift-swap-requests" "$T3_T" "{\"shift_id\":$S8C,\"client_request_id\":\"$(uuid)\"}"
 expect_code "Tanod requests a swap on their own DRAFT shift" 404
 api POST "/shift-swap-requests" "$T1_T" "{\"shift_id\":$S1_ID,\"target_user_id\":$T4_ID,\"client_request_id\":\"$(uuid)\"}"
@@ -666,7 +665,7 @@ expect_code "Malformed times" 400
 api POST "/accomplishment-entries" "$T1_T" "{\"work_date\":\"$W1\",\"accomplishment_text\":\"x\",\"duration_minutes\":60,\"client_event_id\":\"bad\"}" -H "$D_T1"
 expect_code "client_event_id not a UUID" 400
 
-# fix review finding 8: a late retry of an already-stored entry returns the original, never a 400/409
+# a late retry of an already-stored entry returns the original, never a 400/409
 mysql_exec "$VALDB" -e "INSERT INTO accomplishment_report (barangay_id, user_id, month, status, created_at, updated_at) VALUES (1, $T3_ID, '2025-03', 'prepared', UTC_TIMESTAMP(), UTC_TIMESTAMP());"
 OLD_R=$(db_one "SELECT report_id FROM accomplishment_report WHERE user_id=$T3_ID AND month='2025-03';")
 OLD_EVT=$(uuid)

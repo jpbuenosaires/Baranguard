@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Baranguard — Wave 1 / Agent A validation (review decisions 2026-10-07):
-# dispatch cancel reason + cancel-from-arrived, dispatch needs a PUBLISHED
-# shift (NO_PUBLISHED_SHIFT / override_reason), Secretary may create/update
-# shifts and review swap requests, approved swap KEEPS a published shift
-# published (2026-10-12; legacy pending_reapproval rows: Tanod keeps seeing
-# them, publish clears it), migrations
+# Baranguard — dispatch and roster rules: dispatch cancel reason +
+# cancel-from-arrived, dispatch needs a PUBLISHED shift (NO_PUBLISHED_SHIFT /
+# override_reason), Secretary may create/update shifts and review swap
+# requests, approved swap KEEPS a published shift published (legacy
+# pending_reapproval rows: Tanod keeps seeing them, publish clears it), migrations
 # 0034/0035 (+ down), and backup.sh's "legal hold prunes nothing" rule.
 #
 # Safe to run: disposable database, disposable app-user, throwaway port. The
@@ -337,7 +336,7 @@ case "$BODY" in *"hoax"*) fail "LEAK: cancel reason text reached the Tanod's own
 # ================================================================ shifts: secretary
 step "6. Secretary may create/update shifts and publish (no paper tracking since 2026-10-12)"
 D1=$("$PHP_BIN" -r 'echo gmdate("Y-m-d", time()+86400*3);')
-# Since 2026-10-12 POST/PATCH /shifts refuses to schedule a tanod outside
+# POST/PATCH /shifts refuses to schedule a tanod outside
 # their submitted availability (422 OUTSIDE_AVAILABILITY, covered by
 # verify-roster-accomplishment.sh). This suite tests other rules, so every
 # tanod gets open whole-day availability first.
@@ -393,7 +392,7 @@ api PATCH "/shift-swap-requests/$SW1" "$PB_T" '{"status":"approved","version":1}
 expect_code "Punong Barangay cannot approve a swap" 403
 
 # availability is the tanod's fixed statement: a swap can't put T4 outside it
-# (availability is optional since 2026-10-17: with NO submission a swap is allowed; with a submission that lists no time it is refused)
+# (availability is optional: with NO submission a swap is allowed; with a submission that lists no time it is refused)
 mysql_exec "$VALDB" -e "CREATE TABLE wa_avail_hold AS SELECT * FROM tanod_availability WHERE user_id=$T4; UPDATE tanod_availability SET windows_json='[]' WHERE user_id=$T4;"
 api PATCH "/shift-swap-requests/$SW1" "$SEC_T" '{"status":"approved","version":1}'
 expect_code "Swap to a tanod whose submitted availability lists no time for the shift is refused" 422
@@ -426,8 +425,8 @@ SWD=$(jget "$BODY" dispatch_id)
 expect_eq "  no override stored" "$(db_one "SELECT IFNULL(override_reason,'NULL') FROM dispatch WHERE dispatch_id=$SWD;")" "NULL"
 mysql_exec "$VALDB" -e "UPDATE dispatch SET status='cancelled', cancel_reason='test cleanup' WHERE dispatch_id=$SWD; UPDATE incident SET status='pending' WHERE incident_id=$INC4;"
 
-# LEGACY rows: a shift flagged pending_reapproval by a swap approved before
-# 2026-10-12 (draft + flag) keeps its display and rules until re-published.
+# LEGACY rows: a shift flagged pending_reapproval by an older swap approval
+# (draft + flag) keeps its display and rules until re-published.
 mysql_exec "$VALDB" -e "UPDATE shift_schedule SET approval_status='draft', approved_by=NULL, approved_at=NULL, pending_reapproval=1 WHERE shift_id=$S1;"
 api GET "/shifts?limit=100" "$T4_T" ""
 expect_eq "Legacy: holder T4 SEES the awaiting-re-approval shift" "$(shift_visible "$BODY" $S1)" "1"
@@ -477,7 +476,7 @@ expect_code "Admin moves the start of a PUBLISHED shift (SS_NEW, owner T4)" 200
 expect_eq "  reverted to draft, pending_reapproval 0" "$(db_one "SELECT CONCAT(approval_status,'|',pending_reapproval) FROM shift_schedule WHERE shift_id=$SS_NEW;")" "draft|0"
 api GET "/shifts?limit=100" "$T4_T" ""
 expect_eq "  owner does NOT see it (hidden, as before)" "$(shift_visible "$BODY" $SS_NEW)" "0"
-# simulate a LEGACY flagged release (pre-2026-10-12) to keep covering "reassigning clears the flag"
+# simulate a LEGACY flagged release to keep covering "reassigning clears the flag"
 mysql_exec "$VALDB" -e "UPDATE shift_schedule SET approval_status='draft', approved_by=NULL, approved_at=NULL, pending_reapproval=1 WHERE shift_id=$S2;"
 api PATCH "/shifts/$S2" "$ADMIN_T" "{\"user_id\":$T6,\"version\":$(db_one "SELECT version FROM shift_schedule WHERE shift_id=$S2;")}"
 expect_code "Admin assigns the released (pending_reapproval) shift S2 to T6" 200

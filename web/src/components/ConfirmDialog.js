@@ -1,5 +1,5 @@
 /**
- * ConfirmDialog.js — reusable modal dialogs (§3.2 of the UI/UX review).
+ * ConfirmDialog.js — reusable modal dialogs.
  *
  * Three exports, one implementation:
  *
@@ -10,13 +10,11 @@
  * `confirmDialog()` returns a Promise<boolean> specifically so a call
  * site's existing `if (!confirm(...)) return;` becomes
  * `if (!(await confirmDialog({...}))) return;` — a one-line swap, not a
- * restructure of the surrounding function. That contract is unchanged.
+ * restructure of the surrounding function.
  *
- * `promptSelect()` was added for the Dispatch Center audit fix: the Tanod
- * picker used to be a full-width <select> rendered into EVERY pending row,
- * which is what pushed the queue table into permanent horizontal scroll
- * inside its 420px column. Moving the picker into a dialog lets the row
- * carry a single compact button instead.
+ * `promptSelect()` lets a Tanod picker live in a dialog instead of a
+ * full-width <select> in every pending row, which would push the queue table
+ * into permanent horizontal scroll; the row carries one compact button.
  *
  * Accessibility: `role="alertdialog"`, a real focus trap cycling the
  * dialog's own focusable elements, Escape dismisses (resolves false/null),
@@ -40,11 +38,10 @@ function openDialog({ title, description, confirmLabel, cancelLabel, danger, bui
 
     const dialog = document.createElement('div');
     dialog.className = 'confirm-dialog' + (danger ? ' confirm-dialog--danger' : '');
-    // X-14 recommends role="dialog" for the prompt* forms (alertdialog is
-    // for interruptions). The `role` option exists for that, but every
-    // caller still gets alertdialog for now: page tests owned elsewhere
-    // locate these dialogs by [role="alertdialog"], so the switch is a
-    // coordinated follow-up, not a silent change here.
+    // role="dialog" would suit the prompt* forms (alertdialog is for
+    // interruptions). The `role` option exists for that, but every caller
+    // still gets alertdialog: page tests locate these dialogs by
+    // [role="alertdialog"], so switching is a coordinated change.
     dialog.setAttribute('role', role);
     dialog.setAttribute('aria-modal', 'true');
     dialog.setAttribute('aria-labelledby', 'confirm-dialog-title');
@@ -60,7 +57,7 @@ function openDialog({ title, description, confirmLabel, cancelLabel, danger, bui
       descEl.id = 'confirm-dialog-description';
       descEl.textContent = description;
       dialog.appendChild(descEl);
-      // X-14: read the description when the dialog opens, not only the title.
+      // Read the description when the dialog opens, not only the title.
       dialog.setAttribute('aria-describedby', descEl.id);
     }
 
@@ -123,7 +120,7 @@ function openDialog({ title, description, confirmLabel, cancelLabel, danger, bui
         confirmButton.disabled = true;
         cancelButton.disabled = true;
         // Built with DOM nodes, not innerHTML: confirmLabel can carry a
-        // caller-supplied name (X-14 flagged the unescaped interpolation).
+        // caller-supplied name.
         const spinner = document.createElement('span');
         spinner.className = 'btn-spinner';
         spinner.setAttribute('aria-hidden', 'true');
@@ -212,8 +209,8 @@ export function promptSelect({ title, description, label, options, confirmLabel 
 }
 
 /**
- * A dialog that asks the user to type a value. Added for W21's incident
- * lifecycle "mark as duplicate" action, which needs a target incident id
+ * A dialog that asks the user to type a value (e.g. the incident lifecycle
+ * "mark as duplicate" action, which needs a target incident id
  * alongside the confirmation — `onConfirmAsync` is the validation/submit
  * hook: throwing inside it (client-side or a server 400/409/404) shows
  * the message inline and keeps the dialog open, same as confirmDialog's.

@@ -1,8 +1,7 @@
 /**
- * Audit 2026-10-09 fixes owned together: V-01 (?api_base= exfiltration),
- * X-02/F-07 (session expiry returns to sign-in with a message and the same
- * screen), the idle lock, V-04 (security headers / CSP hash drift) and the
- * V-03/V-12 XSS sinks (swap requests, KpiCard, DataTable).
+ * Session and page security: ?api_base= exfiltration, session expiry (returns
+ * to sign-in with a message and the same screen), the idle lock, security
+ * headers / CSP hash drift and the XSS sinks (swap requests, KpiCard, DataTable).
  */
 import { api, window, signIn, cleanup, settle, text, $, $$, click, type, mountPage, assertNoInjectedMarkup, XSS } from '../harness/render.mjs';
 import { describe, test, afterEach } from 'node:test';
@@ -21,7 +20,7 @@ const read = (rel) => readFileSync(WEB + rel, 'utf8');
 
 afterEach(() => cleanup());
 
-// --- V-01: ?api_base= --------------------------------------------------------
+// --- ?api_base= --------------------------------------------------------
 
 const INDEX_HTML = read('index.html');
 const KEY = 'baranguard.apiBaseUrlOverride';
@@ -97,7 +96,7 @@ describe('V-01: the ?api_base= override cannot redirect sign-ins off-site', () =
   });
 });
 
-// --- V-04: headers / CSP hash drift ------------------------------------------
+// --- headers / CSP hash drift ------------------------------------------
 
 describe('V-04: security headers', () => {
   const webHt = read('.htaccess');
@@ -142,7 +141,7 @@ describe('V-04: security headers', () => {
   });
 });
 
-// --- X-02: expiry handling in the API client ---------------------------------
+// --- expiry handling in the API client ---------------------------------
 
 describe('X-02: a dead session is reported once and explained', () => {
   test('a server 401 clears the session, uses the plain-language message and notifies once', async () => {
@@ -183,7 +182,7 @@ describe('X-02: a dead session is reported once and explained', () => {
   });
 });
 
-// --- X-02 / idle lock through main.js ----------------------------------------
+// --- expiry / idle lock through main.js ----------------------------------------
 
 let n = 0;
 async function bootMain() {
@@ -266,7 +265,7 @@ describe('idle lock', () => {
   });
 });
 
-// --- V-03 / V-12: XSS sinks ----------------------------------------------------
+// --- XSS sinks ----------------------------------------------------
 
 describe('V-03/V-12: free text never becomes markup', () => {
   test('Swap requests: a patrol zone with markup renders as text (V-03)', async () => {

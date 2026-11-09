@@ -1,17 +1,12 @@
 /**
- * AsyncState — shared Loading/Error builders for the pattern already used
- * by ~20 pages via base.css's `.state-block`/`.skeleton` classes (§6:
- * "every data-driven screen needs Loading/Empty/Error-with-retry/
- * Populated"). Every page hand-rolled its own copy of this exact DOM shape
- * (see incident-detail.js and service-health.js, the two cleanest examples
- * this was extracted from) — this just gives new/touched pages one place
- * to call instead of re-writing it. Existing pages are NOT being mass-
- * migrated; adopt incrementally as pages are touched.
+ * AsyncState — shared Loading/Error builders for the `.state-block`/`.skeleton`
+ * pattern in base.css (every data-driven screen needs Loading / Empty /
+ * Error-with-retry / Populated). New or touched pages call this instead of
+ * re-writing the DOM shape; existing pages adopt it incrementally.
  *
- * Deliberately does NOT cover the Empty state: that one varies too much
- * per page (icon choice, next-action button, copy) to generalize without
- * losing the specific "what to do next" guidance §16 asks for — keep
- * writing that one per page, same as today.
+ * Deliberately does NOT cover the Empty state: it varies too much per page
+ * (icon choice, next-action button, copy) to generalize without losing the
+ * specific "what to do next" guidance — write that one per page.
  */
 
 /**

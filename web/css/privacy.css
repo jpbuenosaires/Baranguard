@@ -1,11 +1,9 @@
-/* privacy.css — the static privacy notice page (web/privacy.html)
-   Implements All 12 UI/UX, WCAG 2.2 AA, and ergonomic enhancements:
-   - Elevated multi-column article layout with sticky desktop Table of Contents
-   - Document metadata strip and high-visibility DRAFT notice callout
-   - High-contrast role-access matrix with canonical role badges
-   - Data retention timeline cards and citizen privacy rights grid
-   - 100% token adherence against base.css
-*/
+/* privacy.css — the static privacy notice page (web/privacy.html): elevated
+   multi-column article layout with sticky desktop Table of Contents;
+   document metadata strip and high-visibility DRAFT notice callout;
+   high-contrast role-access matrix with canonical role badges; data
+   retention timeline cards and citizen privacy rights grid; 100% token
+   adherence against base.css. */
 
 /* Override base.css's html, body { height: 100%; overflow: hidden; }
    so the standalone privacy notice document scrolls naturally on all devices */

@@ -7,7 +7,7 @@ declare(strict_types=1);
  * a whole-day availability submission for every Asia/Manila date from
  * today-<days-back> to today+<days-ahead>.
  *
- * Why: since 2026-10-12 POST/PATCH /shifts refuses to schedule a tanod
+ * Why: POST/PATCH /shifts refuses to schedule a tanod
  * outside their submitted availability (422 OUTSIDE_AVAILABILITY,
  * ShiftsController::assertWithinAvailability). Suites that test OTHER roster
  * rules (overlap, 12 h/day cap, publish, swaps, dispatch) seed open

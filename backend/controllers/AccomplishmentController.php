@@ -15,8 +15,8 @@ use Baranguard\Services\Scheduling\RosterSupport;
 use PDO;
 
 /**
- * Monthly accomplishment report — docs/FEATURE_CONTRACT_2026-10.md section 4
- * (migration 0031: `accomplishment_report`, `accomplishment_entry`).
+ * Monthly accomplishment report (`accomplishment_report`,
+ * `accomplishment_entry`).
  *
  * A Tanod writes dated entries (their own words plus a CONFIRMED duration);
  * the server records, at write time, the duration it would have suggested
@@ -24,19 +24,17 @@ use PDO;
  * `DURATION_FLAG_MARGIN_MINUTES`. The month's report then walks
  * open -> prepared (Tanod submits, online only, entries locked, ready to
  * print), or is `returned` (entries editable again) by an authority holder.
- * Reports are printed and signed on paper (2026-10-12), so the app tracks no
- * signatures or approvals: there is no note/approve step (migration 0041).
+ * Reports are printed and signed on paper, so the app tracks no signatures or
+ * approvals: there is no note/approve step.
  *
- * Resolved decisions where the contract is silent (logged in DEVLOG.md):
- *   - Suggested duration counts ONLY `on_duty` intervals (literal reading of
- *     the contract: a `responding` interval is not summed). The interval
- *     state at the start of the Manila day is carried in from the last
- *     status row before it; a still-open `on_duty` interval is closed at the
- *     day's end, or "now" if the day has not ended. When the Tanod has no
- *     duty_status row at or before the end of that day at all there is
- *     nothing to suggest: `suggested_duration_minutes` is NULL and the flag
- *     is 0 (no basis to compare). A day with history but no on_duty time
- *     suggests 0 minutes.
+ *   - Suggested duration counts ONLY `on_duty` intervals (a `responding`
+ *     interval is not summed). The interval state at the start of the Manila
+ *     day is carried in from the last status row before it; a still-open
+ *     `on_duty` interval is closed at the day's end, or "now" if the day has
+ *     not ended. When the Tanod has no duty_status row at or before the end
+ *     of that day at all there is nothing to suggest:
+ *     `suggested_duration_minutes` is NULL and the flag is 0 (no basis to
+ *     compare). A day with history but no on_duty time suggests 0 minutes.
  *   - Submitting with no entries is a 422 (not a transition conflict).
  *   - `submit` clears `return_reason`.
  *   - Report text visibility: the owning Tanod sees their own text; Admin
@@ -73,7 +71,7 @@ final class AccomplishmentController
             throw new ApiError(400, 'VALIDATION_ERROR', 'X-Device-Id header is required.');
         }
         RosterSupport::assertDeviceOwnership($pdo, $identity, $deviceId);
-        // H-09: no-op for a device that has not upgraded to a Keystore key yet.
+        // No-op for a device that has not registered a Keystore key.
         DeviceSignature::verifyOrReject($pdo, $deviceId, $identity['user_id']);
 
         $result = self::createEntryItem($pdo, $identity, $deviceId, Http::jsonBody());
@@ -94,7 +92,7 @@ final class AccomplishmentController
     public static function createEntryItem(PDO $pdo, array $identity, string $deviceId, array $item): array
     {
         RosterSupport::assertDeviceOwnership($pdo, $identity, $deviceId);
-        // H-09, per item (the sync batch carries one signature for the whole
+        // Per item (the sync batch carries one signature for the whole
         // request; each item is held to it exactly like GpsController::createItem).
         // No-op for a device with no registered Keystore key.
         DeviceSignature::verifyOrReject($pdo, $deviceId, $identity['user_id']);
@@ -526,8 +524,8 @@ final class AccomplishmentController
 
     /**
      * Records a `report_update` notification for the tanod who owns the
-     * report (migration 0040), inside the caller's transaction so it exists
-     * only if the transition does.
+     * report, inside the caller's transaction so it exists only if the
+     * transition does.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -628,8 +626,8 @@ final class AccomplishmentController
      * report is still editable (open/returned). Called when a duty_status row
      * is recorded AFTER the fact (a queued offline off-duty, see
      * DutyStatusController), which changes the on-duty intervals those
-     * entries' suggestions were computed from. Prepared
-     * months are left as submitted.
+     * entries' suggestions were computed from. Prepared months are left as
+     * submitted.
      */
     public static function refreshSuggestedSince(PDO $pdo, int $userId, \DateTimeImmutable $fromUtc): void
     {

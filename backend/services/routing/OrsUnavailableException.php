@@ -10,14 +10,11 @@ namespace Baranguard\Services\Routing;
  * unlike a genuinely malformed request, retrying later is expected to
  * succeed.
  *
- * `DispatchController::route()` (Phase 3) catches this and, if a
- * dispatch already has a previously-computed route cached, KEEPS it and
- * marks `route_status: stale` rather than discarding it — the same
- * fallback the Master Reference's M6 "cached route labeled as such"
- * line describes. If there is no prior route, it falls to
- * `unavailable`, the same literal `DispatchController::create()`
- * already hardcodes today. Either way, mobile's "Open in external
- * navigation app" link keeps working regardless.
+ * `DispatchController::route()` catches this and, if a dispatch already has
+ * a previously-computed route cached, KEEPS it and marks
+ * `route_status: stale` rather than discarding it. If there is no prior
+ * route, it falls to `unavailable`. Either way, mobile's "Open in external
+ * navigation app" link keeps working.
  *
  * See OrsException for the other half of the distinction.
  */

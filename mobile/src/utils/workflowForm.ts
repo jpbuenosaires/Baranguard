@@ -1,5 +1,5 @@
 /**
- * workflowForm.ts - pure helpers for the Phase 4 workflow screens
+ * workflowForm.ts - pure helpers for the workflow screens
  * (accomplishment duration inputs, availability quick-fill). No I/O.
  */
 

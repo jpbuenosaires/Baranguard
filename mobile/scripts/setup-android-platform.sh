@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Baranguard — automates mobile/README.md's "Not done yet" step: add the
-# Android platform, install deps, sync. Same conventions as
+# Baranguard — add the Android platform, install deps, sync. Same conventions as
 # backend/scripts/bootstrap-db.sh: idempotent, pass/fail-per-step,
 # refuses/skips rather than corrupting existing state.
 #
@@ -27,7 +26,7 @@ echo "Baranguard mobile Android platform setup — $(date -u +%Y-%m-%dT%H:%M:%SZ
 step "0. Locate the Android SDK"
 SDK_PATH="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 if [ -z "$SDK_PATH" ]; then
-  # docs/REFERENCE.md §8's own documented default install location.
+  # Default Android Studio install location.
   DEFAULT_SDK="$USERPROFILE/AppData/Local/Android/Sdk"
   if [ -d "$DEFAULT_SDK" ]; then
     SDK_PATH="$DEFAULT_SDK"
@@ -67,8 +66,8 @@ echo "=== Summary ==="
 echo "Android SDK:    $SDK_PATH"
 echo "mobile/android: $([ -d "$MOBILE_DIR/android" ] && echo present || echo MISSING)"
 echo
-echo "Next: build a debug APK (needs JAVA_HOME set — see docs/REFERENCE.md §8 for"
-echo "the Gradle/JAVA_HOME gotcha with a space in the Windows username):"
+echo "Next: build a debug APK (needs JAVA_HOME set; Gradle's daemon follows JAVA_HOME, and a space in"
+echo "the Windows username needs the short path, e.g. C:\Users\JAYSON~1):"
 echo "  cd mobile/android"
 echo "  export JAVA_HOME=\"C:/Program Files/Eclipse Adoptium/jdk-21.0.12.101-hotspot\""
 echo "  export TMPDIR=C:/gtmp TEMP=C:/gtmp TMP=C:/gtmp"

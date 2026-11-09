@@ -1,28 +1,17 @@
 /**
- * login.tsx — M1 Login (§9 Mobile): "After successful authentication the
- * app validates the device, registers FCM, checks map package version,
- * and enters M2 without blocking on map download."
- *
- * kebab-case filename per §4 (pages/routes); the component itself is
- * PascalCase.
+ * login.tsx — Login. After authentication the app validates the device, registers FCM, checks the map
+ * package version, and enters Home without blocking on the map download.
  *
  * Rules this screen honors:
- *   - **Roles (decision 15C, 2026-10-07):** `tanod` and `admin` (Chief Tanod)
- *     sign in here; secretary / punong_barangay are refused with an honest
- *     "wrong app" message and their just-opened session is ended.
- *   - **No role selector** (§9 W1's rule, and the same reasoning applies
- *     here): the server derives role from the account. §8 lists a login
- *     role-selector among the Figma patterns explicitly NOT adopted.
- *   - **Generic failure message.** §2 Rule 9 requires unknown-user,
- *     wrong-password, and locked-account to be externally
- *     indistinguishable; the server already collapses them, and this
- *     client must not re-introduce the distinction. A genuinely
- *     unreachable workstation gets its own honest message, because that
- *     is a different fact — not a credential problem.
- *   - **Submit disabled while authenticating.**
- *   - **Post-login steps never block entry.** §9 M1 is explicit that the
- *     map-package check must not gate reaching the home screen, and §2
- *     Rule 7/15 treat the workstation as routinely unavailable.
+ *   - `tanod` and `admin` (Chief Tanod) sign in here; secretary / punong_barangay are refused with an
+ *     honest "wrong app" message and their just-opened session is ended.
+ *   - No role selector: the server derives role from the account.
+ *   - Generic failure message: unknown-user, wrong-password, and locked-account must be externally
+ *     indistinguishable; the server already collapses them and this client must not re-introduce the
+ *     distinction. A genuinely unreachable workstation gets its own honest message (a different fact).
+ *   - Submit disabled while authenticating.
+ *   - Post-login steps never block entry: the map-package check must not gate reaching Home, and the
+ *     workstation is routinely unavailable.
  */
 
 import { useState } from 'react';
@@ -82,8 +71,7 @@ const LoginPage: React.FC = () => {
         tacticalFeedback.onWarning();
         return;
       }
-      // Authentication succeeded. Everything below is best-effort setup —
-      // §9 M1: "enters M2 without blocking on map download".
+      // Authentication succeeded. Everything below is best-effort setup; it must not block entry.
       tacticalFeedback.onSuccess();
       await runPostLoginSetup(session.barangayId, session.role === 'admin');
       navigate(session.role === 'admin' ? '/tabs/sos' : '/tabs/home', { replace: true });
@@ -189,35 +177,23 @@ const LoginPage: React.FC = () => {
 /**
  * Device registration + map-package version check.
  *
- * Every failure here is swallowed on purpose: the Tanod is already
- * authenticated, and §9 M1 requires entering the app regardless. Failing
- * login because a basemap was unreachable would strand a responder over
- * something that has no bearing on their ability to capture an incident
- * offline (§2 Rule 2).
+ * Every failure here is swallowed on purpose: the Tanod is already authenticated, and failing login
+ * because a basemap was unreachable would strand a responder over something that has no bearing on
+ * capturing an incident offline.
  */
 async function runPostLoginSetup(barangayId: number, isAdmin: boolean): Promise<void> {
   try {
     const fcmToken = await getFcmToken();
-    // Registration always happens now, even when fcmToken is null —
-    // explicit decision, 2026-09-13 (DevicesController.php's class doc).
-    // A device with no push capability must still become the ACTIVE,
-    // sync-capable row POST /sync/batch requires; skipping registration
-    // entirely (the old behavior) left every device on this no-Firebase
-    // deployment permanently unregistered, which only surfaced once the
-    // sync scheduler started calling /sync/batch automatically. This is
-    // NOT "faking" push reachability — null is sent honestly, and the
-    // server stores it as an empty token, which NotificationDispatcher
-    // already reads as "fall through to SMS" (Rule 12).
-    // H-09: best-effort — a device that can't generate/read a Keystore key
-    // (or isn't Android) still registers and works exactly as before this
-    // finding, just without the stronger per-request signature guarantee.
+    // Registration always happens, even when fcmToken is null: a device with no push capability must
+    // still become the ACTIVE, sync-capable row POST /sync/batch requires. null is sent honestly and the
+    // server stores it as an empty token, which NotificationDispatcher reads as "fall through to SMS".
+    // Best-effort device key: a device that can't generate/read a Keystore key (or isn't Android) still
+    // registers and works, just without the stronger per-request signature guarantee.
     const devicePublicKeyPem = await getDevicePublicKeyPem();
     const registration = await registerDevice({ deviceId: await getDeviceId(), fcmToken, devicePublicKeyPem });
     clearSyncDeviceBlocked();
-    // Sprint 4 Phase 3: present ONLY on this device_id's first-ever
-    // registration — see DevicesController.php's own doc. Stored once,
-    // never re-fetched (there is nowhere else to get it from — the
-    // server does not re-return it on later calls, deliberately).
+    // Present ONLY on this device_id's first-ever registration (see DevicesController.php). Stored
+    // once, never re-fetched: the server does not re-return it on later calls, deliberately.
     if (registration.messageEncryptionKey) {
       await storeMessageEncryptionKey(registration.messageEncryptionKey);
     }
@@ -230,7 +206,7 @@ async function runPostLoginSetup(barangayId: number, isAdmin: boolean): Promise<
     }
   }
 
-  // Chief Tanod (admin) stage 1: only the SOS fallback number is useful here.
+  // Chief Tanod (admin): only the SOS fallback number is useful here.
   // The map package, school cache and the offline sync queue are Tanod-only
   // (and outside an admin device session's server-side allow-list).
   if (isAdmin) {
@@ -238,17 +214,13 @@ async function runPostLoginSetup(barangayId: number, isAdmin: boolean): Promise<
     return;
   }
 
-  // Deliberately NOT awaited: §9 M1's contract is that the map check must
-  // never block entry to M2, and a multi-MB package download even less
-  // so. mapPackageService.ts itself never throws (offline/server-error
-  // just means "keep whatever's already installed"), and live-map.tsx
-  // re-checks on its own mount as a safety net for a session that never
-  // reaches this point (e.g. resumed from a background service worker).
+  // Deliberately NOT awaited: the map check must never block entry, and a multi-MB package download
+  // even less so. mapPackageService.ts itself never throws (offline/server-error just means "keep
+  // whatever's already installed"), and live-map.tsx re-checks on its own mount as a safety net.
   void ensureMapPackageDownloaded(barangayId);
 
-  // G1's SOS fallback contact (Phase 4.3) — cached now, while online,
-  // because the moment it's actually needed is the moment the server is
-  // confirmed unreachable. Same non-blocking, non-fatal treatment.
+  // The SOS fallback contact: cached now, while online, because the moment it's needed is the moment
+  // the server is confirmed unreachable. Same non-blocking, non-fatal treatment.
   void refreshSosFallbackContact();
 
   // School list for the check-in/incident pickers — same reasoning: cached now,

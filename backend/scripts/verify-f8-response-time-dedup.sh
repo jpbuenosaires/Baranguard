@@ -1,16 +1,9 @@
 #!/usr/bin/env bash
-# Baranguard — F8 validation: `avg_response_time_minutes` no longer
-# double-counts an incident with more than one arrived dispatch
-# (docs/REMAINING.md F8, docs/AUDIT_2026-09-07.md).
-#
-# Before this fix, `GET /reports/summary`'s AVG(...) joined `incident` to
-# EVERY arrived `dispatch` row with no de-dup, so an incident dispatched
-# twice (both reaching `arrived`) was averaged in twice, weighting it
-# double against §6's "per incident" definition. This exercises the fix
-# through the real HTTP endpoint (verify-w2-reports.sh already covers the
-# single-dispatch-per-incident shape and passes unchanged; this script
-# adds the one seed scenario that actually exercises the bug: TWO arrived
-# dispatches on the SAME incident).
+# Baranguard — `avg_response_time_minutes` must not double-count an incident
+# with more than one arrived dispatch: `GET /reports/summary` averages per
+# incident. Exercised through the real HTTP endpoint with TWO arrived
+# dispatches on the SAME incident (verify-w2-reports.sh covers the
+# single-dispatch shape).
 #
 # Safe to run: disposable database, disposable app-user, throwaway port.
 # The real `baranguard` database and backend/.env are never touched.
@@ -30,10 +23,8 @@ step() { echo; echo "=== $1 ==="; }
 expect_eq() { if [ "$1" = "$2" ]; then pass "$3 ($2)"; else fail "$3 — expected '$2', got '$1'"; fi; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -49,12 +40,8 @@ echo "Baranguard F8 (avg_response_time_minutes de-dup) validation — $(date -u 
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for candidate in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$candidate" ] && { echo "$candidate"; return; }
   done

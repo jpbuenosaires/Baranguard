@@ -1,7 +1,7 @@
 /**
  * scheduler.js — Personnel > Scheduler Tab.
  *
- * Two views of the same roster (2026-10-12 rework):
+ * Two views of the same roster:
  * - Week (default): a grid with one row per tanod and one column per day.
  *   Each tanod's availability is a fixed input, shown as given; nobody
  *   accepts or revises it here. Click "+" in a cell to add the chosen
@@ -10,7 +10,7 @@
  *   coverage row counts the standard shifts covered per day, "Copy last
  *   week" repeats last week's pattern, and the whole week's drafts are
  *   published in one step once the printed A4 roster is signed.
- * - List: the earlier table with status filters, search and selection.
+ * - List: a table with status filters, search and selection.
  * The New Shift form (custom times) stays available under the grid.
  */
 
@@ -118,7 +118,7 @@ async function fetchAllPages(fetchPage) {
  * @param {() => void} [onOpenSwaps] jump to the Swap requests tab
  */
 export function renderSchedulerTab(container, user, pageHeader, initialData, onOpenSwaps) {
-  // Admin and Secretary manage shifts (create/edit; 2026-10-07 — the
+  // Admin and Secretary manage shifts (create/edit; the
   // Secretary is the Records & Reports Officer who builds the roster the
   // approver then publishes). Punong Barangay reaches this tab to publish
   // drafts (approve_roster) only. The server re-checks role and authority on
@@ -126,7 +126,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   // (GET /users/directory) for both Admin and Secretary. The roster is
   // printed and signed on paper outside the app; publishing is a plain
   // confirm with nothing to record.
-  // Availability is fixed per tanod (2026-10-12): it is shown in the week
+  // Availability is fixed per tanod: it is shown in the week
   // grid as submitted, never accepted or sent back for revision here.
   const isAdmin = user.role === 'admin';
   const canManageShifts = isAdmin || user.role === 'secretary';
@@ -160,7 +160,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
   let weekStart = weekStartOf(manilaToday());
   let activePreset = 'morning';
   let currentSort = { key: 'timeRange', direction: 'desc' };
-  // Draft shifts ticked for publishing (contract §3: POST /shifts/publish).
+  // Draft shifts ticked for publishing (POST /shifts/publish).
   const selectedShiftIds = new Set();
   let publishWarnings = [];
   let publishedCount = 0;
@@ -724,7 +724,7 @@ export function renderSchedulerTab(container, user, pageHeader, initialData, onO
     const range = presetRange(date, activePreset);
     const preset = SHIFT_PRESETS.find((p) => p.type === activePreset);
     const intervals = availabilityIntervals(availability.items, userId);
-    // Availability is optional (2026-10-17): only a tanod who gave some is held to it.
+    // Availability is optional: only a tanod who gave some is held to it.
     if (availability.status === 'ready' && gaveAvailability(userId) && !isWithinAvailability(range.startMs, range.endMs, intervals)) {
       const candidates = suggestAvailableTanods(shifts, availability.items, date, activePreset, tanods);
       const suggestions = candidates.slice(0, 3).map((c) => c.fullName).join(', ');

@@ -1,5 +1,5 @@
 /**
- * liveMapPolicy.ts — pure decisions for the Live Map screen (Phase 4 M).
+ * liveMapPolicy.ts — pure decisions for the Live Map screen.
  * No React, no MapLibre, no network: everything here is unit tested.
  */
 

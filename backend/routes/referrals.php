@@ -2,8 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Route table for incident referrals ("Delegated to"), docs/
- * FEATURE_CONTRACT_2026-10.md §5. `/incidents/:id/referrals` never collides
+ * Route table for incident referrals ("Delegated to"). `/incidents/:id/referrals` never collides
  * with routes/incidents.php's anchored `^/incidents/(\d+)$` patterns.
  */
 

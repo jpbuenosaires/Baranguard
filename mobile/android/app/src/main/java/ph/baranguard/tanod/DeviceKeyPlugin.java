@@ -17,8 +17,8 @@ import java.security.Signature;
 import java.security.spec.ECGenParameterSpec;
 
 /**
- * DeviceKeyPlugin — code-review finding H-09 (2026-09-24 external audit):
- * "X-Device-Id is an identifier, not strong proof of device authenticity."
+ * DeviceKeyPlugin — a hardware-backed device identity, because X-Device-Id
+ * alone is an identifier, not strong proof of device authenticity.
  *
  * Generates a hardware-backed EC P-256 keypair in the Android Keystore on
  * first use, never exportable (the private key material never leaves
@@ -35,17 +35,10 @@ import java.security.spec.ECGenParameterSpec;
  * StrongBox (a separate secure chip, where the device has one) is
  * attempted first and silently falls back to the normal Keystore/TEE
  * backing on any device that lacks it — most devices, including the
- * Infinix X6840 this project's other native work was verified on
- * (HANDOFF.md), do not have a StrongBox module, and treating its absence
- * as fatal would break key generation entirely for exactly the hardware
- * already in use.
+ * Infinix X6840 test phone, have no StrongBox module, and treating its
+ * absence as fatal would break key generation entirely.
  *
- * CODE-COMPLETE, DEVICE-UNVERIFIED this session — no phone was attached
- * (DEVLOG.md). Gradle-compiles clean (`./gradlew assembleDebug`); the
- * actual Keystore generation/signing path needs a real device to confirm,
- * same "prove it, don't claim it" gap this project already tracks
- * elsewhere for exactly this reason (see REMAINING.md's device-verification
- * items).
+ * The Keystore generation/signing path is not device-verified.
  */
 @CapacitorPlugin(name = "DeviceKey")
 public class DeviceKeyPlugin extends Plugin {

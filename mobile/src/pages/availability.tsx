@@ -1,21 +1,16 @@
 /**
- * availability.tsx — Availability submission (contract §3, docs/FEATURE_
- * CONTRACT_2026-10.md §9).
+ * availability.tsx — Availability submission.
  *
- * A Tanod tells the desk which dates and time windows they can serve in a
- * period. Since 2026-10-12 this is the tanod's own FIXED statement: nobody at
- * the desk accepts it or asks for changes, and the desk can only schedule the
- * tanod inside these windows (the server refuses a shift outside them). The
- * tanod can change a period at any time (the server bumps its version). This
- * screen is OFFLINE-FIRST (Rule 7): Save writes to encrypted SQLite before the
- * form closes and the record goes out through `/sync/batch` (`availability[]`).
- * The chip beside every period says only what the row can prove — "Saved on
- * phone" until a sync confirms it. Legacy review fields from before
- * 2026-10-12 are kept in the local row but no longer shown.
+ * A Tanod tells the desk which dates and time windows they can serve in a period. This is the tanod's
+ * own FIXED statement: nobody at the desk accepts it or asks for changes, and the desk can only schedule
+ * the tanod inside these windows (the server refuses a shift outside them). The tanod can change a
+ * period at any time (the server bumps its version). This screen is OFFLINE-FIRST: Save writes to
+ * encrypted SQLite before the form closes and the record goes out through `/sync/batch`
+ * (`availability[]`). The chip beside every period says only what the row can prove, "Saved on phone"
+ * until a sync confirms it. Legacy review fields are kept in the local row but not shown.
  *
- * Dates are plain Manila `YYYY-MM-DD` strings (utils/manilaTime.ts); times are
- * `HH:MM`. Native <input type="date|time"> keep this working with the WebView's
- * own pickers.
+ * Dates are plain Manila `YYYY-MM-DD` strings (utils/manilaTime.ts); times are `HH:MM`. Native
+ * <input type="date|time"> keep this working with the WebView's own pickers.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';

@@ -1,21 +1,12 @@
 /**
- * incident-submitted.tsx — M4 Incident Submitted Confirmation (§9 Mobile).
+ * incident-submitted.tsx — Incident Submitted Confirmation: a single field receipt.
  *
- * COMPLETE GROUND-UP REDESIGN:
- * Unified Tactical Blotter Receipt built entirely from scratch for field responders.
- *
- * UX & ACCESSIBILITY ENHANCEMENTS:
- * 1. Unified Tactical Receipt Canvas:
- *    - Replaces fragmented hero and detail boxes with a single, authoritative field receipt.
- * 2. Dynamic Synchronous State Engine:
- *    - Real-time headline, subtitle, and badge that accurately reflect the sync state
- *      without confusing contradictions ("Report Verified & Synced" vs "Report Secured Offline").
- * 3. Ergonomic 2-Row Action Dock:
- *    - Full-width primary CTA ("Return to Patrol Console") + side-by-side secondary CTAs
- *      ("Log Another" and "View Blotter") placed directly in the mobile thumb zone.
- * 4. Interactive Telemetry & Semantic Identifiers:
- *    - Interactive [Map] button to view pinned GPS coordinates on the Live Radar map.
- *    - Explicit semantic differentiation between HQ Case Number and Local Blotter Reference.
+ *  - Headline, subtitle, and badge accurately reflect the sync state, without contradictions
+ *    ("Report Verified & Synced" vs "Report Secured Offline").
+ *  - 2-row action dock: full-width primary CTA ("Return to Patrol Console") plus side-by-side secondary
+ *    CTAs in the mobile thumb zone.
+ *  - Interactive [Map] button to view the pinned GPS coordinates, and explicit differentiation between
+ *    the HQ Case Number and the Local Reference.
  */
 
 import { useEffect, useState } from 'react';

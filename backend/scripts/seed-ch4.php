@@ -45,8 +45,7 @@ if (isset($opts['since'])) {
 $INCIDENTS = isset($opts['incidents']) ? max(30, (int) $opts['incidents']) : null;
 // Profile "uat" (database baranguard_uat) is the final-testing dataset: the same
 // simulated Dao history, plus fixtures arranged so every scenario in the UAT
-// sign-off form (docs/chapter4-instruments/04-uat-signoff.html) has the data it
-// needs. See docs/UAT_DATA_REQUIREMENTS.md. Any other combination is refused.
+// sign-off form has the data it needs. Any other combination is refused.
 $PROFILE = (string) ($opts['profile'] ?? ($dbName === 'baranguard_uat' ? 'uat' : 'ch4'));
 $UAT = $PROFILE === 'uat';
 // The project keeps only two databases: the real `baranguard` and `baranguard_uiseed`, which holds the Chapter 4 / UAT
@@ -296,10 +295,8 @@ $TEMPLATES = [
 ];
 
 // Per-language slot fillers — a template's {A}/{B} must only ever be
-// filled with a word IN THAT TEMPLATE'S OWN LANGUAGE (an earlier version
-// of this script shared one Tagalog-only pool across all three languages
-// and produced sentences like "A damit sa sampayan was taken..." —
-// fixed by keying every slot pool by language too).
+// filled with a word IN THAT TEMPLATE'S OWN LANGUAGE, so every slot pool is
+// keyed by language.
 $SLOT_A = [
     'theft' => [
         'en' => ['bicycle', 'cellphone', 'cash', 'chickens', 'laundry from the clothesline'],

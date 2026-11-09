@@ -26,13 +26,13 @@
   font-size: var(--font-size-label);
   font-weight: 700;
   font-style: italic;
-  font-family: var(--font-base); /* D-21: was a Georgia serif stack */
+  font-family: var(--font-base); /* base font stack, not a serif one */
   cursor: help;
   flex-shrink: 0;
   position: relative;
 }
-/* X-17: the visible dot stays 18px, but the hit area is 24x24 (WCAG 2.2
-   target size) through an invisible pseudo-element. */
+/* The visible dot stays 18px, but the hit area is 24x24 (WCAG 2.2 target
+   size) through an invisible pseudo-element. */
 .info-tip__trigger::after {
   content: '';
   position: absolute;

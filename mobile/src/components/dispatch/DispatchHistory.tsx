@@ -1,4 +1,4 @@
-/** Recent finished dispatches on the Dispatches list (Phase 6 split; markup unchanged). */
+/** Recent finished dispatches on the Dispatches list. */
 import { useState } from 'react';
 import type { DispatchLocalRow } from '../../services/db/localSchema';
 import { dispatchStatusLabel } from '../../utils/dispatchList';

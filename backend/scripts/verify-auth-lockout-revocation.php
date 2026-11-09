@@ -2,17 +2,12 @@
 declare(strict_types=1);
 
 /**
- * verify-auth-lockout-revocation.php — Sprint 8 "Auth/session revocation
- * + lockout evidence" box.
+ * verify-auth-lockout-revocation.php — auth/session revocation + lockout evidence.
  *
  * Runs against a real running backend (default http://127.0.0.1:8081)
  * and real seeded `baranguard_uiseed` data, on `tanod.delacruz` — an
- * active, non-suspended seeded tanod deliberately different from
- * `tanod.olayvar` (which this session had incorrectly told the user to
- * use for manual testing — `tanod.olayvar` is actually `is_suspended=1`
- * in this seed, so login is *supposed* to reject it; the correction is
- * logged in DEVLOG.md) and from every account already used for the two
- * earlier Sprint 8 boxes this session. Mutates the target account's
+ * active, non-suspended seeded tanod (`tanod.olayvar` is seeded
+ * `is_suspended=1`, so login is supposed to reject it). Mutates the target account's
  * password/lockout state during the run; resets both back to the
  * documented shared seed state (`Demo@2026`, zeroed counters) at the end
  * regardless of pass/fail, via a `register_shutdown_function`.
@@ -26,7 +21,7 @@ declare(strict_types=1);
  *      password now rejected" with a direct DB read of `locked_until`.
  *   2. Session revocation on logout — a token used after its own logout
  *      is rejected; a second logout call on an already-revoked session
- *      does not itself error (§6's documented idempotent-logout).
+ *      does not itself error (logout is idempotent).
  *   3. Change-password revokes every OTHER active session for that user,
  *      but leaves the session that made the change valid.
  *

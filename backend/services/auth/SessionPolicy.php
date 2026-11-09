@@ -7,9 +7,6 @@ namespace Baranguard\Services\Auth;
 /**
  * SessionPolicy — how long an auth_session lives, by kind.
  *
- * Architecture decision 2026-09-19 (user-confirmed, DEVLOG 2026-09-19 (7);
- * Master Reference §2 Rule 9 amended the same day):
- *
  *   web    — the dashboard on the shared barangay-hall PC. 15-minute
  *            sliding token (`JWT_EXPIRES_IN_MINUTES`). An open dashboard
  *            polls every 15s and so never expires; only a closed tab or a
@@ -21,19 +18,18 @@ namespace Baranguard\Services\Auth;
  *            when a dispatch push arrives; one who lost the phone is
  *            bounded to a week even if nobody reports it.
  *
- * Amended 2026-10-07 (decision 15C): the Chief Tanod's phone. An ADMIN login
- * carrying a well-formed X-Device-Id also gets a device session — but one
- * that is scope-limited to ADMIN_DEVICE_ALLOWLIST below (everything else is
- * 403 DEVICE_SESSION_SCOPE). Web admin logins (no header) are unchanged.
- * Secretary and Punong Barangay never get a device session.
+ * The Chief Tanod's phone: an ADMIN login carrying a well-formed X-Device-Id
+ * also gets a device session, scope-limited to ADMIN_DEVICE_ALLOWLIST below
+ * (everything else is 403 DEVICE_SESSION_SCOPE). Web admin logins (no
+ * header) are unchanged. Secretary and Punong Barangay never get a device
+ * session.
  *
  * Both kinds are revoked instantly by logout / suspension / deactivation /
  * password change, because AuthMiddleware checks the auth_session row on
  * EVERY request — the long device token changes only how long an
  * un-revoked session lives, never how fast a revoked one dies.
  *
- * The two device numbers are constants, not config, in the same spirit as
- * §11's retention numbers (REFERENCE.md §2 rule 10): changing them is an
+ * The two device numbers are constants, not config: changing them is an
  * architecture review, not a runbook edit.
  */
 final class SessionPolicy
@@ -58,12 +54,11 @@ final class SessionPolicy
     }
 
     /**
-     * Roles that may hold a DEVICE session. `tanod` is the original mobile
-     * role; `admin` was added 2026-10-07 (review decision 15C — the Chief
-     * Tanod's phone, one account, any Admin account). An admin device
-     * session is SCOPE-LIMITED to {@see self::ADMIN_DEVICE_ALLOWLIST}, which
-     * is what makes giving an Admin a 24h/7d token acceptable. Secretary and
-     * Punong Barangay never get one.
+     * Roles that may hold a DEVICE session: `tanod`, and `admin` (the Chief
+     * Tanod's phone). An admin device session is SCOPE-LIMITED to
+     * {@see self::ADMIN_DEVICE_ALLOWLIST}, which is what makes giving an
+     * Admin a 24h/7d token acceptable. Secretary and Punong Barangay never
+     * get one.
      */
     private const DEVICE_SESSION_ROLES = ['tanod', 'admin'];
 
@@ -73,19 +68,16 @@ final class SessionPolicy
      * One table, one place; AuthMiddleware::authenticate() is the enforcer.
      * Each entry: [HTTP method, regex against the path after /api/v1,
      * signed-write?]. `true` marks a state-changing call that must carry the
-     * same X-Device-Id (+ H-09 signature when the device has a key on file)
-     * that a Tanod's mobile writes carry — see AuthMiddleware.
+     * same X-Device-Id (+ signature when the device has a key on file) that
+     * a Tanod's mobile writes carry — see AuthMiddleware.
      *
-     * PATCH /tanod-sos/:id/resolve was added 2026-10-12 (workflow gap #6):
-     * the Chief Tanod's phone may close an SOS when nobody is at the desk at
-     * night. Signed write, same as acknowledge; the controller still demands
-     * role admin + same tenant, so a Tanod device session cannot resolve.
+     * PATCH /tanod-sos/:id/resolve lets the Chief Tanod's phone close an SOS
+     * when nobody is at the desk at night; the controller still demands role
+     * admin + same tenant, so a Tanod device session cannot resolve.
      *
-     * Deliberately NOT here: GET /users, the
-     * audit log, incident resolve/lifecycle, reports/export, system
-     * settings, availability, shift publishing, notifications/ack-all.
-     * `/dispatch-offers*` is listed by pattern ahead of its routes landing
-     * (Wave 2); a pattern with no route simply 404s.
+     * Deliberately NOT here: GET /users, the audit log, incident
+     * resolve/lifecycle, reports/export, system settings, availability,
+     * shift publishing, notifications/ack-all.
      */
     public const ADMIN_DEVICE_ALLOWLIST = [
         ['GET', '#^/tanod-sos$#', false],
@@ -97,8 +89,8 @@ final class SessionPolicy
         ['PATCH', '#^/dispatch/\d+/cancel$#', true],
         ['GET', '#^/dispatch/\d+/route$#', false],
         ['GET', '#^/incidents$#', false],
-        // 2026-10-17: the Chief Tanod logs a phone report from the console. Signed write; the
-        // response never carries the narrative (Rule 1).
+        // The Chief Tanod logs a phone report from the console. Signed write; the
+        // response never carries the narrative.
         ['POST', '#^/incidents$#', true],
         ['GET', '#^/incidents/\d+$#', false],
         ['GET', '#^/gps/live$#', false],
@@ -134,7 +126,7 @@ final class SessionPolicy
     /**
      * Which kind a fresh login gets. A device session needs BOTH a
      * well-formed `X-Device-Id` header AND a device-capable role (Tanod, or
-     * since 2026-10-07 Admin — scope-limited, see ADMIN_DEVICE_ALLOWLIST).
+     * Admin — scope-limited, see ADMIN_DEVICE_ALLOWLIST).
      * Secretary / Punong Barangay never get one, and an Admin in a browser
      * (no header) keeps the 15-minute web session.
      */

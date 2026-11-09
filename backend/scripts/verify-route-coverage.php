@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 /**
  * verify-route-coverage.php — every /api/v1 route must be exercised by at
- * least one verify script (HANDOFF "things most likely to bite you" #4: a
- * verify script proves nothing about a route it never calls).
+ * least one verify script (a verify script proves nothing about a route it
+ * never calls).
  *
  * Static check, no server or database: it loads the route tables exactly as
  * `public/index.php` does, turns each route pattern into a path matcher

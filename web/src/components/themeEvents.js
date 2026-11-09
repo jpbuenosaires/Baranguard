@@ -1,6 +1,5 @@
 /**
- * themeEvents.js — one signal for "the colour theme just changed" (audit
- * 2026-10-09 D-10).
+ * themeEvents.js — one signal for "the colour theme just changed".
  *
  * The theme is applied in three places: the topbar toggle (AppShell.js),
  * the Settings > Appearance cards (settings.js `applyTheme`), and the

@@ -10,7 +10,7 @@
  * Server-side rules the real API enforces are mirrored where a page's
  * behaviour depends on them — most importantly, only a Secretary's token
  * receives `raw_narrative` and the party fields from GET /incidents/:id
- * (REFERENCE.md §2 Rule 1). The session token encodes the role
+ * (the raw-narrative rule). The session token encodes the role
  * (`test-token-<role>`), see render.mjs.
  */
 
@@ -59,8 +59,7 @@ export function buildRoutes(scenario) {
     { user_id: 7, full_name: t('Ana Dichoso'), username: 'tanod.dichoso', role: 'tanod', contact_number: '09170000007', is_active: 0, is_suspended: 0, created_at: sqlAgo(60 * 1440), last_login_at: null },
   ];
   const tanodName = (id) => users.find((u) => u.user_id === id)?.full_name ?? null;
-  // Contract section 2: official_title + approval_authority (an array on the
-  // wire). Only admin / secretary / punong_barangay accounts may hold any.
+  // official_title + approval_authority (an array on the wire). Only admin / secretary / punong_barangay accounts may hold any.
   const authorityByUser = {
     1: [t('Chief Tanod'), ['note_report', 'prepare_annex_d']],
     2: ['Kagawad', ['note_report']],
@@ -83,10 +82,10 @@ export function buildRoutes(scenario) {
     { incident_id: 903, barangay_id: 1, reported_by: 4, incident_type: 'disturbance', priority: 'normal', status: 'resolved', source: 'web', latitude: 12.9190, longitude: 123.6690, created_at: sqlAgo(3 * 1440), device_offline_created_at: null, synced_at: sqlAgo(3 * 1440), location_description: t('Roadside stalls, Purok 4'), display_id: 'INC-2026-903', officer_name: tanodName(4) },
     { incident_id: 904, barangay_id: 1, reported_by: 2, incident_type: 'vandalism', priority: 'normal', status: 'pending', source: 'web', latitude: null, longitude: null, created_at: sqlAgo(200), device_offline_created_at: null, synced_at: null, location_description: null, display_id: 'INC-2026-904', officer_name: null },
   ];
-  // Contract section 7: every incident carries school_id + the three C-1 fields.
+  // Every incident carries school_id + the three C-1 fields.
   for (const inc of allIncidents) {
     inc.school_id = null;
-    // Migration 0036: how the report reached the barangay + a reference link.
+    // How the report reached the barangay + a reference link.
     inc.report_channel = { app: 'tanod_alerted', sms: 'sms', web: 'walk_in' }[inc.source] ?? 'other';
     inc.related_incident_id = null;
     inc.c1_summary = null;
@@ -102,7 +101,7 @@ export function buildRoutes(scenario) {
   });
   const incidents = empty ? [] : allIncidents;
 
-  // --- Schools / referrals / availability (sections 3, 5, 7) -----------------
+  // --- Schools / referrals / availability -----------------
   const schools = empty ? [] : [
     { school_id: 11, barangay_id: 1, name: t('Dao Elementary School'), school_type: 'public', level: 'primary_elementary', address: t('Purok 1, Dao'), focal_person: null, focal_contact: null, remarks: null, latitude: 12.9205, longitude: 123.6698, is_active: 1 },
     { school_id: 12, barangay_id: 1, name: t('Dao Integrated High School'), school_type: 'public', level: 'secondary_high_school', address: t('Purok 2, Dao'), focal_person: t('Mrs. Reyes'), focal_contact: '09170000020', remarks: null, latitude: null, longitude: null, is_active: 1 },
@@ -150,7 +149,7 @@ export function buildRoutes(scenario) {
       has_active_dispatch: own.some((d) => ['assigned', 'en_route', 'arrived'].includes(d.status)),
       dispatches: own.map(({ dispatch_id, tanod_id, tanod_name, status, dispatched_at, en_route_at, arrived_at, completed_at, cancelled_at }) => ({ dispatch_id, tanod_id, tanod_name, status, dispatched_at, en_route_at, arrived_at, completed_at, cancelled_at })),
     };
-    // REFERENCE.md §2 Rule 1 (amended 2026-10-13): raw narrative + party fields reach the Secretary and the (web) Admin only.
+    // Raw narrative + party fields reach the Secretary and the (web) Admin only.
     if (role === 'secretary' || role === 'admin') {
       detail.raw_narrative = t(`RAW-NARRATIVE-${inc.incident_id}: Complainant Juan Santos reported the incident at 0917-555-0101.`);
       detail.complainant_name = t('Juan Santos');
@@ -229,7 +228,7 @@ export function buildRoutes(scenario) {
     { method: 'GET', path: '/reports/nav-counts', handler: () => ok({ pending_incidents: empty ? 0 : 2, pending_swap_requests: empty ? 0 : 1 }) },
     { method: 'GET', path: '/reports/export', handler: ({ query }) => ok({ file_url: `/reports/export/download?format=${query.format || 'csv'}`, format: query.format || 'csv', generated_at: sqlAgo(0) }) },
     { method: 'GET', path: '/reports/export/download', handler: () => ({ status: 200, raw: 'incident_id,type\r\n901,theft\r\n', headers: { 'Content-Type': 'text/csv' } }) },
-    // Periodic PB digest (REMAINING.md section G, DEVLOG (37)) -- no
+    // Periodic PB digest -- no
     // generate fixture on purpose, same as the real API: generation is
     // CLI-only, GET /reports/digest is read-only.
     { method: 'GET', path: '/reports/digest', handler: () => ok(empty
@@ -261,7 +260,7 @@ export function buildRoutes(scenario) {
     // --- Incidents ---
     { method: 'GET', path: '/incidents', handler: ({ query, headers }) => {
       // Mirrors IncidentsController::index() for the Punong Barangay
-      // (V-02/P-12, 2026-10-09): no search, first page only, minimal fields.
+      // no search, first page only, minimal fields.
       if (roleFromAuth(headers) === 'punong_barangay') {
         if (query.q) return { status: 403, body: { error: { code: 'FORBIDDEN', message: 'Incident search is not available to the Punong Barangay role.' } } };
         if (Number(query.page || 1) > 1) return { status: 403, body: { error: { code: 'FORBIDDEN', message: 'The Punong Barangay role gets a recent-activity summary, not a paginated incident list.' } } };
@@ -365,7 +364,7 @@ export function buildRoutes(scenario) {
     { method: 'POST', path: '/notifications/ack-all', handler: () => ok({ success: true, acknowledged_count: 1 }) },
     { method: 'POST', path: '/notifications/:id/ack', handler: ({ params }) => ok({ success: true, notification_id: Number(params.id), acknowledged_at: sqlAgo(0) }) },
 
-    // --- Dispatch offers (Wave 2; admin|secretary|PB view, newest first) ---
+    // --- Dispatch offers (admin|secretary|PB view, newest first) ---
     { method: 'GET', path: '/dispatch-offers', handler: ({ query }) => ok({ items: empty ? [] : [
       { offer_id: 31, incident_id: 901, incident_type: 'theft', priority: 'high', barangay_name: 'Dao', status: 'open', round: 2, created_at: isoIn(-200), expires_at: isoIn(120), closed_at: null, created_by: 1, recipient_count: 3, recipient_counts: { offered: 3, accepted: 0, released: 0, expired: 0 }, accepted_by: null, accepted_by_name: null, accepted_dispatch_id: null },
       { offer_id: 32, incident_id: 904, incident_type: 'vandalism', priority: 'normal', barangay_name: 'Dao', status: 'escalated', round: 3, created_at: isoIn(-700), expires_at: isoIn(-100), closed_at: null, created_by: null, recipient_count: 2, recipient_counts: { offered: 0, accepted: 0, released: 0, expired: 2 }, accepted_by: null, accepted_by_name: null, accepted_dispatch_id: null },
@@ -379,7 +378,7 @@ export function buildRoutes(scenario) {
     { method: 'POST', path: '/shifts', handler: ({ body }) => ({ status: 201, body: { shift_id: 599, user_id: body.user_id, patrol_zone: body.patrol_zone, start_at: body.start_at, end_at: body.end_at, version: 1, approval_status: 'draft', approved_by: null, approved_at: null, source_availability_id: body.source_availability_id ?? null } }) },
     { method: 'POST', path: '/shifts/publish', handler: ({ body }) => ok({ published: body.shift_ids, already_published: [], warnings: [{ code: 'NO_COVERAGE', date: '2026-10-07' }] }) },
     { method: 'GET', path: '/availability', handler: ({ query }) => ok(paginate(availability.filter((a) => (!query.status || a.status === query.status) && (!query.user_id || a.user_id === Number(query.user_id))), query)) },
-    // Retired 2026-10-12: availability is the tanod's fixed statement, never reviewed.
+    // Availability is the tanod's fixed statement, never reviewed.
     { method: 'PATCH', path: '/availability/:id', handler: () => ({ status: 410, body: { error: { code: 'AVAILABILITY_NOT_REVIEWED', message: 'Availability is no longer reviewed.' } } }) },
     { method: 'PATCH', path: '/shifts/:id', handler: ({ params, body }) => ok({ shift_id: Number(params.id), updated_at: sqlAgo(0), version: (body.version || 0) + 1 }) },
     { method: 'GET', path: '/shift-swap-requests', handler: ({ query }) => ok(paginate(swapRequests, query)) },

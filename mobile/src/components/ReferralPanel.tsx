@@ -1,5 +1,5 @@
 /**
- * ReferralPanel.tsx — the "Refer" action (contract §5) shared by Assignment
+ * ReferralPanel.tsx — the "Refer" action shared by Assignment
  * Detail and the submitted-incident view.
  *
  * A referral RECORDS A HANDOFF: the Tanod handed this incident to PNP, BFP,
@@ -9,7 +9,7 @@
  * made the referral. `contact_name` is the receiving unit/official, never a
  * citizen, and the form says so.
  *
- * Offline-first (Rule 7): Save persists to encrypted SQLite and only then
+ * Offline-first: Save persists to encrypted SQLite and only then
  * closes the sheet; the row's chip says "Saved on phone" until a sync pass
  * confirms it. A referral for an incident captured on this phone is linked by
  * its local id and resolved at sync time (see referralRepository.ts).

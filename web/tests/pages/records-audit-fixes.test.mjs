@@ -6,9 +6,8 @@ import { renderIncidentDetailPage } from '../../src/pages/incident-detail.js';
 import { renderSchoolZonesPage } from '../../src/pages/school-zones.js';
 import { clearAuthorityCache } from '../../src/services/tanodWorkflowUi.js';
 
-// Audit 2026-10-09, Secretary / Admin / Punong Barangay findings S-01..S-09,
-// S-14, S-16, S-19, S-21, A-09, A-10, P-09: invented content, the 90-day
-// narrative purge, official printouts, the walk-in form.
+// Secretary / Admin / Punong Barangay screens: no invented content, the
+// narrative purge wording, official printouts, the walk-in form.
 
 const FORBIDDEN_FABRICATIONS = /Juan dela Cruz|Under Investigation|Barangay Center|Barangay Desk Secretary|Purok 3, near market/;
 
@@ -40,7 +39,7 @@ describe('Incident Management: no invented content', () => {
     await settle();
     const pane = text($('.incident-right-panel'));
     assert.doesNotMatch(pane, FORBIDDEN_FABRICATIONS);
-    // The Admin now reads the party details (Rule 1 amended 2026-10-13), so "By" is the complainant's name.
+    // The Admin reads the party details, so "By" is the complainant's name.
     assert.match(pane, /By: Juan Santos/);
     assert.doesNotMatch(pane, /By: \d+/);
   });
@@ -128,7 +127,7 @@ describe('Incident Management: walk-in form', () => {
     assert.ok(patch, 'the school link was not saved');
     assert.equal(patch.path, '/incidents/905');
     assert.ok(Number.isInteger(patch.body.school_id));
-    // The Secretary is told the new incident number.
+    // The Secretary is told the incident number.
     assert.match(text(window.document.body), /INC-2026-905 logged/);
   });
 

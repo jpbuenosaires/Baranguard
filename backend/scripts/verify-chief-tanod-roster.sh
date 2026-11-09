@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Baranguard — Chief Tanod on the roster (Wave 3b-K, review decision 21).
+# Baranguard — Chief Tanod on the roster.
 #
 # Proves over real HTTP that an ADMIN account (the Chief Tanod, one account)
 # can be rostered, with every existing shift rule applying to it unchanged:
@@ -18,7 +18,7 @@
 #   7. KNOWN GAP (asserted, not built): an admin cannot create accomplishment
 #      entries (tanod-only), so an admin is never a report preparer today.
 #
-# Disposable DB + app user + port (Wave 3b agent K range 9301-9399). FULL
+# Disposable DB + app user + port (range 9301-9399). FULL
 # migration chain. Real databases and backend/.env are never touched.
 set -uo pipefail
 
@@ -127,7 +127,7 @@ shift_body() { echo "{\"user_id\":$1,\"start_at\":\"$2\",\"end_at\":\"$3\",\"pat
 ADM=$(login_tok chief); ADM2=$(login_tok chief2); SECT=$(login_tok sec1); PBT=$(login_tok pb1)
 [ -n "$ADM" ] && [ "$ADM" != "MISSING" ] && pass "Logged in as the Chief Tanod admin" || { fail "admin login failed"; exit 1; }
 
-# Since 2026-10-12 POST/PATCH /shifts refuses to schedule a tanod outside
+# POST/PATCH /shifts refuses to schedule a tanod outside
 # their submitted availability (422 OUTSIDE_AVAILABILITY, covered by
 # verify-roster-accomplishment.sh). This suite tests other rules, so every
 # tanod gets open whole-day availability first.
@@ -189,7 +189,7 @@ expect_eq "$CODE" "422" "PATCH to a secretary -> 422"
 step "5. Draft/published, re-draft on edit, NO_COVERAGE"
 req GET "/shifts?approval_status=draft&limit=100" "$ADM"
 expect_eq "$(echo "$BODY" | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); echo count(array_filter($d["items"],fn($i)=>(int)$i["user_id"]===(int)$argv[1]));' "$CHIEF")" "3" "Admin's 3 shifts are listed as drafts"
-# Rosters are printed and signed on paper (2026-10-12): publishing is a plain publish, nothing to record.
+# Rosters are printed and signed on paper: publishing is a plain publish, nothing to record.
 req POST /shifts/publish "$PBT" "{\"shift_ids\":[$S1,$S2,$S3]}" -H "Idempotency-Key: $(uuid)"
 expect_eq "$CODE" "200" "approve_roster holder (PB) publishes the admin's shifts"
 expect_eq "$(db_one "SELECT approval_status FROM shift_schedule WHERE shift_id=$S1;")" "published" "  admin shift is published"

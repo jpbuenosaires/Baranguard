@@ -71,7 +71,7 @@ export function useSosFlow() {
     const clientEventId = uuid();
     try {
       // Never wait long for GPS: past the bound, send without coordinates and
-      // the server uses the last-known fix (§2 Rule 27, C-01).
+      // the server uses the last-known fix.
       const position = await positionWithin(() => getCurrentPosition({ maximumAge: 30000, timeout: SOS_FIX_WAIT_MS }));
       const payload: { latitude?: number; longitude?: number } = position
         ? { latitude: position.latitude, longitude: position.longitude }

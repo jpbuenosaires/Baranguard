@@ -1,8 +1,7 @@
 /**
  * modalA11y.js — one shared dialog contract for every modal in the app,
- * applied without editing the pages that build them (audit 2026-10-09
- * X-10/D-19: nine of ten modals lacked a focus trap, Escape or focus return;
- * only ConfirmDialog had the full contract).
+ * applied without editing the pages that build them (only ConfirmDialog has
+ * the full contract built in).
  *
  * Started once (AppShell calls startModalA11y()). A MutationObserver on
  * <body> notices a modal being added and:
@@ -24,7 +23,7 @@
  * removed and re-added) get the trap only while visible and no focus return.
  */
 
-/** Overlay roots, by the classes the page stylesheets actually use (D-16/D-19). */
+/** Overlay roots, by the classes the page stylesheets actually use. */
 export const MODAL_ROOT_SELECTOR = [
   '.modal-backdrop',
   '.audit-modal-backdrop',

@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
-# Baranguard — H-16/M-03 validation: `PATCH /incidents/:id/lifecycle`
-# (2026-09-24 external audit, docs/REMAINING.md §H; migration 0025).
-#
-# Before this fix, `incident.status` had no way to record a duplicate
-# report, an invalid one, a cancellation, or a case reopened after being
-# closed — the only human-driven transition was `updateStatus()`'s
-# Admin-only "resolved". This script proves the new Secretary-only
-# `updateLifecycle()` endpoint: role gating, the transition table
+# Baranguard — `PATCH /incidents/:id/lifecycle` (migration 0025): the
+# Secretary-only `updateLifecycle()` endpoint, which records a duplicate,
+# invalid, cancelled or reopened incident. Proves it: role gating, the transition table
 # (forward-only within each branch), the "duplicate" merge-as-link
 # (not-delete) behaviour, the open-dispatch guard, tenant isolation, and
 # Idempotency-Key replay.
@@ -29,10 +24,8 @@ step() { echo; echo "=== $1 ==="; }
 expect_eq() { if [ "$1" = "$2" ]; then pass "$3 ($2)"; else fail "$3 — expected '$2', got '$1'"; fi; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -48,12 +41,8 @@ echo "Baranguard H-16/M-03 (incident lifecycle) validation — $(date -u +%Y-%m-
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for candidate in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$candidate" ] && { echo "$candidate"; return; }
   done
@@ -251,7 +240,7 @@ for I in $INC_E $INC_F $INC_G; do
   expect_eq "$(body_of PATCH "/incidents/${I}/lifecycle" "$SEC_TOKEN" "$(uuid)" '{"status":"reopened"}' | jget status)" "reopened" "incident $I invalid -> reopened"
 done
 
-# Admin resolve of a reopened incident with no dispatch needs a reason (2026-10-09 decision); without one it is a 400.
+# Admin resolve of a reopened incident with no dispatch needs a reason; without one it is a 400.
 expect_eq "$(status_of PATCH "/incidents/${INC_E}/status" "$ADMIN_TOKEN" "$(uuid)" '{"status":"resolved"}')" "400" "Reopened with no dispatch cannot be resolved without a reason"
 
 DE=$(body_of POST "/dispatch" "$ADMIN_TOKEN" "" "{\"incident_id\":$INC_E,\"tanod_id\":$TANOD2_ID,\"request_id\":\"$(uuid)\"}")

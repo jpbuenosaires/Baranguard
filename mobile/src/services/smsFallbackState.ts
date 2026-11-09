@@ -1,27 +1,10 @@
 /**
- * smsFallbackState.ts — the state model behind M13 SMS Fallback
- * Confirmation (§9, "Persistent element"): "Text reflects the actual
- * transport state: 'Sent by SMS,' 'SMS pending,' 'SMS failed,' or 'Saved
- * locally for retry.' It never says successful merely because the
- * fallback attempt was queued."
+ * smsFallbackState.ts — the state model behind the SMS fallback confirmation indicator. The text
+ * reflects the actual transport state ('Sent by SMS', 'SMS pending', 'SMS failed', or 'Saved locally
+ * for retry') and never says successful merely because the fallback attempt was queued.
  *
- * SCOPE, STATED PLAINLY: this file implements the full 4-state model
- * correctly and completely, but on-device SMS SENDING (Android's
- * SmsManager, via a native plugin, with the SEND_SMS runtime permission)
- * is NOT built this cut — the same scoping decision this session already
- * made for the SERVER's GSM-modem OUTBOUND transport, for the identical
- * reason: no hardware/credentials exist here to build or test it against,
- * and it is a genuinely separate, sizeable native integration (comparable
- * to Sprint 2's Camera/Voice work), not a rider on this cut. See
- * DEVLOG.md.
- *
- * Consequence: `sent_by_sms`/`sms_pending`/`sms_failed` are real, typed,
- * reachable states in this function's contract — ready the moment SMS
- * sending is wired up — but in THIS build, only `saved_locally_for_retry`
- * is ever actually produced, because nothing yet sets `smsAttempted`. That
- * is the honest, current-capability answer, not a placeholder pretending
- * otherwise — the function still never returns a state that claims more
- * than what's true.
+ * `sent_by_sms`/`sms_pending`/`sms_failed` are reached only once `smsAttempted` is true; the function
+ * never returns a state that claims more than what's true.
  */
 
 export type SmsFallbackState = 'sent_by_sms' | 'sms_pending' | 'sms_failed' | 'saved_locally_for_retry';
@@ -35,11 +18,9 @@ export interface SmsFallbackInput {
 }
 
 /**
- * Returns null when the record has already reached the workstation
- * through its normal transport — M13 is a fallback-specific indicator,
- * not a general sync-state display (that's M4's `deriveSyncState`); the
- * two are shown side by side, never merged into one pill, so neither
- * misrepresents the other's question.
+ * Returns null when the record has already reached the workstation through its normal transport: this
+ * is a fallback-specific indicator, not a general sync-state display (that's `deriveSyncState`); the
+ * two are shown side by side, never merged into one pill, so neither misrepresents the other's question.
  */
 export function deriveSmsFallbackState(input: SmsFallbackInput): SmsFallbackState | null {
   if (input.reachedWorkstation) {
@@ -66,7 +47,7 @@ export const SMS_FALLBACK_STATE_LABEL: Record<SmsFallbackState, string> = {
   saved_locally_for_retry: 'Saved locally for retry',
 };
 
-/** §8's status→token mapping. Only `sent_by_sms` reads as success — everything else is explicitly NOT success, per §9 M13's own "never says successful merely because queued" rule. */
+/** Status->token mapping. Only `sent_by_sms` reads as success; everything else is explicitly NOT success (never "successful" merely because queued). */
 export const SMS_FALLBACK_STATE_PILL: Record<SmsFallbackState, string> = {
   sent_by_sms: 'status-pill--success',
   sms_pending: 'status-pill--info',

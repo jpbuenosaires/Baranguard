@@ -1,29 +1,16 @@
 /**
- * apiService.ts — THE single mobile API boundary.
+ * apiService.ts — the single mobile API boundary: every server call goes through here.
  *
- * §4's boundary rule is explicit: "exactly ONE central API client file
- * per platform (`apiClient.js` web, `apiService.ts` mobile) does
- * snake_case → camelCase conversion. Never convert ad-hoc inside a
- * component." Every server call in this app goes through this file.
+ * snake_case -> camelCase conversion is hand-written per endpoint, not a recursive key walker:
+ * a blind converter would rewrite enum-valued keys (`physical_injury`). Structural keys convert;
+ * enum VALUES pass through untouched.
  *
- * Conversion is hand-written per endpoint, not a recursive key walker —
- * the same resolved decision the web client already made and documented:
- * a blind converter would rewrite enum-valued keys (`physical_injury` →
- * `physicalInjury`), corrupting data identity rather than merely
- * reformatting a field name. Structural keys convert; enum VALUES are
- * passed through untouched.
+ * Sliding renewal: an `X-Renewed-Token` on any authenticated response is persisted through
+ * session.ts, which refuses to move the expiry backwards.
  *
- * Sliding renewal (§2 Rule 9): every authenticated response is checked
- * for `X-Renewed-Token`, and the newer token is persisted through
- * session.ts, which itself refuses to move the expiry backwards.
- *
- * Offline behaviour: a network failure surfaces as an ApiError with
- * `code: 'NETWORK_ERROR'`, distinct from any server-sent error code, so
- * callers can tell "the workstation is unreachable" (expected, and
- * routine under §2 Rule 7/15) apart from "the server rejected this".
- * Nothing here writes to the local store — offline durability is the
- * local-database layer's job, and §2 Rule 9 requires capture to keep
- * working regardless of session/API state.
+ * A network failure surfaces as an ApiError with `code: 'NETWORK_ERROR'`, distinct from any
+ * server-sent code. Nothing here writes to the local store; offline durability is the
+ * local-database layer's job.
  */
 
 import { normalizeServerTimestamps } from '../utils/serverTime';
@@ -42,36 +29,16 @@ import {
 } from './session';
 
 /**
- * The API base URL every install talks to. Not configurable on-device —
- * removed by explicit decision 2026-09-27 (the "Workstation address" UI
- * on Login and Profile, and the `setApiBaseUrlOverride()` Preferences
- * override, both used to let a Tanod point the app at a different
- * address). Now that C-03's Cloudflare Named Tunnel gives the workstation
- * a real, stable, Cloudflare-DNS-backed hostname, there is no longer a
- * legitimate reason for a per-device address to differ — a DHCP-
- * reassigned LAN IP was the whole reason the override existed, and that
- * class of problem doesn't apply to a fixed public hostname.
- *
- * Local development still needs the workstation directly: create
- * `mobile/.env.local` (gitignored, never committed, never shipped) with
- * `VITE_API_BASE_URL=http://localhost:8081/api/v1` to override this
- * default for your own dev builds only — see that file's own comment.
- * This is the only remaining override mechanism, and it is build-time
- * only (never reachable from the running app).
+ * The API base URL every install talks to; not configurable on-device.
+ * For local dev, set `VITE_API_BASE_URL` in the gitignored `mobile/.env.local` (build-time only).
  */
 const API_BASE_URL: string =
   (import.meta.env?.VITE_API_BASE_URL as string | undefined) ?? 'https://api.baranguardph.win/api/v1';
 
 /**
- * Mirrors `API_BASE_URL` into Preferences so `PatrolLocationService.java`
- * (Mobile Improvement Plan Phase 4.1) can read it from the same
- * "CapacitorStorage" SharedPreferences file to know where to POST
- * background GPS points — a Vite build-time constant baked into the JS
- * bundle is invisible to native code. Fired once at module load; the
- * value itself is now fixed for the life of the install (see
- * `API_BASE_URL`'s own doc), so this only needs to run once, not on
- * every launch, but doing so is cheap and keeps this file the single
- * source of truth for what native code reads.
+ * Mirrors `API_BASE_URL` into Preferences so `PatrolLocationService.java` can read it from the
+ * "CapacitorStorage" SharedPreferences file to know where to POST background GPS points
+ * (a Vite build-time constant is invisible to native code).
  */
 const EFFECTIVE_API_BASE_URL_KEY = 'baranguard.effectiveApiBaseUrl';
 (async () => {
@@ -129,24 +96,14 @@ interface RequestOptions {
   timeoutMs?: number;
 }
 
-/**
- * No previous version of this function ever bounded how long a request
- * could take — on a genuinely bad connection (weak WiFi, far from the
- * router) `fetch()` can sit unresolved for a very long time with nothing
- * for the caller to catch, which reads to a Tanod as the app simply being
- * stuck rather than "the workstation is slow to reach right now." 15s is
- * generous for a real LAN hop (or a remote tunnel, when one is in use)
- * but short enough that a bad
- * connection fails honestly instead of hanging the caller indefinitely —
- * same spirit as deviceIdentity.ts's 8s FCM-registration bound.
- */
+/** Bounds every request: without it a bad connection leaves fetch() hanging and the app looks stuck. 15s is generous for a LAN hop or tunnel; same spirit as deviceIdentity.ts's 8s FCM bound. */
 const REQUEST_TIMEOUT_MS = 15000;
 
 /**
  * SOS is the one call where waiting is itself the failure: on a dead link a
  * 15s hang delays the SMS fallback tier by the same 15s. 5s is still enough
  * for a healthy hop, and a false "timeout" is safe — the SOS is queued with
- * the same `client_event_id`, so a late-arriving original dedupes (Rule 3).
+ * the same `client_event_id`, so a late-arriving original dedupes.
  */
 const SOS_TIMEOUT_MS = 5000;
 
@@ -174,9 +131,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       signal: timeoutSignal(timeoutMs),
     });
   } catch {
-    // §2 Rule 15: the workstation is a known single point of failure and
-    // the app must degrade, not crash, when it is unavailable. Covers both
-    // an outright connection failure and this now timing out.
+    // The workstation can be down: degrade, don't crash. Covers a connection failure and a timeout.
     throw new ApiError(0, 'NETWORK_ERROR', 'Cannot reach the barangay workstation.');
   }
 
@@ -213,20 +168,13 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 }
 
 /**
- * H-09: builds the X-Device-Id/-Timestamp/-Signature headers for a
- * high-value mobile write (GPS/SOS/dispatch-status/evidence/sync-batch).
+ * Builds the X-Device-Id/-Timestamp/-Signature headers for a high-value mobile write.
  *
- * `routePath` is the route's OWN path (e.g. `/gps`), with no `/api/v1`
- * mount prefix — but the server signs against `$_SERVER['REQUEST_URI']`
- * (`DeviceSignature::verifyOrReject()`), which is the FULL request path
- * the webserver actually saw, prefix included. Deriving that prefix from
- * `API_BASE_URL`'s own pathname (rather than hardcoding `/api/v1`) keeps
- * this correct if a local dev build's `.env.local` ever mounts the API
- * under a different path than the production `/api/v1`.
+ * `routePath` has no `/api/v1` mount prefix, but the server signs the FULL request path, so the
+ * prefix is derived from `API_BASE_URL`'s pathname.
  *
- * Signing failure (or a pre-upgrade device with no Keystore key) yields a
- * device-id-only header set, same as before H-09 — see
- * `signDeviceRequest()`'s own doc for why this never blocks the request.
+ * Signing failure (or a device with no Keystore key) yields a device-id-only header set and
+ * never blocks the request.
  */
 async function deviceAuthHeaders(method: string, routePath: string, deviceId: string): Promise<Record<string, string>> {
   let fullPath = routePath;
@@ -269,11 +217,9 @@ interface LoginResponse {
 
 /** POST /auth/login. Returns the session it stored, for the caller to route on. */
 export async function login(username: string, password: string): Promise<StoredSession> {
-  // `X-Device-Id` on login is what earns a DEVICE session (24h sliding,
-  // 7-day cap — backend SessionPolicy, decided 2026-09-19) instead of the
-  // dashboard's 15-minute one. The id is minted on first launch, before any
-  // login, so it always exists here; the server still only grants the
-  // longer session to the tanod role.
+  // `X-Device-Id` on login earns a DEVICE session (24h sliding, 7-day cap) instead of the
+  // dashboard's 15-minute one. The id exists from first launch; the server grants the longer
+  // session to the tanod role only.
   const json = await request<LoginResponse>('/auth/login', {
     method: 'POST',
     body: { username, password },
@@ -298,38 +244,29 @@ export async function logout(): Promise<void> {
   await request<{ success: boolean }>('/auth/logout', { method: 'POST' });
 }
 
-// --- Device lifecycle (§6, M1) ---------------------------------------------
+// --- Device lifecycle ---------------------------------------------
 
 export interface DeviceRegistration {
   deviceId: string;
   registered: boolean;
   /**
-   * §6/Rule 26 — Sprint 4 Phase 3 addition. Present ONLY on this
-   * device_id's first-ever registration; absent on every later call
-   * (ordinary FCM-token-refresh re-registration). Base64, ready to hand
-   * straight to `messageEncryptionKey.ts`'s `storeMessageEncryptionKey()`.
-   * See DevicesController.php's own doc for why the server never
-   * re-returns it once issued.
+   * Present ONLY on this device_id's first-ever registration; absent on every later call.
+   * Base64, ready for `messageEncryptionKey.ts`'s `storeMessageEncryptionKey()`.
    */
   messageEncryptionKey?: string;
 }
 
 /**
- * POST /devices/register. Tanod-only server-side.
- * The server returns no FCM token by design (§6) — do not expect one.
+ * POST /devices/register. Tanod-only server-side. The server returns no FCM token.
  *
- * `fcmToken` is nullable — explicit decision, 2026-09-13 (see
- * DevicesController.php's class doc): this deployment has no real Firebase
- * project, so `getFcmToken()` always resolves null, and a device must
- * still register (and become sync-capable) without one. `null` is sent
- * through as-is rather than coerced to `''` here — the server's own
- * validation already treats null/missing/empty identically.
+ * `fcmToken` is nullable: a device must still register (and become sync-capable) without one.
+ * `null` is sent as-is; the server treats null/missing/empty identically.
  */
 export async function registerDevice(params: {
   deviceId: string;
   fcmToken: string | null;
   appVersion?: string;
-  /** H-09: this install's Keystore public key, or undefined/null on a device that can't generate one (never blocks registration). */
+  /** This install's Keystore public key, or undefined/null on a device that can't generate one (never blocks registration). */
   devicePublicKeyPem?: string | null;
 }): Promise<DeviceRegistration> {
   const json = await request<{ device_id: string; registered: boolean; message_encryption_key?: string }>(
@@ -339,7 +276,7 @@ export async function registerDevice(params: {
       body: {
         device_id: params.deviceId,
         fcm_token: params.fcmToken,
-        platform: 'android', // §5 mobile_device.platform is ENUM('android')
+        platform: 'android', // mobile_device.platform is ENUM('android')
         app_version: params.appVersion,
         device_public_key_pem: params.devicePublicKeyPem ?? null,
       },
@@ -348,7 +285,7 @@ export async function registerDevice(params: {
   return { deviceId: json.device_id, registered: json.registered, messageEncryptionKey: json.message_encryption_key };
 }
 
-// --- Map packages (§6, M1) -------------------------------------------------
+// --- Map packages ----------------------------------------------------
 
 export interface MapPackageMetadata {
   version: string;
@@ -358,12 +295,8 @@ export interface MapPackageMetadata {
 }
 
 /**
- * GET /map-packages/:barangayId.
- *
- * Returns null when the server has no published package (the endpoint
- * answers 404). §9 M1 requires the map check to be NON-BLOCKING — the app
- * enters M2 regardless — so "nothing published yet" is an ordinary
- * outcome here, not an error worth failing login over.
+ * GET /map-packages/:barangayId. Returns null when the server has no published package (404):
+ * the map check is non-blocking, so "nothing published yet" is an ordinary outcome.
  */
 export async function getMapPackage(barangayId: number): Promise<MapPackageMetadata | null> {
   try {
@@ -391,15 +324,9 @@ export function mapPackageDownloadUrl(barangayId: number): string {
 }
 
 /**
- * GET /map-packages/:barangayId/download. Streams the published MBTiles
- * package's raw bytes — bypasses `request()`'s JSON handling (this is a
- * binary transfer, sometimes tens of MB), but is still the one place in
- * the app allowed to `fetch()` the API directly, per this file's own
- * single-boundary rule. Auth/renewal follow the same rules as every other
- * call here. Checksum verification is the CALLER's job
- * (`mapPackageService.ts`) — §2 Rule 14 / §6: "client verifies SHA-256
- * before activation", and this function has no opinion on what "before
- * activation" means for local storage.
+ * GET /map-packages/:barangayId/download. Streams the MBTiles bytes, bypassing `request()`'s JSON
+ * handling (binary, sometimes tens of MB). Auth/renewal follow every other call. Verifying the
+ * SHA-256 before activation is the CALLER's job (`mapPackageService.ts`).
  */
 export async function downloadMapPackage(barangayId: number): Promise<Uint8Array> {
   const session = await loadSession();
@@ -430,9 +357,9 @@ export async function downloadMapPackage(barangayId: number): Promise<Uint8Array
   }
 }
 
-// --- Duty status (§6, M2 Home) ----------------------------------------------
+// --- Duty status -----------------------------------------------------
 
-/** §5 duty_status.status enum — the only accepted values. */
+/** duty_status.status enum — the only accepted values. */
 export type DutyStatus = 'on_duty' | 'responding' | 'off_duty';
 
 export interface DutyStatusEntry {
@@ -457,10 +384,9 @@ export async function setDutyStatus(status: DutyStatus, clientEventId: string): 
 }
 
 /**
- * GET /duty-status?user_id=me — the caller's own most recent toggle, for
- * M2 to show the TRUE current status on load rather than an optimistic
- * local guess (a Tanod may have toggled from a different device, or via
- * the SMS fallback channel once Sprint 4 exists).
+ * GET /duty-status?user_id=me — the caller's own most recent toggle, so Home shows the TRUE
+ * current status on load rather than an optimistic local guess (it may have been toggled from
+ * another device or via SMS).
  */
 export async function getOwnDutyStatus(): Promise<DutyStatusEntry | null> {
   const json = await request<{
@@ -471,7 +397,7 @@ export async function getOwnDutyStatus(): Promise<DutyStatusEntry | null> {
   return { statusId: latest.status_id, status: latest.status, channel: latest.channel, changedAt: latest.changed_at };
 }
 
-// --- SOS (§6 `POST /tanod-sos`, §2 Rule 27) --------------------------------
+// --- SOS -------------------------------------------------------------
 
 export interface SosResult {
   sosId: number;
@@ -480,17 +406,11 @@ export interface SosResult {
 }
 
 /**
- * POST /tanod-sos. `clientEventId` is the idempotency key
- * (UNIQUE(user_id, client_event_id) server-side) — a retry with the same
- * id returns the original row rather than raising a second alarm, the
- * same guarantee an SMS-fallback-correlated SOS relies on (§2 Rule 27).
- * `latitude`/`longitude` are OPTIONAL (migration 0026, C-01) — §2 Rule 27
- * says SOS must never be blocked on a missing GPS fix, so a caller that
- * couldn't get a location must still call this, just without coordinates.
- * The server falls back to the Tanod's last known `gps_track` fix, or
- * creates the SOS with null coordinates (`location_source='no_fix'`) if
- * there is none at all — it never rejects for a missing fix. Sending only
- * one of the two is still a 400 (a different failure mode from neither).
+ * POST /tanod-sos. `clientEventId` is the idempotency key (UNIQUE(user_id, client_event_id)): a
+ * retry returns the original row rather than raising a second alarm.
+ * `latitude`/`longitude` are OPTIONAL: SOS must never be blocked on a missing GPS fix. The server
+ * falls back to the last known `gps_track` fix, or creates the SOS with null coordinates
+ * (`location_source='no_fix'`). Sending only one of the two is a 400.
  */
 export async function postSos(params: {
   latitude?: number;
@@ -499,11 +419,8 @@ export async function postSos(params: {
   dispatchId?: number | null;
   fallbackChannel?: 'app' | 'sms';
 }): Promise<SosResult> {
-  // H-09: best-effort device auth headers — the server NEVER rejects an
-  // SOS over a missing/bad signature (TanodSosController's own doc:
-  // "a real emergency signal must never be lost to a secondary
-  // authenticity check"), it only logs the anomaly. Attaching these here
-  // is purely additive audit value, never a condition for the SOS itself.
+  // Best-effort device auth headers: the server never rejects an SOS over a missing/bad
+  // signature (an emergency signal must not be lost to a secondary check), it only logs it.
   const deviceId = await getDeviceId();
   const headers = await deviceAuthHeaders('POST', '/tanod-sos', deviceId);
   const json = await request<{ sos_id: number; status: string; received_at: string }>('/tanod-sos', {
@@ -522,12 +439,9 @@ export async function postSos(params: {
 }
 
 /**
- * GET /tanod-sos/fallback-contact — G1's third SOS fallback tier (Mobile
- * Improvement Plan Phase 4.3). Deliberately NOT `GET /system-settings`
- * (Admin-only, and it would also hand a Tanod's phone the SMS gateway
- * API key). Returns null when no backup contact has been configured —
- * a legitimate, non-error outcome (§7's W21 note: this key defaults
- * empty until an Admin sets it).
+ * GET /tanod-sos/fallback-contact — third SOS fallback tier. Deliberately NOT
+ * `GET /system-settings` (Admin-only). Returns null when no backup contact has been configured,
+ * a non-error outcome.
  */
 export async function getSosFallbackContact(): Promise<string | null> {
   const json = await request<{ backup_contact_number: string | null }>('/tanod-sos/fallback-contact');
@@ -546,11 +460,11 @@ export async function getSosFallbackNumbers(): Promise<{ backupContact: string |
   return { backupContact: json.backup_contact_number, gatewayNumber: json.gateway_number ?? null };
 }
 
-// --- Dispatch (§6, Sprint 1 web + Sprint 3 mobile: M5/M6) -------------------
+// --- Dispatch --------------------------------------------------------
 
-/** §5 dispatch.status enum. */
+/** dispatch.status enum. */
 export type DispatchStatus = 'assigned' | 'en_route' | 'arrived' | 'completed' | 'cancelled';
-/** §5 dispatch.route_status enum. */
+/** dispatch.route_status enum. */
 export type RouteStatus = 'available' | 'unavailable' | 'stale';
 export type RouteMode = 'car' | 'foot';
 
@@ -612,7 +526,7 @@ export interface DispatchEntry {
   routeJson: RouteData | null;
   routeStatus: RouteStatus;
   status: DispatchStatus;
-  /** Redacted-safe fields joined in from the incident (Sprint 3 addition — see DispatchController.php's class doc). */
+  /** Redacted-safe fields joined in from the incident (see DispatchController.php's class doc). */
   incidentType: string | null;
   /** Official INC-YYYY-NNN code if the server ever includes it on dispatch items (GET /dispatch does not today). */
   incidentDisplayId: string | null;
@@ -662,10 +576,7 @@ function mapDispatch(json: {
   };
 }
 
-/**
- * GET /dispatch — §6: Tanod is forced server-side to their own dispatches.
- * M5's Assignments List refreshes its `dispatch_local` cache from this.
- */
+/** GET /dispatch — a Tanod is forced server-side to their own dispatches; refreshes the `dispatch_local` cache. */
 export async function getDispatches(params: { status?: DispatchStatus } = {}): Promise<DispatchEntry[]> {
   const query = params.status ? `?status=${encodeURIComponent(params.status)}` : '';
   const json = await request<{ items: Parameters<typeof mapDispatch>[0][] }>(`/dispatch${query}`);
@@ -673,17 +584,16 @@ export async function getDispatches(params: { status?: DispatchStatus } = {}): P
 }
 
 /**
- * PATCH /dispatch/:id/status — §6 forward-only transition matrix
- * (assigned->en_route->arrived->completed). M6 calls this immediately when
- * online; when offline, the status change is queued locally instead (see
- * `offlineQueueRepository.ts`) and this same endpoint is reached later via
- * `syncBatch()`'s `dispatch_status_updates[]`.
+ * PATCH /dispatch/:id/status — forward-only transition (assigned->en_route->arrived->completed).
+ * Called immediately when online; when offline the change is queued locally
+ * (`offlineQueueRepository.ts`) and reaches this endpoint later via `syncBatch()`'s
+ * `dispatch_status_updates[]`.
  */
 export async function updateDispatchStatus(
   dispatchId: number,
   status: 'en_route' | 'arrived' | 'completed'
 ): Promise<{ dispatchId: number; status: DispatchStatus; updatedAt: string }> {
-  // H-09: server verifies this only for a Tanod-initiated call (never an
+  // Server verifies this only for a Tanod-initiated call (never an
   // Admin override) and only when this device has a key on file — see
   // DispatchController::applyStatusTransition()'s own doc.
   const path = `/dispatch/${dispatchId}/status`;
@@ -750,11 +660,11 @@ export async function getDispatchRoute(
   };
 }
 
-// --- GPS (§6, Sprint 3: M7 Live Map) ----------------------------------------
+// --- GPS -------------------------------------------------------------
 
 /**
  * POST /gps. `recordedAt` is the device's own capture time (ISO 8601) —
- * distinct from the server's authoritative `received_at` (Rule 31).
+ * distinct from the server's authoritative `received_at`.
  */
 export async function postGps(point: {
   latitude: number;
@@ -764,7 +674,7 @@ export async function postGps(point: {
   dispatchId?: number | null;
   clientEventId: string;
 }): Promise<{ trackId: number; receivedAt: string }> {
-  // H-09: signature verification applies here AND to syncBatch()'s replay
+  // Signature verification applies here AND to syncBatch()'s replay
   // of queued points (both go through GpsController::createItem()) — see
   // syncBatch() below for why it attaches the same headers to that call.
   const deviceId = await getDeviceId();
@@ -794,7 +704,7 @@ export interface NearbyIncident {
   ageSeconds: number;
 }
 
-/** GET /incidents/nearby — Tanod only (§6); never raw narrative/contact data. */
+/** GET /incidents/nearby — Tanod only; never raw narrative/contact data. */
 export async function getNearbyIncidents(params: {
   latitude: number;
   longitude: number;
@@ -840,13 +750,10 @@ export interface NearbyTanod {
 }
 
 /**
- * GET /gps/live?barangay_id=me — same-barangay on-duty-or-not active Tanod
- * roster (2026-09-12: opened to the `tanod` role alongside admin/PB, an
- * explicit user decision — see GpsController::live()'s own doc comment).
- * Returns every OTHER active Tanod in the caller's own barangay who has
- * ever recorded a position; the caller's own row is filtered out here
- * since "nearby Tanods" means peers, not a duplicate of the position this
- * screen already shows from the device's own GPS.
+ * GET /gps/live?barangay_id=me — every OTHER active Tanod in the caller's barangay who has ever
+ * recorded a position (the server also opens this to the `tanod` role; see GpsController::live()).
+ * The caller's own row is filtered out: "nearby Tanods" means peers, not a duplicate of the
+ * device's own GPS.
  */
 export async function getNearbyTanods(): Promise<NearbyTanod[]> {
   const session = await loadSession();
@@ -879,7 +786,7 @@ export async function getNearbyTanods(): Promise<NearbyTanod[]> {
     }));
 }
 
-// --- Evidence upload (§6, closes F4 — Mobile Improvement Plan Phase 3.2) ---
+// --- Evidence upload -------------------------------------------------
 
 export interface EvidenceUploadItem {
   type: 'photo' | 'voice';
@@ -907,7 +814,7 @@ export interface UploadedEvidence {
  * `request()`'s JSON handling (binary transfer via `FormData`), the same
  * single-boundary exception `downloadMapPackage()` already is.
  * `X-Device-Id` is required server-side (`assertDeviceOwnership()`),
- * matching every other mobile write's §2 Rule 3 contract. The server
+ * matching every other mobile write. The server
  * computes its OWN sha256 over the received bytes and rejects a mismatch
  * against `item.sha256` — this function does not pre-verify that itself,
  * trusting the server's check rather than duplicating it.
@@ -931,7 +838,7 @@ export async function uploadEvidence(
   form.append('client_request_id', item.clientRequestId);
   if (item.originalFilename) form.append('original_filename', item.originalFilename);
 
-  // H-09: same headers every other high-value write attaches — see
+  // Same headers every other high-value write attaches — see
   // deviceAuthHeaders()'s own doc for the /api/v1-prefix reasoning.
   const deviceHeaders = await deviceAuthHeaders('POST', `/incidents/${incidentServerId}/evidence`, deviceId);
 
@@ -981,7 +888,7 @@ export async function uploadEvidence(
   };
 }
 
-// --- Sync (§6 "Sync" section, Sprint 3) -------------------------------------
+// --- Sync ------------------------------------------------------------
 
 /** One item's shape for POST /sync/batch's `incidents[]` array (mirrors POST /incidents mobile body). */
 export interface SyncIncidentItem {
@@ -991,7 +898,7 @@ export interface SyncIncidentItem {
   longitude: number | null;
   device_offline_created_at?: string | null;
   client_event_id: string;
-  /** Safer School Zones link + Annex C-1 fields (contract §7) — omitted entirely when not set. */
+  /** Safer School Zones link + Annex C-1 fields — omitted entirely when not set. */
   school_id?: number;
   c1_summary?: string;
   c1_action_taken?: string;
@@ -999,9 +906,9 @@ export interface SyncIncidentItem {
 }
 
 /**
- * One item's shape for `referrals[]` (contract §5/§6 — same as the POST
- * /incidents/:id/referrals body). A referral to an incident that only exists
- * on this phone carries `incident_client_event_id` instead of `incident_id`.
+ * One item's shape for `referrals[]` (same as the POST /incidents/:id/referrals body). A referral
+ * to an incident that only exists on this phone carries `incident_client_event_id` instead of
+ * `incident_id`.
  */
 export interface SyncReferralItem {
   incident_id?: number;
@@ -1014,7 +921,7 @@ export interface SyncReferralItem {
   client_event_id: string;
 }
 
-/** One item's shape for `availability[]` (contract §3 POST /availability body). */
+/** One item's shape for `availability[]` (POST /availability body). */
 export interface SyncAvailabilityItem {
   period_start: string;
   period_end: string;
@@ -1022,7 +929,7 @@ export interface SyncAvailabilityItem {
   client_event_id: string;
 }
 
-/** One item's shape for `accomplishment_entries[]` (contract §4 POST /accomplishment-entries body). */
+/** One item's shape for `accomplishment_entries[]` (POST /accomplishment-entries body). */
 export interface SyncAccomplishmentItem {
   work_date: string;
   accomplishment_text: string;
@@ -1033,7 +940,7 @@ export interface SyncAccomplishmentItem {
 }
 
 /**
- * One item's shape for `school_checkins[]` (contract §7). A CREATE item
+ * One item's shape for `school_checkins[]`. A CREATE item
  * carries `school_id` + `checked_in_at` (+ `checked_out_at` when the check-out
  * was merged in before the first sync). A CLOSE item for an already-synced
  * check-in carries a NEW `client_event_id`, `closes_client_event_id` (the
@@ -1070,7 +977,7 @@ export interface SyncDutyStatusItem {
   changed_at?: string;
 }
 
-/** One item's shape for `dispatch_status_updates[]` (§6: no override_reason from a sync item). */
+/** One item's shape for `dispatch_status_updates[]` (no override_reason from a sync item). */
 export interface SyncDispatchStatusItem {
   dispatch_id: number;
   status: 'en_route' | 'arrived' | 'completed';
@@ -1080,10 +987,8 @@ export interface SyncDispatchStatusItem {
 }
 
 /**
- * One item's shape for `sos[]` (mirrors POST /tanod-sos body). §6:
- * SyncController.php passes this straight into
- * TanodSosController::createItem() — same idempotency key, same Rule 27
- * fan-out as a live SOS.
+ * One item's shape for `sos[]` (mirrors POST /tanod-sos body). SyncController.php passes it
+ * straight into TanodSosController::createItem(): same idempotency key and fan-out as a live SOS.
  */
 export interface SyncSosItem {
   latitude?: number;
@@ -1105,9 +1010,9 @@ export interface SyncBatchResult {
 }
 
 /**
- * POST /sync/batch. §6: "Device ownership must match authenticated Tanod" —
- * `deviceId` must be THIS device's own id (`deviceIdentity.ts`). Every array
- * is optional; omit or pass `[]` for anything with nothing to sync.
+ * POST /sync/batch. `deviceId` must be THIS device's own id (`deviceIdentity.ts`): device
+ * ownership must match the authenticated Tanod. Every array is optional; omit or pass `[]` for
+ * anything with nothing to sync.
  */
 export async function syncBatch(params: {
   deviceId: string;
@@ -1121,7 +1026,7 @@ export async function syncBatch(params: {
   accomplishmentEntries?: SyncAccomplishmentItem[];
   schoolCheckins?: SyncSchoolCheckinItem[];
 }): Promise<SyncBatchResult[]> {
-  // H-09: one signature covers the whole batch — GpsController::
+  // One signature covers the whole batch — GpsController::
   // createItem()/DispatchController::applyStatusTransition()/
   // TanodSosController::createItem() all read X-Device-Id/-Signature off
   // this single /sync/batch request's headers, not per-item.
@@ -1153,7 +1058,7 @@ export async function syncBatch(params: {
   }));
 }
 
-// --- Shifts & swap requests (§6 "Shifts" — M8/M9, Phase 4.4) ---
+// --- Shifts & swap requests ---
 
 export interface ShiftEntry {
   shiftId: number;
@@ -1161,21 +1066,20 @@ export interface ShiftEntry {
   startAt: string;
   endAt: string;
   version: number;
-  /** Contract §3: a Tanod only ever receives `published` rows; null from a server that predates the field. */
+  /** A Tanod only ever receives `published` rows; null from a server that predates the field. */
   approvalStatus: 'draft' | 'published' | null;
   /**
-   * Wave 1-A (legacy): before 2026-10-12 an approved swap on a published shift sent it back to `draft`
-   * with this flag set — the server shows such a row to its owner only, as "awaiting re-publish". It is
-   * NOT confirmed duty: UI must badge it and keep it out of next-duty/hours logic. An approved swap now
-   * keeps the shift published, so only rows flagged before that change carry it. `false` from a server
-   * that predates the field.
+   * Legacy: a published shift that an approved swap once sent back to `draft` carries this flag, and
+   * the server shows it to its owner only, as "awaiting re-publish". It is NOT confirmed duty: UI
+   * must badge it and keep it out of next-duty/hours logic. `false` from a server that predates
+   * the field.
    */
   pendingReapproval: boolean;
 }
 
 /**
- * GET /shifts — §6: a tanod caller is forced server-side to their own rows, so this is already "my shifts", no ?user_id=me needed.
- * Contract §3: the server also hides `draft` shifts from a Tanod; the client filter below is a second line
+ * GET /shifts — a tanod caller is forced server-side to their own rows, so this is already "my shifts".
+ * The server also hides `draft` shifts from a Tanod; the client filter below is a second line
  * of defence so a draft can never be displayed as a real duty, not a security boundary.
  */
 export async function getMyShifts(): Promise<ShiftEntry[]> {
@@ -1206,7 +1110,7 @@ export async function getMyShifts(): Promise<ShiftEntry[]> {
     .filter((shift) => shift.approvalStatus !== 'draft' || shift.pendingReapproval);
 }
 
-// --- Tanod workflow (contract docs/FEATURE_CONTRACT_2026-10.md §3-§7) --------
+// --- Tanod workflow ----------------------------------------------------
 
 export interface SchoolEntry {
   schoolId: number;
@@ -1244,7 +1148,7 @@ function listItems<T>(json: unknown): T[] {
 }
 
 /**
- * GET /schools — every role incl. tanod, own barangay (contract §7). Staff
+ * GET /schools — every role incl. tanod, own barangay. Staff
  * contact fields (`focal_person`/`focal_contact`) and remarks are deliberately
  * NOT mapped: the mobile cache has no use for them. `?active=` is not sent —
  * the caller filters on `isActive` itself, so a server default can't hide an
@@ -1301,7 +1205,7 @@ function parseWindows(row: RawAvailability): AvailabilityWindow[] {
   return [];
 }
 
-/** GET /availability — a tanod caller sees their own rows only (contract §3). */
+/** GET /availability — a tanod caller sees their own rows only. */
 export async function getMyAvailability(): Promise<AvailabilityEntry[]> {
   const json = await request<unknown>('/availability?limit=100');
   return listItems<RawAvailability>(json).map((row) => ({
@@ -1316,7 +1220,7 @@ export async function getMyAvailability(): Promise<AvailabilityEntry[]> {
   }));
 }
 
-/** Contract §4 `accomplishment_report.status`. */
+/** accomplishment_report.status. */
 export type AccomplishmentReportStatus = 'open' | 'prepared' | 'returned';
 
 /** Reports are printed and signed on paper; older cached/server values 'noted'/'approved' mean 'prepared'. */
@@ -1363,7 +1267,7 @@ function mapReport(row: RawReport): AccomplishmentReportSummary {
   };
 }
 
-/** GET /accomplishment-reports?month= — a tanod caller sees their own reports only (contract §4). */
+/** GET /accomplishment-reports?month= — a tanod caller sees their own reports only. */
 export async function getMyAccomplishmentReports(month?: string): Promise<AccomplishmentReportSummary[]> {
   const query = month ? `?month=${encodeURIComponent(month)}&limit=100` : '?limit=100';
   const json = await request<unknown>(`/accomplishment-reports${query}`);
@@ -1378,9 +1282,8 @@ export interface AccomplishmentEntryServerView {
 }
 
 /**
- * GET /accomplishment-reports/:id — only the per-entry duration fields are
- * mapped (the entry text is returned to approvers only, per contract §4; the
- * Tanod's own text stays in `accomplishment_entry_local`).
+ * GET /accomplishment-reports/:id — only the per-entry duration fields are mapped (the entry
+ * text is returned to approvers only; the Tanod's own text stays in `accomplishment_entry_local`).
  */
 export async function getAccomplishmentReport(
   reportId: number
@@ -1398,7 +1301,7 @@ export async function getAccomplishmentReport(
 }
 
 /**
- * POST /accomplishment-reports/:id/submit — ONLINE-ONLY by contract §4 (not a
+ * POST /accomplishment-reports/:id/submit — ONLINE-ONLY (not a
  * sync kind): there is deliberately no offline queue behind this. A second
  * submit after success is an illegal transition (409), which the caller turns
  * into a refresh rather than an error.
@@ -1419,8 +1322,7 @@ export async function submitAccomplishmentReport(reportId: number, idempotencyKe
 
 /**
  * PATCH /accomplishment-entries/:id — tanod own, only while the report is
- * open/returned (contract §4). The contract does not spell out the PATCH body;
- * this sends only the editable subset of the POST body's fields. Online only —
+ * open/returned. Sends only the editable subset of the POST body's fields. Online only —
  * an entry that has not synced yet is edited locally instead
  * (`accomplishmentRepository.updateUnsyncedEntry`). The server requires
  * `start_time`/`end_time` together or not at all, so a lopsided pair is
@@ -1443,7 +1345,7 @@ export async function updateAccomplishmentEntry(
   await request<unknown>(path, { method: 'PATCH', headers, body: fields });
 }
 
-/** §5 shift_swap_request.status enum. */
+/** shift_swap_request.status enum. */
 export type ShiftSwapStatus = 'pending' | 'approved' | 'denied';
 
 export interface ShiftSwapRequestEntry {
@@ -1479,20 +1381,16 @@ function mapSwapRequest(json: {
   };
 }
 
-/** GET /shift-swap-requests — a tanod caller sees only requests THEY raised (§6, mirrors GET /shifts' own scoping). */
+/** GET /shift-swap-requests — a tanod caller sees only requests THEY raised (mirrors GET /shifts' own scoping). */
 export async function getMyShiftSwapRequests(): Promise<ShiftSwapRequestEntry[]> {
   const json = await request<{ items: Parameters<typeof mapSwapRequest>[0][] }>('/shift-swap-requests?limit=100');
   return json.items.map(mapSwapRequest);
 }
 
 /**
- * POST /shift-swap-requests. No `target_user_id` here on purpose: picking
- * a specific substitute needs `GET /users` to know who else is a tanod in
- * this barangay, and that endpoint is Admin-only (§7) — a Tanod has no
- * API to safely populate that picker from, so this raises an
- * un-targeted request (the desk/Admin assigns a substitute when
- * reviewing it) rather than asking for a raw numeric user id nobody would
- * actually know.
+ * POST /shift-swap-requests. No `target_user_id` on purpose: picking a specific substitute
+ * needs `GET /users`, which is Admin-only, so this raises an un-targeted request (the desk/Admin
+ * assigns a substitute when reviewing it).
  */
 export async function requestShiftSwap(shiftId: number, reason: string | undefined, clientRequestId: string): Promise<ShiftSwapRequestEntry> {
   const json = await request<Parameters<typeof mapSwapRequest>[0]>('/shift-swap-requests', {
@@ -1513,7 +1411,7 @@ export async function cancelShiftSwapRequest(requestId: number): Promise<{ succe
   return { success: json.success, requestId: json.request_id };
 }
 
-// --- Dispatch offers (Wave 2: night dispatch broadcast; ONLINE-ONLY) -------------
+// --- Dispatch offers (night dispatch broadcast; ONLINE-ONLY) ---------
 //
 // An offer is a broadcast "who can take this call" to on-duty tanods holding a
 // published shift (or, when none qualifies, to every eligible on-duty tanod whose own declared
@@ -1592,13 +1490,11 @@ export async function acceptDispatchOffer(
   return { dispatchId: json.dispatch_id, status: json.status, incidentId: json.incident_id };
 }
 
-// --- Notifications (§6 "Notification acknowledgment", M12) -----------------
+// --- Notifications ---------------------------------------------------
 
 /**
- * POST /notifications/:id/ack. §6: "Tanod only for a target notification
- * assigned to that user ... idempotent for an already-acknowledged
- * target." M12's overlay calls this on Acknowledge; a second tap (or a
- * retry after a flaky connection) is safe.
+ * POST /notifications/:id/ack. Tanod only, for a target notification assigned to that user;
+ * idempotent for an already-acknowledged target, so a second tap or a retry is safe.
  */
 export async function acknowledgeNotification(notificationId: number): Promise<{ acknowledgedAt: string }> {
   const json = await request<{ success: boolean; notification_id: number; acknowledged_at: string }>(
@@ -1614,14 +1510,9 @@ export async function acknowledgeNotification(notificationId: number): Promise<{
  */
 export async function checkHealth(): Promise<boolean> {
   try {
-    // `/health` was never a real route (this call 404'd silently — no
-    // endpoint by that name exists anywhere in backend/routes/). `/barangays`
-    // is the one genuinely public, no-auth, always-cheap GET in this API
-    // (built for W19's pre-login picker — see BarangaysController's own
-    // doc), which is exactly what a reachability probe needs: it works
-    // identically before and after login, unlike an authenticated route
-    // that would also fail on a merely-expired session and be
-    // misread as "workstation unreachable".
+    // `/barangays` is the one public, no-auth, cheap GET in this API, so it works identically
+    // before and after login, unlike an authenticated route that would also fail on a
+    // merely-expired session and be misread as "workstation unreachable".
     const res = await fetch(`${API_BASE_URL}/barangays`, { method: 'GET', signal: timeoutSignal(3000) });
     return res.ok;
   } catch {
@@ -1630,7 +1521,7 @@ export async function checkHealth(): Promise<boolean> {
 }
 
 
-// --- Chief Tanod (Admin) console — decision 15C, stage 1 -------------------
+// --- Chief Tanod (Admin) console ------------------------------------------
 //
 // An Admin may sign into this app (a scope-limited DEVICE session — see
 // backend SessionPolicy::ADMIN_DEVICE_ALLOWLIST). Everything below is
@@ -1652,7 +1543,7 @@ async function adminWriteHeaders(method: string, routePath: string, idempotencyK
 /**
  * POST /incidents — the Chief Tanod logs a phone report. Signed write with the
  * row's idempotency key, so a resend after a dropped reply returns the same
- * incident. The reply carries no narrative (Rule 1).
+ * incident. The reply carries no narrative.
  */
 export async function createAdminIncident(
   payload: {
@@ -1759,8 +1650,8 @@ export async function acknowledgeSos(sosId: number, idempotencyKey: string): Pro
 }
 
 /**
- * PATCH /tanod-sos/:id/resolve — Chief Tanod phone (gap #6, 2026-10-12): an
- * active or acknowledged SOS can be closed from the Admin device session.
+ * PATCH /tanod-sos/:id/resolve — an active or acknowledged SOS can be closed from the Admin
+ * device session.
  * Signed write, same headers as acknowledge. Online-only; never queued. A
  * repeat on an already-resolved SOS is a 409 CONFLICT (the caller treats it
  * as "already closed", e.g. after a dropped reply or the desk got there first).
@@ -1854,7 +1745,7 @@ function strOrNull(v: unknown): string | null {
   return typeof v === 'string' ? v : null;
 }
 
-/** GET /incidents/:id — read-only view. The mapper never reads `raw_narrative` (Rule 1; the server withholds it from Admin anyway). */
+/** GET /incidents/:id — read-only view. The mapper never reads `raw_narrative` (the server withholds it from the Admin device session). */
 export async function getAdminIncident(incidentId: number): Promise<AdminIncidentDetail> {
   const j = await request<Record<string, unknown> & { dispatches?: Array<Record<string, unknown>> }>(`/incidents/${incidentId}`);
   return {

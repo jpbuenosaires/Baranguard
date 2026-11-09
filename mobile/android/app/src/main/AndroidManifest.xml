@@ -37,7 +37,7 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
 
-        <!-- Mobile Improvement Plan Phase 4.1: background patrol GPS. A
+        <!-- Background patrol GPS. A
              location-type foreground service on API 34+ (this app targets
              36) MUST declare its type here, matching the manifest
              permission below — the OS refuses to start it otherwise. -->
@@ -47,7 +47,7 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
-        <!-- Mobile Improvement Plan Phase 4.2: full-screen critical alert.
+        <!-- Full-screen critical alert.
              CriticalAlertActivity shows OVER the lock screen — noHistory
              so it never lingers in the recent-apps stack once dismissed,
              excludeFromRecents so it never appears there at all (it is an
@@ -86,15 +86,14 @@
          via Android's FusedLocationProviderClient, which requires one of
          these declared here (same "plugin's own AAR manifest doesn't
          declare it" situation as CAMERA/RECORD_AUDIO/POST_NOTIFICATIONS
-         below) — missing until now, which silently broke every caller:
-         SOS (home.tsx requires a GPS fix before it will transmit),
-         "Use Current Location" on Log Incident, and GPS-track broadcast.
+         below); without them SOS, "Use Current Location" on Log Incident
+         and GPS-track broadcast all silently fail.
          COARSE is requested alongside FINE because some OEM WebViews only
          grant FINE if COARSE is also declared. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-    <!-- C7 research finding, 2026-09-24 (docs/REMAINING.md): declaring
+    <!-- Declaring
          `foregroundServiceType="location"` on PatrolLocationService is
          necessary but NOT sufficient on its own — Android's own docs are
          explicit that a location-type foreground service only keeps
@@ -103,10 +102,8 @@
          ACCESS_BACKGROUND_LOCATION; without it, `FusedLocationProviderClient`
          callbacks are subject to background-location throttling (docs
          say "a few times per hour" — a 35-minute locked-screen run
-         producing exactly zero fixes, as observed 2026-09-23, is
-         consistent with that, not with a crash or a Doze/battery-
-         optimization issue, which was separately ruled out the same
-         session). Requested via a SEPARATE runtime dialog, never in the
+         producing zero fixes is consistent with that, not with a crash
+         or a Doze/battery-optimization issue). Requested via a SEPARATE runtime dialog, never in the
          same request as FINE/COARSE — Android silently grants NEITHER
          permission if both are requested together (Google's own
          documented behavior since Android 11). -->
@@ -115,18 +112,18 @@
     <!-- @capacitor/camera's own CameraPlugin.kt declares a CAMERA permission
          alias it requests at runtime; neither plugin's own AAR manifest
          declares these, so the app manifest must (confirmed by reading
-         each plugin's Java/Kotlin source, not assumed) — Android refuses
+         each plugin's Java/Kotlin source) — Android refuses
          to grant a runtime permission that was never declared here. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- capacitor-voice-recorder's VoiceRecorder.java requests exactly
          this permission via its own @Permission annotation. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Android 13+ (API 33) requires this to show any notification,
-         including the M12 SOS/critical-alert push — @capacitor/push-notifications
+         including the SOS/critical-alert push — @capacitor/push-notifications
          does not declare it in its own AAR manifest either. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- G1's third SOS fallback tier (Mobile Improvement Plan Phase 4.3):
+    <!-- Third SOS fallback tier:
          SosSmsPlugin.java sends a native SMS directly via SmsManager (own
          SIM, no gateway) ONLY when both the direct app POST and the
          workstation itself are confirmed unreachable — a total-outage
@@ -137,10 +134,10 @@
          permission. -->
     <uses-permission android:name="android.permission.SEND_SMS" />
 
-    <!-- Mobile Improvement Plan Phase 4.1: PatrolLocationService keeps
+    <!-- PatrolLocationService keeps
          broadcasting GPS while on duty even with the app backgrounded or
-         the screen locked — a plain JS setInterval/watchPosition (M7 Live
-         Map's own, foreground-only by its own explicit design) stops the
+         the screen locked — a plain JS setInterval/watchPosition (the Live
+         Map's own, foreground-only by design) stops the
          moment the WebView isn't the front app. FOREGROUND_SERVICE_LOCATION
          is the API 34+ companion permission the "location" foreground
          service type above requires; without it the OS throws a
@@ -148,7 +145,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
-    <!-- C7 (docs/REMAINING.md): a locked-screen patrol shift is exactly what
+    <!-- A locked-screen patrol shift is exactly what
          Doze/App Standby targets even for a running foreground service on
          some OEM battery managers. This permission only lets the app SHOW
          the OS's own "ignore battery optimizations" system dialog
@@ -158,7 +155,7 @@
          else patrol tracking does. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <!-- Mobile Improvement Plan Phase 4.2: lets CriticalAlertNotifier's
+    <!-- Lets CriticalAlertNotifier's
          notification launch CriticalAlertActivity immediately (waking a
          locked screen) instead of the OS silently downgrading it to an
          ordinary heads-up notification. Android 14+ (API 34) further
@@ -168,6 +165,6 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <!-- Not required: this app never refuses to install on a device
-         without a camera, since M3 works with narrative-only capture. -->
+         without a camera, since incident capture works narrative-only. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>

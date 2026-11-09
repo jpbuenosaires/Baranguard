@@ -12,109 +12,76 @@ use Baranguard\Services\Sms\DeviceSecretVault;
 use PDO;
 
 /**
- * Device lifecycle — Master Reference §6 "Users & device lifecycle",
- * §5 `mobile_device`, §2 Rule 17 (device changes are auditable).
- *
- * Built for Sprint 2's M1 Login box, which cannot work without it: the
+ * Device lifecycle (`mobile_device`); device changes are auditable. The
  * mobile app registers its device immediately after authenticating.
  *
- * §6 fixes both endpoints exactly:
- *   - `POST /devices/register` — tanod only; body
- *     `{device_id,fcm_token,platform:"android",app_version?}` →
- *     `{device_id,registered:true}`. "Device ownership is validated.
- *     Previous active device registrations for that Tanod are deactivated
- *     transactionally. Returns no FCM token."
- *   - `PATCH /devices/:id/deactivate` — tanod own device only →
- *     `{success:true}`. "Deactivates only the target device after
- *     ownership check."
+ *   - `POST /devices/register` — tanod (and admin, for the Chief Tanod's
+ *     phone); body `{device_id,fcm_token?,platform:"android",app_version?}` →
+ *     `{device_id,registered:true}`. Device ownership is validated. Previous
+ *     active device registrations for that user are deactivated
+ *     transactionally. Returns no FCM token.
+ *   - `PATCH /devices/:id/deactivate` — own device only → `{success:true}`.
+ *     Deactivates only the target device after the ownership check.
  *
- * Resolved decisions (logged in DEVLOG.md — §6 states the contract but
- * not these specifics):
- *   - **Re-registering the SAME device_id by its OWN owner is an update,
- *     not an error.** This is the ordinary FCM-token-refresh path (tokens
- *     rotate); treating it as a conflict would strand a Tanod whose token
- *     rotated. It refreshes fcm_token/app_version/last_seen_at and
- *     re-activates the row.
- *   - **A device_id already owned by a DIFFERENT user is rejected 409**,
- *     never silently reassigned — that is exactly the "device ownership is
- *     validated" clause, and silently moving a device row between Tanods
- *     would break the §2 Rule 13 guarantee that inbound SMS sender
- *     identity is derived server-side from the device→user mapping.
- *   - **`deactivate` is idempotent** (already-inactive still returns
- *     `{success:true}`), same reasoning as logout's documented
- *     "the server ignores a second logout safely".
- *   - **Unknown device, or a device owned by someone else, both return
- *     404** rather than 403 — a distinct 403 would confirm that a
- *     guessed device_id exists and belongs to another Tanod.
- *   - **`fcm_token` is never echoed back** in any response, and never
- *     written to audit metadata (§6 "Returns no FCM token"; Rule 17
- *     allows identifiers/statuses only).
- *   - **`device_public_key_pem` (optional, code-review finding H-09,
- *     2026-09-24) — a hardware-backed device identity, phased in.** If the
- *     body includes it, it is validated (`DeviceSignature::
- *     isValidPublicKeyPem()`) and stored; `Baranguard\Lib\DeviceSignature`
- *     then verifies a per-request signature on evidence upload / GPS / SOS
- *     / Tanod dispatch-status-update for any device that has one on file.
- *     Omitting it is not an error — see `DeviceSignature`'s own doc for why
- *     this is a phased rollout, not a hard requirement, on an app that
- *     already has devices registered without a keypair.
- *   - **`fcm_token` is OPTIONAL, not required — explicit decision,
- *     2026-09-13.** §6's literal body shape names it, but this deployment
- *     has no real Firebase project (REMAINING.md A4) and never has, so
- *     `getFcmToken()` on the mobile side always resolves `null`. Requiring
- *     it here meant a Tanod's device NEVER actually registered, on any
- *     build, ever — `mobile_device` had no row for it at all, which only
- *     surfaced as `POST /sync/batch`'s "Device is not registered" 422 once
- *     something (the Mobile Improvement Plan's sync scheduler) finally
- *     called that endpoint automatically instead of only on a manual tap.
- *     Push being unconfigured must be as neutral as Ollama or the SMS
- *     gateway being unconfigured elsewhere in this codebase (§2 Rule 6) —
- *     it must never silently block a device from registering at all. A
- *     missing/empty token is stored as `''`, reusing the EXACT convention
- *     `RetentionService::scrubDeactivatedDevices()` already established
- *     for "no token" (that method's own doc explains why the column
- *     stays `NOT NULL` rather than being widened) — `NotificationDispatcher`
- *     already treats an empty `fcm_token` as "no active registration" and
- *     falls through to SMS (Rule 12), so this needed no new dispatcher
- *     logic, only reusing what already existed. A later re-registration
- *     never overwrites a REAL stored token with an empty one — see the
- *     `ON DUPLICATE KEY UPDATE` clause below.
+ *   - Re-registering the SAME device_id by its OWN owner is an update, not an
+ *     error: this is the ordinary FCM-token-refresh path (tokens rotate). It
+ *     refreshes fcm_token/app_version/last_seen_at and re-activates the row.
+ *   - A device_id already owned by a DIFFERENT user is rejected 409, never
+ *     silently reassigned: moving a device row between users would break the
+ *     guarantee that inbound SMS sender identity is derived server-side from
+ *     the device→user mapping.
+ *   - `deactivate` is idempotent (already-inactive still returns
+ *     `{success:true}`).
+ *   - Unknown device, or a device owned by someone else, both return 404
+ *     rather than 403: a distinct 403 would confirm that a guessed device_id
+ *     exists and belongs to another user.
+ *   - `fcm_token` is never echoed back in any response, and never written to
+ *     audit metadata.
+ *   - `device_public_key_pem` (optional) is a hardware-backed device
+ *     identity. If the body includes it, it is validated
+ *     (`DeviceSignature::isValidPublicKeyPem()`) and stored;
+ *     `Baranguard\Lib\DeviceSignature` then verifies a per-request signature
+ *     on evidence upload / GPS / SOS / Tanod dispatch-status-update for any
+ *     device that has one on file. Omitting it is not an error (see
+ *     `DeviceSignature`'s own doc).
+ *   - `fcm_token` is OPTIONAL: with no real Firebase project the mobile side
+ *     resolves a null token, and requiring it would stop a device from ever
+ *     registering (and every `POST /sync/batch` would then fail with "Device
+ *     is not registered"). Push being unconfigured must be neutral. A
+ *     missing/empty token is stored as `''` (the same convention as
+ *     `RetentionService::scrubDeactivatedDevices()`, so the column stays
+ *     `NOT NULL`); `NotificationDispatcher` treats an empty `fcm_token` as
+ *     "no active registration" and falls through to SMS. A later
+ *     re-registration never overwrites a REAL stored token with an empty one
+ *     (see the `ON DUPLICATE KEY UPDATE` clause below).
  *
- * Sprint 4 addition — SMS envelope key provisioning (§6 "Internal SMS /
- * GSM", §2 Rule 26): §6 documents no separate key-provisioning endpoint,
- * and neither does its literal response shape for this one
- * (`{device_id,registered:true}`), but the encrypted SMS envelope those
- * internal handlers require is symmetric crypto — the device and server
- * must share a raw key, and there is no other endpoint in this codebase
- * where that key could be handed to the device. Resolved (logged, not
- * silently invented): `register()` generates a 32-byte per-device secret
- * ON THE DEVICE_ID'S FIRST-EVER REGISTRATION ONLY, stores it encrypted at
- * rest (`DeviceSecretVault`, under `DEVICE_SECRET_MASTER_KEY`), and
- * returns the RAW key ONCE in that same response as
- * `message_encryption_key` (base64). A later re-registration of the SAME
- * device_id (the ordinary FCM-token-refresh path above) never regenerates
- * or re-returns it — same "provisioned once, never re-exposed" precedent
- * as this endpoint already sets for `fcm_token`. If `DEVICE_SECRET_MASTER_KEY`
- * is unset, this is skipped entirely (device_secret_ref stays NULL,
- * `message_encryption_key` is omitted) — an honest "SMS envelope crypto
- * isn't configured on this deployment" state, not a broken one; every
- * `/internal/sms/*` inbound handler already treats a NULL
+ * SMS envelope key provisioning: the encrypted SMS envelope the internal SMS
+ * handlers require is symmetric crypto, so the device and server must share
+ * a raw key, and this is the only endpoint where it can be handed over.
+ * `register()` generates a 32-byte per-device secret ON THE DEVICE_ID'S
+ * FIRST-EVER REGISTRATION ONLY, stores it encrypted at rest
+ * (`DeviceSecretVault`, under `DEVICE_SECRET_MASTER_KEY`), and returns the
+ * RAW key ONCE in that same response as `message_encryption_key` (base64). A
+ * later re-registration of the SAME device_id never regenerates or
+ * re-returns it. If `DEVICE_SECRET_MASTER_KEY` is unset this is skipped
+ * entirely (device_secret_ref stays NULL, `message_encryption_key` is
+ * omitted); every `/internal/sms/*` inbound handler treats a NULL
  * `device_secret_ref` as "reject this envelope", so nothing downstream
- * silently trusts an unprovisioned device.
+ * trusts an unprovisioned device.
  */
 final class DevicesController
 {
-    /** §5 `mobile_device.device_id` is VARCHAR(64); this also bounds the route pattern. */
+    /** `mobile_device.device_id` is VARCHAR(64); this also bounds the route pattern. */
     private const DEVICE_ID_PATTERN = '/^[A-Za-z0-9._:-]{8,64}$/';
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function register(PDO $pdo, array $identity): void
     {
-        // 2026-10-07 (decision 15C): admin may register a device too — the
-        // Chief Tanod's phone — so NotificationService::addTarget()'s
-        // "active device of this user" lookup (role-blind) finds a push
-        // destination for SOS/dispatch alerts. Same ownership, key and
-        // single-active-device rules as a Tanod.
+        // Admin may register a device too (the Chief Tanod's phone) so
+        // NotificationService::addTarget()'s "active device of this user"
+        // lookup (role-blind) finds a push destination for SOS/dispatch
+        // alerts. Same ownership, key and single-active-device rules as a
+        // Tanod.
         AuthMiddleware::requireRole($identity, ['tanod', 'admin']);
 
         $body = Http::jsonBody();
@@ -127,16 +94,16 @@ final class DevicesController
         if (!is_string($deviceId) || !preg_match(self::DEVICE_ID_PATTERN, $deviceId)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'device_id must be 8-64 characters of A-Z a-z 0-9 . _ : or -.');
         }
-        // Optional (see class doc, 2026-09-13) — null/missing/empty all mean
-        // "no push registration on this device", stored as ''. Anything
-        // else must still be a real string, not some other JSON type.
+        // Optional (see class doc): null/missing/empty all mean "no push
+        // registration on this device", stored as ''. Anything else must
+        // still be a real string, not some other JSON type.
         if ($fcmToken !== null && !is_string($fcmToken)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'fcm_token must be a string.');
         }
         $fcmToken = is_string($fcmToken) ? trim($fcmToken) : '';
-        // §5 `mobile_device.platform` is ENUM('android') — the only value
-        // the schema accepts, so anything else is a validation error here
-        // rather than a database error later.
+        // `mobile_device.platform` is ENUM('android'), the only value the
+        // schema accepts, so anything else is a validation error here rather
+        // than a database error later.
         if ($platform !== 'android') {
             throw new ApiError(400, 'VALIDATION_ERROR', "platform must be 'android'.");
         }
@@ -172,13 +139,11 @@ final class DevicesController
 
         $pdo->beginTransaction();
         try {
-            // §6: "Previous active device registrations for that Tanod are
-            // deactivated transactionally." Scoped to this user's OTHER
-            // devices so a token refresh on the current device doesn't
-            // deactivate the row we are about to write.
-            // `deactivated_at` (migration 0007) starts §11's 90-day
-            // device-retention clock. Without it the retention job has
-            // nothing to count from and a retired handset's
+            // Previous active device registrations for that user are
+            // deactivated transactionally. Scoped to this user's OTHER devices
+            // so a token refresh on the current device doesn't deactivate the
+            // row we are about to write. `deactivated_at` starts the 90-day
+            // device-retention clock; without it a retired handset's
             // `device_secret_ref` would sit in the table indefinitely.
             $deactivateStmt = $pdo->prepare(
                 'UPDATE mobile_device SET is_active = 0, deactivated_at = UTC_TIMESTAMP()
@@ -246,10 +211,9 @@ final class DevicesController
 
         $response = ['device_id' => $deviceId, 'registered' => true];
         if ($needsSecretProvisioning && $rawMessageEncryptionKey !== null) {
-            // Never logged, never re-returned on any later call — see the
-            // class doc. base64, not hex: this rides in a JSON response
-            // body next to other string fields, and base64 is ~25%
-            // shorter for the same 32 raw bytes.
+            // Never logged, never re-returned on any later call (see the
+            // class doc). base64, not hex: it rides in a JSON response body
+            // and is ~25% shorter for the same 32 raw bytes.
             $response['message_encryption_key'] = base64_encode($rawMessageEncryptionKey);
         }
         Http::send(200, $response);
@@ -275,8 +239,8 @@ final class DevicesController
 
         $wasActive = (int) $device['is_active'] === 1;
         if ($wasActive) {
-            // See register()'s own note: `deactivated_at` starts §11's
-            // 90-day retention clock for this device and its secret.
+            // See register()'s own note: `deactivated_at` starts the 90-day
+            // retention clock for this device and its secret.
             $pdo->prepare('UPDATE mobile_device SET is_active = 0, deactivated_at = UTC_TIMESTAMP() WHERE device_id = :device_id')
                 ->execute(['device_id' => $deviceId]);
 

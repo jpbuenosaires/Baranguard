@@ -2,7 +2,7 @@
  * manilaTime.ts — Asia/Manila calendar helpers for the tanod workflow screens
  * (availability, accomplishments, school check-in).
  *
- * REFERENCE.md §2 Rule 11: timestamps are stored UTC, but operational dates
+ * Timestamps are stored UTC, but operational dates
  * ("which day did I work", "today", "this period") are Manila dates, and the
  * server buckets them at a fixed +08:00. A Tanod's phone is nearly always
  * already on Manila time, but a device with a travelling/wrong timezone must

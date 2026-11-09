@@ -11,52 +11,31 @@ use Baranguard\Services\Routing\OrsClient;
 use PDO;
 
 /**
- * GET /system/health — Master Reference §6 "System health" section, §9 W20
- * Service Health / Recovery. Implemented this session (2026-09-02
- * architecture review) — W20's screen isn't built yet, but the topbar's
- * status badge needed a real endpoint instead of the hardcoded
- * "All Systems Operational" §8 already forbids.
+ * GET /system/health — Service Health / Recovery, and the source of the
+ * topbar's status badge.
  *
- * Every dependency this deployment hasn't wired up yet (GSM ingestion/
- * notification transports — all later sprints) honestly reports
- * `not_configured`, not `healthy` — a truthful "not built yet" is not a
+ * Every dependency this deployment hasn't wired up honestly reports
+ * `not_configured`, not `healthy`: a truthful "not configured" is not a
  * demo/prototype tell, a fabricated green badge is. `not_configured` is
  * detected from the actual absence of that dependency's env var, not a
  * hardcoded false.
  *
- * `ollama` and `ors` are both UPGRADED from that env-var-
- * presence check to a real live probe (Ollama in Sprint 5; routing when
- * turn-by-turn was built — docs/REMAINING.md §C4). §6's three states map
- * onto both as:
- *   - `not_configured` — OLLAMA_URL/OLLAMA_MODEL (or ORS_API_KEY)
- *     unset; this deployment has no AI (or routing) wired up at all.
- *   - `unhealthy` — configured but the check failed. For Ollama that
- *     covers BOTH "the service didn't answer" AND "the service answered
- *     but the configured model isn't pulled" — the latter is genuinely
- *     unhealthy rather than healthy, because every AI job on that
- *     workstation will fail until someone runs `ollama pull`. Reporting
- *     green there would be precisely the fabricated badge §8 forbids.
- *   - `healthy` — service answered (and, for Ollama, the configured
- *     model is present).
+ * `ors` (routing) is a real live probe. The three states map as:
+ *   - `not_configured` — ORS_API_KEY unset.
+ *   - `unhealthy` — configured but the check failed.
+ *   - `healthy` — the service answered.
  *
- * `ors` is a REAL DEPARTURE from every other dependency here: it is the
- * one cloud call in this stack (OpenRouteService, HeiGIT/Heidelberg
- * University — chosen over Google's Routes API specifically because
- * Google requires a billing account with a card on file even to stay in
- * the free tier, which this deployment doesn't have), not a self-hosted
- * process — see OrsClient's own doc block for why, and for what that
- * trade actually costs (live Tanod/incident coordinates leave the
- * system on every route request). `osrm_status` (migration 0017) is no
- * longer read from any env var — this deployment never wires up OSRM —
- * and is written as a fixed `not_configured` literal purely so the
- * already-applied migration's NOT NULL column stays satisfied; it is
- * deliberately NOT exposed in this endpoint's response any more (see
- * `ors` instead).
+ * `ors` is the one cloud call in this stack (OpenRouteService, HeiGIT/
+ * Heidelberg University — chosen over Google's Routes API because Google
+ * requires a billing account with a card on file even for the free tier),
+ * not a self-hosted process: live Tanod/incident coordinates leave the
+ * system on every route request (see OrsClient's own doc). `osrm_status`
+ * is written as a fixed `not_configured` literal purely so its NOT NULL
+ * column stays satisfied; it is not exposed in this endpoint's response.
  *
- * The probes use each client's short ping timeout, not a
- * generation/route timeout: this runs inside an Admin's web request, so
- * a stalled service must not hang the health page for seconds longer
- * than necessary.
+ * The probes use each client's short ping timeout, not a route timeout:
+ * this runs inside an Admin's web request, so a stalled service must not
+ * hang the health page for seconds longer than necessary.
  */
 final class SystemHealthController
 {
@@ -78,15 +57,11 @@ final class SystemHealthController
         }
 
         $fcmStatus = self::fcmStatus();
-        // 2026-09-23: Semaphore removed, replaced by the local GSM
-        // gateway (`LocalGsmOutboundClient`) — 'healthy' means the
-        // deployment has explicitly opted in (GSM_GATEWAY_ENABLED=true),
-        // not merely that SOME value is set, since 'false' is itself a
-        // meaningful, valid value here (unlike an API key, where any
-        // non-empty string was a real key). Same fcm/sms "presence, not a
-        // live probe" pattern as before — see this class's own doc block.
-        // F-05 (2026-10-09): nothing records a gateway heartbeat, so a flag is
-        // only 'configured' (neutral), never 'healthy' (Rule 6).
+        // 'healthy' means the deployment has explicitly opted in
+        // (GSM_GATEWAY_ENABLED=true), not merely that SOME value is set, since
+        // 'false' is itself a meaningful, valid value here. Presence, not a
+        // live probe. Nothing records a gateway heartbeat, so a flag is only
+        // 'configured' (neutral), never 'healthy'.
         $smsStatus = self::gatewayStatus();
         $orsStatus = self::orsStatus();
         $gsmStatus = self::ingestStatus();
@@ -107,56 +82,42 @@ final class SystemHealthController
             'api' => 'healthy', // this code is executing, so the API itself responded.
             'db' => $db,
             'ors' => $orsStatus,
-            // §2 Rule 22's "internal ingestion service" isn't a process
-            // this endpoint can reach out and ping — INTERNAL_SERVICE_TOKEN
-            // being set is the honest signal actually available here: it's
-            // what the /internal/sms/* router itself requires before it
-            // will accept anything (see public/internal.php).
+            // The internal ingestion service isn't a process this endpoint
+            // can reach out and ping; INTERNAL_SERVICE_TOKEN being set is the
+            // honest signal actually available here: it's what the
+            // /internal/sms/* router itself requires before it will accept
+            // anything (see public/internal.php).
             'gsm_ingestion' => $gsmStatus,
-            // Fine-grained per-transport status (Sprint 4). `fcm` and
-            // `sms_gsm_gateway` are each independently truthful about
-            // configuration presence — NEITHER is a live reachability
-            // probe the way `ollama` is: there is no cheap, side-effect-free
-            // way to "ping" FCM/the gateway phone without actually sending
-            // something, so both stay at the coarser not_configured/healthy
-            // distinction that `ollama` itself used before Sprint 5's
-            // upgrade to a real probe. Same honest-not-fabricated principle,
-            // just without a free probe to make it more precise.
-            // RENAMED 2026-09-23 (was `sms_semaphore`) when Semaphore was
-            // replaced by the local GSM gateway — a real rename, not
-            // additive, since calling this "semaphore" would now be false.
-            // Every consumer (web/src/pages/service-health.js,
-            // web/tests/harness/fixtures.mjs) was updated in the same pass.
+            // Fine-grained per-transport status. `fcm` and `sms_gsm_gateway`
+            // are each independently truthful about configuration presence;
+            // neither is a live reachability probe (there is no cheap,
+            // side-effect-free way to "ping" FCM/the gateway phone without
+            // actually sending something), so both stay at the coarser
+            // not_configured/healthy distinction.
             'fcm' => $fcmStatus,
             'sms_gsm_gateway' => $smsStatus,
             // Kept for the existing web topbar tooltip (AppShell.js) —
             // additive, not a breaking rename.
             'notification_config' => self::notificationConfigStatus($fcmStatus, $smsStatus),
             'backup_last_success' => self::latestBackupTimestamp(),
-            // Sprint 7's backup/restore-drill box closed the gap this
-            // field used to document: `scripts/restore-drill.sh` now
-            // records a completed, VERIFIED drill (it compares per-table
-            // row counts and FK counts against the live database, and
-            // deliberately does NOT write the marker when the comparison
-            // fails). Still null until one has actually run — an honest
+            // `scripts/restore-drill.sh` records a completed, VERIFIED drill (it
+            // compares per-table row counts and FK counts against the live
+            // database, and deliberately does NOT write the marker when the
+            // comparison fails). Null until one has actually run: an honest
             // "never", never a fabricated recent timestamp.
             'restore_test_at' => self::lastRestoreDrillTimestamp(),
-            // H-20: a real count, never fabricated — 0 is the honest
-            // answer when nothing has failed, not a hidden/omitted field.
+            // A real count, never fabricated: 0 is the honest answer when
+            // nothing has failed, not a hidden/omitted field.
             'notification_delivery_failures_24h' => self::notificationDeliveryFailures24h($pdo),
         ]);
     }
 
     /**
      * `GET /system/health/history` — Admin only. The transitions behind
-     * the snapshot `index()` returns.
-     *
-     * NOT IN §6's ENDPOINT LIST, added deliberately (2026-09-12), same
-     * justification as other read-only operational endpoints: the stored data is useless without a way to read it,
-     * and §2 Rule 15 explicitly names the risk this answers. Admin-only,
-     * matching `index()` — this is operational infrastructure detail,
-     * and §3 gives Punong Barangay oversight of INCIDENTS, not of the
-     * workstation's plumbing.
+     * the snapshot `index()` returns: the stored data is useless without a
+     * way to read it. Admin-only, matching `index()`: this is operational
+     * infrastructure detail, and Punong Barangay's oversight is of
+     * INCIDENTS, not of the workstation's plumbing.
      *
      * Returns transitions newest-first, capped. No pagination: this is a
      * change log an operator scans, not a dataset they page through, and
@@ -198,15 +159,13 @@ final class SystemHealthController
      * Writes one row only when the observed statuses differ from the
      * newest recorded row (or when there is no row at all).
      *
-     * WHY A READ ENDPOINT WRITES: `/system/health` is not a plain read,
-     * it is a probe — it actively pings the model server and the
-     * database. Recording what the probe saw is the point of having run
-     * it, and no other caller exists to do the recording (nothing on
-     * this system is scheduled — `docs/REMAINING.md` C2).
+     * WHY A READ ENDPOINT WRITES: `/system/health` is a probe: it actively
+     * pings the database and the dependencies. Recording what the probe saw
+     * is the point of having run it, and nothing else is scheduled to do it.
      *
      * FAILS SILENTLY, DELIBERATELY. A health endpoint that 500s because
      * its own bookkeeping table is missing or unwritable would take down
-     * the screen an operator opens precisely when things are broken —
+     * the screen an operator opens precisely when things are broken,
      * turning a partial outage into a blind one. History is strictly
      * less important than the answer, so any failure here is swallowed
      * and the snapshot still returns.
@@ -235,12 +194,10 @@ final class SystemHealthController
                 }
             }
 
-            // osrm_status (migration 0017) is a fixed literal, not a bound
-            // param: this deployment never wires up OSRM any more (see
-            // class doc), so there is nothing to check, and hardcoding it
-            // here — rather than threading a dead value through $statuses
-            // and its unchanged-comparison loop above — keeps that fact
-            // visible at the one place it's still written.
+            // osrm_status is a fixed literal, not a bound param: nothing wires
+            // up OSRM, and hardcoding it here (rather than threading a dead
+            // value through $statuses and its unchanged-comparison loop above)
+            // keeps that fact visible at the one place it's still written.
             $stmt = $pdo->prepare(
                 "INSERT INTO health_check_log
                     (recorded_at, db_status, osrm_status, ors_status, ollama_status, gsm_status, fcm_status, sms_status)
@@ -345,9 +302,9 @@ final class SystemHealthController
     }
 
     /**
-     * F-05: real, side-effect-free check of the FCM service-account file —
-     * exists, readable, parses as JSON with the keys FCM auth needs. Never
-     * calls Google and never returns file contents. A valid file is still only
+     * Real, side-effect-free check of the FCM service-account file — exists,
+     * readable, parses as JSON with the keys FCM auth needs. Never calls
+     * Google and never returns file contents. A valid file is still only
      * 'configured' (not 'healthy'): nothing here proves Google accepts it.
      * Path set but file missing/unreadable/invalid is 'unhealthy'.
      */
@@ -376,13 +333,12 @@ final class SystemHealthController
 
     /**
      * A real probe of OpenRouteService — a genuine route request
-     * (`OrsClient::ping()`), not a bare presence check, so an invalid
-     * key or an exhausted rate limit shows as `unhealthy` rather than
-     * `healthy`. Never leaks the key or any error detail (same contract
-     * `ollamaStatus()` already documents).
+     * (`OrsClient::ping()`), not a bare presence check, so an invalid key or
+     * an exhausted rate limit shows as `unhealthy` rather than `healthy`.
+     * Never leaks the key or any error detail.
      *
-     * PUBLIC for the same reason `ollamaStatus()` is: Phase 3's
-     * `DispatchController::route()` reuses it rather than re-probing.
+     * PUBLIC so `DispatchController::route()` can reuse it rather than
+     * re-probing.
      */
     public static function orsStatus(): string
     {
@@ -398,7 +354,7 @@ final class SystemHealthController
         $keyId = sha1((string) baranguard_env('ORS_API_KEY'));
         $cached = is_file($cacheFile) ? json_decode((string) @file_get_contents($cacheFile), true) : null;
         // A failure is remembered only briefly: one slow or dropped request must not keep the badge red for the
-        // whole healthy window (2026-10-17), while the short wait still protects the daily quota.
+        // whole healthy window, while the short wait still protects the daily quota.
         $ttl = (($cached['status'] ?? null) === 'healthy') ? self::ORS_PROBE_CACHE_SECONDS : self::ORS_PROBE_FAILURE_CACHE_SECONDS;
         if (is_array($cached) && ($cached['key'] ?? null) === $keyId && time() - (int) ($cached['at'] ?? 0) < $ttl
             && in_array($cached['status'] ?? null, ['healthy', 'unhealthy'], true)) {
@@ -448,9 +404,8 @@ final class SystemHealthController
      * its mtime, so copying or touching the file cannot silently make a
      * stale drill look recent.
      *
-     * Returns null when no drill has ever passed — which is a real,
-     * actionable answer (W20 renders it as "Never" and says so), not a
-     * missing value to paper over.
+     * Returns null when no drill has ever passed: a real, actionable answer
+     * (the page renders it as "Never"), not a missing value to paper over.
      */
     private static function lastRestoreDrillTimestamp(): ?string
     {
@@ -469,17 +424,15 @@ final class SystemHealthController
     }
 
     /**
-     * Code-review finding H-20 (2026-09-24): notification delivery had no
-     * operator-visible failure signal at all — Rule 12's FCM-retry-once-
-     * then-SMS ladder is a real, bounded retry policy (not a gap), but
-     * once BOTH tiers are exhausted, the only trace was a handful of
-     * `notification_delivery` rows with `status='failed'` that nothing
-     * ever surfaced. This counts notification TARGETS (not individual
-     * delivery attempts — a target with a failed FCM try that then
-     * succeeded via SMS is fine, not counted) from the last 24h that have
-     * at least one failed delivery attempt and NO successful one on any
-     * channel — a genuine "nobody was alerted" gap, the actual thing an
-     * operator needs to know about.
+     * Notification delivery failure signal. The FCM-retry-once-then-SMS
+     * ladder is a real, bounded retry policy, but once BOTH tiers are
+     * exhausted the only trace would be `notification_delivery` rows with
+     * `status='failed'` that nothing surfaced. This counts notification
+     * TARGETS (not individual delivery attempts: a target with a failed FCM
+     * try that then succeeded via SMS is fine, not counted) from the last
+     * 24h that have at least one failed delivery attempt and NO successful
+     * one on any channel — a genuine "nobody was alerted" gap, the actual
+     * thing an operator needs to know about.
      */
     private static function notificationDeliveryFailures24h(PDO $pdo): int
     {

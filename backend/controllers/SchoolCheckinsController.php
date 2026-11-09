@@ -10,15 +10,14 @@ use Baranguard\Middleware\AuthMiddleware;
 use PDO;
 
 /**
- * Tanod school check-in/out (docs/FEATURE_CONTRACT_2026-10.md section 7,
- * migration 0033, Annex D "deployment days").
+ * Tanod school check-in/out (Annex D "deployment days").
  *
  *   POST /school-checkins  tanod; {school_id, checked_in_at,
  *                          checked_out_at?, client_event_id}
  *   GET  /school-checkins  admin/secretary/punong_barangay;
  *                          ?from=&to=&school_id= (Manila dates, inclusive)
  *
- * Idempotency is `client_event_id` + `X-Device-Id` (Rule 3, mobile style).
+ * Idempotency is `client_event_id` + `X-Device-Id` (mobile style).
  * Re-sending the SAME client_event_id with `checked_out_at` set CLOSES the
  * check-in -- the one allowed mutation -- and reports `wasCreated=false`.
  * Anything else on a replay (different school/time, or checked_out_at on an
@@ -26,9 +25,9 @@ use PDO;
  * a school is recorded, not the Tanod's position.
  *
  * `createItem()` is the shared core so `SyncController` (POST /sync/batch's
- * `school_checkins[]`) and the direct POST are identical (contract section 6).
- * A unique-key race on (user_id, client_event_id) is handled by
- * SyncController; the direct POST re-reads on a duplicate-key error.
+ * `school_checkins[]`) and the direct POST are identical. A unique-key race
+ * on (user_id, client_event_id) is handled by SyncController; the direct
+ * POST re-reads on a duplicate-key error.
  */
 final class SchoolCheckinsController
 {
@@ -50,7 +49,7 @@ final class SchoolCheckinsController
         if ($deviceId === null) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'X-Device-Id header is required.');
         }
-        // "The authenticated half of device_id + client_event_id" (Rule 3).
+        // The authenticated half of device_id + client_event_id.
         $deviceStmt = $pdo->prepare(
             'SELECT device_id FROM mobile_device WHERE device_id = :d AND user_id = :u AND is_active = 1 LIMIT 1'
         );
@@ -58,7 +57,7 @@ final class SchoolCheckinsController
         if ($deviceStmt->fetch(PDO::FETCH_ASSOC) === false) {
             throw new ApiError(422, 'UNPROCESSABLE_ENTITY', 'Device is not registered or not active for this account.');
         }
-        // H-09: no-op for a device that has not upgraded to a Keystore key yet.
+        // No-op for a device that has no registered Keystore key.
         DeviceSignature::verifyOrReject($pdo, $deviceId, $identity['user_id']);
 
         $item = Http::jsonBody();
@@ -83,7 +82,7 @@ final class SchoolCheckinsController
      */
     public static function createItem(PDO $pdo, array $identity, string $deviceId, array $item): array
     {
-        // H-09, per item: one signature covers the sync batch request and every
+        // Per item: one signature covers the sync batch request and every
         // item is held to it exactly like GpsController::createItem. No-op for a
         // device with no registered Keystore key.
         DeviceSignature::verifyOrReject($pdo, $deviceId, $identity['user_id']);
@@ -130,7 +129,7 @@ final class SchoolCheckinsController
         self::assertCheckinWindow($checkedInAt);
 
         // Tenant check: 404 for an unknown school AND for another barangay's
-        // school, indistinguishably (Rule 2).
+        // school, indistinguishably.
         $schoolStmt = $pdo->prepare('SELECT barangay_id FROM school WHERE school_id = :s LIMIT 1');
         $schoolStmt->execute(['s' => $schoolId]);
         $schoolBarangay = $schoolStmt->fetchColumn();

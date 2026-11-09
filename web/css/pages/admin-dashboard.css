@@ -1,9 +1,9 @@
 /**
- * admin-dashboard.css — co-located with admin-dashboard.js. Added
- * 2026-09-05 (dashboard UX pass) for the "needs attention now" banner —
- * everything else on this page already runs on base.css utilities plus
- * the shared KpiCard/DonutChart/LineChart/DataTable component styles, so
- * this file stays small.
+ * admin-dashboard.css — co-located with admin-dashboard.js: the "needs
+ * attention now" banner and dashboard-specific tiles. Everything else on this
+ * page runs on base.css utilities plus the shared
+ * KpiCard/DonutChart/LineChart/DataTable component styles, so this file
+ * stays small.
  */
 
 /* Same critical-fill/pulse language dispatch-center.css's own .sos-banner
@@ -253,12 +253,11 @@
   }
 }
 
-/* Quick Actions card (2026-09-06 UX pass) — fills the By Status row's
-   previously-empty second column, Admin-only. A 2x2 tile grid rather than
-   a stacked list of buttons: these are shortcuts people scan and tap, not
-   a sequence they read top to bottom. */
+/* Quick Actions card — fills the By Status row's second column, Admin-only.
+   A 2x2 tile grid rather than a stacked list of buttons: these are shortcuts
+   people scan and tap, not a sequence they read top to bottom. */
 /* ==========================================================================
-   Quick Actions Card (Design Token Overhaul)
+   Quick Actions Card
    ========================================================================== */
 
 .quick-actions-card {
@@ -410,12 +409,10 @@
   .quick-actions-grid { grid-template-columns: 1fr; }
 }
 
-/* Date range control (2026-09-06 UX pass) — collapsed the always-visible
-   From/To/Apply trio + a separate preset-chip row into one dropdown, moved
-   into the page header's own actions row (beside Refresh — both answer
-   "how current/which window is this view"), rather than a separate row
-   under the header. The From/To/Apply fields only exist in the visible
-   flow once "Custom range" is picked. Styling (`.range-select`,
+/* Date range control — one dropdown in the page header's own actions row
+   (beside Refresh — both answer "how current/which window is this view").
+   The From/To/Apply fields only exist in the visible flow once "Custom
+   range" is picked. Styling (`.range-select`,
    `.range-picker-custom-row[hidden]`) is shared — see base.css — since
    `statistical-reports.js` uses the identical pattern. */
 
@@ -456,7 +453,7 @@
 }
 
 /* ==========================================================================
-   Tanods On Duty Roster (Design Token Overhaul)
+   Tanods On Duty Roster
    ========================================================================== */
 
 .tanods-roster-scroll {
@@ -998,7 +995,7 @@
   gap: var(--spacing-md);
 }
 
-/* 2026-10: Overhauled Pending Approvals widget (3-column interactive tile grid) */
+/* Pending Approvals widget (3-column interactive tile grid) */
 .card-header__chip--warning {
   background: var(--tint-warning-bg);
   color: var(--color-warning-text);

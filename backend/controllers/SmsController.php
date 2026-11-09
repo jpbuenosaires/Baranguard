@@ -12,26 +12,18 @@ use Baranguard\Services\Sms\SmsGatewayService;
 use PDO;
 
 /**
- * GET /sms/logs — §6: "Admin own barangay ->
+ * GET /sms/logs — Admin, own barangay ->
  * {items:[{log_id,report_id,incident_id,dispatch_id,transport,message_type,
  * direction,status,correlation_id,gateway_message_id,modem_message_id,
- * sent_at,received_at,created_at,failure_reason}],page,limit,total};
- * phone numbers are masked in UI." §9 W14 — read-only this sprint (and
- * every sprint after, per Sprint_Prompts.md, unless explicitly rescoped).
+ * sent_at,received_at,created_at,failure_reason}],page,limit,total}.
  *
- * Note what is DELIBERATELY NOT in the response: `sender_number`/
- * `receiver_number` are not part of §6's own documented item shape at
- * all — not "returned but masked", simply never returned by this
- * endpoint. "Phone numbers are masked in UI" is read as belt-and-braces
- * guidance for a screen that might one day need them, not license to
- * invent an unlisted field on top of an already-exact contract.
+ * DELIBERATELY NOT in the response: `sender_number`/`receiver_number`. They
+ * are never returned by this endpoint (not "returned but masked").
  *
- * This is a normal `/api/v1` endpoint (unlike `/internal/sms/*`) —
- * Admin-only, authenticated, tenant-scoped via `barangay_id` (added in
- * migration 0006; see that file's own doc for why sms_log needed its own
- * tenant column rather than deriving one from incident/dispatch/report,
- * which are all optional and can be simultaneously NULL for a
- * duty_status/coord_ping-originated row).
+ * This is a normal `/api/v1` endpoint (unlike `/internal/sms/*`):
+ * Admin-only, authenticated, tenant-scoped via `sms_log.barangay_id` (its own
+ * tenant column, because incident/dispatch/report are all optional and can be
+ * simultaneously NULL for a duty_status/coord_ping-originated row).
  */
 final class SmsController
 {
@@ -80,10 +72,8 @@ final class SmsController
             $params['status'] = $status;
         }
 
-        // Phase 8 (mockup-driven UI round 2): date_from/date_to, same
-        // contract as GET /reports/summary (Asia/Manila calendar days,
-        // 366-day cap) — reused rather than a bespoke convention for the
-        // one other date-ranged endpoint in this codebase. Filters on
+        // date_from/date_to: same contract as GET /reports/summary
+        // (Asia/Manila calendar days, 366-day cap). Filters on
         // COALESCE(sent_at, received_at, created_at): an outbound row's
         // meaningful moment is when it was sent, an inbound row's is when
         // it was received, and a row that never got that far (still
@@ -158,17 +148,11 @@ final class SmsController
     private const MAX_MESSAGE_LENGTH = 918; // six 153-char GSM-7 segments — well under LocalGsmOutboundClient's own higher backstop ceiling.
 
     /**
-     * GET /sms/conversations — 2026-09-05 UX pass, deliberate rescoping of
-     * `sms-log.js`'s (now `sms-monitor.js`) own "read-only this sprint and
-     * every sprint after unless deliberately rescoped" note (see that
-     * file's header). Groups `sms_log` rows by whichever phone number is
-     * set (`COALESCE(sender_number, receiver_number)`) within the caller's
+     * GET /sms/conversations — groups `sms_log` rows by whichever phone number
+     * is set (`COALESCE(sender_number, receiver_number)`) within the caller's
      * barangay, returning the most recent message per contact plus a real
-     * unread count. Phone numbers are returned here — a genuine, disclosed
-     * contract change from `index()` above, needed specifically to power a
-     * per-contact view; `index()` itself is UNCHANGED (still never returns
-     * a phone number), so the plain SMS Activity Log table this class
-     * doc's own §6 contract describes keeps behaving exactly as before.
+     * unread count. Phone numbers are returned here, unlike `index()`, which
+     * never returns a phone number.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -299,29 +283,24 @@ final class SmsController
     }
 
     /**
-     * POST /sms/send — 2026-09-05 UX pass, the manual compose action.
-     * Admin-only, Idempotency-Key required (§2 Rule 3 — every web write
-     * needs one; a retried send must not double-text someone).
+     * POST /sms/send — the manual compose action. Admin-only, Idempotency-Key
+     * required (every web write needs one; a retried send must not
+     * double-text someone).
      *
      * Body: {recipient_user_id?, phone_number?, message, incident_id?,
      * dispatch_id?, report_id?} — exactly one of recipient_user_id/
      * phone_number.
      *
-     * SECURITY NOTE (deliberately stricter than the mockup's implied
-     * "type any number" flow): a raw `phone_number` is only accepted if
-     * it matches a REAL in-tenant contact already on file (a citizen
-     * report's contact number, or a number that has appeared in this
-     * barangay's own `sms_log` before) — never an arbitrary client-
-     * supplied number. Otherwise an Admin session would be an open
-     * SMS-to-anyone relay, which nothing else in this codebase allows
-     * (every other write is scoped to a real in-tenant recipient). A
-     * `recipient_user_id` resolves the phone server-side from that
-     * user's own record — the client-supplied number for that path (if
-     * any) is ignored entirely.
+     * SECURITY: a raw `phone_number` is only accepted if it matches a REAL
+     * in-tenant contact already on file (a citizen report's contact number, or
+     * a number that has appeared in this barangay's own `sms_log` before),
+     * never an arbitrary client-supplied number. Otherwise an Admin session
+     * would be an open SMS-to-anyone relay. A `recipient_user_id` resolves the
+     * phone server-side from that user's own record; the client-supplied
+     * number for that path (if any) is ignored entirely.
      *
-     * Uses `SmsGatewayService::sendOutbound()` — the exact same shared
-     * path every automated send already uses, with
-     * `message_type='manual'` (migration 0013).
+     * Uses `SmsGatewayService::sendOutbound()`, the same shared path every
+     * automated send uses, with `message_type='manual'`.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -357,8 +336,7 @@ final class SmsController
 
         // Idempotency: a retry with the same key returns the original
         // send's outcome rather than sending a second text. `correlation_id`
-        // (already a column, §5) is the natural home for this — no schema
-        // change needed.
+        // is the natural home for this; no schema change needed.
         $existingStmt = $pdo->prepare('SELECT log_id, status, failure_reason, message_body FROM sms_log WHERE barangay_id = :barangay_id AND correlation_id = :correlation_id LIMIT 1');
         $existingStmt->execute(['barangay_id' => $identity['barangay_id'], 'correlation_id' => $idempotencyKey]);
         $existing = $existingStmt->fetch(PDO::FETCH_ASSOC);
@@ -420,11 +398,10 @@ final class SmsController
     }
 
     /**
-     * POST /sms/broadcast — fans out to `send()`'s same core per
-     * recipient. Admin-only. Scope is ALWAYS the caller's own barangay —
-     * deliberately dropping the mockup's "All Barangays" option, which
-     * would be the one cross-tenant broadcast capability in a system
-     * where every other write is barangay-scoped (§3).
+     * POST /sms/broadcast — fans out to `send()`'s same core per recipient.
+     * Admin-only. Scope is ALWAYS the caller's own barangay: there is no
+     * "All Barangays" option, which would be the one cross-tenant broadcast
+     * capability in a system where every other write is barangay-scoped.
      *
      * Body: {message, scope: 'on_duty_tanods'|'role', role?}.
      *
@@ -434,10 +411,10 @@ final class SmsController
     {
         AuthMiddleware::requireRole($identity, ['admin']);
 
-        // H-11: keyed by barangay, not user — a single broadcast already
-        // fans out to every on-duty Tanod/role/subscriber in the barangay,
-        // so the real abuse budget to protect is "how often this barangay's
-        // whole audience gets messaged," not one Admin's personal quota.
+        // Keyed by barangay, not user: a single broadcast already fans out
+        // to every on-duty Tanod/role/subscriber in the barangay, so the real
+        // abuse budget to protect is "how often this barangay's whole
+        // audience gets messaged," not one Admin's personal quota.
         if (!RateLimiter::check($pdo, 'sms_broadcast:barangay:' . $identity['barangay_id'], 3600, 5)) {
             throw new ApiError(429, 'RATE_LIMITED', 'Too many broadcasts sent recently for this barangay. Please wait before sending another.');
         }
@@ -464,18 +441,17 @@ final class SmsController
             throw new ApiError(400, 'VALIDATION_ERROR', 'role must be one of: admin, secretary, tanod, punong_barangay.');
         }
 
-        // Idempotency for the WHOLE broadcast action (not per-recipient —
+        // Idempotency for the WHOLE broadcast action (not per-recipient:
         // `sms_log.correlation_id` is CHAR(36), a single UUID, and a
-        // broadcast fans out to N recipients with no natural per-row key
-        // to derive N distinct ones from). A retry with the same header
-        // finds this exact prior broadcast in `audit_log` and returns its
-        // recorded outcome instead of sending everything a second time.
+        // broadcast fans out to N recipients with no natural per-row key).
+        // A retry with the same header finds this exact prior broadcast in
+        // `audit_log` and returns its recorded outcome instead of sending
+        // everything a second time.
         //
-        // Queries `audit_log.idempotency_key` (migration 0019's VIRTUAL
-        // generated column + index) rather than a bare JSON_EXTRACT() —
-        // MariaDB only uses the index when the generated column itself is
-        // referenced, not an equivalent expression. See that migration's
-        // header for why this was a full unindexed scan before.
+        // Queries `audit_log.idempotency_key` (a VIRTUAL generated column +
+        // index) rather than a bare JSON_EXTRACT(): MariaDB only uses the
+        // index when the generated column itself is referenced, not an
+        // equivalent expression.
         $auditStmt = $pdo->prepare(
             "SELECT metadata_json FROM audit_log
              WHERE barangay_id = :barangay_id AND action = 'sms_broadcast_sent'
@@ -493,11 +469,10 @@ final class SmsController
         }
 
         if ($scope === 'subscribers') {
-            // Residents who have CONSENTED and not withdrawn (migration
-            // 0018). Deliberately not "every number we have ever seen" —
-            // see that migration's header for why reusing sms_log or
-            // citizen_report numbers here would be an RA 10173 problem,
-            // not a shortcut.
+            // Residents who have CONSENTED and not withdrawn. Deliberately
+            // not "every number we have ever seen": reusing sms_log or
+            // citizen_report numbers here would be an RA 10173 problem, not
+            // a shortcut.
             $recipientsStmt = $pdo->prepare(
                 "SELECT NULL AS user_id, contact_number FROM sms_subscriber
                  WHERE barangay_id = :barangay_id AND opted_out_at IS NULL"
@@ -604,14 +579,14 @@ final class SmsController
     }
 
     // ==================================================================
-    // Advisory subscribers (migration 0018) — Admin only, own barangay.
+    // Advisory subscribers — Admin only, own barangay.
     //
     // These three endpoints exist so a barangay-wide advisory has a
     // LAWFUL recipient list. The consent rules are enforced here, at the
     // boundary, not left to whoever builds a UI on top: `consent_source`
     // is required on every create, an existing number cannot be silently
     // re-subscribed, and removal is an opt-out timestamp rather than a
-    // delete. See 0018's header for the RA 10173 reasoning.
+    // delete (RA 10173).
     // ==================================================================
 
     private const CONSENT_SOURCES = ['walk_in', 'staff_entry', 'sms_keyword'];
@@ -700,7 +675,7 @@ final class SmsController
         if ($existing !== false) {
             // Re-subscribing someone who withdrew is allowed, but it is an
             // explicit act that records FRESH consent and clears the
-            // withdrawal — never a silent revival of the old row.
+            // withdrawal, never a silent revival of the old row.
             if ($existing['opted_out_at'] === null) {
                 throw new ApiError(409, 'CONFLICT', 'This number is already subscribed.');
             }
@@ -734,9 +709,9 @@ final class SmsController
             $subscriberId = (int) $pdo->lastInsertId();
         }
 
-        // Rule 17 allow-list: identifiers and the consent SOURCE, which
-        // is a status. The number itself is personal data and stays out
-        // of audit metadata, same as every other contact field.
+        // Allow-list: identifiers and the consent SOURCE, which is a status.
+        // The number itself is personal data and stays out of audit
+        // metadata, same as every other contact field.
         Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'sms_subscriber_added', 'sms_subscriber', $subscriberId, [
             'consent_source' => $source,
         ]);
@@ -769,7 +744,7 @@ final class SmsController
         if ($row === false) {
             throw new ApiError(404, 'NOT_FOUND', 'Subscriber not found.');
         }
-        // Cross-tenant is 404, never 403 (§2 Rule 2).
+        // Cross-tenant is 404, never 403.
         AuthMiddleware::requireTenant($identity, (int) $row['barangay_id']);
 
         if ($row['opted_out_at'] === null) {

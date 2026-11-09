@@ -14,8 +14,8 @@ import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
 
 /**
- * CriticalAlertActivity — Mobile Improvement Plan Phase 4.2: the
- * lock-screen-visible half of M12 Critical Alert Overlay.
+ * CriticalAlertActivity — the lock-screen-visible half of the Critical
+ * Alert Overlay.
  *
  * Deliberately THIN: this Activity's only job is to wake a locked/screen-
  * off device and grab attention immediately — the ACTUAL acknowledge
@@ -28,16 +28,11 @@ import androidx.appcompat.app.AppCompatActivity;
  * into the app the moment the device is unlocked and attention is
  * secured, where the existing JS overlay takes over.
  *
- * NOT DEVICE-VERIFIED for an actual locked-screen wake (same disclosure
- * as everything else FCM-adjacent in this codebase — see
- * deviceIdentity.ts's getFcmToken()): the window flags below are Android's
- * documented mechanism, exercised in this session only via a manual
- * trigger while the device was unlocked, since no real FCM project exists
- * to deliver a genuine locked-screen push (REMAINING.md A4).
+ * Not device-verified for an actual locked-screen wake: the window flags
+ * below are Android's documented mechanism.
  *
- * HANDOFF, ADDED 2026-09-15 (C4): "Open Baranguard" used to cold-launch
- * the app with no context, so criticalAlertStore.ts's real acknowledge
- * UI never learned which alert to show. `pendingAlert` is a static,
+ * HANDOFF: "Open Baranguard" must tell criticalAlertStore.ts's real
+ * acknowledge UI which alert to show. `pendingAlert` is a static,
  * in-process holder set just before that launch and read once by
  * `FullScreenAlertPlugin.getPendingAlert()` — safe without
  * SharedPreferences/persistence because this Activity can only be tapped

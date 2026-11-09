@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Baranguard — Wave 2 / Agent E validation (review decisions 2026-10-07):
-# night-time dispatch offers (migration 0038), the sweeper, notification
-# payload rules, plain roster publishing (no paper tracking, 0041), and the dispatch status-override
-# audit fix.
+# Baranguard — night-time dispatch offers (migration 0038), the sweeper,
+# notification payload rules, plain roster publishing, and the dispatch
+# status-override audit row.
 #
 # Safe to run: disposable database, disposable app-user, throwaway ports
 # 9001 (night clock), 9002 (day clock), 9003 (night clock + injected offer
@@ -519,7 +518,7 @@ db_run "UPDATE dispatch_offer SET expires_at='2026-10-08 12:59:00' WHERE offer_i
 php_run "$FAKE_NIGHT" "$BACKEND_DIR/scripts/dispatch-offer-sweeper.php" --once >/dev/null
 expect_eq "Escalated offer keeps alerting Admins on every timeout" "$(db_one "SELECT COUNT(*) FROM notification WHERE notification_type='priority_alert' AND dispatch_offer_id=$OFFER5;")" "$((AL_BEFORE+1))"
 expect_eq "  and stays escalated at round 3" "$(offer_field $OFFER5 "CONCAT(\`round\`,'/',status)")" "3/escalated"
-# ---- escalation reminder backoff + cap (Wave 3b-K): +3, +6, +12 min, then every 30 min, max 8 reminders, then silence
+# ---- escalation reminder backoff + cap: +3, +6, +12 min, then every 30 min, max 8 reminders, then silence
 expect_eq "Reminder #1 was audited (ids only)" "$(db_one "SELECT JSON_KEYS(metadata_json) FROM audit_log WHERE action='dispatch_offer_reminder' AND entity_id=$OFFER5 ORDER BY audit_id DESC LIMIT 1;")" '["incident_id", "reminder_no", "admin_alerted"]'
 expect_eq "  next reminder is due +6 min after reminder #1 (13:00 + 360 s)" "$(offer_field $OFFER5 "DATE_FORMAT(expires_at,'%H:%i:%s')")" "13:06:00"
 cat > "$TMP_DIR/sweepsched.php" <<PHP

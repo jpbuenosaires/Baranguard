@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * dispatch-offer-sweeper.php — the timeout half of the night-time dispatch
- * offers (Wave 2, migration 0038). Every live offer (`open`/`escalated`)
+ * offers. Every live offer (`open`/`escalated`)
  * whose `expires_at` has passed is processed by
  * `OfferService::sweep()`: current recipients become `expired`, the
  * barangay's Admin(s) get a `priority_alert`, and the offer is re-broadcast

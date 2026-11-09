@@ -1,6 +1,6 @@
 /**
- * admin-dispatch.tsx — Chief Tanod console, Dispatch tab (decision 15C,
- * stage 1): active dispatches (open the incident read-only, assign more
+ * admin-dispatch.tsx — Chief Tanod console, Dispatch tab: active dispatches (open the
+ * incident read-only, assign more
  * responders, cancel with a required reason) and night-dispatch offers
  * (status/round/recipient counts, cancel an offer). "Take over" lives on
  * the incident sheet. All writes are online-only and never queued.

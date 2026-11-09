@@ -6,14 +6,12 @@ namespace Baranguard\Lib;
 use PDO;
 
 /**
- * Shared abuse-budget / rate-limit counter — code-review findings H-11
- * (no abuse budget on AI jobs, evidence uploads, GPS ingestion, exports,
- * map packages, SMS broadcast) and H-13 (public transparency endpoint has
- * no rate limit), 2026-09-24 external audit.
+ * Shared abuse-budget / rate-limit counter (evidence uploads, GPS ingestion,
+ * exports, map packages, SMS broadcast, public endpoints).
  *
- * Fixed-window counter backed by `rate_limit_counter` (migration 0023).
+ * Fixed-window counter backed by `rate_limit_counter`.
  * Callers pick their own `$key` (should encode both quota TYPE and SCOPE,
- * e.g. `'ai_job:user:42'`, `'transparency:ip:203.0.113.5'`) and their own
+ * e.g. `'export:user:42'`, `'transparency:ip:203.0.113.5'`) and their own
  * window/threshold — this class has no per-feature policy, it is pure
  * mechanism. `check()` increments unconditionally (a request already over
  * budget still counts, same as every other window-counter in this

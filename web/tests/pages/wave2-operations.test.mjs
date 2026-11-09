@@ -1,5 +1,5 @@
 /**
- * Wave 2 (audit 2026-10-09) operations pages: Manila time, plain labels,
+ * Operations pages: Manila time, plain labels,
  * linked labels / accessible names, tab and dialog semantics, and the fixed
  * Review Inbox target. One file so the intent of each fix stays readable.
  */

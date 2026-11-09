@@ -1,13 +1,10 @@
 /**
- * deviceIdentity.ts — the device's own stable identity and its FCM
- * registration seam (§6 "Users & device lifecycle", §5 `mobile_device`).
+ * deviceIdentity.ts — the device's own stable identity and its FCM registration seam.
  *
- * `device_id` is CLIENT-generated (§5 stores it as a VARCHAR(64) primary
- * key, not a server sequence) and must stay stable for the life of the
- * install: the server deactivates a Tanod's *other* devices on each
- * registration, so an id that changed per launch would deactivate the
- * previous registration every time and churn the device row endlessly.
- * Generated once, then persisted app-privately.
+ * `device_id` is CLIENT-generated (a VARCHAR(64) primary key, not a server sequence) and must stay
+ * stable for the life of the install: the server deactivates a Tanod's *other* devices on each
+ * registration, so an id that changed per launch would deactivate the previous registration every time
+ * and churn the device row endlessly. Generated once, then persisted app-privately.
  */
 
 import { Preferences } from '@capacitor/preferences';
@@ -39,14 +36,11 @@ export async function getDeviceId(): Promise<string> {
 }
 
 /**
- * H-09: this install's hardware-backed device identity public key, or
- * null when unavailable (web platform, or the native Keystore call
- * failed for any reason). NEVER THROWS, same "unavailable is a legitimate
- * outcome on the offline-first login path" precedent as `getFcmToken()`
- * above — a device that can't generate a key must still be able to
- * register and work, just without H-09's stronger guarantee (the server
- * treats a device with no key on file as not-yet-upgraded, not invalid;
- * see DeviceSignature.php's own doc).
+ * This install's hardware-backed device identity public key, or null when unavailable (web platform, or
+ * the native Keystore call failed). NEVER THROWS, same "unavailable is a legitimate outcome on the
+ * offline-first login path" precedent as `getFcmToken()` above: a device that can't generate a key must
+ * still be able to register and work, just without the stronger signature guarantee (the server treats
+ * a device with no key on file as not-yet-upgraded, not invalid; see DeviceSignature.php).
  */
 export async function getDevicePublicKeyPem(): Promise<string | null> {
   if (Capacitor.getPlatform() !== 'android') {
@@ -61,7 +55,7 @@ export async function getDevicePublicKeyPem(): Promise<string | null> {
 }
 
 /**
- * H-09: signs `METHOD\nPATH\nDEVICE_ID\nTIMESTAMP` with this device's
+ * Signs `METHOD\nPATH\nDEVICE_ID\nTIMESTAMP` with this device's
  * Keystore private key — the exact canonical string
  * `Baranguard\Lib\DeviceSignature::canonicalMessage()` recomputes
  * server-side. `path` must be the request path only (no query string),
@@ -90,37 +84,19 @@ export async function signDeviceRequest(
 }
 
 /**
- * The device's FCM registration token, or null when push messaging is not
- * available/permitted/reachable.
+ * The device's FCM registration token, or null when push messaging is not available/permitted/reachable.
+ * No token means "don't register", never "send a placeholder" (see `runPostLoginSetup()` in login.tsx).
  *
- * REAL IMPLEMENTATION as of Sprint 4 Phase 5 (M12 Critical Alert Overlay
- * cannot exist without this) — the null-returning stub this function used
- * to be is exactly what `runPostLoginSetup()` in login.tsx already treats
- * as a legitimate, non-fatal outcome: no token still means "don't
- * register", never "send a placeholder" (see that function's own doc,
- * unchanged by this).
+ * NEVER THROWS. Every failure mode (permission denied, no Google Play services, the web platform, a
+ * registration that never fires within the timeout) resolves to `null`, because this sits on the login
+ * path and a Tanod must be able to sign in and start capturing regardless of whether push is available.
  *
- * NEVER THROWS. Every failure mode — permission denied, no Google Play
- * services, running on the web platform, a registration that never fires
- * within the timeout — resolves to `null` rather than rejecting, because
- * this sits on the login path and §2 Rule 2's offline-first guarantee
- * means a Tanod must be able to sign in and start capturing regardless of
- * whether push messaging is available on this particular device.
- *
- * DEVICE-VERIFIED, and the hard way: run on a real device 2026-09-13
- * without the guard below, `PushNotifications.register()` crashed the
- * entire app on login with an uncaught native `IllegalStateException`
- * ("Default FirebaseApp is not initialized") — a REAL Firebase project +
- * `google-services.json` is a SEPARATE prerequisite this workstation
- * still does not have (REMAINING.md A4; the backend side of the same gap
- * is `FCM_SERVICE_ACCOUNT_PATH` in backend/.env.example, also unset). The
- * try/catch below did NOT help: that exception is thrown on Capacitor's
- * own native plugin-invocation thread, before `register()`'s promise can
- * ever reject, so it never reaches JS at all — it just kills the process.
- * `FullScreenAlertPlugin.isFirebaseAvailable()` (native, added the same
- * day) is what actually prevents this, by checking Firebase's real
- * process-level init state BEFORE the crash-prone call, not by reacting
- * to a failure JS can't observe.
+ * Without the guard below, `PushNotifications.register()` crashed the entire app on login with an
+ * uncaught native `IllegalStateException` ("Default FirebaseApp is not initialized") when no real
+ * Firebase project + `google-services.json` is present. The try/catch did NOT help: that exception is
+ * thrown on Capacitor's own native plugin-invocation thread, before `register()`'s promise can ever
+ * reject, so it never reaches JS and just kills the process. `FullScreenAlertPlugin.isFirebaseAvailable()`
+ * (native) prevents this by checking Firebase's real process-level init state BEFORE the crash-prone call.
  */
 export async function getFcmToken(): Promise<string | null> {
   if (Capacitor.getPlatform() !== 'android') {

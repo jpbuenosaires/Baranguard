@@ -8,7 +8,7 @@
 RewriteEngine On
 RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
-# Internal-only surface (§6 "Internal SMS / GSM") — a SEPARATE front
+# Internal-only surface (/internal/sms/*) — a SEPARATE front
 # controller from index.php, checked FIRST so it never falls through to
 # the normal /api/v1 router. See public/internal.php's own doc for why
 # this is a structural separation, not just routing convention.
@@ -21,7 +21,7 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.php [QSA,L]
 
-# --- Security headers (audit 2026-10-09 V-04) -------------------------------
+# --- Security headers -------------------------------------------------------
 # The API only ever answers JSON or file downloads that the dashboard fetches
 # with JS, so it never needs to render, frame or run anything: the strictest
 # CSP applies. CORS headers stay where they are (public/index.php).

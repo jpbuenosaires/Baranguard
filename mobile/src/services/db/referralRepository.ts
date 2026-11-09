@@ -1,5 +1,5 @@
 /**
- * referralRepository.ts — `referral_local` (contract §5, migration 6).
+ * referralRepository.ts — `referral_local` (migration 6).
  *
  * A referral records a HANDOFF: the Tanod handed an incident to PNP, BFP,
  * EMS, a barangay official, etc. It never changes the dispatch or the
@@ -7,14 +7,14 @@
  * the screens built on it) may imply the receiving agency accepted the case.
  * `contact_name` is the receiving unit/official, never a citizen.
  *
- * Offline-first (Rule 7): persisted to encrypted SQLite first, sent via
+ * Offline-first: persisted to encrypted SQLite first, sent via
  * `/sync/batch`'s `referrals[]` keyed by `client_event_id`. Two ways to name
  * the incident:
  *   - `server_incident_id` — the dispatch's incident (Assignment Detail);
  *   - `incident_local_id`  — an incident captured on THIS phone. At sync time
  *     it is resolved against `incident_local`: once that incident has a
  *     server id the referral sends `incident_id`, otherwise it sends
- *     `incident_client_event_id` and the server resolves it (contract §6).
+ *     `incident_client_event_id` and the server resolves it.
  */
 
 import { openLocalDatabase } from './localDatabase';
@@ -22,7 +22,7 @@ import type { IncidentLocalRow, ReferralLocalRow, ReferralTarget } from './local
 import { uuid } from '../uuid';
 import { markWorkflowSyncFailed } from './workflowSync';
 
-/** Referral targets in the order shown to the Tanod, with plain-language labels (contract §5 enum). */
+/** Referral targets in the order shown to the Tanod, with plain-language labels. */
 export const REFERRAL_TARGETS: readonly { value: ReferralTarget; label: string; hint: string }[] = [
   { value: 'pnp', label: 'PNP (Pulis)', hint: 'Police' },
   { value: 'bfp', label: 'BFP (Bumbero)', hint: 'Fire protection' },
@@ -137,7 +137,7 @@ export interface UnsyncedReferral {
   row: ReferralLocalRow;
   /** The incident's server id when known — preferred. */
   incidentId: number | null;
-  /** Fallback identity of a phone-only incident (contract §6). */
+  /** Fallback identity of a phone-only incident. */
   incidentClientEventId: string | null;
 }
 

@@ -4,20 +4,13 @@ declare(strict_types=1);
 namespace Baranguard\Services\Auth;
 
 /**
- * Minimal HS256 JWT encode/decode. No Composer dependency (deliberately —
- * Sprint 0 never wired up a PHP package manager, and pulling one in just
- * for JWT felt like scope creep for what this needs: one algorithm, one
- * fixed claim shape). If a future sprint wants RS256/JWKS rotation, swap
- * this for firebase/php-jwt then — HS256 with a server-side secret is
- * enough for a single trusted local workstation (Master Reference §2
- * Rule 7/19: locally hosted, no cloud deployment in scope).
+ * Minimal HS256 JWT encode/decode with no Composer dependency: one
+ * algorithm, one fixed claim shape. HS256 with a server-side secret is
+ * enough for a single trusted local workstation.
  *
- * Master Reference §2 Rule 9: JWTs expire in 15 minutes, carry a unique
- * `jti` mapped to one auth_session row, and every authenticated request
- * verifies signature, allowed algorithm, expiry, session existence,
- * session revocation, user activation, and tenant identity. This class
- * only does the signature/algorithm/expiry part — AuthMiddleware does the
- * rest (session/user/tenant checks) against the database.
+ * Tokens carry a unique `jti` mapped to one auth_session row. This class
+ * only does the signature/algorithm/expiry part; AuthMiddleware does the
+ * session, revocation, user and tenant checks against the database.
  */
 final class Jwt
 {

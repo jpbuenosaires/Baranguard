@@ -1,12 +1,11 @@
 /**
- * KpiCard — one KPI tile for W2 Admin Dashboard (§9). PascalCase per §4
- * component-file convention. No framework: this is a plain function that
- * returns a DOM node, not a class/JSX component.
+ * KpiCard — one KPI tile for the Admin Dashboard. No framework: this is a
+ * plain function that returns a DOM node, not a class/JSX component.
  *
- * The Figma export's AdminDashboard.tsx gives every KPI card its own
- * colored icon badge (Bell/blue, CheckCircle/green, Clock/orange,
- * Users/teal) rather than a plain text tile — `icon`/`accent` reproduce
- * that; both are optional so a caller can still render a bare KPI card.
+ * Each KPI card has its own colored icon badge (Bell/blue, CheckCircle/green,
+ * Clock/orange, Users/teal) rather than a plain text tile — `icon`/`accent`
+ * provide that; both are optional so a caller can still render a bare KPI
+ * card.
  *
  * @param {{label:string, value:number|string|null, emptyText?:string, icon?:(size:number)=>string, accent?:'blue'|'green'|'orange'|'teal', delta?:number|null, deltaLabel?:string, sparkline?:number[]}} props
  *   `value === null` renders the empty state text instead of a number —
@@ -23,11 +22,10 @@
  *   `trend` (optional): `'up-good'` or `'down-good'` — which DIRECTION is
  *   good for this particular metric, used to colour the delta. Omit it for
  *   a metric with no inherent good direction and the delta stays neutral.
- *   The supplied reference tints "+12% Total Incidents" green; more
- *   incidents is not good news, and colouring it so would encode a
- *   judgement the data doesn't support — hence per-metric rather than a
- *   blanket green-up/red-down rule.
- *   `sparkline` (optional, §4.4 of the UI/UX review): a raw per-day count
+ *   Total Incidents going up is not good news, and colouring it green would
+ *   encode a judgement the data doesn't support — hence per-metric rather
+ *   than a blanket green-up/red-down rule.
+ *   `sparkline` (optional): a raw per-day count
  *   series, oldest first — rendered as a small inline SVG polyline under
  *   the value. Omit it (not an empty array) for a KPI with no matching
  *   real series behind it: `admin-dashboard.js`'s `summary.trend` counts
@@ -36,7 +34,7 @@
  *   isn't what that series measures) — so only Total Incidents gets one,
  *   never a sparkline built from data that doesn't actually match the
  *   number it's attached to.
- *   `description` (optional, 2026-09-05): a one-sentence definition shown
+ *   `description` (optional): a one-sentence definition shown
  *   in a small hover/focus card next to the label — see `Tooltip.js`.
  * @returns {HTMLElement}
  */
@@ -66,7 +64,7 @@ export function KpiCard({
     const chipEl = document.createElement('span');
     chipEl.className = `kpi-card__chip kpi-card__chip--${badgeChip.tone || 'neutral'}`;
     if (badgeChip.tone === 'live') {
-      // DOM, not innerHTML: badgeChip.text is caller-supplied (V-12).
+      // DOM, not innerHTML: badgeChip.text is caller-supplied.
       const dot = document.createElement('span');
       dot.className = 'kpi-card__chip-dot';
       const label = document.createElement('span');
@@ -260,8 +258,8 @@ export function KpiHeroCard({
 
 
 /**
- * §4.4 — a minimal inline SVG polyline, no charting library (same
- * hand-rolled approach TrendChart.js/DonutChart.js already use). Values
+ * A minimal inline SVG polyline, no charting library (same
+ * hand-rolled approach LineChart.js/DonutChart.js use). Values
  * are normalized to the SVG's own 0-100 viewBox range, not to real
  * pixels, so the line always fills the box regardless of the actual
  * count magnitude.

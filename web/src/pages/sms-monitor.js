@@ -1,6 +1,6 @@
 /**
- * sms-monitor.js — W14 SMS Monitor.
- * Overhauled UI/UX:
+ * sms-monitor.js — SMS Monitor.
+ * Features:
  * - 3-column operational layout with high-density tokenized interface
  * - Initials avatars with deterministic color hashing
  * - Grouped message threads with date dividers and delivery status indicators
@@ -102,22 +102,13 @@ const QUICK_RESPONSES = [
   },
 ];
 
-/* SEEDED_CONVERSATIONS and SEEDED_LIVE_FEED removed 2026-09-06 - both
- * silently substituted fabricated named individuals, phone numbers and
- * realistic-looking Tagalog citizen-complaint text (Rule 6: no fabricated
- * statistics, no hardcoded identities) whenever the real API returned an
- * empty list OR failed outright. The genuinely-empty and error states now
- * both have honest handling instead: renderContactList()'s own
- * "No SMS conversations recorded." note (unchanged, it already existed),
- * and the Live Feed panel's renderEmptyFeed()/renderFeedError(). */
-// The name.includes(<specific fake contact name>) clauses this function
-// used to carry (juan dela cruz / baranguard / maria santos / dispatch /
-// pedro reyes) were tuned to the removed fake seed conversations and
-// served no purpose on real data except risking a real citizen who
-// happens to share a common name being mis-tagged by coincidence.
-// Stripped; messageType (a real, fixed server enum) and message-body
-// keywords (real text, genuinely inspected) are what is actually being
-// categorized here.
+// Conversations and the Live Feed show only real API data: no seeded names,
+// phone numbers or placeholder citizen text stand in for an empty list or a
+// failed request (no fabricated statistics, no hardcoded identities). The
+// empty and error states are renderContactList()'s "No SMS conversations
+// recorded." note and the Live Feed panel's renderEmptyFeed()/renderFeedError().
+// Categorizes by messageType (a real, fixed server enum) and message-body
+// keywords (real text), never by specific contact names.
 function getContactTagInfo(convo) {
   const type = convo.lastMessage?.messageType || 'manual';
   const direction = convo.lastMessage?.direction || 'inbound';
@@ -141,21 +132,9 @@ function getContactTagInfo(convo) {
   return { label: msgTypeLabel(type), pillClass: 'sms-tag-pill--neutral' };
 }
 
-// getContactLocation() removed 2026-09-06 - GET /sms/conversations never
-// returns a location field (SmsController::conversations() scopes every
-// row to the caller's OWN barangay_id server-side, so every conversation
-// on this screen already belongs to the same barangay), so this always
-// fell through to keyword-matching text for names/phrases that only
-// existed in the removed fake seed data, and finally to a phone-number
-// hash picking one of four hardcoded names - one of which, "Brgy.
-// Poblacion", is not even a real barangay this deployment serves (the
-// real four are Dao/Binanuahan/Marifosque/Banuyo, REFERENCE.md section 1).
-// That last branch was not a rare fallback - since .location is never
-// set on real data, every single contact would have shown a fabricated,
-// meaningless barangay label as if it were fact (Rule 6: no fabricated
-// identities). There is no honest per-conversation location to show, so
-// the label is gone rather than replaced with something that looks real
-// but isn't.
+// No per-conversation location is shown: GET /sms/conversations returns no
+// location field, and every conversation already belongs to the caller's own
+// barangay.
 
 function formatSmartTime(isoOrTime) {
   if (!isoOrTime) return '';
@@ -229,9 +208,9 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
     <span>Activity Log</span>
   `;
 
-  // Advisory subscribers (migration 0018). Admin-only in the UI too —
-  // the server enforces it regardless, but offering a tab that only
-  // 403s would be a control that does nothing (§2 Rule 6).
+  // Advisory subscribers. Admin-only in the UI too — the server enforces it
+  // regardless, but offering a tab that only 403s would be a control that
+  // does nothing.
   const subscribersTabBtn = document.createElement('button');
   subscribersTabBtn.type = 'button';
   subscribersTabBtn.className = 'page-tab';
@@ -344,7 +323,7 @@ export function renderSmsMonitorPage(root, user, onLoggedOut, navigate, param) {
 }
 
 // ============================================================
-// Advisory List Tab (migration 0018)
+// Advisory List Tab
 // ============================================================
 
 const CONSENT_SOURCE_LABELS = {
@@ -365,7 +344,7 @@ const CONSENT_SOURCE_LABELS = {
  * list look tidier while making the barangay less able to answer for
  * itself.
  *
- * All four states (§8): loading, error-with-retry, empty, populated.
+ * All four states: loading, error-with-retry, empty, populated.
  */
 const SUBSCRIBER_COLUMNS = [
   { key: 'number', label: 'Number', width: '20%' },
@@ -710,8 +689,7 @@ function renderConversationsTab(container, pageHeader, user, setLiveFeedTimer, o
 
       // .total is a real count and 0 is a legitimate value (a quiet day
       // is real data, not something to paper over) — || here would
-      // silently replace a genuine zero with a fabricated number, exactly
-      // what Rule 6 (no fabricated statistics) exists to catch.
+      // silently replace a genuine zero with a fabricated number.
       const totalVal = totalToday.total ?? 0;
       const inVal = inboundToday.total ?? 0;
       const outVal = outboundToday.total ?? 0;
@@ -1432,7 +1410,7 @@ async function loadLiveFeed(feedPane, onSelectPhone) {
 // LIVE_FEED_POLL_MS, and a real outage would otherwise spam a toast every
 // cycle. Genuinely-empty and fetch-failed are worded differently so an
 // Admin watching this panel can tell "nothing happening" from "this isn't
-// working" - both used to render identically (fabricated placeholder rows).
+// working".
 function renderEmptyFeed(listHost) {
   listHost.innerHTML = '';
   const note = document.createElement('p');
@@ -1486,34 +1464,22 @@ function renderFeedItems(items, listHost, onSelectPhone) {
     body.append(text, time);
     entry.append(dot, body);
 
-    // 2026-09-13: removed a "Click to view related conversation" title +
-    // click handler keyed on `item.phoneNumber` — GET /sms/logs never
-    // returns a phone number (masked by design, REFERENCE.md §5) so this
-    // could never actually fire; it looked interactive and did nothing,
-    // exactly what §2 Rule 6 forbids. `onSelectPhone` stays a parameter
-    // here (unused in this function now) since callers still thread it
-    // through for `loadLiveFeed`'s own signature, shared with other real
-    // uses of the same callback elsewhere in this file.
+    // No click handler keyed on `item.phoneNumber`: GET /sms/logs never
+    // returns a phone number (masked by design), so it could never fire, and
+    // a control that looks interactive and does nothing is forbidden.
+    // `onSelectPhone` stays a parameter (unused in this function) since
+    // callers thread it through `loadLiveFeed`'s signature, shared with
+    // other real uses of the same callback elsewhere in this file.
 
     listHost.appendChild(entry);
   });
 }
 
-// 2026-09-13: was keyword-matching against `item.messageBody`/hardcoded
-// barangay and Tanod names ("Tanod Ramos", "Tanod Garcia", "Brgy.
-// Marifosque"/"Brgy. Binanuahan") that exist nowhere in this project's
-// real seed data — a live §2 Rule 6 violation ("no fabricated
-// statistics... no hardcoded identities") found while closing out a
-// backlog item elsewhere. Worse than a missing-data fallback: this ran
-// on EVERY row unconditionally, and `GET /sms/logs` never even returns
-// `message_body` or a phone number in the first place (masked by
-// design, see REFERENCE.md §5's own note on this endpoint) — so the
-// keyword branches could never match real data; they'd have silently
-// fired their fabricated text only for the empty-string case, i.e.
-// always. Replaced with a plain, honest description built from the two
-// real fields this endpoint actually returns: direction and message
-// type, same `replace(/_/g, ' ')` humanization already used elsewhere
-// in this file (see the Conversations detail rendering).
+// A plain, honest description built from the two real fields `GET /sms/logs`
+// returns: direction and message type (the endpoint never returns
+// `message_body` or a phone number — masked by design), with the same
+// `replace(/_/g, ' ')` humanization used elsewhere in this file (see the
+// Conversations detail rendering). No hardcoded barangay or Tanod names.
 function describeLiveFeedEvent(item) {
   const direction = item.direction === 'outbound' ? 'Outgoing' : 'Incoming';
   const typeLabel = item.messageType ? msgTypeLabel(item.messageType).toLowerCase() : 'message';
@@ -1526,7 +1492,7 @@ function describeLiveFeedEvent(item) {
 // ============================================================
 
 /**
- * Keyboard behaviour for the page's two SMS dialogs (audit X-10): Escape
+ * Keyboard behaviour for the page's two SMS dialogs: Escape
  * closes, Tab stays inside. Focus return is done by the opener.
  */
 function trapModalKeys(overlay, onCancel) {
@@ -1922,15 +1888,12 @@ function buildNewMessageModal(existingConversations, onRecipientSelected, onCanc
 // ============================================================
 
 /**
- * Thin adapter over the shared DateRangePicker component.
- *
- * 2026-09-06 UI/UX audit: this file used to hand-roll the whole control
- * (~130 lines), as four other screens also did. The shared component owns
- * it now; this wrapper only preserves the {wrapper, getDateRange, reset}
- * shape the Activity Log tab's call sites already expect, and translates
- * the component's {from, to} into the {dateFrom, dateTo} the SMS log's
- * query builder uses. "All time" maps to undefined/undefined, which is
- * this screen's way of sending no date bounds at all.
+ * Thin adapter over the shared DateRangePicker component: preserves the
+ * {wrapper, getDateRange, reset} shape the Activity Log tab's call sites
+ * expect, and translates the component's {from, to} into the {dateFrom,
+ * dateTo} the SMS log's query builder uses. "All time" maps to
+ * undefined/undefined, which is this screen's way of sending no date bounds
+ * at all.
  */
 function buildDateRangePicker(initialRange = '30', onRangeChange) {
   const picker = DateRangePicker({
@@ -2400,23 +2363,19 @@ function renderSmsLogCell(row, key, navigate) {
 // Utilities
 // ============================================================
 
-// Code-review finding H-22 (2026-09-24): this always assumed the GSM-7
-// default alphabet's 160/153-char limits, regardless of what the message
-// actually contained. Any character outside GSM 03.38's basic set (most
-// emoji, many Unicode punctuation marks, most non-Latin scripts) forces
-// the WHOLE message into UCS-2 encoding, whose real limits are 70 chars
-// single / 67 per concatenated segment — a message showing "1 segment"
-// under the old always-GSM-7 assumption could actually need 2+ once it
-// contains even one such character. Bikol/Filipino text in plain Latin
-// script (including ñ, which IS in the GSM-7 basic set) is unaffected;
-// this matters for curly quotes, em dashes, emoji, or other characters an
-// operator might paste in from elsewhere. Doesn't distinguish the GSM-7
-// EXTENSION table (€, [, ], {, }, ^, ~, \, |, each costing 2 of the 160/153
-// budget) — a smaller, rarer case than the UCS-2 gap this fixes, and
-// still gives a closer estimate than assuming plain GSM-7 for everything.
-// The actual SEND path (LocalGsmOutboundClient.php -> Android's own
-// SmsManager.divideMessage()) already segments correctly regardless —
-// this only fixes the operator-facing estimate shown while composing.
+// SMS segment estimate for the compose counter. Any character outside GSM
+// 03.38's basic set (most emoji, many Unicode punctuation marks, most
+// non-Latin scripts) forces the WHOLE message into UCS-2 encoding, whose real
+// limits are 70 chars single / 67 per concatenated segment, versus 160/153
+// for GSM-7. Bikol/Filipino text in plain Latin script (including ñ, which IS
+// in the GSM-7 basic set) is unaffected; this matters for curly quotes, em
+// dashes, emoji, or other characters an operator might paste in. Doesn't
+// distinguish the GSM-7 EXTENSION table (€, [, ], {, }, ^, ~, \, |, each
+// costing 2 of the 160/153 budget) — a smaller, rarer case, and still a closer
+// estimate than plain GSM-7 for everything. The actual SEND path
+// (LocalGsmOutboundClient.php -> Android's own SmsManager.divideMessage())
+// segments correctly regardless; this only affects the operator-facing
+// estimate shown while composing.
 const GSM7_BASIC_CHARS = new Set(
   "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà"
 );

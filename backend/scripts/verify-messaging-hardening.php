@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Service-level checks for the 2026-10-28 messaging audit fixes. Run by
+ * Service-level checks for messaging hardening. Run by
  * verify-messaging-hardening.sh against a DISPOSABLE database (DB_* env);
  * expects users `msg_admin`, `msg_tanod` (+639170000002), `msg_sec`, `msg_pb`
  * to be seeded already. Prints [PASS]/[FAIL] lines; exit 1 on any failure.

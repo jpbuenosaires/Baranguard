@@ -4,8 +4,7 @@ import assert from 'node:assert/strict';
 import { api, window, mountPage, settle, cleanup, text, click, type, buttonByText, $, $$ } from '../harness/render.mjs';
 import { renderIncidentDetailPage } from '../../src/pages/incident-detail.js';
 
-// The Electronic Blotter and the AI redaction pipeline were removed
-// (migration 0029), so this page is now a single incident view: dossier,
+// This page is a single incident view: dossier,
 // narrative, evidence, timeline, the Admin resolve control and the
 // Secretary's lifecycle actions.
 

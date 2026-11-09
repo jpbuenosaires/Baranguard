@@ -2,14 +2,13 @@
 declare(strict_types=1);
 
 /**
- * Route table for `/sms/*` (§6, §9 W14/SMS Monitor). Ordinary
+ * Route table for `/sms/*` (SMS Monitor). Ordinary
  * authenticated `/api/v1` routes — NOT the internal-only
  * `/internal/sms/*` surface (see routes-internal/sms.php +
  * public/internal.php for that one).
  *
- * `conversations`/`send`/`broadcast` (2026-09-05 UX pass) are the
- * deliberate rescoping of this screen's prior read-only-only design —
- * see SmsController.php's own class doc.
+ * `conversations`/`send`/`broadcast` go beyond the read-only log — see
+ * SmsController.php's own class doc.
  */
 
 use Baranguard\Controllers\SmsController;
@@ -21,7 +20,7 @@ return [
     ['PATCH', '#^/sms/conversations/([0-9+]+)/resolve$#', [SmsController::class, 'resolveConversation'], true],
     ['POST', '#^/sms/send$#', [SmsController::class, 'send'], true],
     ['POST', '#^/sms/broadcast$#', [SmsController::class, 'broadcast'], true],
-    // Advisory subscribers (migration 0018). Admin-only; consent rules
+    // Advisory subscribers. Admin-only; consent rules
     // are enforced in the controller, not left to the UI.
     ['GET', '#^/sms/subscribers$#', [SmsController::class, 'subscribers'], true],
     ['POST', '#^/sms/subscribers$#', [SmsController::class, 'addSubscriber'], true],

@@ -1,23 +1,12 @@
 /**
- * geolocation.ts — the device's own position source for M7 Live Map's GPS
- * broadcast (§6 POST /gps, §9 M7).
+ * geolocation.ts — the device's own position source for the Live Map's GPS broadcast (POST /gps).
  *
- * FOREGROUND ONLY, deliberately: tracking starts when M7 mounts and stops
- * when it unmounts (see the stop function `watchPosition` returns). A
- * background location service (tracking while the app is closed) is a
- * materially bigger native undertaking — a foreground-service
- * notification, battery-optimization exemptions, and Android 10+'s
- * separate background-location consent flow — none of which is part of
- * this cut's documented scope (§9 M7 describes a live map SCREEN, not a
- * standing background tracker). If continuous background GPS is wanted
- * later, that is a separate, explicitly-scoped decision, not something to
- * fold in silently here.
+ * FOREGROUND ONLY, deliberately: tracking starts when the Live Map mounts and stops when it unmounts
+ * (see the stop function `watchPosition` returns). Background tracking is a separate native service
+ * (`patrolLocationService.ts`).
  *
- * Needs `@capacitor/geolocation` (added to package.json this cut) and,
- * once `npx cap sync` is re-run, the ACCESS_FINE_LOCATION /
- * ACCESS_COARSE_LOCATION manifest permissions the plugin adds — same
- * "device/Android-SDK verification still outstanding" caveat as every
- * other native-plugin addition in this codebase (Camera, voice recorder).
+ * Needs `@capacitor/geolocation` and the ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION manifest
+ * permissions the plugin adds.
  */
 
 import { Geolocation, type Position } from '@capacitor/geolocation';
@@ -26,7 +15,7 @@ export interface DevicePosition {
   latitude: number;
   longitude: number;
   accuracyM: number;
-  /** ISO 8601 UTC string — device capture time, §5's `recorded_at`. */
+  /** ISO 8601 UTC string — device capture time (the `recorded_at` value). */
   recordedAt: string;
 }
 
@@ -40,17 +29,14 @@ function toDevicePosition(position: Position): DevicePosition {
 }
 
 /**
- * Makes sure ACCESS_FINE/COARSE_LOCATION is granted, prompting the OS
- * dialog if it isn't yet. Returns whether location is usable afterwards.
+ * Makes sure ACCESS_FINE/COARSE_LOCATION is granted, prompting the OS dialog if it isn't yet. Returns
+ * whether location is usable afterwards.
  *
- * 2026-09-19, found on the Infinix after `pm clear`: nothing in the app
- * ever called `requestPermissions()` explicitly — the prompt only ever
- * appeared as a side effect of the Live Map/SOS calling
- * `getCurrentPosition()`. A fresh install that goes on duty from Home
- * first therefore never got asked, `PatrolLocationPlugin.start()`
- * rejected on the missing grant, and the duty card still said
- * "Foreground GPS · 15s Broadcast" with zero GPS running (§2 Rule 6).
- * `home.tsx` calls this before starting the patrol service.
+ * Nothing else calls `requestPermissions()` explicitly: the prompt would otherwise only appear as a
+ * side effect of the Live Map/SOS calling `getCurrentPosition()`. A fresh install that goes on duty
+ * from Home first would never be asked, `PatrolLocationPlugin.start()` would reject on the missing
+ * grant, and the duty card would claim GPS running with none. `home.tsx` calls this before starting
+ * the patrol service.
  */
 export async function ensureLocationPermission(): Promise<boolean> {
   try {

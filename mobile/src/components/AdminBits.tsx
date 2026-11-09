@@ -1,7 +1,6 @@
 /**
- * AdminBits.tsx — shared pieces of the Chief Tanod console (decision 15C,
- * stage 1): a required-reason sheet, the read-only incident sheet with the
- * dispatch actions, and a time formatter for server timestamps.
+ * AdminBits.tsx — shared pieces of the Chief Tanod console: a required-reason sheet, the read-only
+ * incident sheet with the dispatch actions, and a time formatter for server timestamps.
  *
  * Everything here is ONLINE-ONLY. No write is queued, and a success message
  * is only ever shown after the server answered 200/201.

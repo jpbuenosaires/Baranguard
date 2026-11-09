@@ -1,4 +1,4 @@
-/** Full-bleed turn-by-turn navigation surface of the assignment detail page (Phase 6 split; markup unchanged). */
+/** Full-bleed turn-by-turn navigation surface of the assignment detail page. */
 import { IonIcon, IonSpinner } from '@ionic/react';
 import {
   checkmarkCircle,

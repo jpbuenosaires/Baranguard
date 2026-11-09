@@ -1,6 +1,6 @@
 /**
  * verify-local-schema.mjs — asserts the mobile local schema actually
- * matches Master Reference §5 "Mobile Local", by executing the REAL
+ * matches its declared shape, by executing the REAL
  * migration statements (imported from src/services/db/localSchema.ts, not
  * copy-pasted) against a real SQLite engine and inspecting the result.
  *
@@ -10,12 +10,12 @@
  * dependency to the app.
  *
  * What this DOES verify: the DDL is valid SQL, every table/column/type/
- * nullability/default matches §5 exactly, the UNIQUE constraint on
+ * nullability/default matches the expected shape exactly, the UNIQUE constraint on
  * `client_event_id` is really enforced, declared defaults really apply,
  * and the migration runner is idempotent.
  *
- * What this does NOT verify (needs a real Android device/emulator —
- * flagged in DEVLOG rather than glossed over): that SQLCipher actually
+ * What this does NOT verify (needs a real Android device/emulator):
+ * that SQLCipher actually
  * encrypts the file on disk, and anything in localDatabase.ts, which is
  * Capacitor-dependent.
  *
@@ -145,7 +145,7 @@ const EXPECTED = {
     last_attempt_at:       ['TEXT', 0, null, 0],
     reconciliation_status: ['TEXT', 1, "'pending'", 0],
   },
-  // Migration 6 (2026-10 tanod workflow, contract §9).
+  // Migration 6 (tanod workflow tables).
   availability_local: {
     local_id:           ['TEXT', 1, null, 1],
     server_avail_id:    ['INTEGER', 0, null, 0],
@@ -558,7 +558,7 @@ check(db.prepare('SELECT incident_display_id FROM dispatch_local WHERE local_id 
   upgradeDb.close();
 }
 
-// --- 6b. The real-world 2026-10 path: an installed app already on schema v5 -----
+// --- 6b. Upgrade path: an installed app already on schema v5 -----
 // (with an unsynced incident, a GPS point and a queued SOS) takes migration 6
 // in place — nothing it captured offline is lost, and the new columns/tables
 // arrive empty/NULL.

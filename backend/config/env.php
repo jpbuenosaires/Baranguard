@@ -2,28 +2,17 @@
 declare(strict_types=1);
 
 /**
- * Minimal .env loader (no Composer dependency — Sprint 0's db.php comment
- * mentioned vlucas/phpdotenv, but nothing was ever added to require it, so
- * getenv() returned nothing under Apache/XAMPP, which doesn't read .env on
- * its own the way `dotenv` does for the Node side). Parses backend/.env
- * into $_ENV/$_SERVER only — never `putenv()` — without overwriting any
- * variable the environment already provides (e.g. Apache SetEnv/vhost
- * config, or a real deployment's process manager).
+ * Minimal .env loader (no Composer dependency). Parses backend/.env into
+ * $_ENV/$_SERVER only — never `putenv()` — without overwriting any variable
+ * the environment already provides (e.g. Apache SetEnv/vhost config).
  *
- * Deliberately NOT using putenv()/getenv() for our own config values
- * (2026-09-02 fix, real bug found in production use): those touch the
- * single OS-level process environment table, which is shared across every
- * thread of the same Apache worker process under a threaded MPM
- * (mpm_winnt on this XAMPP install runs 150 threads per process) — and
- * neither call is documented as thread-safe. Concurrent requests calling
- * baranguard_load_env() (every request does, since $loaded is reset each
- * request) raced on that shared table and intermittently produced
- * "Missing required environment variable: DB_HOST" even though the value
- * was correctly in .env — caught via the real Apache error log, not a
- * hunch. $_ENV/$_SERVER are ordinary per-request PHP superglobals, not
- * shared OS state, so they carry no such race. Every reader in this
- * codebase must go through baranguard_env() below, never raw getenv(),
- * for a value that comes from .env.
+ * Deliberately NOT using putenv()/getenv() for our own config values: they
+ * touch the single OS-level environment table, shared across every thread of
+ * an Apache worker under a threaded MPM (mpm_winnt runs 150 threads) and not
+ * thread-safe, so concurrent requests intermittently saw "Missing required
+ * environment variable: DB_HOST". $_ENV/$_SERVER are per-request superglobals
+ * with no such race. Every reader must go through baranguard_env() below,
+ * never raw getenv(), for a value that comes from .env.
  *
  * Include this once, first, from backend/public/index.php (or any PHP
  * entrypoint/CLI script) before reading any env var.

@@ -1,29 +1,17 @@
 /**
- * assignment-detail.tsx — M6 Assignment Detail / Tactical Navigation (§9 Mobile).
+ * assignment-detail.tsx — Assignment Detail / Tactical Navigation.
  *
- * PRODUCTION-GRADE OVERHAUL:
- * Clean, flat, modern, minimal mobile UI designed specifically for Tanods in the field.
- *
- * UX & ACCESSIBILITY ENHANCEMENTS:
- * 1. Streamlined Information Hierarchy:
- *    - Replaces bulky decorative 4-step stepper with a high-contrast, compact
- *      operational stage tracker (saving ~70px vertical viewport).
- *    - Eliminates redundant status tags ("Arrived" repeated in 3 separate locations).
- *    - Displays genuine incident briefing narrative (redacted_incident_summary)
- *      and formatted telemetry (distance + compass bearing + elapsed time).
- * 2. Integrated Map Surface:
- *    - Replaces disconnected text links with a unified, high-contrast map control bar
- *      meeting 48px touch-target standards (Center GPS, Re-route, External Maps).
- *    - Live distance/ETA badge directly on the map viewport.
- * 3. Context-Driven Operational CTAs:
- *    - Dynamically prioritizes actions based on operational stage (e.g., when Arrived,
- *      on-scene completion is primary rather than navigation).
- *    - Added Nielsen Heuristic #5 Error Prevention: Confirmation modal sheet before
- *      completing dispatches to prevent accidental taps while moving in the field.
- * 4. WCAG 2.2 AAA/AA Contrast & Haptic Feedback:
- *    - 100% theme parity across Light (#F8FAFC) and Dark (#0F172A) systems.
- *    - Zero gradients, zero nested card borders, pure flat design tokens.
- *    - Multi-cadence tactical vibration feedback for critical transitions.
+ * Flat, minimal field UI for Tanods:
+ *  - A compact, high-contrast operational stage tracker (no bulky 4-step stepper, no redundant status
+ *    tags), the incident briefing (redacted_incident_summary) and formatted telemetry (distance +
+ *    compass bearing + elapsed time).
+ *  - Integrated map surface: one map control bar meeting 48px touch targets (Center GPS, Re-route,
+ *    External Maps) and a live distance/ETA badge on the map viewport.
+ *  - Context-driven CTAs: actions are prioritised by operational stage (e.g. when Arrived, on-scene
+ *    completion is primary), with a confirmation sheet before completing a dispatch to prevent
+ *    accidental taps while moving.
+ *  - Light/dark parity, flat design tokens only, and multi-cadence vibration feedback for critical
+ *    transitions.
  */
 
 import { useEffect, useRef, useState } from 'react';

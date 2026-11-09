@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * Route table for Safer School Zones' school registry and Tanod school
- * check-ins (docs/FEATURE_CONTRACT_2026-10.md section 7, migration 0033).
+ * check-ins.
  * There is deliberately no DELETE /schools/:id -- deactivate with
  * is_active=false instead.
  */

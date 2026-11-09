@@ -10,8 +10,7 @@ use Baranguard\Services\Notifications\NotificationService;
 use PDO;
 
 /**
- * OfferService — night-time dispatch offers (Wave 2 review decision,
- * migration 0038).
+ * OfferService — night-time dispatch offers.
  *
  * THE MODEL. From 18:00 (inclusive) to 06:00 (exclusive) Asia/Manila, every
  * newly created PENDING incident automatically opens an *offer*: a broadcast
@@ -19,7 +18,7 @@ use PDO;
  * `responding`), holds a PUBLISHED shift covering now, is active and
  * unsuspended, and has no active dispatch.
  *
- * ROSTER FALLBACK (2026-10-12 decision, gap #5). The published-shift Tanods
+ * ROSTER FALLBACK. The published-shift Tanods
  * are always the first choice. Only when NOT ONE Tanod qualifies with a
  * published shift does a round go instead to every otherwise-eligible Tanod
  * (same barangay, active, unsuspended, on duty, no active dispatch) whose OWN
@@ -68,7 +67,7 @@ use PDO;
  * `closeLiveOffersForIncident()` — offers). Concurrency is reasoned from
  * `SELECT ... FOR UPDATE`, not demonstrated: `php -S` is single-threaded.
  *
- * RULE 7. The auto-trigger runs AFTER the incident's own commit and can
+ * OFFLINE-SAFE INTAKE. The auto-trigger runs AFTER the incident's own commit and can
  * never fail or roll back incident creation (`autoOpenForNewIncident()`
  * swallows and logs everything).
  *
@@ -343,7 +342,7 @@ final class OfferService
     /**
      * Night auto-trigger, called by every incident-create path AFTER its own
      * commit. At night, opens an offer for the new pending incident; by day
-     * does nothing. NEVER throws (Rule 7): any failure is logged and
+     * does nothing. NEVER throws: any failure is logged and
      * swallowed so incident creation is unaffected.
      */
     public static function autoOpenForNewIncident(PDO $pdo, int $incidentId, int $barangayId): void

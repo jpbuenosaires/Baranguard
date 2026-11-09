@@ -1,18 +1,15 @@
 /**
- * schoolRepository.ts — `school_local` (the read-only school cache) and
- * `school_checkin_local` (a Tanod's school check-in/out), contract §7,
- * migration 6.
+ * schoolRepository.ts — `school_local` (the read-only school cache) and `school_checkin_local` (a Tanod's
+ * school check-in/out), migration 6.
  *
- * `school_local` mirrors `GET /schools` for the Tanod's own barangay so the
- * picker (check-in, and the Annex C-1 link on a new incident) works with no
- * connection. It is a cache, not capture data: `cacheSchools()` replaces it
- * wholesale on every successful fetch. It holds no staff contact details and
- * nothing about students — the contract forbids student data of any kind.
+ * `school_local` mirrors `GET /schools` for the Tanod's own barangay so the picker (check-in, and the
+ * Annex C-1 link on a new incident) works with no connection. It is a cache, not capture data:
+ * `cacheSchools()` replaces it wholesale on every successful fetch. It holds no staff contact details
+ * and nothing about students.
  *
- * Check-ins are offline-first (Rule 7). The server stores NO coordinates for a
- * check-in, and neither does this table. Closing a check-in (the only mutation
- * the server allows) follows contract §7's close-by-reference rule — see
- * `endSchoolCheckin()`.
+ * Check-ins are offline-first. The server stores NO coordinates for a check-in, and neither does this
+ * table. Closing a check-in (the only mutation the server allows) follows the close-by-reference rule;
+ * see `endSchoolCheckin()`.
  */
 
 import { openLocalDatabase, withTransaction } from './localDatabase';
@@ -101,7 +98,7 @@ export async function startSchoolCheckin(school: { schoolId: number; name: strin
 }
 
 /**
- * Closes an open check-in (contract §7). Re-sending the SAME client_event_id
+ * Closes an open check-in. Re-sending the SAME client_event_id
  * does not work through /sync/batch (the server's ledger answers 'duplicate'
  * first), so:
  *   (a) check-in NOT synced yet  -> just record `checked_out_at`; the single

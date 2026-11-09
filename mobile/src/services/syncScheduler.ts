@@ -1,12 +1,9 @@
 /**
- * syncScheduler.ts — decides WHEN `syncService.ts`'s `runSyncPass()` runs,
- * which that file's own header comment explicitly leaves to "a screen's
- * own effect" — this is that effect, centralized instead of duplicated
- * per-screen (Mobile Improvement Plan Phase 1.1).
+ * syncScheduler.ts — decides WHEN `syncService.ts`'s `runSyncPass()` runs (that file's header leaves it
+ * to "a screen's own effect"; this is that effect, centralized instead of duplicated per screen).
  *
- * Before this file, a sync pass only ever ran when a Tanod manually
- * opened `SyncQueueModal.tsx` and tapped Sync — a real field-usability gap
- * for a Tanod who assumes returning to workstation Wi-Fi is enough.
+ * Without it a sync pass would only run when a Tanod manually opened `SyncQueueModal.tsx` and tapped
+ * Sync, a field-usability gap for a Tanod who assumes returning to workstation Wi-Fi is enough.
  *
  * Three triggers, all best-effort and non-blocking:
  *   1. Network reconnect (`@capacitor/network`'s `networkStatusChange`).
@@ -16,8 +13,7 @@
  *   3. A 60s interval, but ONLY while on duty — an off-duty Tanod has
  *      nothing time-sensitive to flush, and polling `POST /sync/batch`
  *      every minute for an idle device is a real battery/bandwidth cost
- *      with no offsetting benefit (§2 Rule 6 spirit: don't run a control
- *      nobody needs). `home.tsx` reports duty status here via
+ *      with no offsetting benefit. `home.tsx` reports duty status here via
  *      `setKnownDutyStatus()` rather than this module querying the server
  *      itself, which would be a second, redundant `GET /duty-status`
  *      poll on top of the one `home.tsx` already does on mount.
@@ -28,12 +24,6 @@
  * foreground within the same second) never run two sync passes at once —
  * `runSyncPass()` itself has no such guard, and two concurrent passes
  * reading/marking the same unsynced rows would race.
- *
- * NOT DEVICE-VERIFIED for the network/foreground listeners specifically
- * (same caveat every native-plugin-backed module in this app carries) —
- * type-checked and built against `@capacitor/network`/`@capacitor/app`'s
- * documented API, exercised so far only via a manual `triggerSync()` call
- * path, not a real disconnect/reconnect or backgrounding cycle on device.
  */
 
 import { App as CapacitorApp } from '@capacitor/app';

@@ -7,13 +7,8 @@ namespace Baranguard\Lib;
  * Thrown by anything that wants to short-circuit straight to a standard
  * error response. Caught once, centrally, in public/index.php.
  *
- * Split into its own file (was previously declared alongside `Http` in
- * Http.php) because the autoloader is one-class-per-file: a bare
- * `throw new ApiError(...)` from code that never otherwise touches `Http`
- * (e.g. AuthMiddleware) would try to autoload lib/ApiError.php and fail if
- * this class weren't here — caught via a direct unit test of
- * AuthMiddleware, not the end-to-end HTTP tests, which happened to always
- * load Http first and masked it.
+ * Lives in its own file because the autoloader is one-class-per-file: code that
+ * never touches `Http` (e.g. AuthMiddleware) can still `throw new ApiError(...)`.
  */
 class ApiError extends \RuntimeException
 {

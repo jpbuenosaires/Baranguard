@@ -10,38 +10,20 @@ use Baranguard\Middleware\AuthMiddleware;
 use PDO;
 
 /**
- * GET/PATCH /system-settings — W21 System Settings, built as a
- * deliberate, user-authorized exception to REFERENCE.md §7's own
- * "blocked — no schema/endpoints; needs an architecture review first"
- * note (see migration 0012_system_settings.sql's own header for the
- * full reasoning and the exact scope of that override — SMS Gateway
- * credentials only, nothing else moves out of `.env`).
+ * GET/PATCH /system-settings. Admin-only. Settings are GLOBAL, not
+ * per-barangay: one row per key, not one per tenant.
  *
- * Deliberately SMALL relative to the mockup that prompted it. Every key
- * here is either (a) pure organizational metadata with no behavioral
- * claim, or (b) genuinely wired into real enforcement elsewhere in this
- * codebase. `sms_gateway.sender_name`/`sms_gateway.api_key` were REMOVED
- * 2026-09-23 when Semaphore was replaced with a local GSM gateway (see
- * `LocalGsmOutboundClient`'s own doc): that transport has no cloud
- * credential and no configurable sender name, so there was nothing left
- * for those two keys to hold — leaving them would have been exactly the
- * "control that looks functional and does nothing" §2 Rule 6 forbids.
- * Several mockup-proposed sections — Notifications toggles, GIS
- * staleness/map-default overrides, Backup & Data, most of "Security"
- * (password/lockout policy) — are deliberately NOT built here: most of
- * those proposed controls have no enforcement point anywhere in this
- * codebase to actually wire into (or, for password policy specifically,
- * wiring it would risk drifting `bootstrap-admin.js`'s Node copy out of
- * sync with PHP's, which `PasswordPolicy.php`'s own docblock already
- * flags as a real risk it was written to avoid). Adding a toggle that
- * doesn't gate anything is precisely the "control that looks functional
- * and does nothing" §2 Rule 6 forbids — see `backend/DEVLOG.md`'s "Full
- * UI/UX overhaul, Phase 6" entry for the itemized reasoning.
- *
- * Admin-only. Settings are GLOBAL, not per-barangay — this workstation
- * serves 4 barangays' worth of accounts off one shared SMS gateway
- * account, so there is exactly one settings row per key, not one per
- * tenant.
+ * Deliberately SMALL. Every key is either (a) pure organizational metadata
+ * with no behavioral claim, or (b) genuinely wired into enforcement
+ * elsewhere (the SOS fallback contact numbers). Notifications toggles, GIS
+ * overrides, Backup & Data and password/lockout policy are deliberately NOT
+ * here: they would have no enforcement point to wire into (and password
+ * policy would risk drifting `bootstrap-admin.js`'s Node copy out of sync
+ * with `PasswordPolicy.php`), so they would be controls that look
+ * functional and do nothing. The SMS gateway has no cloud credential or
+ * configurable sender name, so there is no key for those either. Secrets
+ * (`DEVICE_SECRET_MASTER_KEY`, `INTERNAL_SERVICE_TOKEN`, `JWT_SECRET`, FCM
+ * credentials) stay in `.env`.
  */
 final class SettingsController
 {
@@ -50,23 +32,19 @@ final class SettingsController
         'general.system_name' => ['default' => 'BARANGUARD', 'max' => 100, 'secret' => false],
         'general.municipality' => ['default' => 'Pilar, Sorsogon', 'max' => 100, 'secret' => false],
         'general.region' => ['default' => 'Region V (Bicol)', 'max' => 100, 'secret' => false],
-        // G1 (Mobile Improvement Plan Phase 4.3) — the third SOS fallback
-        // tier's destination: a human backup contact the mobile app SMSes
-        // DIRECTLY (own SIM, no gateway) when both the direct app POST and
-        // the workstation itself are confirmed unreachable. Explicit user
-        // decision (2026-09-13): lives here rather than a new table/column,
-        // as one more narrow, non-secret key on the same override W21
-        // already established — not a widening of what that override
-        // covers in kind, just in count. Never returned by the Admin-only
-        // GET above to any OTHER role — see TanodSosController::fallbackContact()
-        // for the one narrow, tanod-readable path to this single value.
+        // The third SOS fallback tier's destination: a human backup contact
+        // the mobile app SMSes DIRECTLY (own SIM, no gateway) when both the
+        // direct app POST and the workstation are unreachable. Non-secret.
+        // Never returned to any other role by the Admin-only GET above; see
+        // TanodSosController::fallbackContact() for the one narrow,
+        // tanod-readable path to this value.
         'sos_fallback.backup_contact_number' => ['default' => '', 'max' => 32, 'secret' => false],
-        // 2026-10-10: the SIM number of the GSM gateway phone (sms-gateway/).
-        // The Tanod app sends its encrypted `sos` envelope here when the
-        // workstation API is unreachable but cellular SMS still works, so the
-        // gateway's inbound ingestion (gsm-ingest-daemon.php ->
-        // /internal/sms/sos) turns it into a real SOS record on the command
-        // center. Non-secret, same exposure rule as the backup contact.
+        // The SIM number of the GSM gateway phone (sms-gateway/). The Tanod
+        // app sends its encrypted `sos` envelope here when the workstation API
+        // is unreachable but cellular SMS still works, so the gateway's
+        // inbound ingestion (gsm-ingest-daemon.php -> /internal/sms/sos)
+        // turns it into a real SOS record. Non-secret, same exposure rule as
+        // the backup contact.
         'sos_fallback.gateway_number' => ['default' => '', 'max' => 32, 'secret' => false],
     ];
 
@@ -74,14 +52,11 @@ final class SettingsController
     private const SECRET_MASK = '••••••••';
 
     /**
-     * PH mobile-number shape for `sos_fallback.backup_contact_number` —
-     * added 2026-09-24 after M13 device testing found this key had NO
-     * format validation anywhere in the stack: a malformed value made
-     * `SmsManager` on the mobile side silently drop the SOS fallback send
-     * (no exception, no trace in content://sms/*) while the app still
-     * reported `sent_by_sms` (false confidence). `SosSmsPlugin.java`
-     * enforces the same shape independently (Java can't share this PHP
-     * pattern) — kept in sync deliberately, not via shared code.
+     * PH mobile-number shape for `sos_fallback.backup_contact_number`. A
+     * malformed value makes `SmsManager` on the phone silently drop the SOS
+     * fallback send while the app still reports `sent_by_sms`.
+     * `SosSmsPlugin.java` enforces the same shape independently; keep the
+     * two in sync by hand.
      */
     private const PH_MOBILE_NUMBER_PATTERN = '/^(\+63|0)9\d{9}$/';
 
@@ -153,9 +128,8 @@ final class SettingsController
                     $stmt->execute(['setting_key' => $key, 'setting_value' => $value, 'updated_by' => $identity['user_id']]);
                 }
 
-                // Rule 17 allow-list: identifiers/statuses only — the
-                // setting KEYS changed are recorded, never their values
-                // (a changed API key must never appear in an audit row).
+                // Allow-listed: the setting KEYS changed are recorded, never
+                // their values (a changed secret must never appear in an audit row).
                 Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'system_settings_updated', 'system_settings', null, [
                     'keys' => implode(',', array_keys($writes)),
                 ]);
@@ -180,13 +154,10 @@ final class SettingsController
     }
 
     /**
-     * Real, UNMASKED single-key lookup for internal (non-HTTP) callers —
-     * e.g. `TanodSosController::fallbackContact()`'s read of
-     * `sos_fallback.backup_contact_number`. Never exposed over
-     * HTTP itself; `index()` above is the only HTTP-facing read of this
-     * table, and it always masks secrets. Returns the key's default when
-     * no row has been saved yet (an Admin who never opened Settings gets
-     * the same behavior as before this table existed).
+     * Real, UNMASKED single-key lookup for internal (non-HTTP) callers, e.g.
+     * `TanodSosController::fallbackContact()`. Never exposed over HTTP
+     * itself; `index()` above is the only HTTP-facing read and it masks
+     * secrets. Returns the key's default when no row has been saved yet.
      */
     public static function get(PDO $pdo, string $key): string
     {

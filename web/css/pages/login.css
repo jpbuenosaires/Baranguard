@@ -1,14 +1,12 @@
 /**
- * login.css — co-located with login.js (W1). Split out of base.css during
- * the 2026-09-02 responsive/density pass. `.login-page`/`.login-card`
- * (the simple centered-card layout) also back main.js's renderUnavailable()
- * fallback and the (removed) public report form — kept generic enough for
- * that reuse, unlike the split-screen `.login-screen` below which is W1-only.
+ * login.css — co-located with login.js. `.login-page`/`.login-card` (the
+ * simple centered-card layout) also back main.js's renderUnavailable()
+ * fallback, so they are kept generic, unlike the split-screen
+ * `.login-screen` below which is login-only.
  *
- * Implements Proposal B (Modern SaaS Restructure):
- * - Balanced golden-ratio grid (56/44) with elevated surface rhythm
- * - Full WCAG 2.2 Level AA compliance (3:1+ input borders, 44x44px touch areas, high-visibility focus rings)
- * - 100% token adherence against base.css
+ * Layout: balanced golden-ratio grid (56/44) with elevated surface rhythm;
+ * WCAG 2.2 Level AA (3:1+ input borders, 44x44px touch areas, high-visibility
+ * focus rings); 100% token adherence against base.css.
  */
 
 .login-page {

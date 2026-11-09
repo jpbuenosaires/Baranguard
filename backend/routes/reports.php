@@ -2,14 +2,9 @@
 declare(strict_types=1);
 
 /**
- * Route table for /reports/* (§6 "Audit / reports" section).
- * GET /reports/summary and GET /reports/heatmap (W5) came first;
- * /reports/export landed in Sprint 7's own box (W9's Export button),
- * with a download route for the same reason the Lupon packet has one —
- * §6 promises a file_url while the file must live outside the web root. /reports/notifications-summary isn't in Sprint 1's own endpoint
- * list either (its data model — notification/notification_target/
- * notification_delivery — is Sprint 4 scope) and is deliberately not
- * built yet; see W9's page-level doc for why.
+ * Route table for /reports/*: summary, heatmap, nav-counts, export (with a
+ * download route, because the file must live outside the web root), the PB
+ * digest and the live Annex D computation.
  */
 
 use Baranguard\Controllers\ReportsController;
@@ -17,21 +12,18 @@ use Baranguard\Controllers\ReportsController;
 return [
     ['GET', '#^/reports/summary$#', [ReportsController::class, 'summary'], true],
     ['GET', '#^/reports/heatmap$#', [ReportsController::class, 'heatmap'], true],
-    // §4.1 of the UI/UX review (sidebar badge counts) — not in §6's
-    // original endpoint list, a resolved/logged addition; see
-    // ReportsController::navCounts()'s own doc.
+    // Sidebar badge counts; see ReportsController::navCounts()'s own doc.
     ['GET', '#^/reports/nav-counts$#', [ReportsController::class, 'navCounts'], true],
     ['GET', '#^/reports/export$#', [ReportsController::class, 'export'], true],
     ['GET', '#^/reports/export/download$#', [ReportsController::class, 'exportDownload'], true],
-    // Periodic PB digest (REMAINING.md §G) -- read-only meta + download
-    // for whatever scripts/generate-pb-digest.php last produced on its
-    // own schedule. No generate route here on purpose: generation is
-    // CLI-only (ReportsController::generateDigest()'s own doc explains
-    // why), same as retention-job.php/ai-worker.php having no HTTP
-    // trigger either.
+    // Periodic PB digest: read-only meta + download for whatever
+    // scripts/generate-pb-digest.php last produced on its own schedule. No
+    // generate route on purpose: generation is CLI-only
+    // (ReportsController::generateDigest()'s own doc explains why), same as
+    // retention-job.php having no HTTP trigger.
     ['GET', '#^/reports/digest$#', [ReportsController::class, 'digestMeta'], true],
     ['GET', '#^/reports/digest/download$#', [ReportsController::class, 'digestDownload'], true],
-    // Safer School Zones Annex D, live-computed (docs/FEATURE_CONTRACT_2026-10.md
-    // section 7); the persisted snapshot is /ssz-term-reports.
+    // Safer School Zones Annex D, live-computed; the persisted snapshot is
+    // /ssz-term-reports.
     ['GET', '#^/reports/school-term$#', [ReportsController::class, 'schoolTerm'], true],
 ];

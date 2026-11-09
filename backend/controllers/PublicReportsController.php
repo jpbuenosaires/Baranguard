@@ -10,73 +10,42 @@ use PDO;
 
 /**
  * PublicReportsController — the one unauthenticated READ surface in the
- * system: an aggregate transparency report a barangay can publish.
+ * system: an aggregate transparency report a barangay can publish, so
+ * residents can see how much is being reported and resolved.
  *
- * WHY THIS EXISTS: the original problem statement is that barangay watch
- * operations leave no shared, structured record. A record that only the
- * barangay hall can see solves half of that. This endpoint is the other
- * half — residents can see how much is being reported and how much is
- * being resolved, without anyone having to trust a figure read out at a
- * meeting.
- *
- * =====================================================================
  * EVERY DESIGN DECISION HERE IS A PRIVACY DECISION. Read before editing.
- * =====================================================================
  *
- * This is UNAUTHENTICATED. There is no session, no role, no tenant
- * scoping to fall back on — the response itself is the entire security
- * boundary. `POST /citizen-reports` is the only other public route and
- * it only WRITES; this is the only thing that reads out.
+ * This is UNAUTHENTICATED: no session, role or tenant scoping, so the
+ * response itself is the entire security boundary.
  *
- *   1. **Counts only, never rows.** No incident ids, no `display_id`, no
- *      narratives (redacted or otherwise), no names, no contact numbers,
- *      no coordinates, no `location_description`. Nothing that could be
- *      joined back to a case.
+ *   1. Counts only, never rows. No incident ids, no `display_id`, no
+ *      narratives, no names, no contact numbers, no coordinates, no
+ *      `location_description`. Nothing that could be joined back to a case.
  *
- *   2. **No location breakdown at all.** Not even by purok. Baranguard's
- *      barangays are ~2,500 people; "1 domestic dispute in Purok 3"
- *      identifies a household to anyone living there. The heatmap exists
- *      for authorised oversight and stays behind a login.
+ *   2. No location breakdown at all, not even by purok. The barangays are
+ *      ~2,500 people; "1 domestic dispute in Purok 3" identifies a
+ *      household. The heatmap stays behind a login.
  *
- *   3. **Monthly buckets, never daily.** A daily count in a community
- *      this size, cross-referenced with what a neighbour saw, is close
- *      to an identifier. Months are coarse enough to be safe and still
- *      show a trend.
+ *   3. Monthly buckets, never daily. A daily count in a community this
+ *      size, cross-referenced with what a neighbour saw, is close to an
+ *      identifier.
  *
- *   4. **SMALL COUNTS ARE SUPPRESSED** (`MIN_BUCKET`). A category with
- *      one or two cases is not a statistic, it is a case. Categories
- *      under the floor are MERGED into a single combined bucket rather
- *      than dropped — dropping them silently would make the parts stop
- *      summing to the total, which both misleads the reader and, by
- *      subtraction, leaks exactly the number being hidden.
+ *   4. SMALL COUNTS ARE SUPPRESSED (`MIN_BUCKET`). A category with one or
+ *      two cases is not a statistic, it is a case. Categories under the
+ *      floor are MERGED into a single combined bucket rather than dropped:
+ *      dropping them would make the parts stop summing to the total and,
+ *      by subtraction, leak exactly the number being hidden.
  *
- *   5. **No response-time figure.** It would be the obvious thing to
- *      publish and it is deliberately absent: `avg_response_time_minutes`
- *      double-counts incidents with more than one arrived dispatch
- *      (`docs/REMAINING.md` F8, still open). Publishing a known-wrong
- *      number to the public is worse than publishing none, and §2 Rule 6
- *      forbids presenting a figure as measured when it isn't. Add it
- *      when F8 is fixed, not before.
+ *   5. No response-time figure. It is deliberately absent: publishing a
+ *      number to the public that is not known to be correct is worse than
+ *      publishing none.
  *
- * RATE-LIMITED AND CACHED (code-review findings H-13/L-03, 2026-09-24 —
- * "publish it properly" was the explicit decision, superseding this
- * class's earlier "not rate-limited, stated plainly rather than faked"
- * stance). The earlier reasoning for NOT limiting it is preserved here
- * because it's still why this couldn't just reuse an existing pattern:
- * `CitizenReportsController::submit()`'s limiter counts the `audit_log`
- * rows its own writes produce, and this endpoint still deliberately
- * writes none (one audit row per anonymous page view would flood a table
- * on a 7-year retention clock, §11, with public traffic). An APCu counter
- * was tried once and removed for being a control that looked functional
- * and did nothing (APCu isn't loaded on this XAMPP build) — §2 Rule 6
- * forbids exactly that. The real fix was building `rate_limit_counter`
- * (migration 0023) and `Baranguard\Lib\RateLimiter` as shared,
- * dependency-free infrastructure, not another fake or per-feature limiter.
- * Limited per-IP to `RATE_LIMIT_MAX` requests per `RATE_LIMIT_WINDOW_
- * SECONDS` — no §5/§6 number is given for a public endpoint's traffic
- * budget; picked generously since a real dashboard/kiosk polling this
- * page is a legitimate use, not abuse. `Cache-Control` is set to the same
- * window so a cooperative client/CDN reduces load on its own.
+ * RATE-LIMITED AND CACHED. Limited per-IP to `RATE_LIMIT_MAX` requests per
+ * `RATE_LIMIT_WINDOW_SECONDS` through `Baranguard\Lib\RateLimiter`
+ * (`rate_limit_counter`); picked generously since a dashboard/kiosk polling
+ * this page is a legitimate use. This endpoint writes no audit row (one per
+ * anonymous page view would flood the audit table). `Cache-Control` is set
+ * to the same window so a cooperative client/CDN reduces load on its own.
  */
 final class PublicReportsController
 {
@@ -96,7 +65,7 @@ final class PublicReportsController
      *  isolates a single case. */
     private const MONTHS = 6;
 
-    /** H-13: per-IP public rate limit. */
+    /** Per-IP public rate limit. */
     private const RATE_LIMIT_MAX = 30;
     private const RATE_LIMIT_WINDOW_SECONDS = 300;
 
@@ -164,10 +133,9 @@ final class PublicReportsController
         $typeStmt->execute();
         $rawTypes = $typeStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-        // Month buckets. Asia/Manila, per §2 Rule 11 — a UTC bucket would
-        // put late-evening incidents in the wrong month for a reader who
-        // lives here. Fixed +08:00 rather than CONVERT_TZ(), which needs
-        // tz tables stock XAMPP does not load.
+        // Month buckets, Asia/Manila: a UTC bucket would put late-evening
+        // incidents in the wrong month. Fixed +08:00 rather than
+        // CONVERT_TZ(), which needs tz tables stock XAMPP does not load.
         $monthStmt = $pdo->prepare(
             "SELECT DATE_FORMAT(DATE_ADD(created_at, INTERVAL 8 HOUR), '%Y-%m') AS ym, COUNT(*) AS n
                FROM incident WHERE {$window}

@@ -9,20 +9,13 @@ use Baranguard\Middleware\AuthMiddleware;
 use PDO;
 
 /**
- * GET /search?q= — Master Reference §6 "Reference / lookup" section, added
- * this session (2026-09-02 architecture review) as the real backing
- * endpoint for the web dashboard topbar's search box, which previously
- * rendered but called nothing (§8's production-realism rule forbids a
- * decorative input that does nothing when used).
+ * GET /search?q= — backs the web dashboard topbar's search box.
  *
- * Deliberately narrow scope: incidents only, not Tanods/locations — there's
- * no incident/user detail screen (W7/W10) built yet to deep-link a Tanod
- * match into, and reusing GET /incidents' own exact authorization instead
- * of inventing a new information-disclosure surface keeps this safe by
- * construction. Same tenant + Tanod-own-only scoping as
- * IncidentsController::index(), same field allow-list (no raw_narrative,
- * regardless of role) — this is a read-only overlay on data the caller
- * could already see via GET /incidents, not new visibility.
+ * Deliberately narrow: incidents only. It reuses GET /incidents' own
+ * authorization (same tenant + Tanod-own-only scoping as
+ * IncidentsController::index(), same field allow-list, no raw_narrative
+ * regardless of role), so it is a read-only overlay on data the caller
+ * could already see, not new visibility.
  */
 final class SearchController
 {
@@ -60,8 +53,7 @@ final class SearchController
             $params['reported_by'] = $identity['user_id'];
         }
 
-        // Punong Barangay: exact id lookup only (audits V-02/P-12,
-        // 2026-10-09; REFERENCE.md section 3 "no list of cases"). A PB can
+        // Punong Barangay: exact id lookup only (no list of cases). A PB can
         // jump to an incident whose number or display id they already have,
         // but cannot list incidents by type, status or partial number. A
         // non-matching query is an empty result, not an error, so the
@@ -80,8 +72,7 @@ final class SearchController
             return;
         }
 
-        // The number staff see and say is the display code (INC-2026-159), so it must be searchable as typed;
-        // before 2026-10-14 only the numeric row id matched, so typing a code found nothing for Admin/Secretary/Tanod.
+        // The number staff see and say is the display code (INC-2026-159), so it must be searchable as typed.
         $matchClauses = ['CAST(incident_id AS CHAR) LIKE :q_id', 'display_id LIKE :q_display'];
         $params['q_id'] = '%' . $q . '%';
         $params['q_display'] = '%' . $q . '%';

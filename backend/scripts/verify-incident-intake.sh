@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Baranguard — incident intake verification (Wave 1 review decisions,
-# migration 0036): `incident.report_channel`, `incident.related_incident_id`,
-# `PATCH /incidents/:id/related`, and the REMOVAL of public
+# Baranguard — incident intake verification (migration 0036):
+# `incident.report_channel`, `incident.related_incident_id`,
+# `PATCH /incidents/:id/related`, and the absence of public
 # `POST /citizen-reports`.
 #
 # Proves: migration 0036 backfill from `source` (seeded rows of each source

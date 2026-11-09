@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-# Baranguard — GET /public/transparency validation (code-review findings
-# H-13/L-03, 2026-09-24 external audit): "publish it properly" — the
-# endpoint existed with no rate limit, no HTTP caching, and no web page
-# ever linking to it. This proves the real fix: RateLimiter-backed 429s,
-# a Cache-Control header, and the response shape the new web page
+# Baranguard — GET /public/transparency validation: RateLimiter-backed 429s,
+# a Cache-Control header, and the response shape the web page
 # (web/src/pages/transparency.js) depends on.
 #
 # Safe to run: disposable database, disposable app-user, throwaway port.
 # Your real `baranguard`/`baranguard_uiseed` databases and backend/.env
-# are never touched. Mirrors the other verify-*.sh scripts' conventions.
+# are never touched.
 #
 # Usage (from a Git Bash prompt):
 #   bash backend/scripts/verify-public-transparency.sh
@@ -27,10 +24,8 @@ expect_eq() { if [ "$1" = "$2" ]; then pass "$3 ($2)"; else fail "$3 — expecte
 jget() { "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); $k=$argv[1]; echo is_array($d) && array_key_exists($k,$d) ? (is_scalar($d[$k]) ? $d[$k] : json_encode($d[$k])) : "MISSING";' "$1"; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -45,12 +40,8 @@ echo "Baranguard public transparency (H-13/L-03) validation — $(date -u +%Y-%m
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for candidate in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$candidate" ] && { echo "$candidate"; return; }
   done

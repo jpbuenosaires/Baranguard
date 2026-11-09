@@ -1,4 +1,4 @@
-/** Sticky bottom action dock of the assignment detail page (Phase 6 split; markup unchanged). */
+/** Sticky bottom action dock of the assignment detail page. */
 import { IonFooter, IonIcon } from '@ionic/react';
 import { checkmarkCircle, navigateOutline } from 'ionicons/icons';
 

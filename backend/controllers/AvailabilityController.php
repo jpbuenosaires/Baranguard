@@ -11,36 +11,30 @@ use Baranguard\Services\Scheduling\RosterSupport;
 use PDO;
 
 /**
- * Tanod availability — docs/FEATURE_CONTRACT_2026-10.md section 3, table
- * `tanod_availability` (migration 0030).
+ * Tanod availability, table `tanod_availability`.
  *
  *   POST  /availability        tanod; X-Device-Id + client_event_id (mobile
- *                              write convention, Rule 3). `createItem()` is
- *                              also the `availability[]` group of
- *                              POST /sync/batch.
+ *                              write convention). `createItem()` is also the
+ *                              `availability[]` group of POST /sync/batch.
  *   GET   /availability        tanod: own rows only; admin / secretary /
  *                              punong_barangay: the whole barangay.
- *   PATCH /availability/:id    retired 2026-10-12: always 410
- *                              `AVAILABILITY_NOT_REVIEWED`.
+ *   PATCH /availability/:id    always 410 `AVAILABILITY_NOT_REVIEWED`.
  *
- * Owner decision 2026-10-12: availability is the tanod's own fixed statement
- * and is NOT reviewed. Nobody accepts it, asks for changes or locks it; the
- * Admin / Secretary schedules against it as stated (a shift outside it is
- * reported as an `OUTSIDE_AVAILABILITY` warning by POST/PATCH /shifts, see
- * services/scheduling/AvailabilityCoverage.php).
+ * Availability is the tanod's own fixed statement and is NOT reviewed.
+ * Nobody accepts it, asks for changes or locks it; the Admin / Secretary
+ * schedules against it as stated (a shift outside it is rejected by
+ * POST/PATCH /shifts, see services/scheduling/AvailabilityCoverage.php).
  *
- * Resolved decisions where the contract is silent (logged in DEVLOG.md):
  *   - A period (user_id, period_start, period_end) is one row. The tanod can
  *     re-submit it at any time: changed windows replace the old ones, bump
  *     `version` and store the new client_event_id (so the sync ledger's
  *     lookup of that id finds the row again). An exact replay of the same
  *     windows is a no-op, never a second version bump.
- *   - Legacy rows: `status` (submitted | accepted | revised) and the review
- *     fields stay in the table and in every response so rows reviewed before
- *     2026-10-12 still display. New rows are always `submitted`. A legacy
- *     `accepted` row is no longer locked (it used to 409): changing its
- *     windows sets it back to `submitted` and clears the old review fields,
- *     exactly like a legacy `revised` row.
+ *   - `status` (submitted | accepted | revised) and the review fields stay
+ *     in the table and in every response so older reviewed rows still
+ *     display. New rows are always `submitted`; changing the windows of an
+ *     `accepted` or `revised` row sets it back to `submitted` and clears the
+ *     review fields.
  *   - A Tanod asking for another user's rows via `user_id=` gets 404.
  *   - No audit row is written for the Tanod's own submission (same as
  *     GPS / duty-status writes).
@@ -63,7 +57,7 @@ final class AvailabilityController
             throw new ApiError(400, 'VALIDATION_ERROR', 'X-Device-Id header is required.');
         }
         RosterSupport::assertDeviceOwnership($pdo, $identity, $deviceId);
-        // H-09: no-op for a device that has not upgraded to a Keystore key yet.
+        // No-op for a device that has not registered a Keystore key yet.
         DeviceSignature::verifyOrReject($pdo, $deviceId, $identity['user_id']);
 
         $result = self::createItem($pdo, $identity, $deviceId, Http::jsonBody());
@@ -71,7 +65,7 @@ final class AvailabilityController
     }
 
     /**
-     * Shared by POST /availability and POST /sync/batch (contract section 6).
+     * Shared by POST /availability and POST /sync/batch.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      * @param array<string,mixed> $item
@@ -82,7 +76,7 @@ final class AvailabilityController
     public static function createItem(PDO $pdo, array $identity, string $deviceId, array $item): array
     {
         RosterSupport::assertDeviceOwnership($pdo, $identity, $deviceId);
-        // H-09, per item: one signature covers the sync batch request and every
+        // Per item: one signature covers the sync batch request and every
         // item is held to it exactly like GpsController::createItem. No-op for a
         // device with no registered Keystore key.
         DeviceSignature::verifyOrReject($pdo, $deviceId, $identity['user_id']);
@@ -114,9 +108,8 @@ final class AvailabilityController
             $existing = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if ($existing !== false) {
-                // Availability is the tanod's own statement and is never
-                // locked (2026-10-12): any status, including a legacy
-                // `accepted` one, takes a resubmission.
+                // Availability is never locked: any status takes a
+                // resubmission.
                 $sameWindows = json_encode(json_decode((string) $existing['windows_json'], true), JSON_UNESCAPED_SLASHES) === $windowsJson;
                 if ($sameWindows) {
                     // Same content, new event id: no version bump, but remember
@@ -251,9 +244,9 @@ final class AvailabilityController
     }
 
     /**
-     * PATCH /availability/:id — retired 2026-10-12 (owner decision:
-     * availability is the tanod's fixed statement, not reviewed). Kept as a
-     * route so an old web build gets a clear answer instead of a 404.
+     * PATCH /availability/:id — always 410 (availability is the tanod's fixed
+     * statement, not reviewed). Kept as a route so an old web build gets a
+     * clear answer instead of a 404.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */

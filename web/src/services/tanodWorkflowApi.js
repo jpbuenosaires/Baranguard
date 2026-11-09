@@ -1,24 +1,20 @@
 /**
- * tanodWorkflowApi.js — API wrappers for the 2026-10 tanod-workflow build
+ * tanodWorkflowApi.js — API wrappers for the tanod-workflow pages
  * (approvals, accomplishment reports, referral log, Safer School Zones).
- * Every route/field here comes from docs/FEATURE_CONTRACT_2026-10.md §2-§7;
- * nothing is invented.
  *
- * Why this is a separate file and not more of apiClient.js: the feature
- * plan assigns apiClient.js to no agent in this build, and its private
- * `request()` helper is not exported. This file therefore carries its own
- * small `request()` that follows the same rules as apiClient's — Bearer
- * token from the SAME in-memory session (`getSession()`), `ApiClientError`
- * for every failure (the one error class pages already catch), the same
- * base-URL global, the same bare-SQL-datetime -> UTC reviver, and an
- * `Idempotency-Key` header on every write (REFERENCE.md §2 Rule 3, web
- * flavour).
+ * Why this is a separate file and not more of apiClient.js: apiClient.js's
+ * private `request()` helper is not exported. This file therefore carries
+ * its own small `request()` that follows the same rules — Bearer token from
+ * the SAME in-memory session (`getSession()`), `ApiClientError` for every
+ * failure (the one error class pages already catch), the same base-URL
+ * global, the same bare-SQL-datetime -> UTC reviver, and an
+ * `Idempotency-Key` header on every write.
  *
  * Boundary rule (apiClient.js header): snake_case <-> camelCase happens in
  * exactly one place per platform. Here that place is `camelize()`, applied
  * to every response. It converts KEYS only and never values, so enum values
  * (`ambulance_ems`, `under_investigation`, ...) pass through untouched. The
- * contract's response bodies contain no objects keyed by enum value, which
+ * response bodies contain no objects keyed by enum value, which
  * is the one case the apiClient header warns a blind converter would break.
  *
  * Known limitation, not hidden: a `X-Renewed-Token` sliding renewal header
@@ -105,7 +101,7 @@ async function request(method, path, { query, body, idempotencyKey } = {}) {
     }
   }
 
-  // F-08/X-02: a server 401 ends the session app-wide (back to sign-in with
+  // A server 401 ends the session app-wide (back to sign-in with
   // a message), exactly as apiClient.js does, instead of leaving this page
   // on an error state whose Retry can never succeed. Only when the token
   // that failed is still the current one (a newer sign-in is left alone).
@@ -122,7 +118,7 @@ function write(method, path, body, idempotencyKey) {
   return request(method, path, { body: body ?? {}, idempotencyKey: idempotencyKey || newIdempotencyKey() });
 }
 
-/** Normalises the `{items,page,limit,total}` list envelope (REFERENCE.md §5). */
+/** Normalises the `{items,page,limit,total}` list envelope. */
 function listOf(json) {
   const raw = Array.isArray(json) ? json : (json.items ?? []);
   const items = camelize(raw);
@@ -134,7 +130,7 @@ function listOf(json) {
   };
 }
 
-// --- Enums (contract §2, §5, §7) --------------------------------------------
+// --- Enums ------------------------------------------------------------------
 
 export const REFERRED_TO_LABELS = {
   pnp: 'PNP',
@@ -175,12 +171,12 @@ export const TERM_STATUS_LABELS = {
   submitted: 'Submitted',
 };
 
-// --- Users / authority (§2) -------------------------------------------------
+// --- Users / authority ------------------------------------------------------
 
 /**
  * GET /users/:id — used for the viewer's OWN record so the UI knows which
  * approval actions to offer. `approvalAuthority` is always an array here.
- * The server re-checks every action, so this is UX gating only (Rule 2).
+ * The server re-checks every action, so this is UX gating only.
  */
 export async function getUserById(userId) {
   const json = camelize(await request('GET', `/users/${userId}`));
@@ -211,7 +207,7 @@ export async function getUserNames() {
   return names;
 }
 
-// --- Roster approvals (§3) --------------------------------------------------
+// --- Roster approvals -------------------------------------------------------
 
 /** GET /availability?status=&user_id=&period_start= */
 export async function getAvailability({ status, userId, periodStart, page, limit } = {}) {
@@ -227,7 +223,7 @@ export async function getShiftsByApproval({ approvalStatus, from, to, page, limi
   }));
 }
 
-// --- Accomplishment reports (§4) --------------------------------------------
+// --- Accomplishment reports -------------------------------------------------
 
 export async function getAccomplishmentReports({ month, userId, status, page, limit } = {}) {
   return listOf(await request('GET', '/accomplishment-reports', {
@@ -243,7 +239,7 @@ export async function returnAccomplishmentReport(reportId, reason, idempotencyKe
   return camelize(await write('POST', `/accomplishment-reports/${reportId}/return`, { reason }, idempotencyKey));
 }
 
-// --- Referrals (§5) ---------------------------------------------------------
+// --- Referrals --------------------------------------------------------------
 
 /** GET /referrals — aggregate rows only; the server never returns narrative/names/contacts here. */
 export async function getReferrals({ from, to, referredTo, page, limit } = {}) {
@@ -256,7 +252,7 @@ export async function getIncidentReferrals(incidentId) {
   return listOf(await request('GET', `/incidents/${incidentId}/referrals`));
 }
 
-// --- Schools (§7) -----------------------------------------------------------
+// --- Schools ----------------------------------------------------------------
 
 export async function getSchools({ active } = {}) {
   const query = { limit: 100 };
@@ -310,7 +306,7 @@ export async function getSchoolIncidents({ maxPages = 10 } = {}) {
   return { items, truncated };
 }
 
-// --- School check-ins / term reports (§7) -----------------------------------
+// --- School check-ins / term reports ----------------------------------------
 
 /** GET /reports/school-term — live computed counts, nothing persisted. */
 export async function getSchoolTermLive({ termStart, termEnd }) {

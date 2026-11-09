@@ -1,6 +1,6 @@
 /**
  * rosterWeek.js — pure date and roster helpers for the Scheduler's weekly
- * grid (Personnel > Scheduler, 2026-10-12).
+ * grid (Personnel > Scheduler).
  *
  * Every calculation is done on Asia/Manila wall time (fixed +08:00, no DST),
  * whatever time zone the browser is in: shift timestamps arrive as UTC ISO

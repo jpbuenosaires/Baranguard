@@ -1,55 +1,34 @@
 /**
- * apiClient.js — the ONE central `/api/v1` boundary (§4 "Boundary rule":
- * exactly one file per platform does snake_case <-> camelCase conversion;
- * no page/component may do that ad-hoc).
+ * apiClient.js — the ONE central `/api/v1` boundary: the only file on the web
+ * side that does snake_case <-> camelCase conversion; no page/component does
+ * that ad hoc.
  *
- * Base URL: no build step exists yet (§1 stack: vanilla JS, no framework,
- * no bundler), so there's no env-var injection mechanism at build time.
- * Resolved decision (logged in DEVLOG.md): the base URL comes from
- * `window.BARANGUARD_API_BASE_URL` if index.html defines it, otherwise
- * defaults to the PHP built-in server's URL from
- * backend/scripts/README-serving.md Option B (`http://127.0.0.1:8080/api/v1`)
- * — the lowest-friction local-dev default. Point it at the real vhost
- * (`http://baranguard.local/api/v1`) by setting that global before this
- * module runs; see web/README-serving.md.
+ * Base URL: there is no build step, so no build-time env injection. It comes
+ * from `window.BARANGUARD_API_BASE_URL` if index.html defines it, otherwise a
+ * local-dev default (the PHP built-in server).
  *
- * Session storage: code-review finding H-05 (2026-09-24) — the JWT used
- * to live in `sessionStorage`. Escaping/sanitizing server data (§6's
- * `escapeHtml` rule) defends against XSS INJECTING a script, but does
- * nothing once one has run: any `sessionStorage` value is readable by
- * ANY script executing in the page's origin, so a real XSS on this page
- * could exfiltrate the bearer token directly. Fixed by moving the token
- * to a plain in-memory module variable — never written to any Storage
- * object at all, so there is nothing there for a script to read even in
- * that scenario.
+ * Session storage: the JWT lives in a plain in-memory module variable, never
+ * in any Storage object. Escaping server data defends against XSS injecting a
+ * script, but does nothing once one has run: any `sessionStorage` value is
+ * readable by any script in the page's origin. The cost, accepted on purpose:
+ * a page reload signs the user out. An HttpOnly, Secure, SameSite cookie would
+ * be the real fix but needs HTTPS across the web and API origins; a
+ * client-side "silent refresh" token in Storage would be just as readable by
+ * the same XSS and longer-lived than the 15-minute sliding window.
  *
- * The real cost, disclosed rather than hidden: a page reload now signs
- * the user out, where sessionStorage previously survived one. The
- * "right" fix — an HttpOnly, Secure, SameSite cookie the browser attaches
- * automatically and JS can never read — needs real HTTPS to set
- * `SameSite=None` safely across the web (`:80`) and API (`:8081`) origins,
- * which is C-03, not yet done. Faking a client-side "silent refresh" via
- * a second token stored in `localStorage`/`sessionStorage` would not
- * actually fix anything — that refresh token would be exactly as
- * readable by the same XSS, and arguably worse (a longer-lived credential
- * instead of one capped by the existing 15-minute sliding window, §2
- * Rule 12). So this is a deliberate interim tradeoff, not the final
- * state: revisit once C-03 lands.
+ * An already-open dashboard's own 15s poller (`AppShell.js`) still keeps a
+ * session alive through the `X-Renewed-Token` sliding mechanism below; only
+ * what survives a reload is affected.
  *
- * The already-open dashboard's own 15s poller (`AppShell.js`) still keeps
- * a session alive indefinitely via the existing `X-Renewed-Token` sliding
- * mechanism below — this change affects only what survives a reload,
- * not a session's normal lifetime while the tab stays open.
- *
- * snake_case <-> camelCase (§4): this file hand-maps each endpoint's known
+ * snake_case <-> camelCase: this file hand-maps each endpoint's known
  * *structural* field names rather than deep-recursively converting every
- * object key. That's deliberate, not a shortcut: GET /reports/summary's
- * `by_incident_type` / `by_status` are objects keyed by the raw §5 enum
- * *values* (`physical_injury`, `traffic_incident`, ...), which are data,
- * not field names — a blind recursive snake->camel pass would silently
- * rewrite `physical_injury` to `physicalInjury` and break any code that
- * compares against the real DB enum string. Structural keys are
- * converted; enum-valued keys are passed through byte-for-byte.
+ * object key. GET /reports/summary's `by_incident_type` / `by_status` are
+ * objects keyed by the raw enum *values* (`physical_injury`,
+ * `traffic_incident`, ...), which are data, not field names — a blind
+ * recursive snake->camel pass would rewrite `physical_injury` to
+ * `physicalInjury` and break any code that compares against the real DB enum
+ * string. Structural keys are converted; enum-valued keys pass through
+ * byte-for-byte.
  */
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8080/api/v1';
@@ -64,16 +43,14 @@ export class ApiClientError extends Error {
   }
 }
 
-// --- Session storage (H-05: in-memory only, see the file doc above) -------
+// --- Session storage (in-memory only, see the file doc above) --------------
 
 let inMemorySession = null;
 
-// --- Session expiry notification (audit 2026-10-09 X-02/F-07) -------------
-// A dead session used to be cleared silently: every page then showed "Not
-// signed in." with a Retry that could never succeed. Now the ONE place that
-// learns a session is dead (a server 401 on an authenticated call, or the
-// in-memory expiry passing) tells the app once, and main.js returns the user
-// to the sign-in screen with an explicit message. Still memory-only (H-05).
+// --- Session expiry notification ---------------------------------------------
+// The ONE place that learns a session is dead (a server 401 on an
+// authenticated call, or the in-memory expiry passing) tells the app once, and
+// main.js returns the user to the sign-in screen with an explicit message.
 
 export const SESSION_EXPIRED_MESSAGE = 'Your session expired. Please sign in again.';
 
@@ -150,7 +127,7 @@ export function __setSessionForTests(session) {
 
 // --- Low-level request helper ----------------------------------------------
 
-/** Sliding renewal (§6): keep the token with the latest expiry. */
+/** Sliding renewal: keep the token with the latest expiry. */
 function applyRenewedToken(response, session) {
   const renewed = response.headers.get('X-Renewed-Token');
   // Only renew the session this call was made with: a logout or a fresh
@@ -199,8 +176,7 @@ async function request(method, path, { query, body, auth = true, idempotencyKey,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch (networkError) {
-    // §8 "Required states": every data-driven screen needs an Error state
-    // with retry — a network failure/unreachable API is that case, not a
+    // A network failure/unreachable API gets an Error state with retry, not a
     // silent console error.
     throw new ApiClientError(0, 'NETWORK_ERROR', 'Could not reach the Baranguard server. Check your connection and try again.');
   }
@@ -245,27 +221,17 @@ const BARE_SQL_DATETIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 /**
  * JSON.parse reviver that tags bare SQL datetimes as UTC.
  *
- * 2026-09-06: found while seeding demo data — every relative time in the
- * app was exactly one UTC offset wrong (8 hours, in Asia/Manila). The
- * GIS Live Activity feed showed an SOS raised 6 minutes ago as "8h ago".
+ * The database stores UTC and the API returns `YYYY-MM-DD hh:mm:ss` with NO
+ * timezone designator, which `new Date()` parses as LOCAL time (8 hours off
+ * in Asia/Manila). Fixed here, at the two points every response passes
+ * through: `... 13:41:20` becomes `...T13:41:20Z`, which `new Date()` parses
+ * as the UTC instant it always was. Values that already carry a `Z`/offset
+ * are untouched, as are date-only strings (`YYYY-MM-DD`), which the
+ * date-range inputs rely on staying literal.
  *
- * Cause: the database stores UTC (working reference §2 rule 11) and the
- * API returns it as `2026-09-06 13:41:20` with NO timezone designator.
- * `new Date('2026-09-06 13:41:20')` then parses it as LOCAL time, so on
- * a UTC+8 workstation the value silently moves 8 hours into the past.
- * Anything computing an age or a relative label client-side inherited
- * that error — 85 `new Date()` call sites across 12 files.
- *
- * Fixed here, at the two points every response passes through, rather
- * than at those 85 sites: `... 13:41:20` becomes `...T13:41:20Z`, which
- * `new Date()` parses as the UTC instant it always was. Values that
- * already carry a `Z`/offset are untouched, as are date-only strings
- * (`YYYY-MM-DD`), which the date-range inputs rely on staying literal.
- *
- * Server-side serialization was left alone on purpose: changing the
- * shape of every datetime the API emits would also change what the
- * mobile client and every verify script parse, which is a bigger
- * decision than this bug requires.
+ * Server-side serialization is left alone on purpose: changing every
+ * datetime the API emits would also change what the mobile client and the
+ * verify scripts parse.
  */
 function reviveUtcTimestamps(key, value) {
   if (typeof value === 'string' && BARE_SQL_DATETIME.test(value)) {
@@ -304,7 +270,7 @@ export async function login(username, password) {
   return session.user;
 }
 
-/** W15 Settings/Account. Throws ApiClientError(401,...) on a wrong current password. */
+/** Settings/Account. Throws ApiClientError(401,...) on a wrong current password. */
 export async function changePassword(currentPassword, newPassword) {
   await request('POST', '/auth/change-password', {
     body: { current_password: currentPassword, new_password: newPassword },
@@ -322,15 +288,14 @@ export async function logout() {
   try {
     await pending;
   } catch {
-    // §6: "server ignores a second logout safely" — client-side, logging
-    // out is a local action regardless of whether the network call
+    // Logging out is a local action regardless of whether the network call
     // succeeds; never block the user from leaving a signed-in state.
     // (No clearSession() after the await: it already ran above, and a
     // second one here could wipe a NEW sign-in made while this was pending.)
   }
 }
 
-// --- Reports (W2 Admin Dashboard) -------------------------------------------
+// --- Reports (Admin Dashboard) ----------------------------------------------
 
 /**
  * GET /reports/summary. `dateFrom`/`dateTo` are optional "YYYY-MM-DD"
@@ -344,12 +309,12 @@ export async function logout() {
  *   trend:Array<{date:string, count:number, resolved:number}>,
  *   byHour:number[], responseTimeTrend:Array<{date:string, avgMinutes:?number}>
  * }>}
- * `byHour`/`responseTimeTrend` are Phase 9 (Analytics) additions — see
- * ReportsController::summary() for exactly what each buckets.
+ * `byHour`/`responseTimeTrend`: see ReportsController::summary() for exactly
+ * what each buckets.
  * `trend[].count` is incidents REPORTED that day; `trend[].resolved` is
- * incidents CLOSED OUT that day, bucketed on the dispatch completion time
- * (the only resolution moment §5 records) — see ReportsController::summary
- * for why the two series are not expected to reconcile with resolvedCount.
+ * incidents CLOSED OUT that day, bucketed on the dispatch completion time —
+ * see ReportsController::summary for why the two series are not expected to
+ * reconcile with resolvedCount.
  */
 export async function getReportsSummary({ dateFrom, dateTo } = {}) {
   const json = await request('GET', '/reports/summary', {
@@ -370,7 +335,7 @@ export async function getReportsSummary({ dateFrom, dateTo } = {}) {
   };
 }
 
-/** GET /reports/heatmap (W5). Same date_from/date_to convention as getReportsSummary. */
+/** GET /reports/heatmap. Same date_from/date_to convention as getReportsSummary. */
 export async function getReportsHeatmap({ dateFrom, dateTo } = {}) {
   const json = await request('GET', '/reports/heatmap', {
     query: { date_from: dateFrom, date_to: dateTo },
@@ -386,7 +351,7 @@ export async function getReportsHeatmap({ dateFrom, dateTo } = {}) {
   }));
 }
 
-/** GET /reports/nav-counts (§4.1 of the UI/UX review, sidebar badge counts). Admin only. */
+/** GET /reports/nav-counts (sidebar badge counts). Admin only. */
 export async function getNavCounts() {
   const json = await request('GET', '/reports/nav-counts', { auth: true });
   return {
@@ -395,7 +360,7 @@ export async function getNavCounts() {
   };
 }
 
-// --- Users (Tanod-picker lookup + W10 User Management) ----------------------
+// --- Users (Tanod-picker lookup + User Management) --------------------------
 
 /** @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>} */
 export async function getUsers({ role, page, limit } = {}) {
@@ -434,7 +399,7 @@ export async function getTanodDirectory() {
 }
 
 /**
- * PATCH /users/:id — W10's admin-editing-another-user path. Cross-tenant
+ * PATCH /users/:id — the admin-editing-another-user path. Cross-tenant
  * or the last-active-Admin case surface as the server's real ApiClientError
  * (404 / 409 respectively) — the caller should show that message as-is,
  * not paraphrase it.
@@ -445,7 +410,7 @@ export async function setUserActive(userId, isActive) {
 }
 
 /**
- * PATCH /users/:id — the suspend/unsuspend action (2026-09-05 UX pass),
+ * PATCH /users/:id — the suspend/unsuspend action,
  * independent of `setUserActive`'s deactivate/reactivate — see
  * UsersController::updateOtherUserStatus()'s own doc for why these are
  * two separate flags, not one three-way enum. `reason` is only sent when
@@ -481,10 +446,10 @@ export async function createUser({ username, password, fullName, role, contactNu
   };
 }
 
-// --- Incidents (W3 Dispatch Center queue) -----------------------------------
+// --- Incidents (Dispatch Center queue) --------------------------------------
 
 /** @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>} */
-/** `q` (2026-09-05 UX pass): real server-side search — see IncidentsController::index()'s own doc for why this isn't client-side. */
+/** `q`: real server-side search — see IncidentsController::index()'s own doc for why this isn't client-side. */
 export async function getIncidents({ status, priority, q, page, limit, dateFrom, dateTo } = {}) {
   const json = await request('GET', '/incidents', {
     query: { status, priority, q, page, limit, date_from: dateFrom, date_to: dateTo },
@@ -499,7 +464,7 @@ export async function getIncidents({ status, priority, q, page, limit, dateFrom,
       priority: row.priority,          // enum value, unconverted
       status: row.status,              // enum value, unconverted
       source: row.source,
-      reportChannel: row.report_channel ?? null, // tanod_alerted | walk_in | sms | other (migration 0036)
+      reportChannel: row.report_channel ?? null, // how the report reached the barangay
       relatedIncidentId: row.related_incident_id ?? null,
       latitude: row.latitude,
       longitude: row.longitude,
@@ -523,7 +488,7 @@ export async function getIncidents({ status, priority, q, page, limit, dateFrom,
  * per user-initiated submit and reuse only on an automatic retry.
  *
  * `locationDescription`/`complainantName`/`respondentName`/
- * `complainantContactNumber`: optional (migration 0008 columns).
+ * `complainantContactNumber`: optional.
  */
 export async function createIncident({
   incidentType, rawNarrative, latitude, longitude,
@@ -614,11 +579,10 @@ export async function updateIncident(incidentId, fields = {}) {
 // --- Dispatch (W3a/W3b) -----------------------------------------------------
 
 /**
- * `incidentId` (Sprint 6 backend addition, not previously wired up here):
- * narrows to one incident's dispatch history — used by Incident
+ * `incidentId` narrows to one incident's dispatch history — used by Incident
  * Management's detail pane to resolve the assigned Tanod for a Contact
- * button, same tenant-scoped list this endpoint already returns, just
- * filtered narrower.
+ * button; same tenant-scoped list this endpoint already returns, filtered
+ * narrower.
  * @returns {Promise<{items:Array<object>, page:number, limit:number, total:number}>}
  */
 export async function getDispatches({ status, incidentId, page, limit } = {}) {
@@ -632,7 +596,7 @@ export async function getDispatches({ status, incidentId, page, limit } = {}) {
 }
 
 /**
- * POST /dispatch. `requestId` is the required idempotency key (§6) — the
+ * POST /dispatch. `requestId` is the required idempotency key — the
  * caller generates one UUID per user-initiated create action and reuses
  * it only on an automatic retry of that same action, never on a new one.
  */
@@ -712,7 +676,7 @@ function mapDispatch(row) {
   };
 }
 
-// --- GPS (W4 GIS Live Tracking) ---------------------------------------------
+// --- GPS (GIS Live Tracking) ------------------------------------------------
 
 function mapGpsRow(row) {
   return {
@@ -885,7 +849,7 @@ export async function getTanodSos({ status } = {}) {
     dispatchId: row.dispatch_id,
     latitude: row.latitude,
     longitude: row.longitude,
-    // C-01 (migration 0026): live | last_known | no_fix; undefined on old rows.
+    // live | last_known | no_fix; undefined on old rows.
     locationSource: row.location_source,
     locationRecordedAt: row.location_recorded_at,
     triggeredAt: row.triggered_at,
@@ -899,7 +863,7 @@ export async function getTanodSos({ status } = {}) {
 /**
  * GET /notifications — the caller's own notification targets, newest and
  * unacknowledged first, plus the total unread count for the bell badge.
- * Not in §6's list; see NotificationsController::index for why it exists.
+ * See NotificationsController::index for why it exists.
  */
 export async function getNotifications({ limit } = {}) {
   const json = await request('GET', '/notifications', { query: { limit }, auth: true });
@@ -940,11 +904,8 @@ export async function acknowledgeAllNotifications() {
 }
 
 /**
- * PATCH /tanod-sos/:id/acknowledge. Built in Sprint 4 but never reachable
- * from the UI until the audit's W3 pass — the Dispatch Center banner
- * reported an SOS and offered no way to act on it.
- * Acknowledging deliberately does NOT clear the banner (§9 W3): the alert
- * stays up until it is resolved.
+ * PATCH /tanod-sos/:id/acknowledge. Acknowledging deliberately does NOT clear
+ * the banner: the alert stays up until it is resolved.
  */
 export async function acknowledgeTanodSos(sosId) {
   return request('PATCH', `/tanod-sos/${sosId}/acknowledge`, { auth: true });
@@ -959,7 +920,7 @@ export async function resolveTanodSos(sosId) {
   return request('PATCH', `/tanod-sos/${sosId}/resolve`, { auth: true });
 }
 
-// --- Duty status (read-only this sprint: Admin's Tanod-picker source) ------
+// --- Duty status (read-only: Admin's Tanod-picker source) ------------------
 
 /** @returns {Promise<Array<{userId:number, status:string, channel:string, changedAt:string}>>} */
 export async function getDutyStatus(barangayId) {
@@ -972,7 +933,7 @@ export async function getDutyStatus(barangayId) {
   }));
 }
 
-// --- Settings/Account (W15) --------------------------------------------------
+// --- Settings/Account --------------------------------------------------------
 
 /** PATCH /users/:id, self-only (full_name and/or contact_number). */
 export async function updateProfile(userId, { fullName, contactNumber } = {}) {
@@ -981,7 +942,7 @@ export async function updateProfile(userId, { fullName, contactNumber } = {}) {
   if (contactNumber !== undefined) body.contact_number = contactNumber;
   const json = await request('PATCH', `/users/${userId}`, { body, auth: true });
   // Keep the in-memory session's display name in sync — there's no
-  // "GET /users/me" endpoint (§6 never documents one) to re-fetch from,
+  // "GET /users/me" endpoint to re-fetch from,
   // so the client applies its own known-good write locally instead.
   if (fullName !== undefined) {
     const session = readSession();
@@ -990,13 +951,13 @@ export async function updateProfile(userId, { fullName, contactNumber } = {}) {
   return { userId: json.user_id, updated: json.updated };
 }
 
-// --- Shifts (W11 Scheduler, W12 Swap Requests) ------------------------------
+// --- Shifts (Scheduler, Swap Requests) --------------------------------------
 
 function mapShift(row) {
   return { shiftId: row.shift_id, userId: row.user_id, patrolZone: row.patrol_zone, startAt: row.start_at, endAt: row.end_at, version: row.version };
 }
 
-/** POST /shifts. `requestId` is the required idempotency key (§6). */
+/** POST /shifts. `requestId` is the required idempotency key. */
 export async function createShift({ userId, patrolZone, startAt, endAt, requestId, sourceAvailabilityId }) {
   const body = { user_id: userId, patrol_zone: patrolZone, start_at: startAt, end_at: endAt, request_id: requestId };
   if (sourceAvailabilityId != null) body.source_availability_id = sourceAvailabilityId;
@@ -1015,7 +976,7 @@ export async function getShifts({ page, limit, from, to } = {}) {
 
 /**
  * PATCH /shifts/:id. `version` is the required optimistic-concurrency
- * token from the shift's last-known state (§6) — a stale version means
+ * token from the shift's last-known state — a stale version means
  * someone else changed it first; the caller should reload and retry.
  * `userId` may be `null` to explicitly unassign a shift.
  */
@@ -1064,8 +1025,8 @@ export async function resolveShiftSwapRequest(requestId, status, version) {
   };
 }
 
-// --- Reference / lookup (added 2026-09-02: real backing for the topbar
-// search box and W19's barangay picker, replacing hardcoded UI content) ---
+// --- Reference / lookup: real backing for the topbar search box and the
+// barangay picker ---
 
 /** GET /barangays — public, no session required. Always the four real seeded rows. */
 export async function getBarangays() {
@@ -1084,13 +1045,6 @@ export async function search(q) {
   }));
 }
 
-// The AI Tools screen (migration 0015: four assistants; narrowed to the
-// Incident Classifier by migration 0027; removed entirely by migration
-// 0028 after a real runaway-generation failure showed classification
-// wasn't reliable enough to keep) had its client functions
-// (getAiToolsAvailability, queueIncidentClassification, getAiToolJob) and
-// AiToolPanel.js — the component that rendered them — here. None remain.
-
 /** GET /system/health — Admin only. Coarse status per dependency; see SystemHealthController.php. */
 export async function getSystemHealth() {
   const json = await request('GET', '/system/health', { auth: true });
@@ -1105,7 +1059,7 @@ export async function getSystemHealth() {
 
 /**
  * GET /system/health/history — Admin only. Dependency-status TRANSITIONS,
- * newest first (migration 0017).
+ * newest first.
  *
  * `sampling` comes back as a machine-readable caveat rather than a
  * comment: a row exists only where a probe actually observed a change,
@@ -1127,7 +1081,7 @@ export async function getSystemHealthHistory() {
   };
 }
 
-// --- Advisory subscribers (migration 0018, Admin only) ---------------------
+// --- Advisory subscribers (Admin only) --------------------------------------
 
 /**
  * GET /sms/subscribers — includes opted-out rows deliberately: the
@@ -1171,9 +1125,9 @@ export async function optOutSmsSubscriber(subscriberId) {
 }
 
 /**
- * GET /audit-log — §6, §9 W17 (Admin only, own barangay, newest-first).
- * Defaults to the last 7 days server-side when no range is given, per
- * W17's documented default view. `metadataJson` arrives already parsed.
+ * GET /audit-log — Admin only, own barangay, newest-first.
+ * Defaults to the last 7 days server-side when no range is given.
+ * `metadataJson` arrives already parsed.
  */
 export async function getAuditLog({ action, dateFrom, dateTo, page, limit } = {}) {
   const json = await request('GET', '/audit-log', {
@@ -1199,7 +1153,7 @@ export async function getAuditLog({ action, dateFrom, dateTo, page, limit } = {}
 }
 
 /**
- * GET /reports/export — §6/§9 W9's Export button. Generates the file
+ * GET /reports/export — the Export button. Generates the file
  * server-side and returns where to fetch it; the download is a separate
  * authorized request (the file lives outside the web root).
  */
@@ -1213,16 +1167,11 @@ export async function exportReport({ dateFrom, dateTo, format = 'csv' } = {}) {
 
 /**
  * GET /reports/export/download — streams the file `exportReport()` just
- * generated. 2026-09-06: this used to be a bare URL
- * (`reportExportDownloadUrl()`) handed to `window.open()`/an `<a href>` —
- * which never worked, because this API is Bearer-token-only (no session
- * cookie exists, per this file's own header comment) and a plain browser
- * navigation cannot attach an Authorization header. Every other
- * authenticated download in this app that actually functions (DataTable's
- * client-side CSV export) goes through a `Blob` + `URL.createObjectURL`
- * instead, so this does the same: an authenticated `fetch()`, then the
- * caller turns the returned Blob into a real download. `request()` isn't
- * reused here because it always parses the response as JSON.
+ * generated. An authenticated `fetch()` returning a Blob, because this API
+ * is Bearer-token-only and a plain browser navigation (`window.open` /
+ * `<a href>`) cannot attach an Authorization header; the caller turns the
+ * Blob into a real download, as DataTable's CSV export does. `request()`
+ * isn't reused here because it always parses the response as JSON.
  */
 export async function downloadReportExport({ format = 'csv' } = {}) {
   const session = readSession();
@@ -1253,7 +1202,7 @@ export async function downloadReportExport({ format = 'csv' } = {}) {
 }
 
 /**
- * GET /reports/digest — the periodic PB digest (REMAINING.md section G).
+ * GET /reports/digest — the periodic PB digest.
  * Read-only: there is deliberately no matching "generate" call here —
  * generation is CLI-only (`scripts/generate-pb-digest.php`, run on a
  * schedule), same as retention/AI-worker jobs having no HTTP trigger.
@@ -1305,11 +1254,9 @@ export async function downloadReportsDigest() {
   return response.blob();
 }
 
-// --- SMS Monitor conversations/compose/broadcast (2026-09-05 UX pass) ------
-// See SmsController.php's own class doc for the deliberate rescoping this
-// represents. `GET /sms/logs` below is UNCHANGED (still no phone numbers);
-// these are new, separate endpoints built specifically for the
-// conversation view.
+// --- SMS Monitor conversations/compose/broadcast ---------------------------
+// See SmsController.php's own class doc. `GET /sms/logs` below returns no
+// phone numbers; these separate endpoints serve the conversation view.
 
 /** @returns {Promise<Array<object>>} */
 export async function getSmsConversations() {
@@ -1393,7 +1340,7 @@ export async function broadcastSms({ message, scope, role, idempotencyKey }) {
 }
 
 /**
- * GET /sms/logs — §6, §9 W14 (Admin only, read-only). No sender_number/
+ * GET /sms/logs — Admin only, read-only. No sender_number/
  * receiver_number field exists in the response at all — see
  * SmsController.php's own doc for why that's not an oversight.
  */
@@ -1427,7 +1374,7 @@ export async function getSmsLogs({ messageType, direction, status, dateFrom, dat
   };
 }
 
-// --- Incident detail (§6 "Incidents", W7) -----------------------------------
+// --- Incident detail --------------------------------------------------------
 
 function mapIncidentLink(row) {
   return row ? { incidentId: row.incident_id, displayId: row.display_id ?? null } : null;
@@ -1450,9 +1397,9 @@ export async function setRelatedIncident(incidentId, relatedIncidentId, idempote
 
 /**
  * GET /incidents/:id — the only endpoint that returns `raw_narrative`, and
- * only to a Secretary (§6/§3: the Secretary is the statutory records
- * custodian under RA 7160 §394(c), which is why Admin gets less here).
- * `rawNarrative` is simply absent from the response for every other role,
+ * only to a Secretary, or an Admin on a web session (the Secretary is the
+ * statutory records custodian under RA 7160 §394).
+ * `rawNarrative` is simply absent from the response for every other caller,
  * so callers must treat it as optional rather than assuming a string.
  */
 export async function getIncident(incidentId) {
@@ -1465,7 +1412,7 @@ export async function getIncident(incidentId) {
     priority: json.priority,          // enum value, unconverted
     status: json.status,              // enum value, unconverted
     source: json.source,
-    // How the report reached the barangay (migration 0036), distinct from
+    // How the report reached the barangay, distinct from
     // `source` (which client created the row). `relatedIncident` / `relatedBy`
     // are non-narrative links only: id + display id.
     reportChannel: json.report_channel ?? null,
@@ -1478,7 +1425,7 @@ export async function getIncident(incidentId) {
     syncedAt: json.synced_at,
     locationDescription: json.location_description,
     displayId: json.display_id,
-    // H-16/M-03 lifecycle state (migration 0025) -- duplicate/invalid/
+    // Lifecycle state -- duplicate/invalid/
     // cancelled/reopened, set by updateIncidentLifecycle() below.
     duplicateOfIncidentId: json.duplicate_of_incident_id ?? null,
     lifecycleChangedBy: json.lifecycle_changed_by ?? null,
@@ -1489,12 +1436,12 @@ export async function getIncident(incidentId) {
     complainantName: json.complainant_name ?? null,
     respondentName: json.respondent_name ?? null,
     complainantContactNumber: json.complainant_contact_number ?? null,
-    // Dispatch stages for W7's §9-mandated timeline. They live here rather
+    // Dispatch stages for the detail timeline. They live here rather
     // than on GET /dispatch because that endpoint is Admin/PB/Tanod only
-    // and W7 is a Secretary screen — see IncidentsController::show().
-    // dispatchedAt/arrivedAt mean "the primary/first responder" now that
-    // an incident can have more than one concurrent dispatch — `dispatches`
-    // below is the full, authoritative list.
+    // and the incident detail is also a Secretary screen — see
+    // IncidentsController::show(). dispatchedAt/arrivedAt mean "the
+    // primary/first responder" since an incident can have more than one
+    // concurrent dispatch — `dispatches` below is the full list.
     dispatchedAt: json.dispatched_at ?? null,
     arrivedAt: json.arrived_at ?? null,
     hasActiveDispatch: json.has_active_dispatch === true,
@@ -1514,7 +1461,7 @@ export async function getIncident(incidentId) {
 
 /**
  * GET /incidents/:id/evidence — Secretary/Admin same barangay; Tanod only
- * with a reporter/dispatch relationship. §6: this NEVER returns filesystem
+ * with a reporter/dispatch relationship. This NEVER returns filesystem
  * paths, so there is no `filePath` here by design — evidence bytes are a
  * separate authorized download, `downloadEvidenceFile()` below.
  */
@@ -1570,7 +1517,7 @@ export async function downloadEvidenceFile(incidentId, attachmentId) {
 
 /**
  * PATCH /incidents/:id/status — Admin only, and the body is exactly
- * `{status:"resolved"}` (§6), plus `reason` for a pending/reopened incident.
+ * `{status:"resolved"}`, plus `reason` for a pending/reopened incident.
  * Deliberately not a general status setter: 409 unless the incident is
  * `dispatched` with no active dispatch left, or pending/reopened with a reason.
  */
@@ -1585,8 +1532,8 @@ export async function resolveIncident(incidentId, reason) {
 }
 
 /**
- * PATCH /incidents/:id/lifecycle — Secretary only (H-16/M-03, migration
- * 0025). Records a records-custodian judgment call: `duplicate` (requires
+ * PATCH /incidents/:id/lifecycle — Secretary only.
+ * Records a records-custodian judgment call: `duplicate` (requires
  * `duplicateOfIncidentId`, a same-barangay incident id — MERGE MEANS
  * LINK, NOT DELETE, nothing about the target incident changes),
  * `invalid`, `cancelled`, or `reopened`. Forward-only per
@@ -1613,7 +1560,7 @@ export async function updateIncidentLifecycle(incidentId, { status, duplicateOfI
   };
 }
 
-// --- Map packages (W18) ------------------------------------------------------
+// --- Map packages -----------------------------------------------------------
 
 /**
  * GET /map-packages/:barangayId. A 404 ("no published package yet") is a
@@ -1696,7 +1643,7 @@ export async function uploadMapPackage(version, file) {
   };
 }
 
-// --- System Settings (2026-09-05 UX pass, W21) ------------------------------
+// --- System Settings --------------------------------------------------------
 // See SettingsController.php's own class doc for exactly which keys exist
 // and why this is deliberately a small set, not the full mockup. Keys are
 // passed through as-is (dotted strings like 'general.system_name') rather

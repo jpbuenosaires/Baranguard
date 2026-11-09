@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
-# Baranguard — Sprint 7 validation: audit completeness (§2 Rule 17's full
-# action list actually produces audit_log rows) + W17 GET /audit-log
-# + W9 GET /reports/export.
+# Baranguard — audit completeness (every audited action actually produces
+# audit_log rows) + GET /audit-log + GET /reports/export.
 #
-# The point of this suite is NOT "does Audit::record() work" — that has
-# been exercised since Sprint 1. It is: **for each action Rule 17 names,
-# does performing that action through the real HTTP endpoint actually
-# leave a row behind?** Every check below therefore drives the endpoint
-# and then looks in the table, rather than asserting anything about the
-# code that sits between them.
+# The point is NOT "does Audit::record() work" but: for each audited action,
+# does performing it through the real HTTP endpoint actually leave a row
+# behind? Every check drives the endpoint and then looks in the table.
 #
-# It also enforces Rule 17's second half on every row it produces: audit
-# metadata is "allow-listed and contains identifiers/statuses only, never
-# raw narrative or credentials." The narrative and password used here are
+# It also enforces, on every row it produces, that audit metadata is
+# allow-listed and contains identifiers/statuses only, never raw narrative
+# or credentials. The narrative and password used here are
 # distinctive strings, and the whole audit_log table is grepped for them.
 #
 # Safe to run: disposable database, disposable app-user, throwaway port.
@@ -33,10 +29,8 @@ step() { echo; echo "=== $1 ==="; }
 expect_eq() { if [ "$1" = "$2" ]; then pass "$3 ($2)"; else fail "$3 — expected '$2', got '$1'"; fi; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -55,12 +49,8 @@ echo "Baranguard Sprint 7 audit-completeness validation — $(date -u +%Y-%m-%dT
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for c in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$c" ] && { echo "$c"; return; }
   done
@@ -106,10 +96,8 @@ trap cleanup EXIT
 step "0. Schema + accounts"
 mysql_exec -e "SELECT VERSION();" >/dev/null && pass "Connected to MariaDB" || { fail "Could not connect"; exit 1; }
 mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-# FULL CHAIN, not this sprint's subset — see verify-sprint7-retention.sh's
-# note. Migration 0011 added `user.is_suspended`, which
-# AuthController::login() selects, so a partial schema 500s every login
-# and this suite could not reach a single assertion.
+# Apply the full migration chain, not a subset: a partial schema 500s every
+# login (AuthController::login() selects columns from later migrations).
 for m in $(cd "$BACKEND_DIR/migrations" && ls [0-9]*.sql | grep -v '\.down\.sql$' | sed 's/\.sql$//' | sort | awk -v s=0001_baseline_schema '$0 >= s'); do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
@@ -160,7 +148,7 @@ PB_TOKEN=$(token_for s7a_pb "$TEST_PW")
 
 # Password change runs on its OWN account. It cannot share one with any
 # other check: changing a password revokes that user's other sessions
-# (correct, verified back in Sprint 1) — reusing an account here would
+# — reusing an account here would
 # invalidate a token a later step still needs, and the resulting 401
 # would look like a role-gating failure rather than the intended
 # behaviour it actually is.
@@ -180,7 +168,7 @@ ADMIN_ID=$(db_one "SELECT user_id FROM user WHERE username='s7a_admin';")
 curl -s -X PATCH "$BASE_URL/users/$ADMIN_ID" -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -d '{"full_name":"S7A Admin Renamed","contact_number":"09991112222"}' >/dev/null
 expect_audit "user_updated" "a self profile edit"
-# Rule 17's allow-list: WHICH fields changed, never the values.
+# Allow-list: WHICH fields changed, never the values.
 UMETA=$(db_one "SELECT metadata_json FROM audit_log WHERE action='user_updated' LIMIT 1;")
 case "$UMETA" in
   *09991112222*) fail "AUDIT LEAK: the contact number itself is in audit metadata";;
@@ -210,8 +198,8 @@ expect_audit "dispatch_created" "assigning a Tanod (this was an audit GAP before
 
 curl -s -X PATCH "$BASE_URL/dispatch/$DISPATCH_ID/cancel" -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -d '{"reason":"drill: audit completeness check"}' >/dev/null
 expect_audit "dispatch_cancelled" "cancelling a dispatch (also a GAP before Sprint 7)"
-# Review decision 2026-10-07: the cancel reason is stored on dispatch, but its
-# TEXT must never enter audit metadata (Rule 8) — only that one exists.
+# The cancel reason is stored on dispatch, but its TEXT must never enter
+# audit metadata — only that one exists.
 CMETA=$(db_one "SELECT metadata_json FROM audit_log WHERE action='dispatch_cancelled' LIMIT 1;")
 case "$CMETA" in
   *"audit completeness check"*) fail "AUDIT LEAK: the dispatch cancel reason text is in audit metadata";;
@@ -237,7 +225,7 @@ expect_audit "incident_resolved" "an Admin closing an incident"
 # --------------------------------------------------------------------------
 step "4. Shift changes + swap decisions (both were audit GAPS)"
 # --------------------------------------------------------------------------
-# Since 2026-10-12 POST/PATCH /shifts refuses to schedule a tanod outside
+# POST/PATCH /shifts refuses to schedule a tanod outside
 # their submitted availability (422 OUTSIDE_AVAILABILITY, covered by
 # verify-roster-accomplishment.sh). This suite tests other rules, so every
 # tanod gets open whole-day availability first.
@@ -261,16 +249,14 @@ TANOD2_ID=$(db_one "SELECT user_id FROM user WHERE username='s7a_tanod2';")
 # not what this suite is about, so publish the seeded shift directly.
 mysql_exec "$VALDB" -e "UPDATE shift_schedule SET approval_status='published', approved_by=$ADMIN_ID, approved_at=UTC_TIMESTAMP() WHERE shift_id=$SHIFT_ID;"
 # Approving a swap with a named target (tanod2) exercises the audit path.
-# (The H-17 zero-coverage block this comment used to describe was removed by
-# docs/FEATURE_CONTRACT_2026-10.md section 8; the swap approval now checks the
-# 12h/day cap for the target instead. The assertion below is unchanged.)
+# (The swap approval checks the 12h/day cap for the target.)
 SWAP_ID=$(curl -s -X POST "$BASE_URL/shift-swap-requests" -H "Authorization: Bearer $TANOD_TOKEN" -H 'Content-Type: application/json' \
   -d "{\"shift_id\":$SHIFT_ID,\"target_user_id\":$TANOD2_ID,\"reason\":\"family matter\",\"client_request_id\":\"$CREQ\"}" \
   | "$PHP_BIN" -r 'echo json_decode(stream_get_contents(STDIN), true)["request_id"] ?? "";')
 curl -s -X PATCH "$BASE_URL/shift-swap-requests/$SWAP_ID" -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -d '{"status":"approved","version":1}' >/dev/null
 expect_audit "swap_request_resolved" "an Admin approving a swap"
-# 2026-10-12: an approved swap KEEPS a published shift published (only the
+# An approved swap KEEPS a published shift published (only the
 # name changes); the audit row still carries the approval_reset flag, now false.
 expect_eq "$(db_one "SELECT CONCAT(approval_status,'|',IFNULL(approved_by,'NULL'),'|',pending_reapproval) FROM shift_schedule WHERE shift_id=$SHIFT_ID;")" "published|$ADMIN_ID|0" "an approved swap keeps a published shift published with its approver, no pending_reapproval"
 expect_eq "$(db_one "SELECT JSON_EXTRACT(metadata_json,'\$.approval_reset') FROM audit_log WHERE action='swap_request_resolved' AND entity_id=$SWAP_ID LIMIT 1;")" "false" "swap_request_resolved audit metadata records approval_reset=false (a flag, no personal data)"
@@ -288,7 +274,7 @@ curl -s -X PATCH "$BASE_URL/tanod-sos/$SOS_ID/acknowledge" -H "Authorization: Be
 expect_audit "tanod_sos_acknowledged" "an Admin acknowledging the SOS"
 curl -s -X PATCH "$BASE_URL/tanod-sos/$SOS_ID/resolve" -H "Authorization: Bearer $ADMIN_TOKEN" >/dev/null
 expect_audit "tanod_sos_resolved" "resolving the SOS"
-# Rule 17 + Rule 27: an SOS location is a person's position, never audited.
+# An SOS location is a person's position, never audited.
 SOSMETA=$(db_one "SELECT GROUP_CONCAT(metadata_json) FROM audit_log WHERE action LIKE 'tanod_sos%';")
 case "$SOSMETA" in
   *12.9*) fail "AUDIT LEAK: SOS coordinates appear in audit metadata";;

@@ -16,88 +16,54 @@ use Baranguard\Services\Notifications\NotificationService;
 use PDO;
 
 /**
- * GET /incidents — Master Reference §6 "Incidents" section, §7 role
- * matrix ("View incident list": Admin/Secretary full, Tanod own only,
- * Punong Barangay read-only), §9 W3 (feeds the Dispatch Center's pending
- * queue via `status=pending`).
+ * GET /incidents — Admin/Secretary full, Tanod own only, Punong Barangay
+ * read-only; feeds the Dispatch Center's pending queue via `status=pending`.
  *
- * The reference fixes the response item shape exactly (no raw narrative
- * in the list view — that's only ever returned by
- * `GET /incidents/:id` for Secretary) but leaves the `?...` query
- * params/pagination defaults to the global invariants in §6 (default
- * page size 25, max 100). Resolved decisions, logged in DEVLOG.md:
- *   - `status=` / `priority=` are optional exact-match filters against
- *     the §5 enum values; an unrecognized value is 400 VALIDATION_ERROR
- *     rather than silently matching nothing.
- *   - `page=` / `limit=` follow the same convention as
- *     `ReportsController` would if it paginated: 1-indexed page,
- *     default limit 25, hard cap 100.
- *   - Ordering is `created_at DESC` (newest first) — the reference
- *     doesn't state one, but a dispatch queue needs a stable, useful
- *     default rather than undefined row order.
+ * The response item shape carries no raw narrative (that is only ever
+ * returned by `GET /incidents/:id`, to a Secretary or web-session Admin).
+ *   - `status=` / `priority=` are optional exact-match filters against the
+ *     enum values; an unrecognized value is 400 VALIDATION_ERROR rather than
+ *     silently matching nothing.
+ *   - `page=` / `limit=`: 1-indexed page, default limit 25, hard cap 100.
+ *   - Ordering is `created_at DESC` (newest first): a dispatch queue needs a
+ *     stable, useful default rather than undefined row order.
  *
- * `create()` (W6 Electronic Blotter List's "new-entry form") adds
- * POST /incidents -- Section 6 Incidents, Section 7 role matrix
- * ("Web-side incident entry": Admin/Secretary only). Resolved decisions,
- * logged in DEVLOG.md:
- *   - Idempotency: Section 6 requires the Idempotency-Key UUID header for
- *     trusted web creation, with the server persisting that key and
- *     returning the original incident on replay. Mobile's own idempotency
- *     key is (device_id, client_event_id); a web write has no device_id
- *     (NULL), and MariaDB's nullable UNIQUE KEY (device_id,
- *     client_event_id) does not dedupe across NULL device_id rows (NULL
- *     is never equal to NULL in a unique index) -- Section 5's own schema
- *     note anticipates exactly this ("nullable composite UNIQUE
- *     constraints plus transactional checks are used where a partial
- *     constraint would otherwise be required"). So a web create stores
- *     the Idempotency-Key header value in client_event_id (same column,
- *     device_id stays NULL) and a check-then-insert inside one
- *     transaction supplies the "transactional check" half of that
- *     documented pattern, matching DispatchController::create()'s own
- *     replay-lookup-then-insert shape.
- *   - Priority (REOPENED 2026-09-05, explicit user sign-off): Section 6's
- *     documented POST /incidents body has no priority key, and this
- *     endpoint originally never accepted one on that basis. Web intake
- *     had no way to flag a critical incident at creation time -- every
- *     web-created incident was 'normal' until a separate action escalated
- *     it after the fact. Now accepts an OPTIONAL `priority`, validated
- *     against the same enum GET /incidents already filters on, defaulting
- *     to 'normal' (the schema default, and the mobile branch's own
- *     behavior, both unchanged) when omitted. Mobile's own POST /incidents
- *     body is deliberately NOT extended by this -- §6 fixes its body
- *     shape as mobile-authored, and this change is scoped to the web
- *     "Log Incident" form's own gap only.
- *   - Response shape: not fixed by Section 6 beyond "creates pending
- *     incident with server created_at" -- returns the same redacted shape
- *     GET /incidents already uses (no raw narrative echoed back), for one
- *     consistent incident-item contract across both endpoints.
+ * `create()` is POST /incidents for web entry (Admin/Secretary only):
+ *   - Idempotency: the Idempotency-Key UUID header is persisted and the
+ *     original incident is returned on replay. Mobile's own idempotency key
+ *     is (device_id, client_event_id); a web write has no device_id (NULL),
+ *     and MariaDB's nullable UNIQUE KEY (device_id, client_event_id) does not
+ *     dedupe across NULL device_id rows (NULL is never equal to NULL in a
+ *     unique index). So a web create stores the Idempotency-Key header value
+ *     in client_event_id (device_id stays NULL) and a check-then-insert
+ *     inside one transaction supplies the transactional check, matching
+ *     DispatchController::create()'s replay-lookup-then-insert shape.
+ *   - Priority: an OPTIONAL `priority`, validated against the same enum
+ *     GET /incidents filters on, defaulting to 'normal' when omitted, so web
+ *     intake can flag a critical incident at creation time. Mobile's POST
+ *     /incidents body is deliberately NOT extended by this.
+ *   - Response shape: the same redacted shape GET /incidents uses (no raw
+ *     narrative echoed back), for one consistent incident-item contract.
  *
- * MOBILE BRANCH (Sprint 3 cut — this was Sprint 2's own deferred "mobile
- * branch of POST /incidents" item; §6 documents the same POST /incidents
- * body/idempotency rule for BOTH web and mobile writers, distinguished by
- * role, not by a separate path). Resolved decisions, logged in DEVLOG.md:
- *   - §6 fixes the mobile idempotency key as "authenticated device_id +
- *     client_event_id" but the documented request body
+ * MOBILE BRANCH of POST /incidents (distinguished from web by role, not by a
+ * separate path):
+ *   - The mobile idempotency key is "authenticated device_id +
+ *     client_event_id", but the request body
  *     ({incident_type,raw_narrative,latitude,longitude,source?,
- *     device_offline_created_at?,client_event_id}) has no device_id field
- *     — it must come from somewhere other than the JSON body, since the
- *     JWT itself carries no device identity (AuthMiddleware's claims are
- *     user/role/barangay only). Resolved the same way the web path
- *     resolves its own idempotency key: a request header. A new
- *     `X-Device-Id` header carries it, mirroring the existing
- *     `Idempotency-Key` header precedent exactly. The server then
- *     verifies that device_id actually belongs to the calling Tanod
- *     (`mobile_device.user_id = caller`, `is_active=1`) before trusting
- *     it as part of the idempotency key or attaching it to the new row —
- *     this is the "authenticated" half of "authenticated device_id".
- *   - `createMobileItem()` is `public static` (not private) specifically
- *     so `SyncController::batch()` (POST /sync/batch, same Sprint 3 cut)
- *     can reuse the exact same validation/idempotency/insert logic for
- *     each `incidents[]` item — one incident-creation code path for both
- *     entry points, not two copies that could drift.
- *   - `source` is always written as `'app'` for this branch — §6: "client
- *     `source` is ignored" — matching the web branch's own hardcoded
- *     `'web'`.
+ *     device_offline_created_at?,client_event_id}) has no device_id field and
+ *     the JWT carries no device identity (claims are user/role/barangay only).
+ *     So an `X-Device-Id` header carries it, mirroring the `Idempotency-Key`
+ *     header precedent. The server then verifies that device_id actually
+ *     belongs to the calling Tanod (`mobile_device.user_id = caller`,
+ *     `is_active=1`) before trusting it as part of the idempotency key or
+ *     attaching it to the new row: the "authenticated" half of "authenticated
+ *     device_id".
+ *   - `createMobileItem()` is `public static` so `SyncController::batch()`
+ *     can reuse the exact same validation/idempotency/insert logic for each
+ *     `incidents[]` item: one incident-creation code path for both entry
+ *     points.
+ *   - `source` is always written as `'app'` for this branch (a client
+ *     `source` is ignored), matching the web branch's hardcoded `'web'`.
  */
 final class IncidentsController
 {
@@ -107,13 +73,12 @@ final class IncidentsController
     ];
 
     /**
-     * H-16/M-03 (2026-09-24 external audit, docs/REMAINING.md §H): legal
-     * transitions for the four lifecycle-correction states. Forward-only
-     * within each branch, same discipline as blotter's own case_status —
-     * a terminal state (resolved/cancelled/invalid/duplicate) can only be
-     * left via 'reopened', never jumped directly to another terminal
-     * state, so there is always one unambiguous "this was reconsidered"
-     * event in the audit trail instead of a silent state swap.
+     * Legal transitions for the four lifecycle-correction states.
+     * Forward-only within each branch: a terminal state
+     * (resolved/cancelled/invalid/duplicate) can only be left via 'reopened',
+     * never jumped directly to another terminal state, so there is always one
+     * unambiguous "this was reconsidered" event in the audit trail instead of
+     * a silent state swap.
      */
     private const LIFECYCLE_TRANSITIONS = [
         'pending' => ['duplicate', 'invalid', 'cancelled'],
@@ -126,11 +91,11 @@ final class IncidentsController
     ];
     private const INCIDENT_PRIORITIES = ['normal', 'high', 'critical'];
     /**
-     * Migration 0036: how the report reached the barangay (intake record,
-     * separate from the technical `source`). Web create (Admin/Secretary)
-     * may choose any of these; mobile/sync is forced to `tanod_alerted`,
-     * SMS-ingested incidents to `sms`, a converted citizen report to
-     * `walk_in` -- the client never picks the channel on those paths.
+     * How the report reached the barangay (intake record, separate from the
+     * technical `source`). Web create (Admin/Secretary) may choose any of
+     * these; mobile/sync is forced to `tanod_alerted`, SMS-ingested incidents
+     * to `sms`, a converted citizen report to `walk_in`; the client never
+     * picks the channel on those paths.
      */
     public const REPORT_CHANNELS = ['tanod_alerted', 'walk_in', 'sms', 'phone_call', 'facebook', 'other'];
     private const INCIDENT_TYPES = [
@@ -144,30 +109,27 @@ final class IncidentsController
     /**
      * How far back GET /incidents reaches for the Punong Barangay (besides
      * still-open incidents). Matches the Dashboard's default 30-day range;
-     * a display window, not a retention number (Rule 10 does not apply).
+     * a display window, not a retention number.
      */
     private const PB_LIST_WINDOW_DAYS = 30;
 
-    // §5 has no documented ceiling for one evidence file; picked as a sane
-    // bound for a phone-captured photo/voice note (the mobile client's own
-    // compression, Mobile Improvement Plan Phase 3.1, targets 250-450KB
-    // per photo — this is headroom for the uncompressed fallback path and
-    // longer voice notes, not a target).
+    // No documented ceiling for one evidence file; picked as a sane bound
+    // for a phone-captured photo/voice note (the mobile client compresses
+    // photos to roughly 250-450KB; this is headroom for the uncompressed
+    // fallback path and longer voice notes, not a target).
     private const MAX_EVIDENCE_BYTES = 25 * 1024 * 1024;
 
     /**
-     * H-11: per-Tanod evidence-upload abuse budget. No §5/§6 number given;
-     * picked generously — an active scene can plausibly need several
-     * photos/voice notes in a short span, this only stops sustained abuse.
+     * Per-Tanod evidence-upload abuse budget. Picked generously: an active
+     * scene can plausibly need several photos/voice notes in a short span;
+     * this only stops sustained abuse.
      */
     private const EVIDENCE_UPLOAD_RATE_LIMIT_MAX = 60;
     private const EVIDENCE_UPLOAD_RATE_LIMIT_WINDOW_SECONDS = 3600;
 
-    // §6 "radius has a server maximum" for GET /incidents/nearby — not a
-    // number the reference states, resolved here (logged in DEVLOG.md):
-    // 2km default, 5km hard cap. A barangay is a small area; 5km already
-    // spans well beyond one, so this is a safety ceiling, not a realistic
-    // default search radius.
+    // GET /incidents/nearby: the radius has a server maximum. 2km default,
+    // 5km hard cap. A barangay is a small area; 5km already spans well beyond
+    // one, so this is a safety ceiling, not a realistic default search radius.
     private const NEARBY_DEFAULT_RADIUS_M = 2000;
     private const NEARBY_MAX_RADIUS_M = 5000;
 
@@ -184,13 +146,12 @@ final class IncidentsController
         if ($priority !== null && !in_array($priority, self::INCIDENT_PRIORITIES, true)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'priority must be one of: ' . implode(', ', self::INCIDENT_PRIORITIES) . '.');
         }
-        // `q=` (2026-09-05 UX pass): real server-side search, not a
-        // client-side filter over one loaded page — Incident Management's
-        // list is server-paginated, so a client-only filter would
-        // silently miss every match past the current page. Matches on
+        // `q=`: real server-side search, not a client-side filter over one
+        // loaded page (the list is server-paginated, so a client-only filter
+        // would silently miss every match past the current page). Matches on
         // `display_id`/`incident_type` (LIKE), plus an exact `incident_id`
-        // match when the query is purely numeric — the same two
-        // identifiers an operator would actually search by.
+        // match when the query is purely numeric: the same two identifiers an
+        // operator would actually search by.
         $q = Http::query('q');
         if ($q !== null) {
             $q = trim($q);
@@ -204,16 +165,15 @@ final class IncidentsController
         $limit = min($limit, self::MAX_LIMIT);
         $offset = ($page - 1) * $limit;
 
-        // Punong Barangay reach (REFERENCE.md section 3 "no list of cases";
-        // audits V-02/P-12, 2026-10-09). The PB's own screens call this
-        // endpoint only for the Dashboard's six newest incidents, its
-        // attention-banner counts (status=pending / status=reopened) and
-        // the Live Map's active markers -- never a browsable or searchable
-        // register. So for this role: no `q` search, no page past the
-        // first, rows limited to still-open incidents plus those reported
-        // in the last PB_LIST_WINDOW_DAYS days, and a minimal field set
-        // (see the item mapping below). Individual incidents stay
-        // reachable through GET /incidents/:id.
+        // Punong Barangay reach (no list of cases). The PB's own screens call
+        // this endpoint only for the Dashboard's six newest incidents, its
+        // attention-banner counts (status=pending / status=reopened) and the
+        // Live Map's active markers, never a browsable or searchable register.
+        // So for this role: no `q` search, no page past the first, rows
+        // limited to still-open incidents plus those reported in the last
+        // PB_LIST_WINDOW_DAYS days, and a minimal field set (see the item
+        // mapping below). Individual incidents stay reachable through
+        // GET /incidents/:id.
         $isPunongBarangay = $identity['role'] === 'punong_barangay';
         if ($isPunongBarangay) {
             if ($q !== null && $q !== '') {
@@ -231,7 +191,7 @@ final class IncidentsController
         $where = ['i.barangay_id = :barangay_id'];
         $params = ['barangay_id' => $identity['barangay_id']];
 
-        // §6: "Tanod forced to reported_by=me" — server-enforced, not a
+        // Tanod forced to reported_by=me: server-enforced, not a
         // client-supplied filter the caller could override.
         if ($identity['role'] === 'tanod') {
             $where[] = 'i.reported_by = :reported_by';
@@ -298,12 +258,9 @@ final class IncidentsController
         $total = (int) $countStmt->fetchColumn();
 
         // officer_name: the Tanod name off this incident's most recent
-        // dispatch (any status, including cancelled — an incident that was
-        // dispatched then cancelled still meaningfully had "an officer
-        // handle it" for blotter purposes; a fresh, never-dispatched
-        // incident correctly has none). §6's item shape for GET /incidents
-        // doesn't list this field; added as W6 blotter-table plumbing, same
-        // precedent as GET /users?role= being added for the Tanod picker.
+        // dispatch (any status, including cancelled: an incident that was
+        // dispatched then cancelled still meaningfully had "an officer handle
+        // it"; a never-dispatched incident correctly has none).
         $stmt = $pdo->prepare(
             "SELECT i.incident_id, i.barangay_id, i.reported_by, i.incident_type, i.priority, i.status, i.source,
                     i.latitude, i.longitude, i.created_at, i.device_offline_created_at, i.synced_at,
@@ -332,11 +289,11 @@ final class IncidentsController
 
         $items = array_map(static function (array $row) use ($isPunongBarangay): array {
             if ($isPunongBarangay) {
-                // Minimal operational summary for the PB (V-02/P-12): no
-                // free-text location, no officer name, no reporter, no c1_*
-                // text, no school/related links. Coordinates only while the
-                // incident is still open (the Live Map's active markers);
-                // the historical spread is the aggregated heatmap's job.
+                // Minimal operational summary for the PB: no free-text
+                // location, no officer name, no reporter, no c1_* text, no
+                // school/related links. Coordinates only while the incident is
+                // still open (the Live Map's active markers); the historical
+                // spread is the aggregated heatmap's job.
                 $isOpen = in_array($row['status'], ['pending', 'dispatched', 'reopened'], true);
                 return [
                     'incident_id' => (int) $row['incident_id'],
@@ -384,11 +341,10 @@ final class IncidentsController
     }
 
     /**
-     * GET /incidents/nearby — Tanod only (§6). Never raw narrative/contact
-     * data; distance computed with a portable Haversine SQL expression
-     * (MariaDB 10.4 has no guaranteed ST_Distance_Sphere), rounded to the
-     * nearest metre server-side rather than handed back as a float with
-     * spurious precision.
+     * GET /incidents/nearby — Tanod only. Never raw narrative/contact data;
+     * distance computed with a portable Haversine SQL expression (MariaDB 10.4
+     * has no guaranteed ST_Distance_Sphere), rounded to the nearest metre
+     * server-side rather than handed back as a float with spurious precision.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -419,16 +375,12 @@ final class IncidentsController
             throw new ApiError(400, 'VALIDATION_ERROR', 'radius_m must be between 1 and ' . self::NEARBY_MAX_RADIUS_M . '.');
         }
 
-        // §8 (MariaDB 10.4 limits) note: with PDO::ATTR_EMULATE_PREPARES
-        // false (config/db.php — native prepares), a named parameter can
-        // only be bound to ONE placeholder occurrence; MySQL's binary
-        // protocol has no concept of "the same named param reused",
-        // unlike emulated mode. `:lat` appears twice in the haversine
-        // formula below, so it needs two distinct placeholders
-        // (`:lat`/`:lat2`) each bound to the same value — found live via
-        // `verify-sprint3.sh` (SQLSTATE[HY093] "Invalid parameter
-        // number"), not caught by anything static, since this endpoint
-        // had never been exercised by an existing suite.
+        // With PDO::ATTR_EMULATE_PREPARES false (config/db.php, native
+        // prepares), a named parameter can only be bound to ONE placeholder
+        // occurrence. `:lat` appears twice in the haversine formula below, so
+        // it needs two distinct placeholders (`:lat`/`:lat2`) each bound to
+        // the same value (otherwise SQLSTATE[HY093] "Invalid parameter
+        // number").
         $stmt = $pdo->prepare(
             'SELECT incident_id, incident_type, priority, status, latitude, longitude, created_at,
                     (6371000 * ACOS(
@@ -471,26 +423,23 @@ final class IncidentsController
     }
 
     /**
-     * GET /incidents/:id — §6: "resource must belong to caller's
-     * barangay. Secretary receives {incident_id,barangay_id,reported_by,
-     * incident_type,raw_narrative,redacted_narrative,priority,status,
-     * source,latitude,longitude,created_at,synced_at}; Admin/PB/Tanod
-     * receive redacted allow-listed fields only, with Tanod additionally
-     * requiring reporter or assigned-dispatch relationship."
+     * GET /incidents/:id — the resource must belong to the caller's barangay.
+     * A Secretary (or a web-session Admin) receives {incident_id,barangay_id,
+     * reported_by,incident_type,raw_narrative,redacted_narrative,priority,
+     * status,source,latitude,longitude,created_at,synced_at}; PB/Tanod/
+     * device-session Admin receive redacted allow-listed fields only, with
+     * Tanod additionally requiring a reporter or assigned-dispatch
+     * relationship.
      *
      * **This is the only endpoint in the system that returns
      * `raw_narrative`, and only to a Secretary or to an Admin on a WEB
-     * session.** RA 7160 §394(c) makes the Barangay Secretary the statutory
-     * custodian of barangay records. Until 2026-10-13 the Admin got less
-     * here on purpose; the owner then decided the Chief Tanod (the
-     * dispatcher) must read the narrative and party fields in order to
-     * brief a responding Tanod (REFERENCE.md Rule 1, amended). The Admin's
-     * DEVICE session (the phone console, SessionPolicy::KIND_DEVICE) is
-     * deliberately NOT included: the narrative stays off phones. Editing is
-     * unchanged: `complainant_name` is still Secretary-only (PATCH).
-     *
-     * Built in Sprint 6 because W8 (AI Redaction Review) shows raw vs
-     * draft side by side and had no way to obtain the raw side.
+     * session.** The Barangay Secretary is the statutory custodian of
+     * barangay records (RA 7160 §394(c)); the Chief Tanod (Admin, the
+     * dispatcher) must also read the narrative and party fields to brief a
+     * responding Tanod. The Admin's DEVICE session (the phone console,
+     * SessionPolicy::KIND_DEVICE) is deliberately NOT included: the narrative
+     * stays off phones. Editing is separate: `complainant_name` is
+     * Secretary-only (PATCH).
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -502,24 +451,18 @@ final class IncidentsController
         }
         $incidentId = (int) $incidentIdParam;
 
-        // dispatched_at / arrived_at / has_active_dispatch are NOT in §6's
-        // listed shape for this endpoint, and are added deliberately.
-        //
-        // §9 W7 requires a timeline containing `dispatched_at` and
-        // `arrived_at`, and W7 is a SECRETARY screen — but §6's
-        // `GET /dispatch` is Admin/PB/Tanod only, so a Secretary can never
-        // read those timestamps from the dispatch endpoint (verified: it
-        // returns 403). Without this the timeline would silently render
-        // "Not yet" for stages that actually happened, which is precisely
-        // the scripted/fabricated timeline §9 forbids.
-        //
-        // The alternative — widening `GET /dispatch`'s role list — was
-        // rejected: it would hand the Secretary the whole dispatch record
-        // (assignments, route, tanod ids) to obtain two timestamps §9 says
-        // must be on screen. This is the narrower disclosure, and it is
-        // about the caller's own barangay incident. `has_active_dispatch`
-        // is derived, never a raw id, and exists so W7's Admin resolve
-        // control can reflect §6's real precondition instead of guessing.
+        // dispatched_at / arrived_at / has_active_dispatch are added
+        // deliberately. The incident detail screen shows a timeline with
+        // `dispatched_at` and `arrived_at` and is also a SECRETARY screen, but
+        // `GET /dispatch` is Admin/PB/Tanod only, so a Secretary can never read
+        // those timestamps from the dispatch endpoint. Without this the
+        // timeline would silently render "Not yet" for stages that actually
+        // happened. Widening `GET /dispatch`'s role list was rejected: it would
+        // hand the Secretary the whole dispatch record (assignments, route,
+        // tanod ids) to obtain two timestamps. This is the narrower disclosure,
+        // about the caller's own barangay incident. `has_active_dispatch` is
+        // derived, never a raw id, and lets the Admin resolve control reflect
+        // the real precondition instead of guessing.
         $stmt = $pdo->prepare(
             "SELECT i.incident_id, i.barangay_id, i.reported_by, i.incident_type, i.priority, i.status, i.source,
                     i.latitude, i.longitude, i.created_at, i.device_offline_created_at, i.synced_at,
@@ -553,11 +496,11 @@ final class IncidentsController
         if ($incident === false) {
             throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
         }
-        // Tenant check before any disclosure (§2 Rule 6/30).
+        // Tenant check before any disclosure.
         AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
 
-        // §6/§7: a Tanod may only read an incident they reported or were
-        // dispatched to. 404 rather than 403 — the existence of another
+        // A Tanod may only read an incident they reported or were
+        // dispatched to. 404 rather than 403: the existence of another
         // Tanod's incident is itself information they aren't entitled to.
         if ($identity['role'] === 'tanod') {
             $relStmt = $pdo->prepare(
@@ -577,18 +520,13 @@ final class IncidentsController
             }
         }
 
-        // 2026-09-13, docs/REMAINING.md G-backlog "backup/second responder":
-        // an incident can now have more than one concurrent dispatch, so
-        // the singular dispatched_at/arrived_at pair above is no longer
-        // the full picture. This is the authoritative full list, one row
-        // per dispatch ever made on this incident (including cancelled —
-        // an incident's real history includes a responder who was pulled
-        // off it, same reasoning index()'s officer_name comment already
-        // gives for including cancelled dispatches). Tanod NAME is
-        // included here, not just timestamps, because the existing W7 UI
-        // already renders an "Assigned Tanod" card for every role that can
-        // view this endpoint — this fixes that card's data source rather
-        // than widening what it discloses.
+        // An incident can have more than one concurrent dispatch, so the
+        // singular dispatched_at/arrived_at pair above is not the full picture.
+        // This is the authoritative full list, one row per dispatch ever made
+        // on this incident (including cancelled: an incident's real history
+        // includes a responder who was pulled off it). Tanod NAME is included
+        // here, not just timestamps, because the detail UI renders an
+        // "Assigned Tanod" card for every role that can view this endpoint.
         $dispatchesStmt = $pdo->prepare(
             'SELECT d.dispatch_id, d.tanod_id, u.full_name AS tanod_name, d.status,
                     d.dispatched_at, d.en_route_at, d.arrived_at, d.completed_at, d.cancelled_at
@@ -667,22 +605,18 @@ final class IncidentsController
             'related_incident_id' => $incident['related_incident_id'] !== null ? (int) $incident['related_incident_id'] : null,
             'related_incident' => $relatedIncident,
             'related_by' => $relatedBy,
-            // Safer School Zones (migration 0033, contract section 7): the
-            // linked school and the short NON-identifying Annex C-1 text.
-            // Not narrative -- visible to every role that may read the
-            // incident (Tanod: own incidents only, like the rest of show()).
+            // Safer School Zones: the linked school and the short
+            // NON-identifying Annex C-1 text. Not narrative; visible to every
+            // role that may read the incident (Tanod: own incidents only, like
+            // the rest of show()).
             'school_id' => $incident['school_id'] !== null ? (int) $incident['school_id'] : null,
             'c1_summary' => $incident['c1_summary'],
             'c1_action_taken' => $incident['c1_action_taken'],
             'c1_status_notes' => $incident['c1_status_notes'],
-            // H-16/M-03 lifecycle state (migration 0025) -- added
-            // 2026-09-26 alongside the W21 web UI for
-            // `PATCH /incidents/:id/lifecycle`; previously set by that
-            // endpoint but never read back by show(), so the UI had no
-            // way to display "duplicate of #N" or who/when changed it
-            // after the initiating request's own response was gone.
-            // `lifecycle_changed_by` is a raw user id, same disclosure
-            // level as `reported_by`.
+            // Lifecycle state, so the UI can display "duplicate of #N" or
+            // who/when changed it after the initiating request's own response
+            // was gone. `lifecycle_changed_by` is a raw user id, same
+            // disclosure level as `reported_by`.
             'duplicate_of_incident_id' => $incident['duplicate_of_incident_id'] !== null
                 ? (int) $incident['duplicate_of_incident_id']
                 : null,
@@ -691,8 +625,8 @@ final class IncidentsController
                 : null,
             'lifecycle_changed_at' => $incident['lifecycle_changed_at'],
             // See the query comment above for why these three are here.
-            // dispatched_at/arrived_at now mean "the primary/first
-            // responder" specifically — see `dispatches` for the full list.
+            // dispatched_at/arrived_at mean "the primary/first responder"
+            // specifically; see `dispatches` for the full list.
             'dispatched_at' => $incident['dispatched_at'],
             'arrived_at' => $incident['arrived_at'],
             'has_active_dispatch' => (bool) $incident['has_active_dispatch'],
@@ -708,15 +642,14 @@ final class IncidentsController
         if ($identity['role'] === 'secretary' || $isWebAdmin) {
             $payload['raw_narrative'] = $incident['raw_narrative'];
 
-            // Party fields (migration 0008) carry the same protection as
-            // raw_narrative itself (Secretary and web-session Admin only).
+            // Party fields carry the same protection as raw_narrative itself
+            // (Secretary and web-session Admin only).
             $payload['complainant_name'] = $incident['complainant_name'];
             $payload['respondent_name'] = $incident['respondent_name'];
             $payload['complainant_contact_number'] = $incident['complainant_contact_number'];
 
-            // Code-review finding H-06/H-07 (2026-09-24): this, the one
-            // raw-narrative disclosure in the system, was never audited.
-            // Identifiers only, per Rule 8 — never the narrative itself.
+            // This, the one raw-narrative disclosure in the system, is
+            // audited. Identifiers only, never the narrative itself.
             Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'raw_narrative_viewed', 'incident', $incidentId, []);
         }
 
@@ -724,21 +657,19 @@ final class IncidentsController
     }
 
     /**
-     * GET /incidents/:id/evidence — §6: "Secretary/Admin same barangay;
-     * Tanod only if `incident.reported_by = caller.user_id` OR the caller
-     * has/had a dispatch for that incident; same-barangay check applies
-     * first. **Never returns filesystem paths.**"
+     * GET /incidents/:id/evidence — Secretary/Admin same barangay; Tanod only
+     * if `incident.reported_by = caller.user_id` OR the caller has/had a
+     * dispatch for that incident; the same-barangay check applies first.
+     * **Never returns filesystem paths.**
      *
      * That last rule is why `file_path` is absent from the response shape
-     * below even though it is the most obvious column on the table: a path
-     * is an invitation to fetch the file directly, and §5 keeps evidence
-     * outside the web root precisely so that cannot work. Sprint 7's
-     * download endpoint will serve bytes through an authorization check,
-     * not a path.
+     * below even though it is the most obvious column on the table: a path is
+     * an invitation to fetch the file directly, and evidence is kept outside
+     * the web root precisely so that cannot work. Bytes are served through the
+     * download endpoint, behind an authorization check.
      *
-     * Punong Barangay is NOT in the role list — §6 names only
-     * Secretary/Admin/Tanod for this endpoint, and PB's access elsewhere
-     * is "redacted read-only", which evidence files are not.
+     * Punong Barangay is NOT in the role list: PB's access elsewhere is
+     * "redacted read-only", which evidence files are not.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -756,7 +687,7 @@ final class IncidentsController
         if ($incident === false) {
             throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
         }
-        // §6: "same-barangay check applies FIRST".
+        // The same-barangay check applies FIRST.
         AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
 
         if ($identity['role'] === 'tanod' && !self::tanodMayAccess($pdo, $incidentId, $identity['user_id'])) {
@@ -787,12 +718,10 @@ final class IncidentsController
             ];
         }, $rows);
 
-        // Evidence-access audit (docs/REMAINING.md §G — was blocked behind
-        // F4 not existing; unblocked 2026-09-13). Every successful read is
-        // logged, not just ones that return files, so an all-clear "nobody
-        // accessed this incident's evidence" is provable the same way an
-        // access is. Metadata is allow-listed per Rule 8 — a count, never
-        // filenames/hashes/paths, none of which belong in audit_log anyway.
+        // Evidence-access audit. Every successful read is logged, not just
+        // ones that return files, so an all-clear "nobody accessed this
+        // incident's evidence" is provable the same way an access is. Metadata
+        // is allow-listed: a count, never filenames/hashes/paths.
         Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'evidence_accessed', 'incident', $incidentId, [
             'item_count' => count($items),
         ]);
@@ -801,25 +730,19 @@ final class IncidentsController
     }
 
     /**
-     * GET /incidents/:id/evidence/:attachmentId/download — closes the gap
-     * the `evidence()` GET above and `uploadEvidence()` below both
-     * documented as "deliberately not built here": until now the metadata
-     * endpoint listed a photo/voice attachment's filename, size, and hash,
-     * but nothing anywhere (this API or the web dashboard) could actually
-     * serve the bytes, so Admin/Secretary/Tanod all saw a card with no way
-     * to view the picture or play the audio.
+     * GET /incidents/:id/evidence/:attachmentId/download — serves the bytes of
+     * one listed photo/voice attachment.
      *
-     * Same role/tenant/ownership shape as the metadata GET — deliberately
-     * not a separate authorization model: if a caller can list an
-     * incident's evidence, they can fetch one of the listed files, and
-     * nothing else. `attachmentId` is looked up scoped to `incidentId` (not
-     * globally) so a guessed/enumerated attachment id from a different
-     * incident can never match.
+     * Same role/tenant/ownership shape as the metadata GET, deliberately not a
+     * separate authorization model: if a caller can list an incident's
+     * evidence, they can fetch one of the listed files, and nothing else.
+     * `attachmentId` is looked up scoped to `incidentId` (not globally) so a
+     * guessed/enumerated attachment id from a different incident can never
+     * match.
      *
-     * `Content-Disposition: inline` (not `attachment`) — this exists to
-     * back an `<img>`/`<audio>` element in the dashboard's evidence panel,
-     * not to force a save-as-file dialog like the map package/report/Lupon
-     * packet downloads do.
+     * `Content-Disposition: inline` (not `attachment`): this backs an
+     * `<img>`/`<audio>` element in the dashboard's evidence panel, not a
+     * save-as-file dialog like the map package/report downloads.
      */
     public static function downloadEvidence(PDO $pdo, array $identity, string $incidentIdParam, string $attachmentIdParam): void
     {
@@ -836,8 +759,8 @@ final class IncidentsController
         if ($incident === false) {
             throw new ApiError(404, 'NOT_FOUND', 'Evidence attachment not found.');
         }
-        // §6: "same-barangay check applies FIRST" — cross-tenant is 404,
-        // never 403 (Rule 2: a 403 would confirm the incident exists).
+        // The same-barangay check applies FIRST: cross-tenant is 404, never
+        // 403 (a 403 would confirm the incident exists).
         AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
 
         if ($identity['role'] === 'tanod' && !self::tanodMayAccess($pdo, $incidentId, $identity['user_id'])) {
@@ -857,17 +780,17 @@ final class IncidentsController
 
         $absolutePath = self::evidenceStorageDir() . DIRECTORY_SEPARATOR . $attachment['file_path'];
         if (!is_readable($absolutePath)) {
-            // The row exists but the bytes are gone/unreadable — an
-            // operator problem (manual disk change, not a normal retention
-            // purge, which deletes the whole row via the FK cascade — §4
-            // "FK trap"), not a client one. Don't leak the path.
+            // The row exists but the bytes are gone/unreadable: an operator
+            // problem (manual disk change, not a normal retention purge, which
+            // deletes the whole row via the FK cascade), not a client one.
+            // Don't leak the path.
             error_log('[baranguard] evidence file missing or unreadable for attachment_id=' . $attachmentId);
             throw new ApiError(503, 'SERVICE_UNAVAILABLE', 'This evidence file is temporarily unavailable.');
         }
 
-        // Same audit shape as the metadata GET above (Rule 8: identifiers
-        // and statuses only — never the filename, which is not itself
-        // sensitive but isn't on the audit allow-list either).
+        // Same audit shape as the metadata GET above: identifiers and
+        // statuses only, never the filename (not sensitive, but not on the
+        // audit allow-list either).
         Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'evidence_downloaded', 'evidence_attachment', $attachmentId, [
             'incident_id' => $incidentId,
         ]);
@@ -879,8 +802,8 @@ final class IncidentsController
         header('Content-Length: ' . (string) filesize($absolutePath));
         header('Content-Disposition: inline; filename="' . $safeFilename . '"');
         // Evidence bytes are immutable once uploaded (a new capture is a
-        // new attachment row, never an overwrite) — safe to cache, unlike
-        // the PDF/CSV export endpoints which regenerate on every request.
+        // new attachment row, never an overwrite): safe to cache, unlike the
+        // PDF/CSV export endpoints which regenerate on every request.
         header('Cache-Control: private, max-age=86400');
 
         while (ob_get_level() > 0) {
@@ -891,47 +814,31 @@ final class IncidentsController
     }
 
     /**
-     * POST /incidents/:id/evidence — closes F4 (`docs/REMAINING.md`,
-     * `docs/AUDIT_2026-09-07.md`): the master reference documented this
-     * contract from the start ("`evidence_attachment`'s schema is real,
-     * the upload endpoint is not"), and this is that endpoint. Mobile
-     * Improvement Plan Phase 3.2.
+     * POST /incidents/:id/evidence — Tanod-only (mirrors
+     * `createMobileItem()`'s mobile-write shape): `X-Device-Id` header
+     * required and verified via `assertDeviceOwnership()`, as for every other
+     * Tanod mobile write. Admin/Secretary have no capture flow to upload FROM,
+     * only the GET above. Ownership of the INCIDENT itself reuses
+     * `tanodMayAccess()` verbatim (the same "reported_by = caller OR has a
+     * dispatch on it" rule the GET enforces), so a Tanod cannot attach
+     * evidence to an incident that isn't theirs.
      *
-     * Tanod-only (mirrors `createMobileItem()`'s mobile-write shape
-     * exactly): `X-Device-Id` header required and verified via
-     * `assertDeviceOwnership()`, same as every other tanod mobile write —
-     * Admin/Secretary have no capture flow to upload FROM, only the
-     * existing GET above to read what a Tanod already sent. Ownership
-     * of the INCIDENT itself reuses `tanodMayAccess()` verbatim — the
-     * same "reported_by = caller OR has a dispatch on it" rule the GET
-     * endpoint already enforces, so a Tanod cannot attach evidence to an
-     * incident that isn't theirs.
-     *
-     * Body: multipart/form-data — `file` (binary), `type`
-     * ('photo'|'voice'), `sha256` (64 hex chars, the CLIENT's own hash of
-     * the bytes it captured), `mime_type`, `original_filename` (optional),
-     * `client_request_id` (UUID — §29's idempotency key for this
-     * endpoint, backed by `evidence_attachment`'s own
-     * UNIQUE(client_request_id) — a retry with the same id returns the
+     * Body: multipart/form-data — `file` (binary), `type` ('photo'|'voice'),
+     * `sha256` (64 hex chars, the CLIENT's own hash of the bytes it captured),
+     * `mime_type`, `original_filename` (optional), `client_request_id` (UUID,
+     * the idempotency key for this endpoint, backed by `evidence_attachment`'s
+     * own UNIQUE(client_request_id): a retry with the same id returns the
      * ORIGINAL row rather than creating a second attachment, never a 409).
      *
-     * The server computes its OWN sha256 over the bytes it actually
-     * received and REJECTS a mismatch against the client-supplied value
-     * (400) rather than trusting it — evidence is exactly the kind of
-     * record where "the file on disk matches what the device captured"
-     * must be provably true, not merely claimed, mirroring this whole
-     * codebase's "hash the real bytes, never trust a client-reported
-     * value" discipline (`evidenceCapture.ts` does the same on the
-     * device's own side).
+     * The server computes its OWN sha256 over the bytes it actually received
+     * and REJECTS a mismatch against the client-supplied value (400) rather
+     * than trusting it: evidence is exactly the kind of record where "the file
+     * on disk matches what the device captured" must be provably true
+     * (`evidenceCapture.ts` does the same on the device's side).
      *
-     * Deliberately NOT built here: a download endpoint (the `evidence()`
-     * GET docblock above already earmarks that as separate, later scope)
-     * and independent evidence retention enforcement — `file_path` is
-     * stored, `retention_expires_at` left NULL same as every other
-     * insert path in this codebase, since evidence is currently purged
-     * only as part of `RetentionService::purgeOneIncident()`'s cascade,
-     * not on its own clock; building that independently is a different,
-     * undocumented scope this endpoint doesn't invent.
+     * `file_path` is stored and `retention_expires_at` left NULL, as on every
+     * other insert path: evidence is purged only as part of
+     * `RetentionService::purgeOneIncident()`'s cascade, not on its own clock.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -948,8 +855,8 @@ final class IncidentsController
             throw new ApiError(400, 'VALIDATION_ERROR', 'X-Device-Id header is required.');
         }
         self::assertDeviceOwnership($pdo, $identity, $deviceId);
-        // H-09: no-op for a device that hasn't upgraded to a Keystore
-        // keypair yet — see DeviceSignature's own doc.
+        // No-op for a device that has no registered Keystore key; see
+        // DeviceSignature's own doc.
         DeviceSignature::verifyOrReject($pdo, $deviceId, $identity['user_id']);
 
         if (!RateLimiter::check(
@@ -994,9 +901,9 @@ final class IncidentsController
         }
 
         // Idempotent retry: the same client_request_id returns the
-        // original row rather than a second attachment or a 409 — same
-        // "a retry must return the original row" guarantee every other
-        // mobile write in this codebase gives (§2 Rule 3).
+        // original row rather than a second attachment or a 409 (the same
+        // "a retry must return the original row" guarantee every other mobile
+        // write gives).
         $existingStmt = $pdo->prepare(
             'SELECT attachment_id, incident_id, type, uploaded_by, uploaded_at, sha256, byte_size, mime_type, original_filename
              FROM evidence_attachment WHERE client_request_id = :client_request_id LIMIT 1'
@@ -1032,17 +939,15 @@ final class IncidentsController
             throw new ApiError(400, 'VALIDATION_ERROR', 'sha256 does not match the uploaded bytes.');
         }
 
-        // Code-review finding H-10 (2026-09-24): the sha256 check above
-        // only proves the bytes weren't corrupted in transit — it says
-        // nothing about whether they're actually a photo/voice-note file
-        // at all, since `mime_type` above is taken as-is from the client.
-        // Real per-type format check via magic bytes (finfo), not the
-        // claimed Content-Type. Rejects on allow-list violation only, not
-        // on a claimed-vs-detected mismatch: ADTS-vs-MP4-boxed AAC is
-        // genuinely ambiguous to magic-byte sniffing depending on the
-        // recording device/OS, so a strict equality check would risk
-        // false-positive rejection of real evidence. Not malware scanning
-        // or EXIF stripping — those are separate, larger audit items.
+        // The sha256 check above only proves the bytes weren't corrupted in
+        // transit; it says nothing about whether they're actually a
+        // photo/voice-note file, since `mime_type` is taken as-is from the
+        // client. Real per-type format check via magic bytes (finfo), not the
+        // claimed Content-Type. Rejects on allow-list violation only, not on a
+        // claimed-vs-detected mismatch: ADTS-vs-MP4-boxed AAC is genuinely
+        // ambiguous to magic-byte sniffing depending on the recording
+        // device/OS, so a strict equality check would risk false-positive
+        // rejection of real evidence. Not malware scanning or EXIF stripping.
         $allowedMimeByType = [
             'photo' => ['image/jpeg', 'image/png'],
             'voice' => ['audio/aac', 'audio/x-hx-aac-adts', 'audio/mp4', 'video/mp4'],
@@ -1150,19 +1055,16 @@ final class IncidentsController
      * intake (a mistyped priority, a missing landmark). NOT a narrative
      * editor, deliberately:
      *
-     *   - **`raw_narrative` and `redacted_narrative` are not writable
-     *     here, by any role.** (The blotter and AI redaction pipeline
-     *     were removed; barangays keep the legal record in their own
-     *     binders.)
+     *   - `raw_narrative` and `redacted_narrative` are not writable here, by
+     *     any role.
+     *   - `complainant_name` is Secretary-only, same as show()'s own rule for
+     *     it: the party fields carry raw_narrative's protection. An Admin may
+     *     correct priority, type and location; only a Secretary may touch the
+     *     party name.
      *
-     *   - **`complainant_name` is Secretary-only**, same as show()'s own
-     *     rule for it: migration 0008's party fields carry
-     *     raw_narrative's protection. An Admin may correct priority, type and
-     *     location; only a Secretary may touch the party name.
-     *
-     * Audit metadata records WHICH fields changed, never their values -
-     * Rule 8 allow-lists audit metadata to identifiers and statuses, and
-     * `complainant_name`/`location_description` are personal data.
+     * Audit metadata records WHICH fields changed, never their values: the
+     * allow-list is identifiers and statuses, and `complainant_name`/
+     * `location_description` are personal data.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -1187,24 +1089,20 @@ final class IncidentsController
         if ($incident === false) {
             throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
         }
-        // Cross-tenant is 404, never 403 (Rule 2) - requireTenant() is the
-        // shared implementation of that.
+        // Cross-tenant is 404, never 403; requireTenant() is the shared
+        // implementation of that.
         AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
 
-        // Idempotency (§2 Rule 3): a retry with the same key must return the
-        // original row, never write a second audit row. There is no natural
-        // unique column an UPDATE can dedupe on the way a CREATE dedupes on
-        // client_event_id, so this replays off `audit_log` instead — the
-        // same shape `SmsController::broadcast()` already uses for exactly
-        // this reason (a write with no dedicated idempotency column).
+        // Idempotency: a retry with the same key must return the original
+        // row, never write a second audit row. There is no natural unique
+        // column an UPDATE can dedupe on the way a CREATE dedupes on
+        // client_event_id, so this replays off `audit_log` instead (the same
+        // shape `SmsController::broadcast()` uses).
         //
-        // Queries `audit_log.idempotency_key` (migration 0019's VIRTUAL
-        // generated column + index) rather than a bare JSON_EXTRACT() —
-        // MariaDB only uses the index when the generated column itself is
-        // referenced, not an equivalent expression. This lookup used to be
-        // a full scan of every incident_updated row for this incident;
-        // SmsController::broadcast() hit the identical shape first (see
-        // that migration's header) and this was the deliberate follow-up.
+        // Queries `audit_log.idempotency_key` (a VIRTUAL generated column +
+        // index) rather than a bare JSON_EXTRACT(): MariaDB only uses the index
+        // when the generated column itself is referenced, not an equivalent
+        // expression.
         $replayStmt = $pdo->prepare(
             "SELECT metadata_json FROM audit_log
              WHERE barangay_id = :barangay_id AND action = 'incident_updated' AND entity_id = :entity_id
@@ -1260,9 +1158,9 @@ final class IncidentsController
             $changedFields[] = 'complainant_name';
         }
 
-        // Safer School Zones (migration 0033): link/unlink a school (null
-        // clears it) and the short non-identifying Annex C-1 text. Not
-        // narrative, so Admin may edit these as well as Secretary.
+        // Safer School Zones: link/unlink a school (null clears it) and the
+        // short non-identifying Annex C-1 text. Not narrative, so Admin may
+        // edit these as well as Secretary.
         if (array_key_exists('school_id', $body)) {
             $updates[] = 'school_id = :school_id';
             $params['school_id'] = self::validateSchoolId($pdo, $identity, $body['school_id']);
@@ -1294,9 +1192,9 @@ final class IncidentsController
         $updateStmt = $pdo->prepare('UPDATE incident SET ' . implode(', ', $updates) . ' WHERE incident_id = :id');
         $updateStmt->execute($params);
 
-        // Field NAMES only - never the submitted values (Rule 8). The
-        // idempotency key itself is a client-supplied UUID token, not
-        // incident content, so it is safe to record alongside them.
+        // Field NAMES only, never the submitted values. The idempotency key
+        // itself is a client-supplied UUID token, not incident content, so it
+        // is safe to record alongside them.
         Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'incident_updated', 'incident', $incidentId, [
             'fields' => $changedFields,
             'idempotency_key' => $idempotencyKey,
@@ -1307,8 +1205,7 @@ final class IncidentsController
 
     /**
      * `PATCH /incidents/:id/related` — Admin|Secretary, `Idempotency-Key`
-     * required, body exactly `{"related_incident_id": <int>|null}`
-     * (migration 0036).
+     * required, body exactly `{"related_incident_id": <int>|null}`.
      *
      * A soft "these two incidents are related" pointer, for a repeat
      * complaint, a follow-up or a linked event. It is deliberately NOT the
@@ -1316,13 +1213,13 @@ final class IncidentsController
      * dispatch is open (so it never collides with the "no lifecycle change
      * with an open dispatch" guard), touches no dispatch and moves no rows.
      * `null` removes the link. The target must be in the caller's own
-     * barangay -- an unknown id and another barangay's id both answer 404
-     * (Rule 2); linking an incident to itself is a 400.
+     * barangay: an unknown id and another barangay's id both answer 404;
+     * linking an incident to itself is a 400.
      *
      * Audit `incident_related_changed` carries ids only (incident, the new
-     * and the previous related id, the idempotency key) -- never narrative,
-     * names or any display text (Rule 8). A retry with the same key replays
-     * off `audit_log.idempotency_key`, same shape as `update()`.
+     * and the previous related id, the idempotency key), never narrative,
+     * names or any display text. A retry with the same key replays off
+     * `audit_log.idempotency_key`, same shape as `update()`.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -1390,7 +1287,7 @@ final class IncidentsController
             $targetStmt = $pdo->prepare('SELECT barangay_id FROM incident WHERE incident_id = :id');
             $targetStmt->execute(['id' => $relatedId]);
             $target = $targetStmt->fetch(PDO::FETCH_ASSOC);
-            // Unknown and other-barangay answer identically (Rule 2).
+            // Unknown and other-barangay answer identically.
             if ($target === false || (int) $target['barangay_id'] !== (int) $identity['barangay_id']) {
                 throw new ApiError(404, 'NOT_FOUND', 'Related incident not found.');
             }
@@ -1417,28 +1314,26 @@ final class IncidentsController
      * `PATCH /incidents/:id/status` — Admin only, body exactly
      * `{status:"resolved"}`.
      *
-     * NOT a general status setter. `pending` and `dispatched` belong to
-     * the dispatch lifecycle, which moves them on its own; the only
-     * transition a human drives directly is closing the incident out, so
-     * that is the only one accepted here.
+     * NOT a general status setter. `pending` and `dispatched` belong to the
+     * dispatch lifecycle, which moves them on its own; the only transition a
+     * human drives directly is closing the incident out, so that is the only
+     * one accepted here.
      *
-     * A `dispatched` INCIDENT IS RESOLVED AS BEFORE (§6). A `pending` or
-     * `reopened` one has had no response to conclude, so (decision
-     * 2026-10-09, WORKFLOWS_AND_RULES Part 5 item 1) it can be closed only
-     * with a mandatory `reason` (1-255 chars) saying why no dispatch was
-     * needed — a call that settled it, a walk-in sorted on the spot. The
-     * reason is kept in `incident.resolve_reason` (migration 0039) and is
-     * NEVER copied into audit metadata (Rule 8: only has_reason and
-     * reason_length). Without a reason it is a 400. An already-`resolved`
-     * or terminal incident is a repeat — 409. That also makes the endpoint
-     * safe without an `Idempotency-Key`: a double submit cannot write a
-     * second audit row, because the second call no longer finds a
+     * A `dispatched` incident is resolved directly. A `pending` or `reopened`
+     * one has had no response to conclude, so it can be closed only with a
+     * mandatory `reason` (1-255 chars) saying why no dispatch was needed (a
+     * call that settled it, a walk-in sorted on the spot). The reason is kept
+     * in `incident.resolve_reason` and is NEVER copied into audit metadata
+     * (only has_reason and reason_length). Without a reason it is a 400. An
+     * already-`resolved` or terminal incident is a repeat: 409. That also makes
+     * the endpoint safe without an `Idempotency-Key`: a double submit cannot
+     * write a second audit row, because the second call no longer finds a
      * resolvable incident.
      *
      * Refuses while any dispatch is still open (`assigned`/`en_route`/
      * `arrived`): resolving an incident whose Tanod is mid-response would
-     * strand that dispatch in a non-terminal state with nothing left to
-     * close it.
+     * strand that dispatch in a non-terminal state with nothing left to close
+     * it.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -1461,7 +1356,7 @@ final class IncidentsController
         if ($incident === false) {
             throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
         }
-        // Cross-tenant is 404, never 403 (Rule 2).
+        // Cross-tenant is 404, never 403.
         AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
 
         $resolveReason = null;
@@ -1531,30 +1426,26 @@ final class IncidentsController
     }
 
     /**
-     * `PATCH /incidents/:id/lifecycle` — Secretary only. H-16/M-03
-     * (2026-09-24 external audit): the incident lifecycle had no way to
-     * record a duplicate report, an invalid one, a cancellation, or a
-     * case reopened after being closed. Kept SEPARATE from
-     * `updateStatus()` above (Admin-only, dispatch-driven "resolved")
-     * because these four are a records-custodian judgment call — the
-     * same reasoning that makes blotter finalize/amend Secretary-only
-     * (§3) — not an operational dispatch outcome.
+     * `PATCH /incidents/:id/lifecycle` — Secretary only. Records a duplicate
+     * report, an invalid one, a cancellation, or a case reopened after being
+     * closed. Kept SEPARATE from `updateStatus()` above (Admin-only,
+     * dispatch-driven "resolved") because these four are a records-custodian
+     * judgment call, not an operational dispatch outcome.
      *
-     * MERGE = LINK, NOT DELETE (user decision, 2026-09-26; migration
-     * 0025's own header). Marking an incident `duplicate` requires
+     * MERGE = LINK, NOT DELETE. Marking an incident `duplicate` requires
      * `duplicate_of_incident_id`, which must point at a DIFFERENT,
-     * same-barangay incident. Nothing about the target incident is
-     * touched — no FK is repointed, no evidence/dispatch/blotter row
-     * moves — a human follows the pointer, that's the entire feature.
+     * same-barangay incident. Nothing about the target incident is touched
+     * (no FK is repointed, no evidence/dispatch row moves); a human follows
+     * the pointer, that's the entire feature.
      *
-     * Refuses while any dispatch is still open, same guard
-     * `updateStatus()` uses: closing a case out from under a Tanod who
-     * is actively responding is exactly the kind of silent-state-change
-     * §2's audit rules exist to prevent.
+     * Refuses while any dispatch is still open, same guard `updateStatus()`
+     * uses: closing a case out from under a Tanod who is actively responding
+     * is exactly the kind of silent state change the audit rules exist to
+     * prevent.
      *
-     * Idempotency-Key required (§2 Rule 3), replayed off `audit_log`
-     * exactly like `update()` above — there is no dedicated idempotency
-     * column for a status transition.
+     * Idempotency-Key required, replayed off `audit_log` exactly like
+     * `update()` above (there is no dedicated idempotency column for a status
+     * transition).
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -1597,12 +1488,12 @@ final class IncidentsController
         if ($incident === false) {
             throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
         }
-        // Cross-tenant is 404, never 403 (Rule 2).
+        // Cross-tenant is 404, never 403.
         AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
 
-        // Idempotency replay (§2 Rule 3) — same shape as update()'s own,
-        // scoped to this action so a replayed 'reopened' can never be
-        // confused with a replayed 'invalid' on the same incident.
+        // Idempotency replay: same shape as update()'s own, scoped to this
+        // action so a replayed 'reopened' can never be confused with a replayed
+        // 'invalid' on the same incident.
         $replayStmt = $pdo->prepare(
             "SELECT metadata_json FROM audit_log
              WHERE barangay_id = :barangay_id AND action = 'incident_lifecycle_changed' AND entity_id = :entity_id
@@ -1676,10 +1567,10 @@ final class IncidentsController
                 }
             }
 
-            // Reopening clears any prior duplicate pointer — a case being
-            // reconsidered is no longer simply "the same as that other
-            // one" by default; a Secretary who still believes so can mark
-            // it duplicate again with a (possibly different) target.
+            // Reopening clears any prior duplicate pointer: a case being
+            // reconsidered is no longer simply "the same as that other one" by
+            // default; a Secretary who still believes so can mark it duplicate
+            // again with a (possibly different) target.
             $newDuplicateOfId = $toStatus === 'duplicate' ? $duplicateOfId : null;
 
             $pdo->prepare(
@@ -1718,7 +1609,7 @@ final class IncidentsController
     }
 
     /**
-     * §6/§7's Tanod relationship rule, in one place: a Tanod may reach an
+     * The Tanod relationship rule, in one place: a Tanod may reach an
      * incident they reported, or one they have (or had) a dispatch for.
      */
     private static function tanodMayAccess(PDO $pdo, int $incidentId, int $userId): bool
@@ -1760,13 +1651,11 @@ final class IncidentsController
         $rawNarrative = $body['raw_narrative'] ?? null;
         $latitude = $body['latitude'] ?? null;
         $longitude = $body['longitude'] ?? null;
-        // priority (2026-09-05 bug pass, reopens this class doc's earlier
-        // "no priority field" decision with explicit sign-off): optional,
-        // defaults to 'normal' exactly as the schema/insert always has --
-        // this only lets a caller override that default at intake instead
-        // of requiring a critical incident to be escalated in a second
-        // step. Validated against the same enum GET /incidents already
-        // filters on; an invalid value is 400, same as that filter.
+        // priority: optional, defaults to 'normal' exactly as the schema
+        // does; this only lets a caller override that default at intake instead
+        // of requiring a critical incident to be escalated in a second step.
+        // Validated against the same enum GET /incidents filters on; an invalid
+        // value is 400, same as that filter.
         $priority = $body['priority'] ?? 'normal';
         if (!is_string($priority) || !in_array($priority, self::INCIDENT_PRIORITIES, true)) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'priority must be one of: ' . implode(', ', self::INCIDENT_PRIORITIES) . '.');
@@ -1845,14 +1734,11 @@ final class IncidentsController
                      :complainant_contact_number, :display_id, :school_id, :c1_summary, :c1_action_taken, :c1_status_notes,
                      UTC_TIMESTAMP(), :idempotency_key, UTC_TIMESTAMP())"
             );
-            // display_id (migration 0014): computed inside this same
-            // transaction, right before the insert, so the COUNT it reads
-            // is as fresh as this DB's isolation level allows. A UNIQUE
-            // collision under concurrent same-second writes fails the
-            // insert loudly rather than silently duplicating a case
-            // number — see that migration's own comment for why a bounded
-            // retry (not a dedicated sequence table) is the accepted
-            // tradeoff here.
+            // display_id: computed inside this same transaction, right before
+            // the insert, so the read is as fresh as this DB's isolation level
+            // allows. A UNIQUE collision under concurrent same-second writes
+            // fails the insert loudly rather than silently duplicating a case
+            // number; a bounded retry is the accepted tradeoff.
             $attempts = 0;
             while (true) {
                 $displayId = self::nextDisplayId($pdo, (int) $identity['barangay_id'], 'INC');
@@ -1919,8 +1805,9 @@ final class IncidentsController
                     school_id, c1_summary, c1_action_taken, c1_status_notes
              FROM incident WHERE incident_id = :incident_id'
         );
-        // Wave 2: at night a new pending incident opens a dispatch offer.
-        // After commit, and it can never fail incident creation (Rule 7).
+        // At night a new pending incident opens a dispatch offer. After
+        // commit, and it can never fail incident creation (offline capture is
+        // durable state).
         OfferService::autoOpenForNewIncident($pdo, $incidentId, (int) $identity['barangay_id']);
 
         $readBackStmt->execute(['incident_id' => $incidentId]);
@@ -1930,28 +1817,23 @@ final class IncidentsController
     /**
      * The next `INC-YYYY-NNN` for one barangay and one Manila year:
      * MAX(existing number)+1, read with a LOCKING read (`FOR UPDATE`) inside
-     * the transaction of the insert that will consume it. (Until 2026-10-14 this
-     * was COUNT(*)+1 over a plain read: a purge lowered the count and re-issued
-     * a code another incident still held, and two simultaneous filings read the
-     * same count.) The locking read sees the latest committed rows, so a retry
-     * after a collision recomputes from fresh data, and it serialises concurrent
-     * filings of the same barangay and year. Numbering is per barangay and per
-     * year; uniqueness is (barangay_id, display_id), migration 0043. Shared by
-     * `createWeb()`/`createMobileItem()` and the citizen-report convert
+     * the transaction of the insert that will consume it. (COUNT(*)+1 over a
+     * plain read would let a purge lower the count and re-issue a code another
+     * incident still holds, and let two simultaneous filings read the same
+     * count.) The locking read sees the latest committed rows, so a retry
+     * after a collision recomputes from fresh data, and it serialises
+     * concurrent filings of the same barangay and year. Numbering is per
+     * barangay and per year; uniqueness is (barangay_id, display_id). Shared
+     * by `createWeb()`/`createMobileItem()` and the citizen-report convert
      * (prefix `INC`).
      */
     public static function nextDisplayId(PDO $pdo, int $barangayId, string $prefix, string $table = 'incident', string $dateColumn = 'created_at'): string
     {
-        // Code-review finding M-01 (2026-09-24): this used gmdate('Y') and
-        // YEAR($dateColumn) directly against the UTC-stored column — both
-        // UTC, so internally consistent, but disagreeing with what's
-        // Rule 11's actual requirement: display-facing values use
-        // Asia/Manila, never UTC. Around New Year (Manila is UTC+8, so
-        // Manila's Jan 1 starts while UTC is still Dec 31) this could
-        // stamp a case number with the wrong year. Fixed +08:00 offset,
-        // same pattern PublicReportsController's month-bucketing already
-        // uses (Rule 11: never CONVERT_TZ(), which needs tz tables this
-        // stock XAMPP install doesn't load).
+        // The year is the Asia/Manila year, not UTC: display-facing values
+        // use Asia/Manila. Around New Year (Manila is UTC+8, so Manila's Jan 1
+        // starts while UTC is still Dec 31) a UTC year could stamp a case
+        // number with the wrong year. Fixed +08:00 offset, never CONVERT_TZ()
+        // (this stock XAMPP install doesn't load the tz tables).
         $year = (int) (new \DateTimeImmutable('now', new \DateTimeZone('Asia/Manila')))->format('Y');
         $maxStmt = $pdo->prepare(
             "SELECT MAX(CAST(SUBSTRING_INDEX(display_id, '-', -1) AS UNSIGNED)) FROM {$table}
@@ -1962,7 +1844,7 @@ final class IncidentsController
         return sprintf('%s-%d-%03d', $prefix, $year, $seq);
     }
 
-    /** True when a failed insert was the display-code uniqueness rule (old global key or the per-barangay key from 0043). */
+    /** True when a failed insert was the display-code uniqueness rule (the per-barangay key). */
     public static function isDisplayIdCollision(\PDOException $e): bool
     {
         $m = $e->getMessage();
@@ -2001,23 +1883,19 @@ final class IncidentsController
 
     /**
      * Core mobile incident-creation logic. `public` so
-     * `SyncController::batch()` (POST /sync/batch's `incidents[]` items)
-     * reuses the exact same validation/idempotency/insert path rather than
-     * a second copy that could drift — see class doc's "MOBILE BRANCH"
-     * note.
+     * `SyncController::batch()` (`incidents[]` items) reuses the exact same
+     * validation/idempotency/insert path rather than a second copy that could
+     * drift; see the class doc's "MOBILE BRANCH" note.
      *
-     * @param array<string,mixed> $item body fields, same shape §6 documents
-     *        for POST /incidents (mobile): {incident_type,raw_narrative,
-     *        latitude,longitude,source?,device_offline_created_at?,
-     *        client_event_id}.
-     * @param string $source §5 `incident.source` ENUM('app','sms','web').
-     *        Defaults to 'app' for the direct-POST and /sync/batch callers
-     *        (unchanged behaviour); `SmsGatewayService`'s
-     *        `/sms/incident-fallback` handler is the one caller that
-     *        passes 'sms' — an incident reconstructed from an encrypted
-     *        SMS envelope is honestly NOT the same source as one captured
-     *        through the app, and §9/§6 elsewhere already distinguish
-     *        `source` for exactly this kind of provenance tracking.
+     * @param array<string,mixed> $item body fields, same shape as POST
+     *        /incidents (mobile): {incident_type,raw_narrative,latitude,
+     *        longitude,source?,device_offline_created_at?,client_event_id}.
+     * @param string $source `incident.source` ENUM('app','sms','web').
+     *        Defaults to 'app' for the direct-POST and /sync/batch callers;
+     *        `SmsGatewayService`'s `/sms/incident-fallback` handler is the one
+     *        caller that passes 'sms', since an incident reconstructed from an
+     *        encrypted SMS envelope is honestly NOT the same source as one
+     *        captured through the app.
      * @return array{incident: array<string,mixed>, wasCreated: bool}
      */
     public static function createMobileItem(PDO $pdo, array $identity, string $deviceId, array $item, string $source = 'app'): array
@@ -2041,8 +1919,8 @@ final class IncidentsController
             throw new ApiError(400, 'VALIDATION_ERROR', 'raw_narrative is required.');
         }
         [$latitude, $longitude] = self::validateCoordinates($latitude, $longitude);
-        // Rule 7 spirit: an offline-captured incident is durable state and must
-        // never be lost because its optional school link went stale (school
+        // An offline-captured incident is durable state and must never be
+        // lost because its optional school link went stale (school
         // deactivated/moved/deleted on the server, or a cached id from another
         // barangay). An unusable school_id is stored as NULL instead of failing
         // the whole item; the web create path stays strict (400).
@@ -2051,16 +1929,16 @@ final class IncidentsController
         $c1ActionTaken = self::c1Value($item, 'c1_action_taken');
         $c1StatusNotes = self::c1Value($item, 'c1_status_notes');
 
-        // Phone-clock plausibility (docs/OFFLINE_SYNC_CONFLICT_RULES.md gap 4):
-        // device_offline_created_at is audit context only, so a value that
-        // does not parse, is >300 s in the future (GPS rejects the same) or
-        // older than 30 days is stored as NULL instead of a bogus date. The
-        // report itself is ALWAYS accepted (Rule 7: a wrong phone clock must
-        // never lose an incident); incident.created_at stays server time.
+        // Phone-clock plausibility: device_offline_created_at is audit
+        // context only, so a value that does not parse, is >300 s in the
+        // future (GPS rejects the same) or older than 30 days is stored as
+        // NULL instead of a bogus date. The report itself is ALWAYS accepted (a
+        // wrong phone clock must never lose an incident); incident.created_at
+        // stays server time.
         $deviceOfflineCreatedAt = ClientEventTime::parse($deviceOfflineCreatedAtRaw, ClientEventTime::INCIDENT_MAX_AGE_SECONDS);
 
-        // §5 UNIQUE(device_id, client_event_id) — same replay-lookup-then-
-        // insert shape as the web path's own idempotency check above.
+        // UNIQUE(device_id, client_event_id): same replay-lookup-then-insert
+        // shape as the web path's own idempotency check above.
         $existingStmt = $pdo->prepare(
             'SELECT incident_id, barangay_id, reported_by, incident_type, priority, status, source,
                     latitude, longitude, created_at, device_offline_created_at, synced_at,
@@ -2161,9 +2039,9 @@ final class IncidentsController
                     school_id, c1_summary, c1_action_taken, c1_status_notes
              FROM incident WHERE incident_id = :incident_id'
         );
-        // Wave 2: same night auto-offer as createWeb(); covers POST /incidents
+        // Same night auto-offer as createWeb(); covers POST /incidents
         // (tanod), /sync/batch incidents[] and SMS-ingested incidents, which
-        // all come through here. Never throws (Rule 7).
+        // all come through here. Never throws.
         OfferService::autoOpenForNewIncident($pdo, $incidentId, (int) $identity['barangay_id']);
 
         $readBackStmt->execute(['incident_id' => $incidentId]);
@@ -2171,12 +2049,12 @@ final class IncidentsController
     }
 
     /**
-     * The "authenticated" half of "authenticated device_id + client_event_id"
-     * (§6) — a caller cannot claim an arbitrary device_id string as its own
+     * The "authenticated" half of "authenticated device_id + client_event_id":
+     * a caller cannot claim an arbitrary device_id string as its own
      * idempotency namespace without it actually being a device this Tanod
-     * registered. Same generic-422 pattern DispatchController uses for a
-     * bad tanod_id, so the error message can't be used to enumerate device
-     * ids belonging to other accounts.
+     * registered. Same generic-422 pattern DispatchController uses for a bad
+     * tanod_id, so the error message can't be used to enumerate device ids
+     * belonging to other accounts.
      */
     private static function assertDeviceOwnership(PDO $pdo, array $identity, string $deviceId): void
     {
@@ -2221,12 +2099,12 @@ final class IncidentsController
     }
 
     /**
-     * Safer School Zones (migration 0033, contract section 7): validates an
-     * optional `school_id` -- it must be a school in the CALLER's barangay.
-     * "No such school" and "another barangay's school" give the identical 400
-     * so the message cannot be used to probe other tenants. With
-     * `$strict = false` (the mobile/sync path only) an unusable value yields
-     * NULL instead of an error -- see createMobileItem().
+     * Safer School Zones: validates an optional `school_id`; it must be a
+     * school in the CALLER's barangay. "No such school" and "another
+     * barangay's school" give the identical 400 so the message cannot be used
+     * to probe other tenants. With `$strict = false` (the mobile/sync path
+     * only) an unusable value yields NULL instead of an error; see
+     * createMobileItem().
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */

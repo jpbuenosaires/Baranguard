@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Baranguard — one-shot database bootstrap for a FRESH machine (new laptop,
 # fresh clone). Creates the real application database, creates the
-# least-privileged `baranguard_app` DB user (§8: no CREATE/ALTER/CREATE
-# TABLE — matches docs/REFERENCE.md's stated policy), and applies every
+# least-privileged `baranguard_app` DB user (no CREATE/ALTER/CREATE
+# TABLE), and applies every
 # migration found in backend/migrations/ (glob-matched, not a hardcoded
 # list — always current, whatever the highest-numbered migration is at
 # clone time). Refuses to touch a database that already
@@ -25,8 +25,7 @@
 #
 # This script only touches the database. It does NOT write backend/.env —
 # copy backend/.env.example yourself and fill in DB_NAME/DB_USER/
-# DB_PASSWORD with whatever this script printed at the end (see
-# docs/SETUP.md).
+# DB_PASSWORD with whatever this script printed at the end.
 
 set -uo pipefail
 
@@ -42,9 +41,9 @@ step() { echo; echo "=== $1 ==="; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
 # Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# 3306 guess -- this machine's own XAMPP MariaDB can run on a non-default
+# port (an unrelated MySQL80 service may own 3306), and .env is the one
+# place that's recorded.
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -71,9 +70,9 @@ find_bin() {
   # Explicit XAMPP path checked FIRST, not `command -v`: this machine
   # (and possibly others) has an unrelated same-named binary earlier on
   # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # fail against XAMPP's own MariaDB -- that `command -v` would otherwise
+  # prefer over the XAMPP install these scripts are meant for. PATH is only
+  # a fallback.
   for candidate in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}"; do
     [ -x "$candidate" ] && { echo "$candidate"; return; }
   done

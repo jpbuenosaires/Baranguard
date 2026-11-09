@@ -10,7 +10,7 @@ use PDO;
  * Run by notification-worker.php. Each repeat is a NEW `sos` notification for
  * the same sos_id, so the round count is simply the number of such rows and no
  * schema is needed. Round 2 re-alerts the Admin(s); from round 3 on the
- * Secretary (back-up dispatcher, Rule 89) and the Punong Barangay are added
+ * Secretary (back-up dispatcher) and the Punong Barangay are added
  * (they have no phone app, so they get the SMS). Stops after MAX_ROUNDS.
  */
 final class SosEscalation

@@ -3,15 +3,11 @@ declare(strict_types=1);
 
 /**
  * Front controller. All /api/v1/* requests are rewritten here by
- * .htaccess (Apache/XAMPP). §4 folder conventions don't list a /public
- * folder explicitly, but serving PHP directly out of backend/ (which also
- * holds /config, /migrations, /scripts) from the web root would expose
- * those to direct HTTP requests — /public as the actual Apache document
- * root, with everything else one level up and outside it, is the standard
- * fix. Logged as a deliberate addition in DEVLOG.md, not an oversight.
+ * .htaccess (Apache/XAMPP). /public is the Apache document root so that
+ * /config, /migrations and /scripts (one level up) are never reachable by
+ * direct HTTP request.
  *
- * Point your XAMPP vhost / Apache DocumentRoot at this backend/public
- * folder (see backend/scripts/README-serving.md for the concrete steps).
+ * Point your XAMPP vhost / Apache DocumentRoot at this backend/public folder.
  */
 
 require dirname(__DIR__) . '/config/env.php';
@@ -24,28 +20,14 @@ use Baranguard\Lib\Http;
 use Baranguard\Middleware\AuthMiddleware;
 
 // --- CORS -------------------------------------------------------------
-// Sprint 1's web dashboard will call this API from a different dev-server
-// origin/port. §2 Rule 7: this is a locally hosted, LAN-only system (no
-// public internet exposure assumed), so a permissive default is a
-// reasonable dev convenience here — override via CORS_ALLOWED_ORIGIN in
-// .env for anything stricter. Logged as a resolved decision in
-// DEVLOG.md since the reference doesn't specify CORS policy.
-//
-// 2026-09-13, F1's web half: `CORS_ALLOWED_ORIGIN` now also accepts a
-// comma-separated list of exact origins (scheme+host+port), not just the
-// literal `*` — needed once the web dashboard's real address and the
-// mobile app's own Capacitor WebView origin (`http://localhost`,
-// unrelated to any human browsing choice) became two DIFFERENT real
-// origins that both need access, neither of which is "all of them". A
-// remote/testing origin (e.g. a Cloudflare Quick Tunnel hostname — see
-// web/index.html's own note; ephemeral, changes every run, not a
-// production access path) can be added to this list the same way, or
-// this can just stay `*` for local-only dev. A comma list is matched
-// against the actual `Origin` request header and echoes back ONLY that
-// exact match (`Vary: Origin` alongside it, since the response now
-// differs by request) — an origin not on the list gets no CORS header
-// at all, which is what makes the browser refuse the response rather
-// than this endpoint trying to reject it itself.
+// The web dashboard and the mobile app's Capacitor WebView (`http://localhost`)
+// are two different origins that both need access. This is a locally hosted,
+// LAN-only system, so the default is permissive; override via
+// CORS_ALLOWED_ORIGIN in .env. It is either `*` or a comma-separated list of
+// exact origins (scheme+host+port); a list is matched against the request's
+// `Origin` header and only that exact match is echoed back (`Vary: Origin`).
+// An origin not on the list gets no CORS header at all, so the browser
+// refuses the response.
 $corsConfig = baranguard_env('CORS_ALLOWED_ORIGIN') ?: '*';
 if ($corsConfig === '*') {
     header('Access-Control-Allow-Origin: *');
@@ -58,14 +40,10 @@ if ($corsConfig === '*') {
     }
 }
 header('Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS');
-// X-Device-Timestamp/X-Device-Signature (H-09, mobile_device.device_public_key_pem)
-// were added to the mobile client's request headers without this allow-list
-// being updated -- a header the client sends that isn't listed here makes
-// the WebView/browser reject the CORS preflight and never send the real
-// request at all, which looks exactly like "server unreachable" client-side
-// even though the server itself never even sees the call. Found 2026-09-28
-// investigating why a real device (signing succeeding for the first time)
-// showed the whole app running off cache.
+// Every header the mobile client sends (including the device signature pair)
+// must be listed here: an unlisted header makes the WebView reject the CORS
+// preflight and never send the real request, which looks exactly like
+// "server unreachable" client-side.
 header('Access-Control-Allow-Headers: Content-Type, Authorization, Idempotency-Key, X-Device-Id, X-Device-Timestamp, X-Device-Signature');
 header('Access-Control-Expose-Headers: X-Renewed-Token');
 
@@ -87,20 +65,14 @@ try {
     if ($path === '') {
         $path = '/';
     }
-    // 2026-09-05 UX pass: `parse_url()`'s PHP_URL_PATH does NOT
-    // URL-decode — a phone-number path segment like `+639171234567`
-    // arrives percent-encoded (`%2B639171234567`) and none of this
-    // file's route patterns (all plain digits/literals until now) had
-    // ever needed decoding to match correctly. Every existing route's
-    // pattern is unaffected (they contain no percent-encodable
-    // characters), so this only changes behavior for the new
-    // `/sms/conversations/:phone/*` routes that actually need it.
+    // PHP_URL_PATH is not URL-decoded: a phone-number segment like
+    // `+639171234567` arrives as `%2B639171234567`, which the
+    // `/sms/conversations/:phone/*` patterns need decoded.
     $path = rawurldecode($path);
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
     // Route tables: one file per resource group under backend/routes/,
     // each returning a list of [method, pattern, handler, requiresAuth].
-    // Only auth.php exists so far — this session's scope.
     $routeFiles = glob(dirname(__DIR__) . '/routes/*.php') ?: [];
     $routes = [];
     foreach ($routeFiles as $routeFile) {
@@ -119,11 +91,10 @@ try {
 
         // Numbered capture groups (e.g. the `(\d+)` in
         // `#^/dispatch/(\d+)/cancel$#`) become trailing handler args, in
-        // order, after $pdo/$identity — the first route needing this is
-        // PATCH /dispatch/:id/cancel. $matches[0] is the whole match, not
+        // order, after $pdo/$identity. $matches[0] is the whole match, not
         // a capture, so it's dropped. Extra args are silently ignored by
-        // PHP on handlers that don't declare them, so every existing
-        // 2-arg handler (auth.php/reports.php) keeps working unchanged.
+        // PHP on handlers that don't declare them, so 2-arg handlers work
+        // unchanged.
         $routeParams = array_slice($matches, 1);
 
         if ($requiresAuth) {
@@ -142,8 +113,8 @@ try {
 } catch (ApiError $e) {
     Http::sendError($e);
 } catch (\Throwable $e) {
-    // §6: "Error messages never reveal ... security-sensitive
-    // implementation details." Log the real error server-side only.
+    // Error messages never reveal security-sensitive implementation
+    // details. Log the real error server-side only.
     error_log('[baranguard] unhandled error: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
     Http::send(500, ['error' => ['code' => 'SERVER_ERROR', 'message' => 'An unexpected error occurred.']]);
 }

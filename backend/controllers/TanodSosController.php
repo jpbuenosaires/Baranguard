@@ -14,23 +14,14 @@ use Baranguard\Middleware\AuthMiddleware;
 use PDO;
 
 /**
- * GET /tanod-sos — Master Reference §6 "Tanod SOS" section, §5
- * `tanod_sos` table, §7 ("View/acknowledge/resolve SOS": Admin full, PB
- * read-only), §9 W3 (SOS banner)/W4 (SOS markers).
+ * GET /tanod-sos, POST /tanod-sos (Tanod-only trigger) and the Admin
+ * acknowledge/resolve endpoints, over the `tanod_sos` table (Admin full,
+ * PB read-only; W3 SOS banner / W4 SOS markers).
  *
- * Sprint 4 adds the write side: `POST /tanod-sos` (Tanod-only trigger)
- * and the Admin acknowledge/resolve endpoints.
- *
- * §2 Rule 27 governs this whole file and is worth restating, because it is
- * the reason SOS looks different from every other flow here:
- *
- *   "SOS never depends on incident dispatch triage. It creates a
- *    persistent SOS record and sends alerts to Admin and other eligible
- *    on-duty Tanods. SOS must have a local/offline fallback path so a
- *    workstation/LAN outage does not silently suppress a personal-safety
- *    emergency."
- *
- * Three consequences implemented below:
+ * SOS never depends on incident dispatch triage. It creates a persistent
+ * SOS record and sends alerts to Admin and other eligible on-duty Tanods,
+ * and has a local/offline fallback path so a workstation/LAN outage does not
+ * silently suppress a personal-safety emergency. Consequences below:
  *   - `create()` does NOT create, require, or consult an incident. A Tanod
  *     in danger is not a triage queue item.
  *   - The SOS row and its notification are committed in ONE transaction,
@@ -38,7 +29,7 @@ use PDO;
  *     for help.
  *   - A missing transport is never allowed to fail the request. If nothing
  *     is configured to send, the SOS is still recorded and still appears
- *     on W3's banner — answering 500 here would tell the app "SOS failed"
+ *     on the W3 banner: answering 500 here would tell the app "SOS failed"
  *     for an emergency the server actually knows about.
  */
 final class TanodSosController
@@ -95,7 +86,7 @@ final class TanodSosController
                 'sos_id' => (int) $row['sos_id'],
                 'user_id' => (int) $row['user_id'],
                 'dispatch_id' => $row['dispatch_id'] !== null ? (int) $row['dispatch_id'] : null,
-                // C-01: nullable now — a 'no_fix' SOS has neither.
+                // Nullable: a 'no_fix' SOS has neither.
                 'latitude' => $row['latitude'] !== null ? (float) $row['latitude'] : null,
                 'longitude' => $row['longitude'] !== null ? (float) $row['longitude'] : null,
                 'location_source' => $row['location_source'],
@@ -112,12 +103,11 @@ final class TanodSosController
     }
 
     /**
-     * POST /tanod-sos — §6: "Tanod only → {sos_id,status,received_at}.
+     * POST /tanod-sos — Tanod only → {sos_id,status,received_at}.
      * Body {latitude,longitude,dispatch_id?,client_event_id,
-     * fallback_channel?}. Own user/barangay are derived from token.
-     * Optional dispatch must belong to caller and be active. Creates
-     * idempotent SOS record, creates logical notifications, and
-     * immediately attempts configured FCM/SMS channels."
+     * fallback_channel?}. Own user/barangay are derived from the token.
+     * Creates an idempotent SOS record, creates logical notifications, and
+     * immediately attempts the configured FCM/SMS channels.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -137,7 +127,7 @@ final class TanodSosController
 
     /**
      * Core SOS-creation logic. `public` so `SyncController::batch()`'s
-     * `sos[]` items reuse the identical path — an SOS that had to wait for
+     * `sos[]` items reuse the identical path: an SOS that had to wait for
      * connectivity must land exactly as one raised online, including the
      * same idempotency key and the same fan-out.
      *
@@ -146,16 +136,12 @@ final class TanodSosController
      */
     public static function createItem(PDO $pdo, array $identity, array $item): array
     {
-        // H-09: deliberately NEVER hard-rejects an SOS, unlike every other
-        // caller of DeviceSignature — this is the one write in the whole
-        // system where a false rejection (a clock-skewed device, a
-        // transient signing bug, a not-yet-upgraded app) is categorically
-        // worse than accepting an unverified one. Same priority ordering
-        // as the audit's own C-01 finding ("SOS must not be blocked on
-        // GPS"): a real emergency signal must never be lost to a secondary
-        // authenticity check. A failed/missing verification is recorded
-        // (audit metadata + error_log) for operator visibility, not used
-        // to drop the SOS.
+        // Deliberately NEVER hard-rejects an SOS, unlike every other caller
+        // of DeviceSignature: this is the one write where a false rejection (a
+        // clock-skewed device, a transient signing bug, a not-yet-upgraded
+        // app) is categorically worse than accepting an unverified one. A
+        // failed/missing verification is recorded (audit metadata +
+        // error_log) for operator visibility, not used to drop the SOS.
         $deviceId = Http::header('X-Device-Id');
         $deviceSignatureVerified = null;
         if (is_string($deviceId) && $deviceId !== '') {
@@ -186,17 +172,15 @@ final class TanodSosController
             throw new ApiError(400, 'VALIDATION_ERROR', "fallback_channel must be 'app' or 'sms'.");
         }
 
-        // C-01 (2026-09-24 external audit): a missing/invalid GPS fix must
-        // NEVER block an SOS (§2 Rule 27, same priority ordering as H-09's
-        // "never reject on a bad device signature" above). A position is
+        // A missing/invalid GPS fix must NEVER block an SOS. A position is
         // still required in SHAPE if the caller sends one (garbage
-        // coordinates are still rejected), but its ABSENCE now falls back
-        // to the Tanod's own last-known `gps_track` fix, then to
+        // coordinates are rejected), but its ABSENCE falls back to the
+        // Tanod's own last-known `gps_track` fix, then to
         // `location_source='no_fix'` with NULL coordinates as the final
-        // fallback — migration 0026 made both columns nullable for exactly
-        // this. `location_recorded_at` is the ORIGINAL timestamp of
-        // whichever fix is actually being used, never simply "now", so a
-        // dispatcher can tell a live position from a stale one.
+        // fallback (both columns are nullable for exactly this).
+        // `location_recorded_at` is the ORIGINAL timestamp of whichever fix
+        // is actually being used, never simply "now", so a dispatcher can
+        // tell a live position from a stale one.
         $hasCoordinates = $latitude !== null || $longitude !== null;
         if ($hasCoordinates && (!is_numeric($latitude) || !is_numeric($longitude))) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'latitude and longitude must both be numeric when provided.');
@@ -232,10 +216,10 @@ final class TanodSosController
             // 'no_fix', $lat/$lng stay NULL. The SOS is still created.
         }
 
-        // §5 UNIQUE(user_id, client_event_id) — a retried SOS (the app
-        // retrying through a flaky link, or the same event arriving by both
-        // direct POST and /sync/batch) returns the original rather than
-        // raising a second alarm.
+        // UNIQUE(user_id, client_event_id): a retried SOS (the app retrying
+        // through a flaky link, or the same event arriving by both direct POST
+        // and /sync/batch) returns the original rather than raising a second
+        // alarm.
         $existingStmt = $pdo->prepare(
             'SELECT sos_id, status, received_at FROM tanod_sos
              WHERE user_id = :user_id AND client_event_id = :client_event_id LIMIT 1'
@@ -257,10 +241,10 @@ final class TanodSosController
                 throw new ApiError(400, 'VALIDATION_ERROR', 'dispatch_id must be an integer.');
             }
             $dispatchIdInt = (int) $dispatchId;
-            // §6: "Optional dispatch must belong to caller and be active."
-            // Rule 27 (SOS is never blocked) wins over that: a stale or
-            // non-active dispatch_id (typical for a queued offline SOS)
-            // is dropped to NULL instead of rejecting the alarm.
+            // An optional dispatch should belong to the caller and be active,
+            // but SOS is never blocked: a stale or non-active dispatch_id
+            // (typical for a queued offline SOS) is dropped to NULL instead of
+            // rejecting the alarm.
             $dispatchStmt = $pdo->prepare(
                 "SELECT d.dispatch_id FROM dispatch d
                  JOIN incident i ON i.incident_id = d.incident_id
@@ -300,13 +284,13 @@ final class TanodSosController
                 'client_event_id' => $clientEventId,
                 'fallback_channel' => $fallbackChannel,
                 // When the Tanod pressed SOS, if the phone sent a plausible
-                // `created_offline_at`; otherwise server time as before.
+                // `created_offline_at`; otherwise server time.
                 // received_at stays server time (audit).
                 'triggered_at' => ClientEventTime::eventOrServerTime($item['created_offline_at'] ?? null),
             ]);
             $sosId = (int) $pdo->lastInsertId();
 
-            // Rule 27's fan-out, in the SAME transaction as the SOS row.
+            // The fan-out, in the SAME transaction as the SOS row.
             $notificationResult = NotificationService::create(
                 $pdo,
                 $identity['barangay_id'],
@@ -316,14 +300,13 @@ final class TanodSosController
                 NotificationService::sosRecipients($pdo, $identity['barangay_id'], $identity['user_id'])
             );
 
-            // Rule 17 allow-list: identifiers and status only. Coordinates
-            // are deliberately NOT audited — they are a person's location.
+            // Allow-list: identifiers and status only. Coordinates are
+            // deliberately NOT audited — they are a person's location.
             Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'tanod_sos_raised', 'tanod_sos', $sosId, [
                 'fallback_channel' => $fallbackChannel,
                 'device_signature_verified' => $deviceSignatureVerified,
-                // location_source is a status, not a coordinate — allowed
-                // under Rule 8/17's allow-list; the coordinates themselves
-                // are still never audited.
+                // location_source is a status, not a coordinate, so it is
+                // allowed; the coordinates themselves are still never audited.
                 'location_source' => $locationSource,
             ]);
 
@@ -337,10 +320,10 @@ final class TanodSosController
             throw $e;
         }
 
-        // §6: "immediately attempts configured FCM/SMS channels" — done
-        // OUTSIDE the transaction (external HTTP calls should never hold a
-        // DB transaction open) and never allowed to fail the request that
-        // already recorded the SOS. See the class doc's third bullet.
+        // Immediately attempts the configured FCM/SMS channels, OUTSIDE the
+        // transaction (external HTTP calls should never hold a DB transaction
+        // open) and never allowed to fail the request that already recorded
+        // the SOS. See the class doc's third bullet.
         try {
             (new NotificationDispatcher())->dispatchAll($pdo, $notificationResult['notification_id']);
         } catch (\Throwable $e) {
@@ -356,13 +339,12 @@ final class TanodSosController
     }
 
     /**
-     * PATCH /tanod-sos/:id/acknowledge — §6: "Admin only, same barangay,
+     * PATCH /tanod-sos/:id/acknowledge — Admin only, same barangay,
      * active/acknowledged target → {sos_id,status:'acknowledged',
-     * acknowledged_at,acknowledged_by}. **Does not resolve.**"
-     *
-     * That last sentence is the point: §9 W3 keeps the SOS banner visible
-     * while status is anything other than `resolved`, so acknowledging
-     * tells the room "someone is on it" without clearing the alarm.
+     * acknowledged_at,acknowledged_by}. **Does not resolve**: the W3 SOS
+     * banner stays visible while status is anything other than `resolved`,
+     * so acknowledging tells the room "someone is on it" without clearing
+     * the alarm.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -372,9 +354,9 @@ final class TanodSosController
     }
 
     /**
-     * PATCH /tanod-sos/:id/resolve — §6: "Admin only, same barangay →
+     * PATCH /tanod-sos/:id/resolve — Admin only, same barangay →
      * {sos_id,status:'resolved',resolved_at,resolved_by}. Cannot resolve an
-     * unrelated tenant record."
+     * unrelated tenant record.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -403,9 +385,9 @@ final class TanodSosController
             AuthMiddleware::requireTenant($identity, (int) $sos['barangay_id']);
 
             if ($target === 'acknowledged') {
-                // §6 allows an active OR already-acknowledged target, which
+                // An active OR already-acknowledged target is allowed, which
                 // makes a repeat acknowledge idempotent rather than an error
-                // — two Admins reacting at once is a good problem.
+                // (two Admins reacting at once is a good problem).
                 if ($sos['status'] === 'resolved') {
                     throw new ApiError(409, 'CONFLICT', 'This SOS is already resolved.');
                 }
@@ -458,35 +440,31 @@ final class TanodSosController
     }
 
     /**
-     * GET /tanod-sos/fallback-contact — G1's third fallback tier (Mobile
-     * Improvement Plan Phase 4.3): the ONE value a Tanod's phone needs to
+     * GET /tanod-sos/fallback-contact — the ONE value a Tanod's phone needs to
      * SMS directly (own SIM, no gateway) when both the direct app POST and
-     * the workstation itself are confirmed unreachable — a total-outage
-     * path that, by definition, cannot go through the workstation to look
-     * anything up in the moment it's needed, so the app fetches this ahead
-     * of time (e.g. at login) and holds it locally for that moment.
+     * the workstation are confirmed unreachable. That total-outage path
+     * cannot look anything up in the moment it's needed, so the app fetches
+     * this ahead of time (e.g. at login) and holds it locally.
      *
-     * Deliberately NOT `GET /system-settings` itself, which is Admin-only
-     * and returns `sms_gateway.api_key` alongside everything else — a
-     * secret a Tanod's phone must never receive. This reads the SAME
-     * `system_settings` row (via `SettingsController::get()`, the
-     * existing internal unmasked single-key lookup already used by
-     * `SmsGatewayService`) but exposes ONLY this one non-secret key,
-     * narrowly, to the one role that needs it.
+     * Deliberately NOT `GET /system-settings`, which is Admin-only and
+     * returns every setting. This reads the SAME `system_settings` row (via
+     * `SettingsController::get()`, the internal unmasked single-key lookup)
+     * but exposes ONLY this one non-secret key, narrowly, to the roles that
+     * need it.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
     public static function fallbackContact(PDO $pdo, array $identity): void
     {
-        // Admin added 2026-10-07 (decision 15C): the Chief Tanod's phone
-        // fetches the same non-secret number; it is on the admin-device
-        // allow-list (SessionPolicy::ADMIN_DEVICE_ALLOWLIST).
+        // Admin too: the Chief Tanod's phone fetches the same non-secret
+        // number; it is on the admin-device allow-list
+        // (SessionPolicy::ADMIN_DEVICE_ALLOWLIST).
         AuthMiddleware::requireRole($identity, ['tanod', 'admin']);
 
         $number = SettingsController::get($pdo, 'sos_fallback.backup_contact_number');
-        // 2026-10-10: also the gateway phone's SIM number, for the app's
-        // encrypted-envelope SOS SMS (ingested by gsm-ingest-daemon.php).
-        // Same non-secret, tanod/admin-readable exposure as the backup contact.
+        // Also the gateway phone's SIM number, for the app's encrypted-envelope
+        // SOS SMS (ingested by gsm-ingest-daemon.php). Same non-secret,
+        // tanod/admin-readable exposure as the backup contact.
         $gatewayNumber = SettingsController::get($pdo, 'sos_fallback.gateway_number');
         Http::send(200, [
             'backup_contact_number' => $number !== '' ? $number : null,

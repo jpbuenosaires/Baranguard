@@ -1,4 +1,4 @@
-/** Segmented filter bar and on-demand search of the Dispatches list (Phase 6 split; markup unchanged). */
+/** Segmented filter bar and on-demand search of the Dispatches list. */
 import { IonIcon } from '@ionic/react';
 import { closeCircleOutline, searchOutline } from 'ionicons/icons';
 

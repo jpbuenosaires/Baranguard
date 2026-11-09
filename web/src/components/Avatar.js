@@ -1,6 +1,5 @@
 /**
- * Avatar — initials-circle pattern (§8 "Adopted UI reference":
- * "avatar-initials-circle pattern for user rows"). A small deterministic
+ * Avatar — initials-circle pattern for user rows. A small deterministic
  * hash picks the accent color from the existing status/accent token set
  * so the same name always gets the same color, without needing a stored
  * per-user color column.

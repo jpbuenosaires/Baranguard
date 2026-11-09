@@ -6,13 +6,13 @@
  * PURE ON PURPOSE: no Capacitor, no SQLite, no imports. It is exercised in plain
  * Node by `mobile/scripts/verify-sync-failure-class.mjs`.
  *
- * WHY THIS EXISTS (docs/OFFLINE_SYNC_CONFLICT_RULES.md gap 3): the server answers
+ * WHY THIS EXISTS: the server answers
  * `failed` both when its rules refuse a status change and when something broke
  * inside it (`SyncController::processItem` masks every non-ApiError throwable as
  * 'Internal error processing item.'). The result carries only free-text `reason`,
  * no code, so the client has to recognise the refusals by their exact text.
  *
- * DERIVED FROM THE SERVER (backend/, read 2026-10-10), the only throws reachable
+ * DERIVED FROM THE SERVER (backend/), the only throws reachable
  * for `payload_type = 'dispatch_status'`:
  *   SyncController::processItem
  *     'client_event_id must be a UUID.'                       -> definitive

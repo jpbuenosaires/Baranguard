@@ -1,28 +1,19 @@
 /**
- * CriticalAlertOverlay.tsx — M12 Critical Alert Overlay (§9): "Critical
- * notifications request high-priority/full-screen presentation where the
- * OS permits. The app must also support heads-up/banner fallback and
- * local cached rendering when the local API cannot be reached."
+ * CriticalAlertOverlay.tsx — the Critical Alert Overlay: critical notifications request high-priority/
+ * full-screen presentation where the OS permits, with a heads-up/banner fallback and local cached
+ * rendering when the API cannot be reached.
  *
- * Mounted ONCE at the `App.tsx` root, outside `TabbedShell`'s router —
- * that placement is deliberate: an SOS or priority alert must interrupt
- * whichever screen a Tanod is on, not only appear if they happen to be on
- * Home. It renders nothing (`null`) whenever `criticalAlertStore` has no
- * current alert, so it costs nothing on every other screen.
+ * Mounted ONCE at the `App.tsx` root, outside `TabbedShell`'s router: an SOS or priority alert must
+ * interrupt whichever screen a Tanod is on, not only Home. It renders nothing (`null`) whenever
+ * `criticalAlertStore` has no current alert.
  *
- * "Local cached rendering" (see criticalAlertStore.ts's own doc) means
- * this component reads ONLY what the push payload already carried —
- * never an API call to enrich the alert before showing it.
+ * "Local cached rendering" (see criticalAlertStore.ts) means this component reads ONLY what the push
+ * payload already carried, never an API call to enrich the alert before showing it.
  *
- * Acknowledge calls `POST /notifications/:id/ack` (already real,
- * already verified server-side in Phase 1/2). Its failure does NOT keep
- * the overlay up — §2 Rule 7/15's offline-first stance applies here too:
- * a Tanod dismissing an alert while the workstation is unreachable must
- * still be able to dismiss it and act. A failed ack is remembered and
- * re-sent later by `alertAckRetry.ts` (the server's endpoint is idempotent,
- * §6 "the endpoint is idempotent for an already-acknowledged target").
- *
- * NOT DEVICE-VERIFIED — see criticalAlertStore.ts's own note.
+ * Acknowledge calls `POST /notifications/:id/ack`. Its failure does NOT keep the overlay up (offline-first):
+ * a Tanod dismissing an alert while the workstation is unreachable must still be able to dismiss it and
+ * act. A failed ack is remembered and re-sent later by `alertAckRetry.ts` (the endpoint is idempotent for
+ * an already-acknowledged target).
  */
 
 import { useEffect, useState } from 'react';

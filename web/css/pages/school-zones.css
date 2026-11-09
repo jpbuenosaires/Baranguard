@@ -1,8 +1,7 @@
 /**
- * school-zones.css — Safer School Zones (DILG MC 2026-037) overhaul.
- *
- * Annex B (Schools), Annex C-1 (Incidents), Annex D (Term Report).
- * Follows Baranguard design system tokens (REFERENCE.md §6).
+ * school-zones.css — Safer School Zones (DILG MC 2026-037). Annex B
+ * (Schools), Annex C-1 (Incidents), Annex D (Term Report). Follows the
+ * design system tokens.
  */
 
 .tw-ssz {
@@ -21,7 +20,7 @@
 }
 
 /* ==========================================================================
-   Executive Annex D Count Tiles Overhaul
+   Executive Annex D Count Tiles
    ========================================================================== */
 
 .tw-counts {
@@ -403,7 +402,7 @@
 }
 
 /* ==========================================================================
-   Incidents Tab (Annex C-1) Overhaul
+   Incidents Tab (Annex C-1)
    ========================================================================== */
 
 .c1-notice-card {
@@ -955,7 +954,7 @@
 }
 
 /* ==========================================================================
-   Term Report Tab (Annex D) Overhaul
+   Term Report Tab (Annex D)
    ========================================================================== */
 
 .d-calculator-panel {

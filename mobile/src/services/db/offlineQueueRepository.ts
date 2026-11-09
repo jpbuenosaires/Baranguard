@@ -1,21 +1,15 @@
 /**
- * offlineQueueRepository.ts — `offline_queue_local` (§5).
+ * offlineQueueRepository.ts — `offline_queue_local`.
  *
- * Used for payload types that need a real queue rather than a `synced`
- * column on their own business table: dispatch-status transitions (see
- * `localSchema.ts`'s file header for why `dispatch_local` has only a
- * single `last_status_event_id` slot, not room for multiple pending
- * changes) and SOS (raised offline, §2 Rule 27 — there is no
- * `sos_local` business table at all, only this queue). `incident`/`gps`
- * sync state is read directly off `incident_local`/`gps_track_local`'s
- * own `synced` columns instead — this repository is NOT a generic
- * mirror of those.
+ * Used for payload types that need a real queue rather than a `synced` column on their own business
+ * table: dispatch-status transitions (see `localSchema.ts`'s file header) and SOS raised offline (there
+ * is no `sos_local` business table at all, only this queue). `incident`/`gps` sync state is read
+ * directly off `incident_local`/`gps_track_local`'s own `synced` columns; this repository is NOT a
+ * generic mirror of those.
  *
- * Also stages an OFF-duty toggle made while offline (`payload_type=
- * 'duty_status'`, closes WORKFLOWS_AND_RULES assumption A4): the queue row
- * IS the local record of the event (there is no `duty_status_local` table),
- * holding the device's real tap time, which the server records as
- * `duty_status.changed_at`. Going ON duty stays online-only, so only
+ * Also stages an OFF-duty toggle made while offline (`payload_type='duty_status'`): the queue row IS the
+ * local record of the event (there is no `duty_status_local` table), holding the device's real tap time,
+ * which the server records as `duty_status.changed_at`. Going ON duty stays online-only, so only
  * `off_duty` is ever queued.
  */
 
@@ -47,7 +41,7 @@ export async function enqueueDispatchStatusChange(
   );
 }
 
-/** Pending dispatch_status queue items, oldest first (§5 sync invariants). */
+/** Pending dispatch_status queue items, oldest first. */
 export async function listPendingDispatchStatusUpdates(): Promise<
   {
     queueId: number;
@@ -132,9 +126,8 @@ export interface SosQueuePayload {
 }
 
 /**
- * Stages an SOS raised while offline, keyed by the same client_event_id
- * that would have been sent to `POST /tanod-sos` directly — §2 Rule 27's
- * idempotency guarantee applies identically whether the item goes out
+ * Stages an SOS raised while offline, keyed by the same client_event_id that would have been sent to
+ * `POST /tanod-sos` directly — the idempotency guarantee applies identically whether the item goes out
  * live or through `/sync/batch`'s `sos[]` array.
  */
 export async function enqueueSosItem(clientEventId: string, payload: SosQueuePayload): Promise<void> {
@@ -148,7 +141,7 @@ export async function enqueueSosItem(clientEventId: string, payload: SosQueuePay
   );
 }
 
-/** Pending sos queue items, oldest first (§5 sync invariants). */
+/** Pending sos queue items, oldest first. */
 export async function listPendingSosItems(): Promise<
   { queueId: number; clientEventId: string; createdOfflineAt: string; payload: SosQueuePayload }[]
 > {
@@ -270,7 +263,7 @@ export async function enqueueOffDuty(clientEventId: string, changedAt: string): 
   );
 }
 
-/** Pending duty_status queue items, oldest first (§5 sync invariants). */
+/** Pending duty_status queue items, oldest first. */
 export async function listPendingDutyStatusUpdates(): Promise<QueuedDutyStatus[]> {
   const db = await openLocalDatabase();
   const result = await db.query(
@@ -282,7 +275,7 @@ export async function listPendingDutyStatusUpdates(): Promise<QueuedDutyStatus[]
 }
 
 /**
- * Records the server's refusal of a queued off-duty (Rule 48): terminal,
+ * Records the server's refusal of a queued off-duty: terminal,
  * never auto-retried (a future/too-old time or an active dispatch will not
  * fix itself), and kept on the device with the reason until the Tanod
  * dismisses it on Home.

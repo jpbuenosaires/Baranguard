@@ -36,7 +36,7 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
-    // Mobile Improvement Plan Phase 4.1 (background patrol GPS service):
+    // Background patrol GPS service:
     // @capacitor/geolocation's own build.gradle already declares this as an
     // `implementation` dependency, but that scoping keeps it off THIS
     // module's compile classpath — an app module doesn't inherit a
@@ -44,10 +44,9 @@ dependencies {
     // PatrolLocationService.java (which references FusedLocationProviderClient
     // directly, not through the Capacitor plugin) needs its own explicit
     // declaration. Version pinned to match capacitor-geolocation's own
-    // default (confirmed via its build.gradle) rather than left to float,
-    // so there is exactly one resolved version, not a silent conflict.
+    // default rather than left to float, so there is exactly one resolved version.
     implementation "com.google.android.gms:play-services-location:21.3.0"
-    // Mobile Improvement Plan Phase 4.2 (full-screen critical alert):
+    // Full-screen critical alert:
     // CriticalAlertMessagingService.java extends @capacitor/push-notifications'
     // own MessagingService and references RemoteMessage/FirebaseMessagingService
     // directly — same "library's implementation dependency isn't on this

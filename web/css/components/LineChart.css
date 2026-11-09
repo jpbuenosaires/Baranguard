@@ -144,7 +144,7 @@
   font-size: var(--font-size-sm);
 }
 
-/* ─── Premium polish (UI/UX improvement pass) ─────────────────────────── */
+/* ─── Polish ─────────────────────────────────────────────────────────────── */
 .line-chart__svg {
   animation: scale-in 0.5s ease-out;
 }

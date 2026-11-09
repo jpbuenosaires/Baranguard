@@ -1,6 +1,5 @@
 # Baranguard - Task Scheduler entry point for the WEEKLY restore drill
-# (Sprint 8's B3, paired with C2's daily backup+retention job --
-# docs/REMAINING.md section B / "Current priority" item 2).
+# (paired with the daily backup+retention job).
 #
 # Runs backend/scripts/restore-drill.sh for real once a week: takes a
 # fresh backup, restores it into a disposable *_drill database, and
@@ -9,7 +8,7 @@
 # from today's backup", not just "did a file get written." Non-
 # destructive by construction (restore-drill.sh's own doc explains why);
 # updates backend/backups/.last-restore-drill, which is what
-# GET /system/health's restore_test_at / W20 Service Health display.
+# GET /system/health's restore_test_at / Service Health display.
 #
 # Same targeted-env-read approach as scheduled-backup-and-retention.ps1
 # (never a blanket `set -a; . .env` -- see that script's own comment).

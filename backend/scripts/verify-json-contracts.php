@@ -2,10 +2,10 @@
 declare(strict_types=1);
 
 /**
- * verify-json-contracts.php — Sprint 8 "Valid JSON contracts" box.
+ * verify-json-contracts.php — valid JSON response contracts.
  *
- * Schema-validates the response ENVELOPE for every one of the 43 live
- * `/api/v1` GET routes (backend/routes/*.php) against §6's own contract:
+ * Schema-validates the response ENVELOPE for every live
+ * `/api/v1` GET route (backend/routes/*.php):
  * success = the object itself; error = exactly
  * `{"error":{"code":"...","message":"..."}}`. Runs against a real running
  * backend (default http://127.0.0.1:8081) and the real seeded
@@ -17,10 +17,7 @@ declare(strict_types=1);
  * error body matches the exact {"error":{"code","message"}} shape) for
  * every GET route, plus a 401-without-token check on a sample of
  * protected ones. It does NOT deep-validate every documented field's
- * type on every route — that would need a per-endpoint schema spec this
- * session doesn't have time to author for all 90 routes. Said here
- * rather than silently implied, per this project's own "prove it, don't
- * claim it" rule.
+ * type on every route; that would need a per-endpoint schema spec.
  *
  * Usage: php scripts/verify-json-contracts.php [base_url]
  */

@@ -1,12 +1,11 @@
 /**
- * shellWorkflowApi.js — API wrappers for the 2026-10 tanod-workflow
- * features that the EXISTING pages (Personnel, Dashboard, Incident detail,
- * Incident Management, Dispatch Center) need. Contract:
- * docs/FEATURE_CONTRACT_2026-10.md §2, §3, §5, §7.
+ * shellWorkflowApi.js — API wrappers for the tanod-workflow features that the
+ * EXISTING pages (Personnel, Dashboard, Incident detail, Incident Management,
+ * Dispatch Center) need.
  *
  * Why a separate file and not apiClient.js: apiClient.js's `request()` is
  * module-private and its row mappers (getUsers/getShifts/getIncident) drop
- * the new fields, and this build does not edit apiClient.js. This module
+ * the tanod-workflow fields. This module
  * therefore carries a small request helper of its own, reading the bearer
  * token from the same in-memory session (`getSession()`), and keeps the
  * same snake_case -> camelCase boundary rule: conversion happens here, in
@@ -70,7 +69,7 @@ async function request(method, path, { query, body, idempotencyKey } = {}) {
       throw new ApiClientError(response.status, 'INVALID_RESPONSE', 'The server returned an unreadable response.');
     }
   }
-  // F-08/X-02: a server 401 ends the session app-wide (back to sign-in with
+  // A server 401 ends the session app-wide (back to sign-in with
   // a message), exactly as apiClient.js does, instead of leaving this page
   // on an error state whose Retry can never succeed. Only when the token
   // that failed is still the current one (a newer sign-in is left alone).
@@ -82,7 +81,7 @@ async function request(method, path, { query, body, idempotencyKey } = {}) {
   return json ?? {};
 }
 
-/** Contract §2: the five approval authorities (a MariaDB SET, as an array). */
+/** The five approval authorities (a MariaDB SET, as an array). */
 export const APPROVAL_AUTHORITIES = [
   { value: 'note_report', label: 'Review and return accomplishment reports' },
   { value: 'approve_report', label: 'Sign accomplishment reports as approver' },
@@ -94,7 +93,7 @@ export const APPROVAL_AUTHORITIES = [
 /** Roles that may hold an authority (ApprovalAuthority::ELIGIBLE_ROLES). */
 export const AUTHORITY_ELIGIBLE_ROLES = ['admin', 'secretary', 'punong_barangay'];
 
-/** Contract §5: referred_to enum, with display labels. */
+/** referred_to enum, with display labels. */
 export const REFERRED_TO_OPTIONS = [
   { value: 'pnp', label: 'PNP (Police)' },
   { value: 'bfp', label: 'BFP (Fire)' },
@@ -113,7 +112,7 @@ export function referredToLabel(value) {
   return REFERRED_TO_OPTIONS.find((o) => o.value === value)?.label ?? value;
 }
 
-// --- Users: official title + approval authority (§2) ------------------------
+// --- Users: official title + approval authority -----------------------------
 
 function parseAuthority(raw) {
   if (Array.isArray(raw)) return raw.filter((v) => typeof v === 'string');
@@ -137,7 +136,7 @@ function mapUser(row) {
   };
 }
 
-/** GET /users — same list as apiClient.getUsers, plus the two §2 fields. */
+/** GET /users — same list as apiClient.getUsers, plus the two authority fields. */
 export async function getUsersDetailed({ role, page, limit } = {}) {
   const json = await request('GET', '/users', { query: { role, page, limit } });
   return { items: json.items.map(mapUser), page: json.page, limit: json.limit, total: json.total };
@@ -160,7 +159,7 @@ export async function updateUserApproval(userId, { officialTitle, approvalAuthor
   return { userId: json.user_id, updated: json.updated };
 }
 
-// --- Roster: availability + draft/published shifts (§3) ---------------------
+// --- Roster: availability + draft/published shifts --------------------------
 
 function mapShiftDetailed(row) {
   return {
@@ -174,12 +173,12 @@ function mapShiftDetailed(row) {
     approvedBy: row.approved_by ?? null,
     approvedAt: row.approved_at ?? null,
     sourceAvailabilityId: row.source_availability_id ?? null,
-    // Legacy (migration 0035): set by approved swaps before 2026-10-12; a swap now keeps the shift published.
+    // Legacy: set by older approved swaps; a swap now keeps the shift published.
     pendingReapproval: Boolean(row.pending_reapproval),
   };
 }
 
-/** GET /shifts with the §3 approval fields; `approvalStatus` filters server-side. */
+/** GET /shifts with the approval fields; `approvalStatus` filters server-side. */
 export async function getShiftsDetailed({ page, limit, approvalStatus, from, to } = {}) {
   const json = await request('GET', '/shifts', { query: { page, limit, approval_status: approvalStatus, from, to } });
   return { items: json.items.map(mapShiftDetailed), page: json.page, limit: json.limit, total: json.total };
@@ -271,7 +270,7 @@ function mapAvailability(row) {
     periodEnd: row.period_end,
     windows: Array.isArray(windows) ? windows : [],
     status: row.status,
-    // Legacy review fields (rows reviewed before 2026-10-12); not shown.
+    // Legacy review fields (older reviewed rows); not shown.
     reviewedBy: row.reviewed_by ?? null,
     reviewedAt: row.reviewed_at ?? null,
     reviewNote: row.review_note ?? null,
@@ -288,10 +287,10 @@ export async function getAvailability({ status, userId, periodStart, page, limit
   return { items: rows.map(mapAvailability), total: json.total ?? rows.length };
 }
 
-// PATCH /availability/:id was retired 2026-10-12 (410 AVAILABILITY_NOT_REVIEWED):
+// PATCH /availability/:id answers 410 AVAILABILITY_NOT_REVIEWED:
 // availability is the tanod's own fixed statement, nobody reviews it.
 
-// --- Schools + C-1 fields on incidents (§7) ---------------------------------
+// --- Schools + C-1 fields on incidents --------------------------------------
 
 /** GET /schools (all roles, own barangay). Pass `active: true` for pickers. */
 export async function getSchools({ active } = {}) {
@@ -301,10 +300,10 @@ export async function getSchools({ active } = {}) {
 }
 
 /**
- * GET /incidents/:id — only the §7 school/C-1 fields. apiClient.getIncident
+ * GET /incidents/:id — only the school/C-1 fields. apiClient.getIncident
  * does not map them, so the pages that edit them read them here. Note this
  * is the same single-incident endpoint the page already loads; the extra
- * call is deliberate (no apiClient.js edits in this build).
+ * call is deliberate.
  */
 export async function getIncidentSchoolFields(incidentId) {
   const row = await request('GET', `/incidents/${incidentId}`);
@@ -317,7 +316,7 @@ export async function getIncidentSchoolFields(incidentId) {
 }
 
 /**
- * PATCH /incidents/:id with the §7 fields (Admin + Secretary). Only the
+ * PATCH /incidents/:id with the school/C-1 fields (Admin + Secretary). Only the
  * keys present in `fields` are sent. Never carries a narrative.
  */
 export async function updateIncidentSchoolFields(incidentId, fields, idempotencyKey) {
@@ -330,7 +329,7 @@ export async function updateIncidentSchoolFields(incidentId, fields, idempotency
   return { incidentId: json.incident_id, updated: json.updated, fields: json.fields };
 }
 
-// --- Referrals (§5) ---------------------------------------------------------
+// --- Referrals --------------------------------------------------------------
 
 function mapReferral(row) {
   return {
@@ -370,7 +369,7 @@ export async function createIncidentReferral(incidentId, { referredTo, otherText
   return mapReferral(await request('POST', `/incidents/${incidentId}/referrals`, { body, idempotencyKey }));
 }
 
-// --- Approvals summary (dashboard widget, §10) -------------------------------
+// --- Approvals summary (dashboard widget) ------------------------------------
 
 async function countOf(path, query) {
   const json = await request('GET', path, { query: { ...query, limit: 100 } });
@@ -411,7 +410,7 @@ export async function getPendingApprovalCounts(authorities, role) {
 
 /**
  * The signed-in user's own approval authorities. `GET /users/:id` is the
- * contract's source (§2/§10). An Admin who cannot read it falls back to the
+ * source. An Admin who cannot read it falls back to the
  * Admin-only user list, which carries the same field; any other role has no
  * second source and the error is surfaced to the caller (shown as an error
  * state with Retry, never guessed).

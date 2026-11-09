@@ -1,7 +1,7 @@
 /**
- * LiveMap.css — co-located with LiveMap.js (shared, W3 Dispatch Center +
- * W4 GIS Live Tracking).
- * 100% tokenized CSS referencing BaranGuard design tokens in base.css.
+ * LiveMap.css — co-located with LiveMap.js (shared by Dispatch Center and
+ * GIS Live Tracking). 100% tokenized CSS referencing the design tokens in
+ * base.css.
  */
 
 .live-map {

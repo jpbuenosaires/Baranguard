@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Baranguard — interactive backend/.env generator for a FRESH machine.
 #
-# Replaces docs/SETUP.md's old manual sequence ("copy .env.example, hand-
-# generate 3 secrets with php -r, paste the DB_* values bootstrap-db.sh
-# printed") with one script. Same conventions as bootstrap-db.sh: refuses
+# Replaces the manual sequence (copy .env.example, hand-generate 3 secrets
+# with php -r, paste the DB_* values bootstrap-db.sh printed) with one
+# script. Same conventions as bootstrap-db.sh: refuses
 # to touch existing state, prints a pass/fail/info line per step, safe to
 # re-run only after removing/renaming a previous attempt.
 #
@@ -49,9 +49,8 @@ if ! "$PHP_BIN" -v >/dev/null 2>&1; then
 fi
 
 # Prompts only when interactive AND the caller didn't already supply the
-# value as an env var — same "env var wins" precedent config/env.php
-# itself already documents (CLAUDE.md §8), applied to this script's own
-# inputs instead of PHP's runtime config.
+# value as an env var — the same "env var wins" precedence config/env.php
+# uses, applied to this script's own inputs instead of PHP's runtime config.
 ask() {
   local varname="$1" prompt="$2" default="${3:-}"
   local current="${!varname:-}"

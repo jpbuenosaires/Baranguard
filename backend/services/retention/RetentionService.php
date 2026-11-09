@@ -7,58 +7,47 @@ use Baranguard\Lib\Audit;
 use PDO;
 
 /**
- * RetentionService — §11's retention table, implemented as executable
- * constants and one method per record type. Sprint 7's "Retention jobs
- * (§11's table, all record types)" cut.
+ * RetentionService â€” the retention table implemented as executable
+ * constants and one method per record type.
  *
- * §11 is explicit that these numbers are RESOLVED DECISIONS: "these
- * implement directly as retention-job constants; a later change requires
- * the same architecture-review process as any other resolved decision,
- * not a runbook edit." So they are `const`s here, not env vars — an
- * operator cannot quietly shorten the raw-narrative ceiling or stretch
- * the 7-year record retention by editing a config file.
+ * These numbers are RESOLVED DECISIONS: they are `const`s here, not env
+ * vars, so an operator cannot quietly shorten the raw-narrative ceiling or
+ * stretch the 7-year record retention by editing a config file. A change
+ * needs an architecture review, not a runbook edit.
  *
- * WHAT THIS IMPLEMENTS (§11's table, verbatim):
- *
- *   raw_narrative          deleted 30 days after human-approved redaction;
- *                          hard ceiling 90 days from created_at if never
- *                          approved. Legal hold is the only exception.
+ *   raw_narrative          hard ceiling of one year from created_at (nothing
+ *                          approves a redaction any more, so the ceiling is
+ *                          the rule for every incident). Legal hold is the
+ *                          only exception.
  *   incident / evidence    7 years default (incident, evidence_attachment).
  *   citizen_report         1 year from submitted_at while UNCONVERTED;
  *                          a converted report drops its own clock and
  *                          follows the linked incident.
  *   audit_log              7 years.
  *   sms_log                1 year, extended for the duration of any hold
- *                          on the linked incident/dispatch/citizen
- *                          report (migration 0016).
+ *                          on the linked incident/dispatch/citizen report.
  *   mobile_device          secret columns (fcm_token, device_secret_ref)
  *                          cleared 90 days after deactivation; the ROW
  *                          is retained so `incident.device_id`
- *                          provenance survives (migration 0016).
- *   offline mirror         no independent retention (Rule 2) — see
- *                          purgeOfflineQueue()'s own doc.
- *   backups                explicitly OUT of scope for a database job —
- *                          see the class-level note at the bottom.
- *   gps_track              1 year from recorded_at (H-15, 2026-09-24
- *                          external audit + 2026-09-26 architecture-
- *                          review sign-off — see docs/REMAINING.md §H).
- *                          No legal_hold column; this is operational
- *                          telemetry, not an evidentiary record.
- *   duty_status             1 year from changed_at — same H-15 sign-off,
- *                          mirrors the National Archives of the
- *                          Philippines' Daily Time Record retention
- *                          period (1 year), the closest real-world
- *                          analog for an attendance/on-duty log.
- *   shift_schedule          1 year from end_at — same H-15 sign-off,
- *                          same DTR analog. Purges its RESTRICT
- *                          dependent (shift_swap_request)
- *                          in the same per-row transaction, same shape
- *                          as purgeOneIncident()'s cascade below.
- *   notification            1 year from created_at — same H-15 sign-off,
- *                          matches the existing sms_log default for
- *                          comparable dispatch/alert transport records.
+ *                          provenance survives.
+ *   offline mirror         no independent retention, see
+ *                          purgeOfflineQueue()'s doc.
+ *   backups                OUT of scope for a database job, see the note
+ *                          at the bottom.
+ *   gps_track              1 year from recorded_at. No legal_hold column;
+ *                          this is operational telemetry, not an
+ *                          evidentiary record.
+ *   duty_status            1 year from changed_at; mirrors the 1-year
+ *                          Daily Time Record retention, the closest analog
+ *                          for an attendance/on-duty log.
+ *   shift_schedule         1 year from end_at, same DTR analog. Purges its
+ *                          RESTRICT dependent (shift_swap_request) in the
+ *                          same per-row transaction, same shape as
+ *                          purgeOneIncident()'s cascade below.
+ *   notification           1 year from created_at, matching the sms_log
+ *                          default for comparable transport records.
  *
- * RESOLVED DECISIONS (logged in DEVLOG.md; don't reopen without review):
+ * DESIGN DECISIONS:
  *
  *   - **Legal hold is checked per rule, and skipped rows are COUNTED and
  *     REPORTED, never silently passed over.** A retention run that
@@ -67,87 +56,71 @@ use PDO;
  *     `held` count alongside `purged`.
  *
  *   - **An incident's `legal_hold` covers its dependent case records.**
- *     `dispatch` has no `legal_hold` column of its own; a
- *     hold is placed on a case, not a row. Migration 0007's own header
- *     carries the same note. **`sms_log` gained its own `legal_hold` in
- *     0016 and is the one exception** — not because the principle
- *     changed, but because a transport record can be held on its own
- *     (an SMS thread subpoenaed independently of any case). It is
- *     checked IN ADDITION to the inherited holds, never instead of them.
+ *     `dispatch` has no `legal_hold` column of its own; a hold is placed on
+ *     a case, not a row. `sms_log` has its own `legal_hold` and is the one
+ *     exception, because a transport record can be held on its own (an SMS
+ *     thread subpoenaed independently of any case). It is checked IN
+ *     ADDITION to the inherited holds, never instead of them.
  *
  *   - **Each purge runs in its own transaction, one record at a time for
- *     the cascading rules**, not one giant DELETE. §5's FK policy makes
- *     an incident purge a genuine ordered cascade (evidence_attachment →
- *     dispatch → incident, since both are ON DELETE RESTRICT), and a partial
- *     cascade must never be left committed. Slower, and correct.
+ *     the cascading rules**, not one giant DELETE. An incident purge is an
+ *     ordered cascade (evidence_attachment -> dispatch -> incident, since
+ *     both are ON DELETE RESTRICT), and a partial cascade must never be
+ *     left committed.
  *
  *   - **Evidence files are unlinked from disk before the row is
  *     deleted**, and a file that cannot be removed ABORTS that record's
  *     purge rather than orphaning bytes outside the web root that no
- *     database row points at any more. Rule 11's "a deletion is not
- *     complete while the data still exists elsewhere" applies to the
- *     filesystem as directly as it does to backups.
+ *     database row points at any more. A deletion is not complete while
+ *     the data still exists elsewhere.
  *
- *   - **One audit row per rule per run, carrying counts** (Rule 17:
- *     "retention jobs produce audit events"), not one per deleted
- *     record. A 7-year purge can touch thousands of rows; flooding
- *     `audit_log` — which is itself on a 7-year retention clock — with
- *     one row per deletion would be self-defeating. Per-record evidence
- *     for the rule that most needs it already exists as
- *     `incident.raw_narrative_purged_at`. Metadata is identifiers and
- *     counts only, per Rule 17's allow-list.
+ *   - **One audit row per rule per run, carrying counts**, not one per
+ *     deleted record. A 7-year purge can touch thousands of rows; flooding
+ *     `audit_log` (itself on a 7-year clock) with one row per deletion
+ *     would be self-defeating. Per-record evidence for the rule that most
+ *     needs it exists as `incident.raw_narrative_purged_at`. Metadata is
+ *     identifiers and counts only.
  *
  *   - **`dry_run` is a first-class mode, not a debug flag.** Every
  *     method takes it, and in dry-run mode counts exactly what a real
- *     run would delete without deleting anything — so an operator can
- *     see the blast radius of the first-ever run on real data before
- *     committing to it.
+ *     run would delete without deleting anything.
  *
- * PLACEHOLDER RULES (2026-10, review decision 10) — the tables the
- * tanod-workflow build added (migrations 0030-0033): `tanod_availability`,
- * `accomplishment_report` (+ `accomplishment_entry`), `school_checkin`,
- * `incident_referral`, `ssz_term_report` (Annex D). (`document_scan`, migration 0037, was dropped
- * by 0041: reports are printed and signed on paper, nothing is scanned.)
+ * NEWER-TABLE RULES: `tanod_availability`, `accomplishment_report` (+
+ * `accomplishment_entry`), `school_checkin`, `incident_referral` and
+ * `ssz_term_report` (Annex D) are rows of `NEW_TABLE_RULES`. Each carries a
+ * provisional 365 days (`status` provisional_one_year) pending a
+ * barangay/COA decision. A rule whose `days` is null is a NO-OP (it runs no
+ * query and reports `{purged:0, held:0, note:'pending barangay
+ * confirmation'}`). The only ways to change a duration are editing the
+ * constant after an architecture review or the constructor's
+ * `$durationOverrides` argument, which exists SOLELY as a test seam:
+ * `retention-job.php` never passes it and it is not read from `.env`.
  *
- * `school` (Annex B inventory) is DELIBERATELY NOT time-purged and has no
- * rule, so this is a recorded decision, not a gap: it is a standing master
- * list (not time-bound activity data), holds no student data (only school
- * name/address and a staff focal person), is referenced by check-ins and
- * incidents, and is retired by setting `is_active = 0`, never by age.
- * NO retention period for any of them has been decided by the barangay or
- * COA, and this file does not invent one: each is a row of
- * `NEW_TABLE_RULES` whose `days` is `null` and whose `status` is
- * `pending_barangay_confirmation`. While `days` is null the rule is a
- * NO-OP (it runs no query at all and reports
- * `{purged:0, held:0, note:'pending barangay confirmation'}`), so a full
- * non-dry-run `runAll()` provably deletes nothing from these tables. The
- * purge itself is fully written and tested, but unreachable in
- * production: the only way to give a rule a duration is (a) editing the
- * constant after an architecture review (Rule 10) or (b) the constructor's
- * `$durationOverrides` argument, which exists SOLELY as a test seam —
- * `retention-job.php` never passes it, and it is not read from `.env`.
+ * `school` (Annex B inventory) is DELIBERATELY NOT time-purged: it is a
+ * standing master list, holds no student data (only school name/address
+ * and a staff focal person), is referenced by check-ins and incidents, and
+ * is retired by setting `is_active = 0`, never by age.
  *
- * NOT IMPLEMENTED HERE, DELIBERATELY: backup expiry. §11 makes backups
- * follow their source data's retention, and Rule 11 says a deletion is
- * incomplete while a retained backup still holds the same data — but
- * backups on this system are encrypted `.sql.enc` files produced by
- * `scripts/backup.sh`, not database rows, and expiring them is a
- * filesystem/runbook concern with its own restore-safety implications.
- * `scripts/retention-job.php` prints a standing reminder about this
+ * NOT IMPLEMENTED HERE, DELIBERATELY: backup expiry. Backups follow their
+ * source data's retention and a deletion is incomplete while a retained
+ * backup still holds the same data, but backups are encrypted `.sql.enc`
+ * files produced by `scripts/backup.sh`, not database rows, and expiring
+ * them is a filesystem/runbook concern with its own restore-safety
+ * implications. `scripts/retention-job.php` prints a standing reminder
  * rather than pretending the database job covered it.
  */
 final class RetentionService
 {
-    // §11's table, as executable constants. See class doc for why these
-    // are not configurable.
+    // The retention table as executable constants. See class doc for why
+    // these are not configurable.
     public const RAW_NARRATIVE_GRACE_DAYS = 30;   // after approved redaction
-    public const RAW_NARRATIVE_CEILING_DAYS = 365; // from created_at; was 90 until 2026-10-17 (one year, like the other operational data)
+    public const RAW_NARRATIVE_CEILING_DAYS = 365; // from created_at (one year, like the other operational data)
     public const RECORD_RETENTION_DAYS = 2557;    // 7 years (365.25 * 7, rounded)
     public const CITIZEN_REPORT_DAYS = 365;       // unconverted only
     public const SMS_LOG_DAYS = 365;
     public const AUDIT_LOG_DAYS = 2557;           // aligned with the incident record retention
     public const DEVICE_DEACTIVATED_DAYS = 90;
-    // H-15 (2026-09-24 external audit; sign-off 2026-09-26 — see class doc).
+    // Operational telemetry/transport records: one year.
     public const GPS_TRACK_DAYS = 365;
     public const DUTY_STATUS_DAYS = 365;
     public const SHIFT_SCHEDULE_DAYS = 365;
@@ -156,15 +129,15 @@ final class RetentionService
     /** Status marker for a retention rule whose length the barangay has not yet confirmed. */
     public const PENDING_BARANGAY_CONFIRMATION = 'pending_barangay_confirmation';
 
-    /** One year, set by the project owner 2026-10-17 to match GPS/duty/shift/SMS/notification retention; still to be confirmed by the barangay and COA. */
+    /** One year, matching GPS/duty/shift/SMS/notification retention; still to be confirmed by the barangay and COA. */
     public const PROVISIONAL_ONE_YEAR = 'provisional_one_year';
     public const NEW_TABLE_DEFAULT_DAYS = 365;
 
     /**
-     * Retention rules for the tables added by migrations 0030-0033 (Rule 10:
-     * constants, not config). `days` null = no number decided = the rule is
-     * a no-op. Since 2026-10-17 every rule carries a provisional 365 days
-     * (status provisional_one_year); the barangay/COA decision then changes the
+     * Retention rules for the newer tanod-workflow tables (constants, not
+     * config). `days` null = no number decided = the rule is a no-op. Every
+     * rule carries a provisional 365 days (status provisional_one_year); the
+     * barangay/COA decision then changes the
      * integer AND `status` to 'confirmed' (architecture review, council/COA sign-off).
      * `clock` documents which column the age is measured from.
      */
@@ -241,8 +214,7 @@ final class RetentionService
      *        verify suite can prove the dormant purge code deletes only
      *        expired rows. It is deliberately NOT populated from `.env` or
      *        any config, and `retention-job.php` never passes it: shipping
-     *        code must get its number from the NEW_TABLE_RULES constant
-     *        (Rule 10).
+     *        code must get its number from the NEW_TABLE_RULES constant.
      */
     public function __construct(PDO $pdo, bool $dryRun = false, array $durationOverrides = [])
     {
@@ -311,22 +283,21 @@ final class RetentionService
     }
 
     // ------------------------------------------------------------------
-    // Rule 1 — raw_narrative (§11; Rule 11's operational track)
+    // raw_narrative
     // ------------------------------------------------------------------
 
     /**
-     * "Deleted 30 days after human-approved redaction; hard ceiling of 90
-     * days from `created_at` if never approved. Legal hold is the only
-     * exception to either."
+     * Deleted RAW_NARRATIVE_GRACE_DAYS after an approved redaction, or at the
+     * RAW_NARRATIVE_CEILING_DAYS ceiling from `created_at` if never approved.
+     * Legal hold is the only exception to either.
      *
      * Both clauses are ORed into one scan because they are two paths to
      * the same outcome, and an incident can only ever satisfy one of them
      * (the ceiling clause requires `redaction_approved_at IS NULL`).
      *
-     * The 90-day ceiling deliberately does NOT require an approved
-     * redaction — that is the entire point of Rule 11's "abandoned
-     * incident" cap: raw text on an incident nobody ever processed is
-     * exactly the data that must not sit there forever.
+     * The ceiling deliberately does NOT require an approved redaction: raw
+     * text on an incident nobody ever processed is exactly the data that
+     * must not sit there forever.
      *
      * @return array{purged:int, held:int}
      */
@@ -372,13 +343,13 @@ final class RetentionService
     }
 
     // ------------------------------------------------------------------
-    // Rule 2 — citizen_report (§11; Rule 25)
+    // citizen_report
     // ------------------------------------------------------------------
 
     /**
-     * "1 year from `submitted_at`, then purged. Converted reports drop
+     * 1 year from `submitted_at`, then purged. Converted reports drop
      * their own clock and follow the linked incident's retention once
-     * `incident_id` is set."
+     * `incident_id` is set.
      *
      * So `incident_id IS NULL` is a hard part of the filter, not an
      * optimisation: a converted report is no longer governed by this
@@ -413,8 +384,8 @@ final class RetentionService
     }
 
     // ------------------------------------------------------------------
-    // Rule 3 — sms_log (§11: "1 year default, extended for the duration
-    // of any hold on the linked incident / dispatch / citizen report")
+    // sms_log: 1 year, extended for the duration of any hold on the linked
+    // incident / dispatch / citizen report
     // ------------------------------------------------------------------
 
     /**
@@ -422,15 +393,10 @@ final class RetentionService
      * incident's own 7-year record retention — a transport log is not the
      * evidentiary record and does not inherit its length. What it DOES
      * inherit is a legal hold, which is a different thing from a
-     * retention period: §11's target rule says the clock is "extended for
-     * the duration of any hold on the linked incident/dispatch/citizen
-     * report", because a hold freezes everything about how a case was
-     * handled, and the SMS trail is part of that.
-     *
-     * Until migration 0016 this was unexecutable — the column did not
-     * exist — and this method purged on the flat clock regardless of any
-     * hold, which this comment used to describe as intentional. It was
-     * not; it was the gap `docs/REMAINING.md` §G2 tracked.
+     * retention period: the clock is extended for the duration of any hold
+     * on the linked incident/dispatch/citizen report, because a hold
+     * freezes everything about how a case was handled, and the SMS trail is
+     * part of that.
      *
      * FOUR HOLD PATHS, checked at purge time rather than trusted as
      * pre-propagated flags:
@@ -482,31 +448,26 @@ final class RetentionService
     }
 
     // ------------------------------------------------------------------
-    // Rule 5 — mobile_device (§11: secret columns cleared 90 days after
-    // deactivation, matching Rule 9's auth_session purge window; the row
-    // itself is RETAINED)
+    // mobile_device: secret columns cleared 90 days after deactivation,
+    // matching the auth_session purge window; the row itself is RETAINED
     // ------------------------------------------------------------------
 
     /**
      * Scrubs the device's secrets in place and KEEPS the row.
      *
-     * WHY THIS IS NOT A DELETE, which is what §11 originally said and
-     * what this method used to do: every reference to `mobile_device` is
+     * WHY THIS IS NOT A DELETE: every reference to `mobile_device` is
      * ON DELETE SET NULL (`incident.device_id`,
      * `notification_target.device_id`). Deleting the row therefore
      * silently strips device provenance off incidents that are
      * themselves under 7-year retention or an active legal hold — 90
      * days after a Tanod's handset is deactivated, a 7-year legal record
-     * quietly forgets which device filed it. That is a retention rule
-     * destroying data a longer retention rule requires be kept, which
-     * cannot be the right reading of §11.
+     * quietly forgets which device filed it. A retention rule must not
+     * destroy data a longer retention rule requires be kept.
      *
-     * Rule 26's actual requirement is that the SECRETS not linger, not
-     * that the row not exist: `fcm_token` and `device_secret_ref` are
-     * cleared, which satisfies it exactly. This is the same shape
-     * `purgeRawNarratives()` above already uses — clear the sensitive
-     * field, keep the row, stamp a marker — applying an established
-     * pattern rather than inventing one.
+     * The actual requirement is that the SECRETS not linger, not that the
+     * row not exist: `fcm_token` and `device_secret_ref` are cleared. Same
+     * shape as `purgeRawNarratives()`: clear the sensitive field, keep the
+     * row, stamp a marker.
      *
      * `fcm_token` is NOT NULL in the 0001 baseline, so it is emptied
      * rather than nulled. That is safe and not merely tolerable:
@@ -518,7 +479,7 @@ final class RetentionService
      * `is_active = 0` filter already guarantees.)
      *
      * `secrets_scrubbed_at` (migration 0016) is both the per-record
-     * evidence Rule 17 wants from a retention job and the idempotency
+     * evidence a retention job should leave and the idempotency
      * guard — an already-scrubbed row is not eligible again, so the
      * counts an operator sees are real work remaining, not a permanent
      * backlog of rows the job re-reports every night.
@@ -560,12 +521,10 @@ final class RetentionService
     }
 
     // ------------------------------------------------------------------
-    // H-15 — gps_track / duty_status / shift_schedule / notification
-    // (2026-09-24 external audit; 1-year retention signed off 2026-09-26
-    // — see class doc for the sourcing). None of these four have a
-    // legal_hold column: they are operational telemetry/transport
-    // records, not the evidentiary record itself (that's the incident/
-    // blotter/evidence chain, already on its own 7-year clock).
+    // gps_track / duty_status / shift_schedule / notification: 1 year. None
+    // of these four have a legal_hold column: they are operational
+    // telemetry/transport records, not the evidentiary record itself
+    // (that's the incident/evidence chain, already on its own 7-year clock).
     // ------------------------------------------------------------------
 
     /** @return array{purged:int, held:int, eligible:int} */
@@ -612,10 +571,9 @@ final class RetentionService
 
     /**
      * `shift_swap_request` is ON DELETE RESTRICT against `shift_schedule`
-     * (§5), so an old shift can't simply be deleted — same RESTRICT shape
-     * `purgeOneIncident()` already handles, scaled down to a one-dependent
-     * cascade. One transaction
-     * per shift so a failure on one row never blocks the rest of the run.
+     * so an old shift can't simply be deleted — same RESTRICT shape
+     * `purgeOneIncident()` handles, scaled down to a one-dependent
+     * cascade. One transaction per shift so a failure on one row never blocks the rest of the run.
      *
      * @return array{purged:int, held:int, eligible:int, failed?:int}
      */
@@ -678,10 +636,9 @@ final class RetentionService
     }
 
     // ------------------------------------------------------------------
-    // Placeholder rules for the 0030-0033 tables (review decision 10).
-    // Every method below is a NO-OP until NEW_TABLE_RULES gives it a
-    // number — see the class doc. None of them is reachable with a number
-    // in production code.
+    // Rules for the newer tanod-workflow tables, driven by NEW_TABLE_RULES.
+    // Every method below is a NO-OP while its rule's `days` is null; see the
+    // class doc.
     // ------------------------------------------------------------------
 
     /**
@@ -997,13 +954,12 @@ final class RetentionService
     }
 
     // ------------------------------------------------------------------
-    // Rule 6 — audit_log (§11: 7 years, "write-once except controlled
-    // retention deletion")
+    // audit_log: 7 years, write-once except this controlled retention deletion
     // ------------------------------------------------------------------
 
     /**
-     * This is the "controlled retention deletion" Rule 17 carves out as
-     * the single exception to audit_log being write-once. It is
+     * This is the "controlled retention deletion": the single exception to
+     * audit_log being write-once. It is
      * deliberately the plainest rule in this file: an age filter and
      * nothing else. Any conditional logic here would be a way to make
      * specific audit rows disappear, which is precisely what a
@@ -1035,12 +991,11 @@ final class RetentionService
     }
 
     // ------------------------------------------------------------------
-    // Rule 7 — the 7-year case purge (§11: "redacted incident / blotter /
-    // evidence, 7 years default")
+    // the 7-year case purge (incident / evidence, 7 years default)
     // ------------------------------------------------------------------
 
     /**
-     * The only genuinely hard rule here, because §5's FK policy makes an
+     * The only genuinely hard rule here, because the FK policy makes an
      * incident deletion an ordered cascade rather than one statement:
      * `evidence_attachment` and `dispatch` are both
      * ON DELETE **RESTRICT** against `incident`. Everything else
@@ -1145,7 +1100,7 @@ final class RetentionService
     }
 
     /**
-     * §5 keeps evidence outside the web root; `file_path` is stored
+     * Evidence lives outside the web root; `file_path` is stored
      * relative to `EVIDENCE_DIR` (default `backend/storage/evidence`).
      * The resolved path is asserted to stay inside that directory, the
      * same containment check `MapPackagesController` already applies —
@@ -1176,18 +1131,16 @@ final class RetentionService
     }
 
     // ------------------------------------------------------------------
-    // Offline mirror (§11: no independent retention)
+    // Offline mirror: no independent retention
     // ------------------------------------------------------------------
 
     /**
-     * §11: "Offline mirror (`offline_queue`, mobile local tables) —
-     * cleared on confirmed sync per device retention rules (Rule 2); no
-     * independent retention beyond that. Server mirror never holds raw
-     * payload, so no separate raw-data ceiling applies here."
+     * The offline mirror (`offline_queue`, mobile local tables) is cleared
+     * on confirmed sync; it has no independent retention. The server mirror
+     * never holds raw payload, so no separate raw-data ceiling applies.
      *
-     * That is a deliberate NO-OP, documented as a method so a future
-     * session doesn't read the absence as an oversight and invent a
-     * clock §11 explicitly declines to define. `SyncController` already
+     * That is a deliberate NO-OP, documented as a method so the absence is
+     * not read as an oversight. `SyncController` already
      * resolves queue rows on confirmed sync; nothing here should
      * second-guess that.
      */
@@ -1222,12 +1175,12 @@ final class RetentionService
     }
 
     /**
-     * Rule 17: retention jobs produce audit events. `actor_user_id` and
+     * Retention jobs produce audit events. `actor_user_id` and
      * `barangay_id` are both NULL — this is the SYSTEM acting on a
      * schedule, not a person acting in a barangay, and inventing an
      * actor would make the audit trail lie about who did it.
      *
-     * @param array<string,int|string> $metadata identifiers/counts only (Rule 17 allow-list)
+     * @param array<string,int|string> $metadata identifiers/counts only (audit allow-list)
      */
     private function audit(string $action, string $entityType, array $metadata): void
     {

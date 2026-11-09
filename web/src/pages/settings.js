@@ -1,16 +1,11 @@
 /**
- * settings.js — W15 Settings/Account & W21 System Configuration
+ * settings.js — Settings/Account & System Configuration
  *
- * Fully overhauled with:
- * - Baranguard Design Tokens & light/dark theme contrast compliance
- * - Categorized Multi-Tier Settings Rail (Account Settings vs System Configuration)
- * - User Identity Hero Card with initials avatar and role badge
- * - Enhanced Password Security with eye show/hide toggles & real-time policy checklist
- * - Visual Interactive Theme Selector Cards (Light & Dark mode)
- * - Municipal Deployment Branding editor
- * - SMS Gateway Telemetry with live sender preview and API key reveal toggle
- *
- * kebab-case filename per §4.
+ * Features: design tokens and light/dark contrast; a categorized settings
+ * rail (Account Settings vs System Configuration); identity hero card with
+ * initials avatar and role badge; password security with show/hide toggles
+ * and a real-time policy checklist; theme selector cards (Light & Dark);
+ * Municipal Deployment Branding editor.
  */
 
 import {
@@ -44,13 +39,10 @@ const SYSTEM_SECTIONS = [
   { key: 'general', label: 'General', subLabel: 'Municipal & jurisdiction branding', icon: icons.shield },
   { key: 'sos-fallback', label: 'SOS Fallback', subLabel: 'Backup contact for total-outage SOS', icon: icons.alertTriangle },
 ];
-// SMS Gateway tab REMOVED 2026-09-23 when Semaphore was replaced by a local
-// GSM gateway (explicit user decision — cost). That transport has no cloud
-// credential and no configurable sender name (messages come from the
-// gateway phone's own number), so there's nothing left for a settings card
-// to hold — leaving one would be exactly the "control that looks
-// functional and does nothing" §2 Rule 6 forbids. See
-// backend/controllers/SettingsController.php's own note.
+// There is no SMS Gateway tab: the local GSM gateway has no cloud credential
+// and no configurable sender name (messages come from the gateway phone's own
+// number), so a settings card would be a "control that looks functional and
+// does nothing". See backend/controllers/SettingsController.php's own note.
 
 /**
  * @param {HTMLElement} root
@@ -965,7 +957,7 @@ function buildGeneralCard(settings) {
   const munField = buildInputGroup('settings-municipality', 'Municipality / City', settings['general.municipality'], icons.mapPin);
   const regField = buildInputGroup('settings-region', 'Region / Province', settings['general.region'], icons.compass);
 
-  // F-06 / Rule 6: no screen, report or SMS reads these three values yet, so
+  // No screen, report or SMS reads these three values yet, so
   // they are shown read-only with an honest note instead of a Save button that
   // changes nothing. The keys and PATCH /system-settings stay for later wiring.
   [nameField, munField, regField].forEach((f) => { f.input.disabled = true; });
@@ -1005,13 +997,11 @@ function buildGeneralCard(settings) {
 }
 
 /**
- * 5. SOS Fallback Card (Admin Only) — G1's third SOS fallback tier
- * (Mobile Improvement Plan Phase 4.3): the one destination a Tanod's
- * phone SMSes DIRECTLY (own SIM, no gateway) when both the direct app
- * POST and the workstation itself are confirmed unreachable. A single
- * non-secret phone number, part of the same `system_settings` override
- * W21 established — explicit user decision, 2026-09-13 (see
- * `SettingsController::KEYS`'s own comment).
+ * 5. SOS Fallback Card (Admin Only) — the third SOS fallback tier: the one
+ * destination a Tanod's phone SMSes DIRECTLY (own SIM, no gateway) when both
+ * the direct app POST and the workstation itself are confirmed unreachable.
+ * A single non-secret phone number, part of the `system_settings` override
+ * (see `SettingsController::KEYS`'s own comment).
  */
 function buildSosFallbackCard(settings) {
   const card = document.createElement('div');

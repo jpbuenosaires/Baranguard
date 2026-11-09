@@ -1,18 +1,11 @@
 /**
- * BarChart — single-series vertical bar chart, built for W9 Analytics'
- * "incidents by hour of day" (Phase 9 of the mockup-driven UI round 2 —
- * see .claude/plans/clever-wishing-hummingbird.md). Hand-rolled inline
- * SVG, no charting library, following `LineChart.js`'s established
- * pattern exactly (§1's stack has no bundler to pull one in with).
+ * BarChart — single-series vertical bar chart, built for Analytics'
+ * "incidents by hour of day". Hand-rolled inline SVG, no charting library,
+ * following `LineChart.js`'s pattern (there is no bundler to pull one in with).
  *
  * Hover tooltips are native SVG `<title>` elements on each bar — the same
  * mechanism `LineChart.js`'s point markers and `DonutChart.js`'s legend
- * items already use, rather than a separate hand-positioned tooltip
- * component. A dedicated `ChartTooltip` component was in the original
- * plan; reusing the pattern already proven twice in this codebase gets
- * the same real hover information (exact value per bar) without a new,
- * fourth component doing the same job a native browser feature already
- * does for free.
+ * items use — rather than a separate hand-positioned tooltip component.
  *
  * @param {{
  *   bars: Array<{label:string, value:number}>,
@@ -29,7 +22,7 @@ const VIEW_H = 220;
 const PAD = { top: 14, right: 10, bottom: 32, left: 34 };
 
 // CSS custom-property references applied through `style`, so the bars
-// re-resolve on a theme flip without a redraw (audit 2026-10-09 D-10/D-12).
+// re-resolve on a theme flip without a redraw.
 const cssVar = (name) => `var(${name})`;
 
 function niceMax(max) {

@@ -1,7 +1,6 @@
 /**
- * service-health.css — W20 Service Health & Recovery Diagnostics
- * Fully tokenized with Baranguard Design System, dark mode compatibility,
- * and responsive multi-column layouts.
+ * service-health.css — Service Health & Recovery Diagnostics. Fully
+ * tokenized, dark mode compatible, responsive multi-column layouts.
  */
 
 /* ==========================================================================
@@ -1102,9 +1101,9 @@
 
 .health-dr-section {
   display: grid;
-  /* auto-fit rather than a fixed repeat(2, ...): a 3rd card (H-20,
-     2026-09-24, Notification Delivery) reflows cleanly instead of
-     leaving an empty cell next to it on its own row. */
+/* auto-fit rather than a fixed repeat(2, ...): a 3rd card (Notification
+   Delivery) reflows cleanly instead of leaving an empty cell next to it on
+   its own row. */
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--spacing-sm, 0.75rem);
   width: 100%;
@@ -1175,11 +1174,10 @@
 }
 
 .health-dr-value--warn {
-  /* 2026-09-06 UI/UX audit: was --color-warning-solid, which the working
-     reference §6 defines as a saturated FILL for white text and which
-     stays dark in dark mode. Measured on the warning tint in dark mode it
-     gave 4.18:1 — below AA's 4.5:1 for this 12px bold text.
-     --color-warning-text gives 16.84:1. */
+/* --color-warning-text, not --color-warning-solid: *-solid is a saturated
+   FILL for white text and stays dark in dark mode; on the warning tint in
+   dark mode it gives 4.18:1, below AA's 4.5:1 for this 12px bold text.
+   --color-warning-text gives 16.84:1. */
   color: var(--color-warning-text);
 }
 

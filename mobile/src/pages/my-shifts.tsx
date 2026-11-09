@@ -1,19 +1,10 @@
 /**
- * my-shifts.tsx — M8 Shift Schedule + M9 Shift Swap Request (§9 Mobile).
+ * my-shifts.tsx — Shift Schedule + Shift Swap Requests.
  *
- * COMPLETE GROUND-UP REDESIGN:
- * Clean, ergonomic duty roster and swap tracker built from scratch for field responders.
- *
- * UX & ACCESSIBILITY ENHANCEMENTS:
- * 1. Clean Duty Roster Cards:
- *    - Eliminated box-in-a-box nesting (inner grey container) and thick blue outlines.
- *    - Established clear visual hierarchy: Date Header -> Bold Patrol Hours -> Assigned Zone -> Contextual Action.
- * 2. Roster Glance Metric Banner:
- *    - Immediate top overview showing when the next patrol begins and total scheduled weekly hours.
- * 3. Two-Segment Navigation (Schedule vs Swap Requests):
- *    - Segment toggle ensuring pending swap approvals are never lost below a long schedule list.
- * 4. Contextual Shift Swap Actions:
- *    - Replaced heavy repetitive buttons with a clean, ergonomic action link and bottom sheet modal.
+ *  - Clean duty roster cards: date header -> bold patrol hours -> assigned zone -> contextual action.
+ *  - Glance banner: when the next patrol begins and total scheduled weekly hours.
+ *  - Two segments (Schedule vs Swap Requests) so pending swap approvals are never lost below a long list.
+ *  - A clean swap action link and bottom sheet instead of heavy repetitive buttons.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -206,7 +197,7 @@ const MyShiftsPage: React.FC = () => {
             </Banner>
           )}
           {/* Availability entry point — the desk builds the roster from what Tanods submit here. */}
-          {/* Same row pattern as the Profile list (the old profile-nav-card class had no styles). */}
+          {/* Same row pattern as the Profile list. */}
           <ul className="profile-list">
             <li>
               <button

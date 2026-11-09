@@ -1,25 +1,15 @@
 /**
- * mapPackageService.ts — downloads, SHA-256-verifies, and locally
- * activates the per-barangay offline MBTiles basemap package (§6 "Map
- * packages", §2 Rule 14: "client verifies SHA-256 before activation").
+ * mapPackageService.ts — downloads, SHA-256-verifies, and locally activates the per-barangay offline
+ * MBTiles basemap package. The client verifies the SHA-256 before activation.
  *
- * DELIBERATE DEVIATION from `offline_map_package_local`'s pre-declared
- * schema (`db/localSchema.ts`): that table lives in the SQLCipher local
- * database, which `db/localDatabase.ts` refuses to open on the web
- * platform BY DESIGN (Android-only — see that file's own comment). Using
- * it here would make this whole feature untestable outside a physical
- * device, the same A1 blocker that has stalled the rest of the
- * local-storage layer (REMAINING.md A1). A basemap package carries no
- * PII/narrative — it's public map tiles, not incident data — so the
- * SQLCipher-at-rest guarantee that table exists for was never actually
- * needed here. Activation metadata is tracked instead via
- * `@capacitor/preferences` (already this app's pattern for
- * `deviceIdentity.ts`/`session.ts`, and cross-platform), and the package
- * bytes via `@capacitor/filesystem`'s `Directory.Data` (the same
- * app-private storage `evidenceCapture.ts` already uses for photo/voice
- * evidence). `offline_map_package_local` stays unused for now — a future
- * session could migrate onto it once this path is device-verified,
- * without changing the exported functions below.
+ * DELIBERATE DEVIATION from `offline_map_package_local` (`db/localSchema.ts`): that table lives in the
+ * SQLCipher local database, which `db/localDatabase.ts` refuses to open on the web platform BY DESIGN
+ * (Android-only), so using it here would make this feature untestable outside a physical device. A
+ * basemap package is public map tiles with no PII/narrative, so the at-rest guarantee that table exists
+ * for was never needed here. Activation metadata is tracked via `@capacitor/preferences` (cross-platform,
+ * the pattern `deviceIdentity.ts`/`session.ts` use) and the package bytes via `@capacitor/filesystem`'s
+ * `Directory.Data` (the app-private storage `evidenceCapture.ts` also uses). `offline_map_package_local`
+ * stays unused.
  */
 
 import { Directory, Filesystem } from '@capacitor/filesystem';
@@ -110,7 +100,7 @@ async function downloadAndInstall(
   const bytes = await downloadMapPackage(barangayId);
   const actualChecksum = await sha256Hex(bytes);
   if (actualChecksum !== expectedChecksum) {
-    // §2 Rule 14 / §6: never activate an unverified package — a
+    // Never activate an unverified package — a
     // corrupted or tampered transfer must fall back to whatever (if
     // anything) was already installed, not silently replace it.
     return null;
@@ -135,7 +125,7 @@ async function downloadAndInstall(
  * Checks the server for the published package and downloads it only if
  * this device doesn't already have that exact version installed. NEVER
  * THROWS — offline or a server error just means "keep using whatever's
- * already installed" (§2 Rule 15's degrade-not-crash), the same non-fatal
+ * already installed" (degrade, not crash), the same non-fatal
  * treatment `runPostLoginSetup()` in login.tsx already gives this same
  * check.
  */

@@ -2,10 +2,8 @@
 declare(strict_types=1);
 
 /**
- * Route table for /dispatch (§6 "Dispatch" section). This session builds
- * create/list/cancel (W3a/W3b) plus PATCH /dispatch/:id/status (Sprint 3,
- * M6 Assignment Detail/Navigation); detail (GET /dispatch/:id) is a
- * separate box not built here.
+ * Route table for /dispatch: create/list/cancel, PATCH /dispatch/:id/status
+ * and the route lookup. There is no GET /dispatch/:id.
  */
 
 use Baranguard\Controllers\DispatchController;

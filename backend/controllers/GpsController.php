@@ -11,15 +11,11 @@ use Baranguard\Middleware\AuthMiddleware;
 use PDO;
 
 /**
- * GPS — Master Reference §6 "GPS" section (`GET /gps/live`,
- * `GET /gps/history`, and — added this Sprint 3 cut — `POST /gps`), §5
- * `gps_track` table, §9 W4 GIS Live Tracking / M7 Live Map.
+ * GPS: `GET /gps/live`, `GET /gps/history`, `GET /gps/stream` and
+ * `POST /gps`, over the `gps_track` table (W4 GIS Live Tracking / M7 Live Map).
  *
- * §6 fixes the freshness fields (`recorded_at`, `received_at`,
- * `age_seconds`, `is_stale` at >=120s) and `GET /gps/history`'s exact
- * item shape, but never states `GET /gps/live`'s response shape beyond
- * prose ("returns latest position plus freshness metadata"). Resolved
- * decisions, logged in DEVLOG.md:
+ * Freshness fields are `recorded_at`, `received_at`, `age_seconds` and
+ * `is_stale` (at >=120s).
  *   - `GET /gps/live` returns one row per same-barangay active Tanod who
  *     has ever recorded a GPS point — their single latest `gps_track`
  *     row plus freshness — as `{items:[{user_id,full_name,dispatch_id,
@@ -27,34 +23,25 @@ use PDO;
  *     age_seconds,is_stale}]}`. A Tanod with no GPS row at all is simply
  *     absent from `items` (there is no "position" to show).
  *   - `age_seconds`/`is_stale` are computed against `recorded_at` (the
- *     device's own capture time), not `received_at` — staleness is about
+ *     device's own capture time), not `received_at`: staleness is about
  *     how old the *position* is, not network/queue delay.
  *   - `GET /gps/history`'s date range reuses the same 366-day cap
- *     `ReportsController` already established for date-range endpoints,
- *     for consistency rather than inventing a different number.
+ *     `ReportsController` uses for date-range endpoints.
  *
- * POST /gps (Sprint 3 cut): §6 — "Tanod only → {track_id,received_at}. If
- * dispatch_id is supplied, it must belong to caller, same barangay, and be
- * active. client_event_id required for offline/retryable writes. Server
- * records received_at and validates coordinate ranges/accuracy bounds."
- * The exact request body isn't spelled out beyond that prose; resolved
- * here from §5's `gps_track` columns (logged in DEVLOG.md):
+ * POST /gps: Tanod only → {track_id,received_at}. If dispatch_id is
+ * supplied, it must belong to caller and be in the same barangay. The server
+ * records received_at and validates coordinate ranges/accuracy bounds.
  *   - Body: {latitude,longitude,accuracy_m,recorded_at,dispatch_id?,
  *     client_event_id}. `recorded_at` is the device's own capture
- *     timestamp (§5 `gps_track.recorded_at`, distinct from the
- *     server-authoritative `received_at` — Rule 31: client timestamps are
- *     informational and never replace server receipt time).
- *   - `client_event_id` is always required, not just "for offline/
- *     retryable writes" — every mobile write in this codebase already
- *     requires one (duty status, dispatch creation, shifts), and a
- *     broadcast-cadence endpoint like this is retried by definition.
- *   - "Active" dispatch (for the optional `dispatch_id` check) means
- *     status IN ('assigned','en_route','arrived') — the same "not yet
- *     completed/cancelled" definition DispatchController already uses
- *     elsewhere in this codebase.
+ *     timestamp, distinct from the server-authoritative `received_at`:
+ *     client timestamps are informational and never replace server receipt
+ *     time.
+ *   - `client_event_id` is always required: every mobile write requires
+ *     one, and a broadcast-cadence endpoint like this is retried by
+ *     definition.
  *   - `createItem()` is `public static` so `SyncController::batch()`
- *     (POST /sync/batch's `gps_tracks[]` items, same Sprint 3 cut) reuses
- *     the identical validation/idempotency/insert path.
+ *     (`gps_tracks[]` items) reuses the identical
+ *     validation/idempotency/insert path.
  */
 final class GpsController
 {
@@ -73,22 +60,19 @@ final class GpsController
     private const MAX_LIMIT = 100;
     private const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
     private const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
-    // Code-review findings H-08/M-06 (2026-09-24) — see createItem()'s own
-    // comment for the reasoning. Neither number is specified anywhere in
-    // the reference; both are this session's own engineering judgment,
-    // logged as a resolved decision rather than an exhaustive study.
+    // See createItem()'s own comments for the reasoning. Both numbers are
+    // engineering judgment, not a documented requirement.
     private const MAX_FUTURE_SKEW_SECONDS = 300; // 5 minutes — allows minor clock/NTP drift, not a wrong clock.
     private const MAX_PLAUSIBLE_ACCURACY_M = 50000.0; // 50km — comfortably above any real device reading; anything beyond is a garbage value, not just "imprecise".
 
     /**
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      *
-     * Tanod admitted alongside admin/punong_barangay (2026-09-12, explicit
-     * user decision): a Tanod sees the same same-barangay-active-Tanod
-     * roster this query already builds for Admin/PB — no new query, no
-     * wider data exposure than those two roles already have for their own
-     * barangay. requireTenant() below still blocks a Tanod from ever
-     * passing a barangay_id other than their own (404, Rule 2).
+     * Tanod is admitted alongside admin/punong_barangay: a Tanod sees the
+     * same same-barangay-active-Tanod roster this query already builds for
+     * Admin/PB, with no wider data exposure than those roles already have
+     * for their own barangay. requireTenant() below still blocks a Tanod
+     * from ever passing a barangay_id other than their own (404).
      */
     public static function live(PDO $pdo, array $identity): void
     {
@@ -150,7 +134,7 @@ final class GpsController
     /**
      * GET /gps/stream?barangay_id= -- the same positions as /gps/live, pushed
      * as Server-Sent Events the moment a phone's fix is stored, instead of
-     * waiting for the dashboard's next poll (2026-11-06, "real real time").
+     * waiting for the dashboard's next poll.
      *
      * Events: `snapshot` ({items}, once, same shape as /gps/live), `position`
      * ({items}, the new fixes, latest per Tanod), `auth_expired` (the session
@@ -162,11 +146,10 @@ final class GpsController
      *
      * Same authentication, role, tenant and Tanod filter as /gps/live; the
      * session row is re-checked every STREAM_AUTH_RECHECK_SECONDS so a logout,
-     * suspension or deactivation ends the stream within that window (Rule 12).
-     * The stream is bounded (STREAM_MAX_SECONDS) so a worker thread is never
-     * held forever, and opening one is rate limited. It sends only what
-     * /gps/live already sends: no narrative, names beyond full_name, or
-     * anything new (Rules 1 and 8).
+     * suspension or deactivation ends the stream within that window. The
+     * stream is bounded (STREAM_MAX_SECONDS) so a worker thread is never held
+     * forever, and opening one is rate limited. It sends only what /gps/live
+     * already sends: no narrative, no names beyond full_name.
      *
      * @param array{user_id:int,barangay_id:int,role:string,session_id:int} $identity
      */
@@ -362,14 +345,13 @@ final class GpsController
     {
         AuthMiddleware::requireRole($identity, ['tanod']);
 
-        // H-11: only on the direct real-time path, deliberately NOT inside
-        // createItem() — that method is also the core of SyncController's
-        // batch replay of offline-queued points (§2 Rule 7: offline
-        // capture is durable state), and a Tanod who was out of range for
-        // hours can legitimately sync hundreds of backlogged points in one
-        // batch call. Rate-limiting the direct live-tracking path is the
-        // real target; rate-limiting the offline catch-up path would
-        // punish exactly the offline-first behavior this app is built for.
+        // Rate limit only on the direct real-time path, deliberately NOT
+        // inside createItem(): that method is also the core of SyncController's
+        // batch replay of offline-queued points (offline capture is durable
+        // state), and a Tanod who was out of range for hours can legitimately
+        // sync hundreds of backlogged points in one batch call. Limiting the
+        // offline catch-up path would punish exactly the offline-first
+        // behavior this app is built for.
         if (!RateLimiter::check($pdo, 'gps_post:user:' . $identity['user_id'], 300, 300)) {
             throw new ApiError(429, 'RATE_LIMITED', 'Too many GPS updates recently. Please wait before sending another.');
         }
@@ -391,12 +373,10 @@ final class GpsController
      */
     public static function createItem(PDO $pdo, array $identity, array $item): array
     {
-        // H-09: optional today — neither the direct POST /gps path nor
-        // SyncController::batch() currently send X-Device-Id for GPS at
-        // all (confirmed gap the audit found: "GPS ingestion... has NO
-        // device-id check whatsoever"). A device with no header, or one
-        // that hasn't upgraded to a Keystore keypair yet, is unaffected;
-        // see DeviceSignature's own doc for the phased-rollout reasoning.
+        // Device signature is optional here: neither the direct POST /gps
+        // path nor SyncController::batch() requires X-Device-Id for GPS. A
+        // device with no header, or no registered Keystore key, is
+        // unaffected; see DeviceSignature's own doc.
         $deviceId = Http::header('X-Device-Id');
         if (is_string($deviceId) && $deviceId !== '') {
             DeviceSignature::verifyOrReject($pdo, $deviceId, $identity['user_id']);
@@ -420,20 +400,14 @@ final class GpsController
         if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'latitude/longitude are out of range.');
         }
-        // Code-review findings H-08/M-06 (2026-09-24): range checks alone
-        // let through a technically-valid-but-useless reading — an
-        // absurd accuracy value, or (the real risk behind H-08's "client
-        // clock" concern) a recorded_at from the future, which can only
-        // mean the device's clock is wrong or the value was tampered
-        // with. This does NOT change is_stale/age_seconds to use
-        // received_at instead of recorded_at — that's a deliberate,
-        // documented decision (see this class's own doc block: staleness
-        // measures position age, not network delay) — it guards the
-        // INPUT those fields are computed from instead. Deliberately NOT
-        // rejecting an old recorded_at: this app is offline-first (§2),
-        // and a Tanod's queued points syncing hours later after
-        // regaining connectivity is expected, legitimate traffic, not a
-        // clock problem.
+        // Range checks alone let through a technically-valid-but-useless
+        // reading: an absurd accuracy value, or a recorded_at from the future,
+        // which can only mean the device's clock is wrong or the value was
+        // tampered with. This guards the INPUT that is_stale/age_seconds are
+        // computed from (staleness still measures position age, not network
+        // delay). Deliberately NOT rejecting an old recorded_at: this app is
+        // offline-first, and a Tanod's queued points syncing hours later is
+        // expected, legitimate traffic, not a clock problem.
         if (!is_numeric($accuracyM) || (float) $accuracyM < 0 || (float) $accuracyM > self::MAX_PLAUSIBLE_ACCURACY_M) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'accuracy_m must be a non-negative number no greater than ' . self::MAX_PLAUSIBLE_ACCURACY_M . '.');
         }
@@ -452,9 +426,9 @@ final class GpsController
                 throw new ApiError(400, 'VALIDATION_ERROR', 'dispatch_id must be an integer.');
             }
             $dispatchIdInt = (int) $dispatchId;
-            // §6 says "active", but a queued offline fix often syncs after
-            // its dispatch completed/cancelled. Ownership + tenant still
-            // must match; any status is accepted. Anything else is nulled
+            // Only "active" would be strict, but a queued offline fix often
+            // syncs after its dispatch completed/cancelled. Ownership + tenant
+            // still must match; any status is accepted. Anything else is nulled
             // (never fails the ping, which would stall the sync batch).
             $dispatchStmt = $pdo->prepare(
                 "SELECT d.dispatch_id
@@ -474,7 +448,7 @@ final class GpsController
             }
         }
 
-        // §5 UNIQUE(user_id, client_event_id).
+        // UNIQUE(user_id, client_event_id).
         $existingStmt = $pdo->prepare(
             'SELECT track_id, received_at FROM gps_track WHERE user_id = :user_id AND client_event_id = :client_event_id LIMIT 1'
         );

@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-# Baranguard — Sprint 1's remaining "Today's cut" items validation against a
-# REAL local XAMPP MariaDB + PHP (not a cloud sandbox): W5 Historical
-# Heatmap, W6 Electronic Blotter List, W9 Statistical Reports (Generate
-# only), W15 Settings/Account, W16 Citizen Reports Inbox (list only); W19
-# Public Citizen Report is REMOVED (Wave 1) and asserted to 404. Safe to run: everything happens in a disposable
+# Baranguard — validation against a REAL local XAMPP MariaDB + PHP:
+# W5 Historical Heatmap, the incident list, W9 Statistical Reports (Generate
+# only), W15 Settings/Account; the citizen-report routes are asserted to 404.
+# Safe to run: everything happens in a disposable
 # database (baranguard_s1rem_check) with a disposable app-user, disposable
 # test accounts, and a PHP dev server on a throwaway local port. Your real
 # `baranguard` database, real backend/.env, and Apache are never touched.
-# Mirrors verify-sprint1-auth.sh / verify-w2-reports.sh / verify-w3-w4-
-# dispatch-gis.sh's conventions.
 #
 # Usage (from a Git Bash prompt, repo root or anywhere):
 #   bash backend/scripts/verify-sprint1-remaining.sh
@@ -28,10 +25,8 @@ fail() { echo "[FAIL] $1"; FAIL=$((FAIL+1)); }
 step() { echo; echo "=== $1 ==="; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -47,12 +42,8 @@ echo "Baranguard Sprint 1 remaining items (W5/W6/W9/W15/W16/W19) validation — 
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for candidate in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$candidate" ] && { echo "$candidate"; return; }
   done
@@ -90,8 +81,7 @@ mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CH
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0001_baseline_schema.sql" && pass "Schema applied" || fail "Schema apply failed"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0002_seed_barangays.sql" && pass "Barangays seeded" || fail "Seed failed"
 
-# FULL CHAIN — see verify-sprint1-auth.sh's note. This suite applied a
-# partial schema and so 500'd at login from 2026-09-05 onward.
+# Apply the full migration chain, not a subset.
 for m in $(cd "$BACKEND_DIR/migrations" && ls [0-9]*.sql | grep -v '\.down\.sql$' | sed 's/\.sql$//' | sort | awk -v s=0003_shift_schedule_nullable_user '$0 >= s'); do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
@@ -187,19 +177,10 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_T
 
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TANOD_TOKEN" -H "Content-Type: application/json" -H "Idempotency-Key: dddddddd-dddd-4ddd-8ddd-dddddddddddd" \
   "${BASE_URL}/incidents" -X POST -d '{"incident_type":"vandalism","raw_narrative":"n/a"}')
-# EXPECTATION CORRECTED 2026-09-12, after this suite's login was repaired
-# and it could reach this line for the first time since 2026-09-05.
-#
-# It asserted 403 on the premise that "web-side entry is Admin/Secretary
-# only". That premise was true in Sprint 1 and stopped being true in
-# Sprint 3: `POST /incidents` now gates on ['admin','secretary','tanod']
-# because mobile incident capture comes through this same route, and the
-# controller then branches on `X-Device-Id` (§2 Rule 3's mobile write
-# path). A Tanod IS authorized here; this request is simply malformed for
-# their path, which is a 400.
-#
-# Verified by hand before relaxing this: the request is refused and
-# writes nothing. The assertion was stale, the behaviour is correct.
+# `POST /incidents` gates on ['admin','secretary','tanod'] because mobile
+# incident capture uses this same route, and the controller branches on
+# `X-Device-Id` (the mobile write path). A Tanod IS authorized; this web-style
+# request is simply malformed for their path, so it is a 400 and writes nothing.
 [ "$CODE" = "400" ] && pass "Tanod POST /incidents -> 400 (authorized role, but mobile writes need X-Device-Id)" || fail "Tanod POST /incidents -> $CODE (expected 400)"
 
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
@@ -263,25 +244,15 @@ DB_NAME_CHECK=$(mysql_exec -N -s "$VALDB" -e "SELECT full_name FROM user WHERE u
 SEC_USER_ID=$(mysql_exec -N -s "$VALDB" -e "SELECT user_id FROM user WHERE username='s1check_secretary';")
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $RELOGIN_TOKEN" -H "Content-Type: application/json" \
   "${BASE_URL}/users/${SEC_USER_ID}" -X PATCH -d '{"full_name":"Hijacked Name"}')
-# EXPECTATION CORRECTED 2026-09-12 — same repair, same kind of staleness.
-#
-# The SECURITY PROPERTY this line exists to protect still holds and was
-# verified by hand: an Admin cannot rename another user through this
-# endpoint, and the target's `full_name` is unchanged afterwards. Only
-# the status code moved. `PATCH /users/:id` grew a second mode
-# (is_active / is_suspended moderation, migrations 0011), so a request
-# aimed at someone else's row is read as moderation and a `full_name`
-# body fails ITS validation first — 400, not 403.
-#
-# Left as a 400 rather than "fixed" to 403 because nothing is actually
-# wrong: the write is refused either way. A future pass that wants the
-# clearer 403 would have to reorder validation against authorization in
-# UsersController, which is a real change with its own blast radius, not
-# a test tweak.
+# An Admin cannot rename another user through this endpoint: the target's
+# `full_name` is unchanged afterwards. `PATCH /users/:id` has a second mode
+# (is_active / is_suspended moderation), so a request aimed at someone else's
+# row is read as moderation and a `full_name` body fails ITS validation first:
+# 400, not 403. The write is refused either way.
 [ "$CODE" = "400" ] && pass "Admin editing a DIFFERENT user's profile fields is refused (400; write does not happen)" || fail "Cross-user edit -> $CODE (expected 400)"
 
 # ============================================================
-# Citizen Reports inbox RETIRED (2026-10-17): every /citizen-reports route is gone.
+# Citizen Reports inbox: every /citizen-reports route is gone.
 # ============================================================
 step "9. /citizen-reports routes are retired (no handler: 404 for every method and role)"
 for pair in "POST:/citizen-reports" "GET:/citizen-reports" "POST:/citizen-reports/1/convert"; do

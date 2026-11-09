@@ -1,8 +1,7 @@
 /**
- * AppShell.css — sidebar + topbar nav shell, co-located with AppShell.js
- * (moved out of the old monolithic base.css during the 2026-09-02
- * responsive/density pass — see that commit's notes). Tokens still come
- * from base.css's :root; this file only lays out the shell itself.
+ * AppShell.css — sidebar + topbar nav shell, co-located with AppShell.js.
+ * Tokens come from base.css's :root; this file only lays out the shell
+ * itself.
  */
 
 .app-shell {
@@ -943,7 +942,7 @@
 }
 
 .status-badge {
-  /* A real <button> since 2026-10-09 (X-15): drop the base button chrome. */
+  /* A real <button>: drop the base button chrome. */
   border: none;
   min-height: 0;
   font-family: inherit;
@@ -964,22 +963,17 @@
 .status-badge__dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex-shrink: 0; }
 .status-badge--checking { background: var(--tint-neutral-bg); color: var(--color-text-secondary); }
 .status-badge--checking .status-badge__dot { background: var(--color-text-secondary); }
-/* --tint-success-solid here specifically, not --tint-success-bg — the
-   source documents this one topbar "system status" pill with its own,
-   slightly more saturated green, distinct from status/priority pills
-   elsewhere. Not a typo; see base.css's tint-success-bg comment.
-   Promoted from a hardcoded #DCFCE7 to a real token (§6.4/dark-mode
-   pass) so it has a dark-mode value too instead of a fixed light hex. */
-/* 2026-09-06 legibility audit: this was `color: var(--color-success)` —
-   base.css's own "TEXT-SAFE STATUS COLOURS" comment (§ audit A2) documents
-   that plain token as a fill tuned to ~3.30:1 as text, below AA's 4.5:1 for
-   this badge's 14px/500-weight label (not bold/large enough for the 3:1
-   exception). `--color-success-text` is the exact token that audit added
-   for this — every other status pill already uses its `-text` sibling;
-   this badge was the one spot still on the plain fill token. The dot
-   below stays on the plain token deliberately: it's a decorative graphic,
-   not text, so the fill-tuned color is the correct, more saturated choice
-   there. */
+/* --tint-success-solid here specifically, not --tint-success-bg — this one
+   topbar "system status" pill has its own, slightly more saturated green,
+   distinct from status/priority pills elsewhere. Not a typo; see base.css's
+   tint-success-bg comment. A real token, so it has a dark-mode value too
+   instead of a fixed light hex. */
+/* The text uses `--color-success-text`, not `--color-success`: the plain
+   token is a fill tuned to ~3.30:1 as text, below AA's 4.5:1 for this
+   badge's 14px/500-weight label (not bold/large enough for the 3:1
+   exception). The dot below stays on the plain token deliberately: it's a
+   decorative graphic, not text, so the fill-tuned color is the correct,
+   more saturated choice there. */
 .status-badge--ok { background: var(--tint-success-solid); color: var(--color-success-text); }
 /* "Live Pulse Indicator" — spec calls for animate-pulse on an online/
    active status dot specifically (not on the checking/down states). */
@@ -1033,15 +1027,12 @@
 }
 
 /* --- Responsive -----------------------------------------------------------
-   audit A13. The old rule turned the sidebar into a permanent 4.5rem icon
-   rail below 768px, hid every label, hid the count badges, AND hid the
-   collapse toggle (it matched `.sidebar__brand > :not(:first-child)`) —
-   so a phone user got twelve unlabelled icons, no tooltips (there is no
-   hover on touch), no way to expand, and 54px of a 375px screen gone
-   permanently.
-   It is now a proper off-canvas drawer: nothing consumed when closed,
-   full labels when open, dismissed by the scrim or Escape. The drawer
-   button lives in the topbar and only exists at this breakpoint. */
+   Below 768px the sidebar is an off-canvas drawer: nothing consumed when
+   closed, full labels when open, dismissed by the scrim or Escape. (A
+   permanent icon rail would leave a phone user with unlabelled icons, no
+   tooltips — there is no hover on touch — no way to expand, and 54px of a
+   375px screen gone.) The drawer button lives in the topbar and only exists
+   at this breakpoint. */
 
 .topbar__menu { display: none; }
 .sidebar__scrim { display: none; }
@@ -1172,11 +1163,10 @@
   }
 }
 
-/* audit A15: the topbar carried theme toggle + a nowrap health badge +
-   avatar + full name + Sign out in one row, and the name had no
-   truncation (the sidebar copy does). Below 900px the name and the badge
-   text drop out — the avatar still identifies the user, and the badge
-   keeps its coloured dot and its title tooltip. */
+/* The topbar row carries theme toggle + a nowrap health badge + avatar +
+   full name + Sign out, and the name has no truncation. Below 900px the name
+   and the badge text drop out — the avatar still identifies the user, and
+   the badge keeps its coloured dot and its title tooltip. */
 @media (max-width: 1100px) {
   .topbar__clock-shift { display: none; }
 }
@@ -1189,8 +1179,8 @@
   .topbar__crumb--group, .topbar__crumb-sep { display: none; }
 }
 
-/* §2 Rule 6: restore the pre-glass opaque fills on a browser that can't
-   blur, same reasoning as .card's fallback in base.css. */
+/* Restore the opaque fills on a browser that can't blur, same reasoning as
+   .card's fallback in base.css. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .sidebar {
     background: linear-gradient(180deg, var(--color-navy) 0%, var(--color-navy-deep) 100%);
@@ -1206,7 +1196,7 @@
   }
 }
 
-/* --- Site-wide SOS bar (audit 2026-10-09 A-08) -----------------------------
+/* --- Site-wide SOS bar -----------------------------------------------------
    Sits between the topbar and the page header on every page while an SOS
    notification is unacknowledged. White on --color-critical-solid is
    4.83:1 in both themes (the -solid fill does not lighten in dark mode). */
@@ -1253,7 +1243,7 @@
 }
 @keyframes sos-bar-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 
-/* --- "Updates paused" (X-01): background polling failed ------------------- */
+/* --- "Updates paused": background polling failed ------------------------- */
 .topbar__stale {
   display: inline-flex;
   align-items: center;

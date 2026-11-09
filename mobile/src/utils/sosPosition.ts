@@ -1,4 +1,4 @@
-/** Longest the SOS flow waits for a GPS fix before sending without one (Rule 27 / C-01: the server falls back to last-known or no-fix). */
+/** Longest the SOS flow waits for a GPS fix before sending without one (the server falls back to last-known or no-fix). */
 export const SOS_FIX_WAIT_MS = 2000;
 
 /** Resolves with the fix if it arrives within `ms`, else null. Never rejects. */

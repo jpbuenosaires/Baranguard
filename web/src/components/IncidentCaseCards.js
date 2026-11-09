@@ -1,8 +1,7 @@
 /**
- * IncidentCaseCards — the two per-incident panels added by the 2026-10
- * tanod-workflow contract (docs/FEATURE_CONTRACT_2026-10.md §5, §7), shared
- * by the Incident Record page and Incident Management's detail pane so the
- * two screens cannot drift apart:
+ * IncidentCaseCards — the two per-incident panels shared by the Incident
+ * Record page and Incident Management's detail pane so the two screens
+ * cannot drift apart:
  *
  *   - SchoolC1Card   the school link + Annex C-1 fields (`c1_summary`,
  *                    `c1_action_taken`, `c1_status_notes`). Edited by Admin
@@ -12,7 +11,7 @@
  *                    which the Dispatch Center's "Delegated to" action
  *                    reuses.
  *
- * Wording rule (contract §5): a referral records that an incident was
+ * Wording rule: a referral records that an incident was
  * REFERRED. Nothing here says or implies the other party accepted,
  * responded or arrived — the system has no such signal.
  *

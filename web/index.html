@@ -9,8 +9,7 @@
        is deferred by spec and would run after first paint, producing a
        visible flash of the wrong theme on every load for a user who has
        chosen dark). Mirrors AppShell.js's own read of the same
-       localStorage key — see that file for where the value is written.
-       §1.1/§7.1 of the UI/UX review. -->
+       localStorage key — see that file for where the value is written. -->
   <script>
     (function () {
       // 2026-09-06 UI/UX audit fix. This block used to set data-theme ONLY
@@ -61,11 +60,11 @@
     })();
   </script>
   <!-- Branded favicon: the real Baranguard logo mark, vendored as a static
-       SVG file (assets/logo.svg) rather than a data URI — still no
-       separate binary asset/build step, consistent with icons.js's own
-       "no external icon library" approach (§1: no bundler). -->
+       SVG file (assets/logo.svg) rather than a data URI — no separate binary
+       asset/build step, consistent with icons.js's "no external icon
+       library" approach. -->
   <link rel="icon" href="assets/logo.svg">
-  <!-- §7.2 of the UI/UX review — same logo mark as the favicon above.
+  <!-- Same logo mark as the favicon above.
        Honest limitation, not hidden: an SVG apple-touch-icon has patchier
        iOS Safari support than a PNG would, but this is a locally-hosted
        internal admin tool, not a consumer app that needs App-Store-quality
@@ -75,12 +74,9 @@
   <meta name="theme-color" content="#1E3A6E">
   <!-- Inter is self-hosted (css/base.css @font-face, assets/fonts/): no third-party font host, works offline. -->
   <link rel="stylesheet" href="css/base.css">
-  <!-- Component/page CSS, one dedicated css/ folder (moved out of src/ in
-       the glassmorphism refactor pass — was previously co-located with
-       each owning .js file under src/; see backend/DEVLOG.md for why).
-       Order after base.css doesn't matter between these (no rule here
-       overrides another file's selectors), but each file must load
-       somewhere. -->
+  <!-- Component/page CSS, one dedicated css/ folder. Order after base.css
+       mostly doesn't matter between these; the exception is consistency.css,
+       which loads LAST on purpose so it wins over the page stylesheets. -->
   <link rel="stylesheet" href="css/components/AppShell.css">
   <link rel="stylesheet" href="css/components/PageHeader.css">
   <link rel="stylesheet" href="css/components/DataTable.css">
@@ -116,11 +112,11 @@
   <link rel="stylesheet" href="css/consistency.css">
   <!--
     MapLibre GL JS v4.7.1, vendored locally under /vendor (not loaded from
-    a public CDN) — §1 names MapLibre as the stack's mapping library, and
-    §2 Rule 7 treats this as a locally hosted system with no internet
+    a public CDN): this is a locally hosted system with no internet
     exposure assumed, so the library file itself shouldn't require a live
     internet connection to load. See web/src/components/LiveMap.js for
-    the shared component this backs (W3's map pane + W4 both use it).
+    the shared component it backs (Dispatch Center and GIS Live Tracking
+    both use it).
   -->
   <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css">
   <script src="vendor/maplibre-gl/maplibre-gl.js"></script>

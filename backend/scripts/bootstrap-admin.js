@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Interactive first-Admin bootstrap CLI (Master Reference §2 Rule 10).
+// Interactive first-Admin bootstrap CLI.
 //
 // - Administrative bootstrap is one-time and deterministic.
 // - The first Admin in each barangay is created only by this trusted,
@@ -73,7 +73,7 @@ async function promptPassword(nextLine, startMute, stopMute, isRealTty, label) {
 }
 
 function validatePasswordPolicy(pw) {
-  // Baseline policy pending §6's full password policy wiring; keeps the
+  // Same policy as PasswordPolicy.php (keep in sync by hand); keeps the
   // bootstrap from creating an unusably weak first Admin account.
   if (pw.length < 12) return 'Password must be at least 12 characters.';
   if (!/[a-z]/.test(pw)) return 'Password must include a lowercase letter.';
@@ -146,7 +146,7 @@ async function run() {
     }
 
     const usernameRaw = await question(nextLine, 'Username: ');
-    // Username normalization per §5: trim, lowercase (ASCII rules), then
+    // Username normalization: trim, lowercase (ASCII rules), then
     // validate/persist normalized value before uniqueness/auth checks.
     const username = usernameRaw.trim().toLowerCase();
     if (!/^[a-z0-9._-]{3,64}$/.test(username)) {
@@ -197,7 +197,7 @@ async function run() {
 
     rl.close();
 
-    // Argon2id per Master Reference §2 Rule 9.
+    // Argon2id password hashing.
     const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
 
     await conn.beginTransaction();

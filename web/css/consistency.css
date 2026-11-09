@@ -1,8 +1,8 @@
 /**
- * consistency.css — one look for the controls every screen shares (2026-10-17).
- * Loaded LAST, so it wins over the page stylesheets without editing each of them.
- * Source: docs/UI_CONSISTENCY_AUDIT.md. When a page stylesheet is tidied, move its rule
- * here or delete the override; do not add page-specific button colours or radii.
+ * consistency.css — one look for the controls every screen shares.
+ * Loaded LAST, so it wins over the page stylesheets without editing each of
+ * them. When a page stylesheet is tidied, move its rule here or delete the
+ * override; do not add page-specific button colours or radii.
  *
  *   buttons  40 px, 8 px radius, ONE flat primary blue, secondary = white with a border
  *   toolbar buttons (map toolbars)  36 px, same radius, secondary unless a mode is on

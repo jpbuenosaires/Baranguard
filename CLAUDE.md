@@ -11,9 +11,9 @@ decisions with the user before writing code.
 
 **The `docs/` folder and `backend/DEVLOG.md` were removed from the repo
 2026-11-09** (manuscript is in Google Docs; the rest was moved to a folder
-outside the repo). Comments in code that mention `docs/...` or DEVLOG are
-historical. The
-schema, API, role and rule references lived there: don't invent a field,
+outside the repo). Code comments were cleaned of citations to them on the
+same date; any that remain are historical. The schema, API, role and rule
+references lived there: don't invent a field,
 route, role or state transition from memory; read the code (`backend/routes/*.php`,
 `backend/migrations/`) or ask the user for the external docs folder. Recover
 the old files with `git log --diff-filter=D -- docs/ backend/DEVLOG.md`.

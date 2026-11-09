@@ -1,11 +1,6 @@
 /**
- * LiveMap — the shared MapLibre component §9 W4 requires ("build the
- * shared LiveMap component here; W3's map pane reuses it later, it does
- * not get a second implementation"). Both `dispatch-center.js` (W3) and
- * `gis-live-tracking.js` (W4) instantiate this; neither hand-rolls its
- * own map.
- *
- * PascalCase filename per §4 (component convention).
+ * LiveMap — the shared MapLibre component. Both `dispatch-center.js` and
+ * `gis-live-tracking.js` instantiate it; neither hand-rolls its own map.
  *
  * Tactical CAD Enhancements:
  *   - Screen-pixel clustering for both Tanods and Incidents to eliminate
@@ -33,7 +28,7 @@ const INCIDENT_CLUSTER_RADIUS_PX = 46; // Screen-pixel distance for Incident gro
 
 /**
  * Community Landmarks and Critical Infrastructure POIs in Pilar.
- * Coordinates are the OpenStreetMap positions (Overpass query, 2026-10-17), not estimates.
+ * Coordinates are the OpenStreetMap positions (from an Overpass query), not estimates.
  */
 export const PILAR_COMMUNITY_POIS = [
   { id: 'bgy-hall', name: 'Dao Brgy Hall & HQ', category: 'command', lat: 12.922, lng: 123.67449, glyph: '🏛️' },

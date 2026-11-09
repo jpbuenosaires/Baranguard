@@ -1,4 +1,4 @@
-/** One active dispatch card on the Dispatches list (Phase 6 split; markup unchanged). */
+/** One active dispatch card on the Dispatches list. */
 import { IonIcon } from '@ionic/react';
 import {
   alertCircleOutline,

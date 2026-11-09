@@ -1,5 +1,5 @@
 /**
- * HeatmapMap — W5 Historical Heatmap's map component.
+ * HeatmapMap — the Historical Heatmap's map component.
  *
  * Provides a calibrated multi-stop thermal density heatmap (Cyan -> Green -> Yellow -> Orange -> Red),
  * official PSA barangay boundary polygon, and interactive view controls (Recenter, Zoom, Fullscreen).

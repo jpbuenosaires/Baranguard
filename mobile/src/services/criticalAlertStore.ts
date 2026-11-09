@@ -1,34 +1,17 @@
 /**
- * criticalAlertStore.ts — the data side of M12 Critical Alert Overlay
- * (§9: "Critical notifications request high-priority/full-screen
- * presentation where the OS permits. The app must also support heads-up/
- * banner fallback and local cached rendering when the local API cannot be
- * reached.").
+ * criticalAlertStore.ts — the data side of the Critical Alert Overlay: critical notifications request
+ * high-priority/full-screen presentation where the OS permits, with a heads-up/banner fallback and
+ * local cached rendering when the API cannot be reached.
  *
- * "Local cached rendering when the local API cannot be reached" is the
- * load-bearing requirement here: the overlay must render from whatever
- * the push payload itself carried, NEVER by making a follow-up API call
- * to fetch more detail first — a Tanod on a bad connection needs to see
- * the alert the instant it arrives, not after a request that might never
- * resolve. So `PushNotifications`' `data` payload is treated as the
- * complete, authoritative content for the overlay; the only API call this
- * whole flow makes is the Acknowledge button's `POST
- * /notifications/:id/ack` (§6 "Notification acknowledgment"), and even
- * that failing does not hide the alert — see CriticalAlertOverlay.tsx.
+ * The overlay must render from whatever the push payload itself carried, NEVER by making a follow-up
+ * API call to fetch detail first: a Tanod on a bad connection needs to see the alert the instant it
+ * arrives. So the `PushNotifications` `data` payload is the complete, authoritative content; the only
+ * API call in this flow is the Acknowledge button's `POST /notifications/:id/ack`, and even that
+ * failing does not hide the alert (see CriticalAlertOverlay.tsx).
  *
- * No state-management library exists anywhere in this app (§1's stack is
- * React + Ionic, nothing else), so this is a minimal hand-rolled
- * subscribe/notify store — the same "smallest thing that solves the
- * actual problem" instinct as this codebase's hand-rolled JWT/autoloader
- * on the backend side. `CriticalAlertOverlay` is mounted once, at the
- * `App.tsx` root (outside the tab router), specifically so it can react
- * to an alert regardless of which screen a Tanod is currently on.
- *
- * NOT DEVICE-VERIFIED. `PushNotifications.addListener` is real API surface
- * per the plugin's docs, but nothing here has ever received a real push —
- * see deviceIdentity.ts's `getFcmToken()` for the two stacked
- * prerequisites (Android SDK, a real Firebase project) neither of which
- * exist in this environment yet.
+ * No state-management library exists in this app, so this is a minimal hand-rolled subscribe/notify
+ * store. `CriticalAlertOverlay` is mounted once, at the `App.tsx` root (outside the tab router), so it
+ * can react to an alert regardless of which screen a Tanod is on.
  */
 
 import { PushNotifications, type PushNotificationSchema, type ActionPerformed } from '@capacitor/push-notifications';
@@ -37,7 +20,7 @@ import FullScreenAlert from './fullScreenAlert';
 import { isDispatchOfferPush, requestDispatchOfferRefresh } from './dispatchOfferStore';
 import { refreshActiveSosCount } from './adminSosCount';
 
-// 'dispatch_offer' (Wave 2 night-dispatch offers) is kept in sync by hand with
+// 'dispatch_offer' (night-dispatch offers) is kept in sync by hand with
 // CRITICAL_TYPES in CriticalAlertMessagingService.java (and CriticalAlertNotifier.genericTitle).
 export type CriticalNotificationType = 'sos' | 'priority_alert' | 'dispatch' | 'dispatch_offer';
 
@@ -55,7 +38,7 @@ export interface CriticalAlert {
    * id/type/title/body), where the server-composed body is shown instead.
    */
   offer?: { offerId: number | null; incidentType: string; barangayName: string; createdAt: string };
-  /** When this device received it — informational only, never sent to the server (§2 Rule 31: client timestamps are informational). */
+  /** When this device received it — informational only, never sent to the server. */
   receivedAt: string;
 }
 
@@ -92,7 +75,7 @@ function onAlertPush(alert: CriticalAlert | null): void {
   if (alert?.notificationType === 'sos') void refreshActiveSosCount();
 }
 
-/** M12's overlay subscribes here; returns an unsubscribe function. */
+/** The overlay subscribes here; returns an unsubscribe function. */
 export function subscribeToCriticalAlert(listener: Listener): () => void {
   listeners.add(listener);
   listener(queue[0] ?? null, Math.max(0, queue.length - 1));
@@ -103,11 +86,9 @@ export function subscribeToCriticalAlert(listener: Listener): () => void {
 export function dismissCriticalAlert(): void {
   queue = queue.slice(1);
   notify();
-  // The overlay dismissing does not by itself clear the system heads-up
-  // notification (id 2001) — `setAutoCancel` only fires on a direct tap,
-  // so an in-app ACKNOWLEDGE otherwise left it in the tray (found on the
-  // Infinix X6840, 2026-09-19). Best-effort: never block the in-app
-  // dismiss on this, and no-op on web/if nothing was ever posted.
+  // The overlay dismissing does not by itself clear the system heads-up notification (id 2001):
+  // `setAutoCancel` only fires on a direct tap, so an in-app ACKNOWLEDGE would otherwise leave it in
+  // the tray. Best-effort: never block the in-app dismiss on this, and no-op on web/if nothing was posted.
   if (queue.length === 0 && Capacitor.getPlatform() === 'android') {
     void FullScreenAlert.dismiss().catch(() => {});
   }
@@ -158,12 +139,11 @@ export function registerCriticalAlertListeners(): void {
   }
   listenersRegistered = true;
 
-  // App is open and in the foreground when the push arrives — this is the
-  // "heads-up/banner fallback" path §9 describes, rendered entirely by
-  // CriticalAlertOverlay rather than relying on the OS's own heads-up
-  // notification UI (which this app does not control the styling of).
+  // App is open and in the foreground when the push arrives — the "heads-up/banner fallback" path,
+  // rendered entirely by CriticalAlertOverlay rather than the OS's own heads-up notification UI (which
+  // this app does not control the styling of).
   PushNotifications.addListener('pushNotificationReceived', (notification: PushNotificationSchema) => {
-    // Wave 2 night-dispatch offers: refresh the offer cards (they are rendered from
+    // Night-dispatch offers: refresh the offer cards (they are rendered from
     // `GET /dispatch-offers`, never from this payload). Also a critical-overlay type.
     if (isDispatchOfferPush(notification.data as Record<string, unknown> | undefined)) {
       requestDispatchOfferRefresh();
@@ -200,16 +180,13 @@ export function registerCriticalAlertListeners(): void {
 }
 
 /**
- * C4 (2026-09-15): the third way an alert can reach this store, alongside
- * the two listeners above. `CriticalAlertActivity`'s "Open Baranguard"
- * button cold-launches the app with no Capacitor push event at all — the
- * OS never re-delivers the push that triggered it — so on every cold
- * start this checks whether that native screen just stashed one, and if
- * so feeds it through the exact same `parseAlert()` shape-guard the two
- * push listeners use, rather than trusting the native side's shape
- * unchecked. Call once from `App.tsx`'s mount effect, next to
- * `registerCriticalAlertListeners()`. A no-op on web/if nothing's
- * pending, same stance as the listener registration above.
+ * The third way an alert can reach this store, alongside the two listeners above.
+ * `CriticalAlertActivity`'s "Open Baranguard" button cold-launches the app with no Capacitor push
+ * event at all (the OS never re-delivers the push that triggered it), so on every cold start this
+ * checks whether that native screen just stashed one, and if so feeds it through the same
+ * `parseAlert()` shape-guard the two push listeners use rather than trusting the native side's shape
+ * unchecked. Call once from `App.tsx`'s mount effect, next to `registerCriticalAlertListeners()`.
+ * A no-op on web/if nothing's pending.
  */
 export async function checkForPendingNativeAlert(): Promise<void> {
   if (Capacitor.getPlatform() !== 'android') {

@@ -1,5 +1,5 @@
 /**
- * approvals.js — Approvals queue (contract §10): one place where an
+ * approvals.js — Approvals queue: one place where an
  * official sees every record waiting on THEM — draft shifts to publish,
  * accomplishment reports prepared and ready to print and sign, and Annex D
  * term reports still to prepare or submit — each row deep-linking to the
@@ -8,10 +8,10 @@
  * Signing happens on paper, outside the app: the app only prints. Nothing
  * here tracks signatures or approval of a printed copy.
  *
- * Availability is not here (2026-10-12): it is the tanod's own fixed
+ * Availability is not here: it is the tanod's own fixed
  * statement and is not reviewed; it is shown read-only in the Scheduler.
  *
- * Role/authority gating is UX only (REFERENCE.md §2 Rule 2: the server
+ * Role/authority gating is UX only (the server
  * re-checks every action). A group is shown only when the viewer can act
  * on it:
  *   - shifts awaiting publish ....... role admin or secretary, or

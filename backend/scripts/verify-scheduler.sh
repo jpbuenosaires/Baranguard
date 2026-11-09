@@ -25,10 +25,8 @@ fail() { echo "[FAIL] $1"; FAIL=$((FAIL+1)); }
 step() { echo; echo "=== $1 ==="; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -44,12 +42,8 @@ echo "Baranguard W11/W12 (Scheduler + Swap Requests) validation — $(date -u +%
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for candidate in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$candidate" ] && { echo "$candidate"; return; }
   done
@@ -90,8 +84,7 @@ mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0001_baseline_schema.sql" && pass
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0002_seed_barangays.sql" && pass "0002 barangays seeded" || fail "0002 seed failed"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0003_shift_schedule_nullable_user.sql" && pass "0003 nullable user_id applied" || fail "0003 apply failed"
 
-# FULL CHAIN — see verify-sprint1-auth.sh's note. This suite applied a
-# partial schema and so 500'd at login from 2026-09-05 onward.
+# Apply the full migration chain, not a subset.
 for m in $(cd "$BACKEND_DIR/migrations" && ls [0-9]*.sql | grep -v '\.down\.sql$' | sed 's/\.sql$//' | sort | awk -v s=0004_blotter_revision '$0 >= s'); do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
@@ -155,7 +148,7 @@ extract() {
 # ============================================================
 # W11 — POST/GET/PATCH /shifts
 # ============================================================
-# Since 2026-10-12 POST/PATCH /shifts refuses to schedule a tanod outside
+# POST/PATCH /shifts refuses to schedule a tanod outside
 # their submitted availability (422 OUTSIDE_AVAILABILITY, covered by
 # verify-roster-accomplishment.sh). This suite tests other rules, so every
 # tanod gets open whole-day availability first.
@@ -200,7 +193,7 @@ RESP=$(curl -s -H "Authorization: Bearer $TANOD1_TOKEN" "${BASE_URL}/shifts?limi
 TOTAL=$(extract "$RESP" total)
 [ "$TOTAL" = "6" ] && pass "Tanod sees only own 6 shifts (forced to self)" || fail "Tanod own shifts total=$TOTAL (expected 6)"
 
-# from/to window (audit F-09): inclusive Manila dates, shift returned when it overlaps the window
+# from/to window: inclusive Manila dates, shift returned when it overlaps the window
 FAR_FUTURE=$("$PHP_BIN" -r "echo date('Y-m-d', strtotime('+3650 days'));")
 FAR_PAST=$("$PHP_BIN" -r "echo date('Y-m-d', strtotime('-3650 days'));")
 RESP=$(curl -s -H "Authorization: Bearer $ADMIN_TOKEN" "${BASE_URL}/shifts?limit=100&from=${FAR_FUTURE}")
@@ -228,9 +221,8 @@ CODE=$(echo "$RESP" | tail -1)
 DB_ZONE=$(mysql_exec -N -s "$VALDB" -e "SELECT patrol_zone FROM shift_schedule WHERE shift_id=$SHIFT_ID;")
 [ "$DB_ZONE" = "Zone B Updated" ] && pass "patrol_zone actually persisted (verified in DB)" || fail "DB patrol_zone='$DB_ZONE'"
 
-# Contract section 8 (2026-10): the H-17 "zero coverage" hard block was removed
-# (coverage is now a NO_COVERAGE warning on publish), so unassigning the only
-# shift covering a window is allowed (it used to be 422).
+# Coverage is a NO_COVERAGE warning on publish, not a hard block, so
+# unassigning the only shift covering a window is allowed.
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
   "${BASE_URL}/shifts/${SHIFT_ID}" -X PATCH -d '{"user_id":null,"version":2}')
 [ "$CODE" = "200" ] && pass "Contract section 8: unassign the ONLY covering shift -> 200 (coverage is a publish warning, no longer a block)" || fail "Unassign with no other coverage -> $CODE (expected 200)"
@@ -258,7 +250,7 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $ADMIN_T
   "${BASE_URL}/shifts" -X POST -d "{\"user_id\":$TANOD2_ID,\"start_at\":\"${CAP_DAY}T14:00:00+08:00\",\"end_at\":\"${CAP_DAY}T22:00:00+08:00\",\"request_id\":\"99999999-1111-4999-8999-999999999992\"}")
 [ "$CODE" = "422" ] && pass "Contract section 8: +8h on the same Manila day (13h > 12h cap; also only 1h rest, no longer a rule) -> 422" || fail "Daily-cap breach -> $CODE (expected 422)"
 
-# Remove the H-17 cover shift outright (not just unassign it) so it can't
+# Remove the cover shift outright (not just unassign it) so it can't
 # interfere with the shift created for the swap steps below.
 mysql_exec "$VALDB" -e "DELETE FROM shift_schedule WHERE shift_id=$COVER_SHIFT_ID; DELETE FROM shift_schedule WHERE client_request_id LIKE '99999999-1111-%';" >/dev/null
 
@@ -284,7 +276,7 @@ case "$NAVC" in *fatigue*) fail "nav-counts still carries a fatigue count: $NAVC
 # W12 — Shift swap requests
 # ============================================================
 step "9. POST /shift-swap-requests — ownership check, named target, idempotency"
-# Fix review finding 2: a Tanod only ever sees PUBLISHED shifts, so a swap on a DRAFT shift is refused (404).
+# A Tanod only ever sees PUBLISHED shifts, so a swap on a DRAFT shift is refused (404).
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TANOD1_TOKEN" -H "Content-Type: application/json" \
   "${BASE_URL}/shift-swap-requests" -X POST -d "{\"shift_id\":$SWAP_SHIFT_ID,\"target_user_id\":$TANOD2_ID,\"client_request_id\":\"dddddddd-0001-4ddd-8ddd-dddddddddddd\"}")
 [ "$CODE" = "404" ] && pass "Fix review finding 2: Tanod swap request on their own DRAFT shift -> 404 (refused)" || fail "Swap on a draft shift -> $CODE (expected 404)"
@@ -312,7 +304,7 @@ CODE=$(echo "$RESP" | tail -1)
 NEW_SHIFT_OWNER=$(mysql_exec -N -s "$VALDB" -e "SELECT user_id FROM shift_schedule WHERE shift_id=$SWAP_SHIFT_ID;")
 [ "$NEW_SHIFT_OWNER" = "$TANOD2_ID" ] && pass "Shift actually reassigned from tanod1 to tanod2 in the DB" || fail "shift user_id=$NEW_SHIFT_OWNER (expected $TANOD2_ID)"
 DB_APPR=$(mysql_exec -N -s "$VALDB" -e "SELECT CONCAT(approval_status,'|',IFNULL(approved_by,'NULL'),'|',pending_reapproval) FROM shift_schedule WHERE shift_id=$SWAP_SHIFT_ID;")
-# 2026-10-12: an approved swap KEEPS a published shift published (the roster was signed; only the name changes).
+# An approved swap KEEPS a published shift published (the roster was signed; only the name changes).
 [ "$DB_APPR" = "published|$ADMIN_ID|0" ] && pass "An approved swap keeps the PUBLISHED shift published, approver kept, no pending_reapproval" || fail "approval after swap='$DB_APPR' (expected published|$ADMIN_ID|0)"
 
 step "11. Revalidation on approve: reassigned-out-from-under-the-request -> 409"

@@ -1,5 +1,5 @@
 /**
- * DispatchOfferCards.tsx — the night-dispatch "offer" cards (Wave 2).
+ * DispatchOfferCards.tsx — the night-dispatch "offer" cards.
  *
  * At night the server broadcasts a call to every on-duty tanod holding a
  * published shift (if none qualifies, to every eligible on-duty tanod whose own

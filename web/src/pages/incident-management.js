@@ -124,7 +124,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
   const isAdmin = user.role === 'admin';
   const isSecretary = user.role === 'secretary';
   const canCreate = isAdmin || isSecretary;
-  // The Secretary is the back-up dispatcher (2026-10-17): dispatch and resolve like the Admin.
+  // The Secretary is the back-up dispatcher: dispatch and resolve like the Admin.
   const canDispatch = isAdmin || isSecretary;
 
   // Active modal tracking
@@ -348,7 +348,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
   // Cached Lookups
   const barangayNameById = new Map();
-  // Never guesses a name when the lookup failed (Rule 6).
+  // Never guesses a name when the lookup failed.
   const barangayLabel = (barangayId) => {
     const raw = barangayNameById.get(barangayId);
     if (!raw) return barangayId != null ? `Barangay #${barangayId}` : 'Barangay not recorded';
@@ -643,8 +643,8 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     { value: 'pending', label: INCIDENT_STATUS_LABELS.pending },
     { value: 'dispatched', label: 'Responding' },
     { value: 'resolved', label: 'Resolved' },
-    // H-16/M-03 lifecycle states -- otherwise a Secretary could set them
-    // (W21's Case lifecycle card) but never filter the list back to them.
+    // Lifecycle states -- otherwise a Secretary could set them (Case
+    // lifecycle card) but never filter the list back to them.
     { value: 'duplicate', label: 'Duplicate' },
     { value: 'invalid', label: 'Invalid' },
     { value: 'cancelled', label: 'Cancelled' },
@@ -766,7 +766,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       bRes.forEach((b) => barangayNameById.set(b.barangayId, b.name));
     } catch {
       barangayNameById.set(1, 'Dao');
-      // Fixed ids per REFERENCE.md section 1: Dao=1, Binanuahan=2, Marifosque=3, Banuyo=4.
+      // Fixed ids: Dao=1, Binanuahan=2, Marifosque=3, Banuyo=4.
       barangayNameById.set(2, 'Binanuahan');
       barangayNameById.set(3, 'Marifosque');
       barangayNameById.set(4, 'Banuyo');
@@ -1236,15 +1236,10 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
 
     // 4. Assigned Tanod(s) Card (with Smart Assign / Contact modal)
     //
-    // 2026-09-13: rebuilt on real `detail.dispatches` data. The previous
-    // version fell back to a hardcoded fake name ("Tanod Ramos") and a
-    // fake relative time ("2 min later") whenever no real dispatch data
-    // was available for an already-dispatched/resolved incident â€” a live
-    // Â§2 Rule 6 violation ("no fabricated statistics... no hardcoded
-    // identities") found while wiring this card to show more than one
-    // responder for docs/REMAINING.md's second-responder feature. An
-    // incident can now have more than one concurrent active dispatch â€”
-    // each gets its own row here.
+    // Built on real `detail.dispatches` data: an incident can have more than
+    // one concurrent active dispatch, and each gets its own row here. No
+    // hardcoded fake name or relative time when no dispatch data exists (no
+    // fabricated statistics, no hardcoded identities).
     const tanodCard = document.createElement('div');
     tanodCard.className = 'incident-tanod-card';
     const activeDispatches = (detail.dispatches || []).filter((d) => ['assigned', 'en_route', 'arrived'].includes(d.status));
@@ -1349,7 +1344,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     descLabel.textContent = 'Description';
     const descBody = document.createElement('p');
     descBody.className = 'incident-desc-body';
-    // Rule 1 (amended 2026-10-13): raw_narrative is returned to the Secretary and the Admin (web), so any
+    // raw_narrative is returned to the Secretary and the Admin (web), so any
     // other role honestly sees that it is restricted rather than blank.
     descBody.textContent = detail.rawNarrative
       || (user.role === 'secretary' || user.role === 'admin' ? missingNarrativeText(detail) : 'The narrative is restricted to the Barangay Secretary and the Chief Tanod.');
@@ -1392,7 +1387,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       });
       actionsRow.appendChild(dispatchBtn);
 
-      // Part 5 item 1 (2026-10-09): an incident settled without any dispatch
+      // An incident settled without any dispatch
       // (a phone call, a walk-in sorted on the spot) can be closed by the
       // Admin with a mandatory reason. The server enforces the reason.
       const resolveNoDispatchBtn = document.createElement('button');
@@ -1418,12 +1413,11 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       });
       actionsRow.appendChild(resolveNoDispatchBtn);
     } else if (row.status === 'dispatched') {
-      // 2026-09-13: an already-dispatched incident can now get an
-      // additional concurrent responder too (docs/REMAINING.md G-backlog,
-      // explicit user sign-off â€” no incident-type/priority gate, Admin's
-      // own judgment call). Reuses the exact same promptDispatchTanod()
-      // flow as the "Assign" button above; the server is the real
-      // enforcement point either way.
+      // An already-dispatched incident can get an additional concurrent
+      // responder too (no incident-type/priority gate, Admin's own judgment
+      // call). Reuses the exact same promptDispatchTanod() flow as the
+      // "Assign" button above; the server is the real enforcement point
+      // either way.
       const addResponderBtn = document.createElement('button');
       addResponderBtn.type = 'button';
       addResponderBtn.className = 'btn-tanod-assign';
@@ -1481,7 +1475,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
       actionsRow.appendChild(resolvedBtn);
     }
 
-    // Secondary action: open the incident record (W7).
+    // Secondary action: open the incident record.
     const recordBtn = document.createElement('button');
     recordBtn.type = 'button';
     recordBtn.className = 'btn-action-record';
@@ -1521,18 +1515,10 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     s1.append(dot1, t1, time1);
     timelineList.appendChild(s1);
 
-    // Stages 2+: one dispatched/arrived(or cancelled) pair per REAL
-    // dispatch row (docs/REMAINING.md G-backlog â€” an incident can now
-    // have more than one). 2026-09-13: this used to render a single
-    // "Dispatched to {officerNameText}" stage unconditionally whenever
-    // row.status !== 'pending', with a hardcoded fake name and a
-    // hardcoded fake "2 min later" whenever real dispatch data was
-    // missing â€” a live Â§2 Rule 6 violation ("no fabricated statistics...
-    // no hardcoded identities"), confirmed against the real
-    // baranguard_uiseed data (a resolved incident with ZERO dispatch
-    // rows still showed "Dispatched to Tanod Ramos â€” 2 min later").
-    // Every value below comes from a real `dispatches[]` row; when there
-    // isn't one yet, no stage renders â€” an honest gap, not an invented one.
+    // Stages 2+: one dispatched/arrived(or cancelled) pair per REAL dispatch
+    // row (an incident can have more than one). Every value below comes from
+    // a real `dispatches[]` row; when there isn't one yet, no stage renders —
+    // an honest gap, not an invented one.
     const allDispatchesSorted = detail.dispatches || [];
     const showTanodInLabel = allDispatchesSorted.length > 1;
     for (const dispatch of allDispatchesSorted) {
@@ -1597,7 +1583,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     timelineSection.appendChild(timelineList);
     rightPanel.appendChild(timelineSection);
 
-    // 2026-10 (contract Â§5, Â§7): school link + Annex C-1 fields and the
+    // School link + Annex C-1 fields and the
     // referrals list. Admin and Secretary are the only roles on this page,
     // and both may edit/add; each card loads and fails on its own.
     const caseCards = document.createElement('div');
@@ -1669,7 +1655,7 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     }
     gPrio.append(lPrio, selPrio);
 
-    // Report channel: how the matter reached the barangay (migration 0036).
+    // Report channel: how the matter reached the barangay.
     // Defaults to Walk-in because this form is the desk's intake path; the
     // server forces tanod_alerted for incidents a Tanod files from the app.
     const gChan = document.createElement('div');
@@ -2024,9 +2010,9 @@ export function renderIncidentManagementPage(root, user, onLoggedOut, navigate, 
     overlay.className = 'incident-modal-overlay';
     activeModalEl = overlay;
 
-    // No fabricated fallback number â€” a Tanod with no contact number on
+    // No fabricated fallback number — a Tanod with no contact number on
     // file gets an honest empty state, not a placeholder phone number
-    // presented as if it were real (Rule 6: no hardcoded identities).
+    // presented as if it were real.
     const hasContact = Boolean(contactNumber);
     const phoneStr = contactNumber || '';
 

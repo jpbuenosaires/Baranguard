@@ -450,7 +450,7 @@
   border-color: var(--color-border);
 }
 
-/* H-16/M-03 lifecycle states (migration 0025) */
+/* Lifecycle states */
 .incident-status-indicator--duplicate,
 .incident-status-indicator--invalid,
 .incident-status-indicator--cancelled {
@@ -1425,9 +1425,9 @@
   }
 }
 
-/* Read-only explanation shown where the Edit form used to offer a
-   narrative textarea — see incident-management.js for why editing the
-   narrative there was removed rather than restyled. */
+/* Read-only explanation shown where an Edit form would offer a narrative
+   textarea — see incident-management.js for why the narrative is not
+   editable there. */
 .incident-form-note {
   margin: 0;
   padding: var(--spacing-sm) var(--spacing-md);
@@ -1439,10 +1439,7 @@
   border-radius: var(--radius-md);
 }
 
-/* The "New Incident" pill. Lived in blotter-list.css as `.btn-blotter-new`
-   until 2026-09-10, when W6 was removed — the name was always wrong
-   (it opens the incident create pane, not a blotter entry) and the rule
-   only ever had this one user. */
+/* The "New Incident" pill: opens the incident create pane. */
 .btn-new-incident {
   display: inline-flex;
   align-items: center;
@@ -1488,7 +1485,7 @@
   transform: translateY(-1px);
 }
 
-/* 2026-10: school/C-1 + referral cards under the detail pane's timeline. */
+/* School/C-1 + referral cards under the detail pane's timeline. */
 .incident-detail-case-cards {
   display: flex;
   flex-direction: column;

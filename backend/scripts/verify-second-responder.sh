@@ -1,18 +1,13 @@
 #!/usr/bin/env bash
 # Baranguard — second responder / backup dispatch validation
-# (docs/REMAINING.md G-backlog "Backup/second responder on critical
-# incidents", closed 2026-09-13 by explicit user architecture sign-off —
-# no incident-type/priority gate, unbounded concurrent dispatches,
+# (no incident-type/priority gate, unbounded concurrent dispatches, the
 # Admin's own judgment call).
 #
-# Before this fix, DispatchController::create() rejected a second
-# POST /dispatch on any incident once its status left 'pending' — a
-# hard "at most one active dispatch per incident" rule. This script
-# proves the new behavior end-to-end over real HTTP: a second (and
+# Proves end-to-end over real HTTP: a second (and
 # third) concurrent responder can be added to an already-dispatched
 # incident, a Tanod cannot be double-assigned to the same incident, and
-# DispatchController::cancel()'s incident-revert-to-pending logic now
-# correctly accounts for OTHER still-active dispatches rather than
+# DispatchController::cancel()'s incident-revert-to-pending logic
+# accounts for OTHER still-active dispatches rather than
 # unconditionally reverting on any single cancellation.
 #
 # Safe to run: disposable database, disposable app-user, throwaway port.
@@ -34,10 +29,8 @@ step() { echo; echo "=== $1 ==="; }
 expect_eq() { if [ "$1" = "$2" ]; then pass "$3 ($2)"; else fail "$3 — expected '$2', got '$1'"; fi; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -53,12 +46,8 @@ echo "Baranguard second-responder validation — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for c in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$c" ] && { echo "$c"; return; }
   done

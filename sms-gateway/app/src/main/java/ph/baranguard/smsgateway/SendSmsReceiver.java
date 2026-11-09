@@ -11,14 +11,12 @@ import android.util.Log;
 import java.util.ArrayList;
 
 /**
- * SendSmsReceiver — the whole point of this app. Replaces
- * `SemaphoreClient.php`'s job: sends one outbound SMS via this phone's own
+ * SendSmsReceiver — the whole point of this app: sends one outbound SMS via this phone's own
  * SIM (`SmsManager`) on command from the workstation, over `adb shell am
  * broadcast`. No network call of its own, no server, no polling — the
  * workstation reaches IN via adb, the same trust boundary
  * `gsm-ingest-daemon.php` already relies on for reading inbound SMS off
- * this same phone (§1 REFERENCE.md's F1 architecture: LAN/USB-local, no
- * cloud dependency).
+ * this same phone (LAN/USB-local, no cloud dependency).
  *
  * Long messages are split via `divideMessage`/`sendMultipartTextMessage` —
  * a plain `sendTextMessage` silently truncates anything over ~160 chars
@@ -55,13 +53,10 @@ public class SendSmsReceiver extends BroadcastReceiver {
         final String finalCorrelationId = correlationId;
         final Context appContext = context.getApplicationContext();
 
-        // Declared outside the try so a code-review-found bug can be fixed:
-        // any exception thrown AFTER registerReceiver() but before the send
-        // call completes (e.g. a SecurityException from a revoked SEND_SMS
-        // permission) used to leave `resultReceiver` registered forever —
-        // the catch block only called pendingResult.finish(), never
-        // unregisterReceiver(). Tracked here so the catch block can clean
-        // it up too.
+        // Declared outside the try so the catch block can unregister it: an
+        // exception thrown AFTER registerReceiver() but before the send
+        // completes (e.g. a SecurityException from a revoked SEND_SMS
+        // permission) would otherwise leave `resultReceiver` registered forever.
         BroadcastReceiver resultReceiver = null;
         boolean receiverRegistered = false;
 
@@ -168,7 +163,7 @@ public class SendSmsReceiver extends BroadcastReceiver {
         }
     }
 
-    /** Never let a phone number reach logcat in full — same audit-metadata discipline (§2 Rule 8) as the rest of this codebase. */
+    /** Never let a phone number reach logcat in full — same allow-listed-metadata discipline as the rest of this codebase. */
     private static String redact(String phoneNumber) {
         if (phoneNumber.length() <= 4) return "****";
         return "****" + phoneNumber.substring(phoneNumber.length() - 4);

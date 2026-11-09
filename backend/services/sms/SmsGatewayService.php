@@ -14,7 +14,7 @@ use Baranguard\Services\Notifications\LocalGsmOutboundClient;
 use PDO;
 
 /**
- * SmsGatewayService — both halves of §6 "Internal SMS / GSM":
+ * SmsGatewayService — both halves of internal SMS / GSM:
  *
  *   RECEIVING (`receive*` methods, called only from the internal-only
  *   `/internal/sms/*` router): validates an inbound encrypted envelope
@@ -22,10 +22,9 @@ use PDO;
  *   the SAME business event the app itself would have produced online —
  *   by calling the exact same `createMobileItem`/`createItem`/
  *   `applyToggle`/`createItem` core methods `SyncController` already
- *   reuses, never a second copy of that logic. §2 Rule 13: "Sender
- *   identity is derived server-side from a registered Tanod/device
- *   mapping; any user ID included in the SMS payload is ignored for
- *   authorization" — every `receive*` method resolves `$identity` from
+ *   reuses, never a second copy of that logic. Sender identity is derived
+ *   server-side from a registered Tanod/device mapping; any user ID in the
+ *   SMS payload is ignored for authorization — every `receive*` method resolves `$identity` from
  *   the device mapping BEFORE touching the decrypted payload, and never
  *   reads a user id out of that payload at all.
  *
@@ -67,17 +66,12 @@ final class SmsGatewayService
     }
 
     /**
-     * 2026-09-23: Semaphore removed (explicit user decision — a paid
-     * per-SMS aggregator cost too much for this project's actual volume;
-     * see DEVLOG.md). Outbound now goes through the same tethered phone
-     * `gsm-ingest-daemon.php` already reads INBOUND SMS off —
-     * `LocalGsmOutboundClient`'s own doc block has the full mechanism.
-     * `system_settings`' former `sms_gateway.api_key`/`sender_name` keys
-     * are gone with it: this transport has no cloud credential and no
-     * configurable sender name (messages come from the gateway phone's
-     * own number), so there was nothing left for that Settings card to
-     * hold — `GSM_GATEWAY_ENABLED`/`GSM_GATEWAY_ADB_PATH` are `.env`-only
-     * ops configuration, not something an Admin toggles per barangay.
+     * Outbound goes through the same tethered phone `gsm-ingest-daemon.php`
+     * reads INBOUND SMS off; `LocalGsmOutboundClient`'s doc has the
+     * mechanism. This transport has no cloud credential and no configurable
+     * sender name (messages come from the gateway phone's own number);
+     * `GSM_GATEWAY_ENABLED`/`GSM_GATEWAY_ADB_PATH` are `.env`-only ops
+     * configuration, not something an Admin toggles per barangay.
      */
     private function resolveOutboundClient(): LocalGsmOutboundClient
     {
@@ -171,10 +165,10 @@ final class SmsGatewayService
     // --- Inbound: /internal/sms/sos -----------------------------------------
 
     /**
-     * §6: "dedicated SOS fallback path; ... creates or correlates the SOS
-     * if app submission could not reach the workstation." Reuses
+     * Dedicated SOS fallback path: creates or correlates the SOS if app
+     * submission could not reach the workstation. Reuses
      * `TanodSosController::createItem()` verbatim — including its own
-     * Rule 27 fan-out and immediate FCM/SMS dispatch attempt, so an
+     * fan-out and immediate FCM/SMS dispatch attempt, so an
      * SMS-originated SOS is indistinguishable in every downstream respect
      * from one raised through the app.
      *
@@ -333,7 +327,7 @@ final class SmsGatewayService
      *        values ('dispatch','priority_alert','sos','confirmation','manual').
      * @param ?int $barangayId see migration 0006's own doc for why this is
      *        a dedicated column rather than derived from incident/dispatch.
-     * @param ?string $correlationId (2026-09-05 UX pass) — set by
+     * @param ?string $correlationId set by
      *        `SmsController::send()`/`broadcast()` to their
      *        Idempotency-Key, so a retry can be detected by looking this
      *        row up directly rather than guessing "the most recent row
@@ -484,7 +478,7 @@ final class SmsGatewayService
     /**
      * Stores a human text (or a daemon-reported rejected envelope) so SMS
      * Monitor's Conversations can show it. Barangay: GATEWAY_BARANGAY_ID, else
-     * the only barangay in the DB (Rule 92: one workstation per barangay).
+     * the only barangay in the DB (one workstation per barangay).
      * A STOP-style keyword opts the sender out of the advisory list (0018).
      * `message_body` of a rejected envelope is NEVER stored.
      *
@@ -558,17 +552,12 @@ final class SmsGatewayService
 
     private function logOutbound(PDO $pdo, string $messageType, ?int $incidentId, ?int $dispatchId, ?int $reportId, ?int $barangayId, string $phone, string $messageBody, string $status, ?string $gatewayMessageId, ?string $failureReason, ?string $correlationId = null): int
     {
-        // message_body (migration 0013, 2026-09-05 UX pass) — the actual
-        // text is now persisted for every NEW outbound send, going
-        // forward only (rows from before this migration stay NULL,
-        // never backfilled with a guess — §2 Rule 6).
-        // transport is 'gsm_modem' for every outbound row since 2026-09-23
-        // (Semaphore removed) — the SAME tethered phone `gsm-ingest-daemon.php`
-        // reads inbound SMS off, now sending too. Older rows with
-        // transport='semaphore' are historical only; that enum value is
-        // deliberately left in place rather than migrated (§2 Rule 9 — no
-        // new numbered migration was worth it just to rename a retired
-        // value on rows nothing writes anymore).
+        // message_body is NULL on rows from before migration 0013, never
+        // backfilled with a guess.
+        // transport is always 'gsm_modem': the same tethered phone
+        // `gsm-ingest-daemon.php` reads inbound SMS off. Older rows with
+        // transport='semaphore' are historical; that enum value is left in
+        // place rather than migrated.
         $stmt = $pdo->prepare(
             "INSERT INTO sms_log
                 (incident_id, dispatch_id, report_id, barangay_id, receiver_number, transport, message_type, direction,

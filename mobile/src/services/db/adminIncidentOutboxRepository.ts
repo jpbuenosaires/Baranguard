@@ -1,9 +1,8 @@
 /**
  * adminIncidentOutboxRepository.ts — the Chief Tanod console's incident outbox (schema v10).
  *
- * A report logged from the phone is written here before the screen is left
- * (Rule 7), sent with its own idempotency key, and deleted once the server
- * confirms. The row holds the narrative only until then.
+ * A report logged from the phone is written here before the screen is left, sent with its own
+ * idempotency key, and deleted once the server confirms. The row holds the narrative only until then.
  */
 
 import { openLocalDatabase } from './localDatabase';

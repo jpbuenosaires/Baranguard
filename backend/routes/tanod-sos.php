@@ -2,9 +2,8 @@
 declare(strict_types=1);
 
 /**
- * Route table for /tanod-sos (§6 "Tanod SOS" section). Only the
- * read-only list this session — POST /tanod-sos (Tanod trigger) and the
- * acknowledge/resolve endpoints are Sprint 4 scope.
+ * Route table for /tanod-sos: list, Tanod trigger, acknowledge/resolve and
+ * the SMS fallback contact.
  */
 
 use Baranguard\Controllers\TanodSosController;

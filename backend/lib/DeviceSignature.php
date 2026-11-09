@@ -7,23 +7,14 @@ use PDO;
 
 /**
  * Verifies a per-request device signature against a device's registered
- * hardware-backed public key — code-review finding H-09 (2026-09-24
- * external audit): "X-Device-Id is an identifier, not strong proof of
- * device authenticity."
+ * hardware-backed public key ("X-Device-Id is an identifier, not strong proof
+ * of device authenticity").
  *
- * PHASED ROLLOUT, NOT A HARD CUTOVER. Every already-registered device has
- * `mobile_device.device_public_key_pem IS NULL` (migration 0024) until it
- * upgrades and re-registers with a Keystore-generated key — a hard
- * requirement on day one would 401 every existing Tanod session before a
- * single device has the new app build. `verify()` therefore returns
- * `null` ("not upgraded yet, caller keeps doing whatever it did before
- * H-09") rather than `false` when no key is on file — only a device that
- * HAS a key gets held to the new, stronger standard. This is the same
- * "unconfigured is neutral, don't fail closed on a control that was never
- * turned on" principle §2 Rule 6 already applies to Ollama/the SMS
- * gateway, not a security compromise: a device with no key still gets
- * exactly today's protection (the X-Device-Id + ownership DB lookup),
- * never less.
+ * A device with `mobile_device.device_public_key_pem IS NULL` (no
+ * Keystore-generated key registered yet) is not failed closed: `verify()`
+ * returns `null` ("no key on file, caller keeps its X-Device-Id + ownership
+ * lookup") rather than `false`. Only a device that HAS a key is held to the
+ * signature check.
  *
  * Signature scheme: the device signs `METHOD\nPATH\nDEVICE_ID\nTIMESTAMP`
  * (SHA-256, whatever key algorithm the device generated — `openssl_verify`
@@ -47,8 +38,8 @@ final class DeviceSignature
     /**
      * @return bool|null true = verified; false = a key is on file but
      *   verification failed (caller MUST reject the request); null = this
-     *   device has not upgraded yet (caller falls back to its pre-H-09
-     *   check).
+     *   device has not upgraded yet (caller falls back to its
+     *   X-Device-Id + ownership check).
      */
     public static function verify(
         PDO $pdo,

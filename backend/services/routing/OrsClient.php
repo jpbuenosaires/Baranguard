@@ -4,62 +4,29 @@ declare(strict_types=1);
 namespace Baranguard\Services\Routing;
 
 /**
- * OrsClient — the ONLY place this codebase talks to OpenRouteService
- * (ORS), a cloud-hosted routing API run by HeiGIT/Heidelberg University
- * on OpenStreetMap data. Second architecture decision on this feature
- * in one day (2026-09-13, explicit user sign-off): Google's Routes API
- * was ruled out immediately after — it requires a billing account with
- * a card on file even to stay inside the free tier, which this
- * deployment doesn't have. ORS's free tier needs no card. A self-hosted
- * OSRM instance was the ORIGINAL plan before that and was abandoned
- * mid-build over WSL2/vcpkg memory constraints on this workstation's
- * ~8GB RAM — see GoogleRoutesClient's replacement, this class, for that
- * history; ORS runs on the same underlying OSM data a self-hosted OSRM
- * build would have, just hosted for you instead of built here.
+ * OrsClient — the ONLY place this codebase talks to OpenRouteService (ORS),
+ * a cloud-hosted routing API on OpenStreetMap data. Free tier, no card.
  *
- * WHAT THIS MEANS OPERATIONALLY, recorded here since it's a real
- * deviation from every other dependency in this stack (same trade
- * Google would have been, different vendor):
- *   - Every route request sends the Tanod's current GPS position and
- *     the incident's location to a third party (HeiGIT, not Google) —
- *     real operational data leaving the system, a deliberate trade the
- *     user made explicitly.
- *   - The phone needs to reach the public internet directly for this
- *     one feature — every other mobile feature only ever needs to reach
- *     the workstation itself (plain LAN by default; see
- *     apiService.ts's own note on temporary remote-testing options).
- *   - Free tier, no card — but rate-limited; exact current limits are
- *     whatever ORS's dashboard shows at signup (their docs pages did
- *     not render for automated verification when this was built).
- *     Mobile's "Get Route" being an explicit tap, not an auto-refresh
- *     poll, is what keeps real usage well inside whatever that limit
- *     is — see AssignmentDetail's own note (Phase 4).
+ * OPERATIONAL TRADE-OFFS (a deliberate deviation from every other
+ * dependency in this stack):
+ *   - Every route request sends the Tanod's current GPS position and the
+ *     incident's location to a third party (HeiGIT).
+ *   - The phone needs the public internet directly for this one feature;
+ *     every other mobile feature only needs the workstation.
+ *   - Free tier is rate-limited. Mobile's "Get Route" is an explicit tap,
+ *     not an auto-refresh poll, which keeps usage well inside the limit.
  *
- * Configuration (see .env.example):
- *   ORS_API_KEY   UNSET means "this deployment has never wired up
- *                 routing", which is what makes /system/health report
- *                 `ors: not_configured` rather than `unhealthy` — same
- *                 reasoning OLLAMA_URL's own "not defaulted" comment
- *                 gives. Free, created directly at openrouteservice.org
- *                 by the user — no card required, but still an account
- *                 signup this codebase/an assistant doesn't do on the
- *                 user's behalf.
- *   ORS_TIMEOUT_SECONDS   request timeout (default 10 — a live cloud
- *                 API call inside a web request, not a background job).
+ * Configuration (.env.example):
+ *   ORS_API_KEY   UNSET means routing was never wired up, which makes
+ *                 /system/health report `ors: not_configured` rather than
+ *                 `unhealthy`.
+ *   ORS_TIMEOUT_SECONDS   request timeout (default 10: a live cloud call
+ *                 inside a web request, not a background job).
  *
- * VERIFICATION STATUS, stated plainly because it matters: the REQUEST
- * side of this client (endpoint path, `Authorization` header carrying
- * the raw key with no "Bearer" prefix, body field names, `geojson`
- * format) is verified directly against ORS's own official Python
- * client source (github.com/GIScience/openrouteservice-py,
- * client.py/directions.py) — not guessed. The RESPONSE-parsing side
- * (features[].properties.segments[].steps[] shape) is built from
- * well-established, long-stable knowledge of ORS's public API, since
- * ORS's docs pages did not render for this session's automated
- * verification and no real API key was available to test a live
- * response against. Parsing below is defensive (null-safe) specifically
- * because of that gap — confirm against a real response once a key
- * exists, per this project's own "prove it, don't claim it" standard.
+ * The request side (endpoint path, `Authorization` header carrying the raw
+ * key with no "Bearer" prefix, body field names, `geojson` format) follows
+ * ORS's official Python client. The response parsing
+ * (features[].properties.segments[].steps[]) is defensive and null-safe.
  *
  * Two distinct failure modes, deliberately not collapsed into one (see
  * each exception's own doc): `OrsUnavailableException` = didn't answer,
@@ -227,7 +194,7 @@ final class OrsClient
      * shows as unhealthy rather than healthy.
      *
      * PUBLIC so SystemHealthController can reuse it without a second
-     * implementation, same reasoning OllamaClient/ollamaStatus() share.
+     * implementation.
      * Only probes the CAR mode — both modes hit the same API key/quota,
      * so a second full request would just double the (rate-limited)
      * request count for no new information.

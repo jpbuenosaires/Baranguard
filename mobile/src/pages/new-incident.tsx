@@ -1,8 +1,8 @@
 /**
- * new-incident.tsx — M3 Log New Incident (§9 Mobile).
+ * new-incident.tsx — Log New Incident.
  *
  * Flat intake form: type, location, narrative, then collapsed optional detail
- * (school link + C-1 notes, photos/audio). Saves on the phone first (Rule 7).
+ * (school link + C-1 notes, photos/audio). Saves on the phone first.
  * Sections live in components/home/*.
  */
 
@@ -512,7 +512,7 @@ const NewIncidentPage: React.FC = () => {
             </Banner>
           )}
 
-          {/* Submit: saves on this phone first (Rule 7), sends when online. */}
+          {/* Submit: saves on this phone first, sends when online. */}
           <div className="dispatch-action-dock h4-submit">
             <Button
               variant="primary"

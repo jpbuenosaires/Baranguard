@@ -7,9 +7,8 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 /**
- * FullScreenAlertPlugin — the one way Phase 4.2's full-screen alert
- * capability can actually be exercised in an environment with no real
- * FCM project (REMAINING.md A4): Profile's diagnostics calls this
+ * FullScreenAlertPlugin — the one way the full-screen alert can be
+ * exercised without a real FCM project: Profile's diagnostics calls this
  * directly ("Test Full-Screen Alert"), posting through the exact same
  * `CriticalAlertNotifier` a real incoming critical push would use via
  * `CriticalAlertMessagingService`. Proves the notification/full-screen-
@@ -63,9 +62,8 @@ public class FullScreenAlertPlugin extends Plugin {
      * Cancels the system heads-up notification (id 2001) posted by
      * `CriticalAlertNotifier`. Called once the Tanod acknowledges the alert
      * in-app — `setAutoCancel(true)` on the notification itself only
-     * clears it on a direct tap, so an in-app ACKNOWLEDGE otherwise left it
-     * sitting in the tray after the overlay was already gone (found on the
-     * Infinix X6840, 2026-09-19).
+     * clears it on a direct tap, so an in-app ACKNOWLEDGE otherwise leaves it
+     * sitting in the tray after the overlay is gone.
      */
     @PluginMethod
     public void dismiss(PluginCall call) {
@@ -76,11 +74,11 @@ public class FullScreenAlertPlugin extends Plugin {
     /**
      * Whether the native Firebase SDK actually initialized in this process
      * — false whenever `google-services.json` was never added to the
-     * build (REMAINING.md A4, still open). `deviceIdentity.ts`'s
+     * build. `deviceIdentity.ts`'s
      * `getFcmToken()` calls this BEFORE `PushNotifications.register()`,
      * because that call throws an uncaught `IllegalStateException` on
      * Capacitor's own native plugin-invocation thread when Firebase isn't
-     * initialized — confirmed on a real device 2026-09-13, crashing the
+     * initialized — it crashes the
      * whole app on login. A JS try/catch around `register()` cannot
      * intercept that: the exception never reaches the JS promise
      * machinery, it kills the process first. This check runs entirely in

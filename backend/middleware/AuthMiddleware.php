@@ -10,12 +10,11 @@ use Baranguard\Services\Auth\SessionPolicy;
 use PDO;
 
 /**
- * Shared request authentication/authorization. Master Reference §2 Rule 9:
- * "Every authenticated request verifies signature, allowed algorithm,
- * expiry, session existence, session revocation, user activation state,
- * and tenant identity." This is that check, in one place, so every
- * controller Sprint 1+ adds calls the same path instead of re-deriving it
- * — the whole point of this session's "shared middleware" cut.
+ * Shared request authentication/authorization. Every authenticated request
+ * verifies signature, allowed algorithm, expiry, session existence, session
+ * revocation, user activation state, and tenant identity. This is that check,
+ * in one place, so every controller calls the same path instead of
+ * re-deriving it.
  *
  * Usage from a controller:
  *   $identity = AuthMiddleware::authenticate($pdo);
@@ -23,18 +22,15 @@ use PDO;
  *   AuthMiddleware::requireTenant($identity, $resource['barangay_id']);
  *
  * `authenticate()` never authorizes role/tenant — that's deliberately
- * separate (§2 Rule 6: RBAC and object ownership are enforced server-side,
- * per endpoint) so a controller can't accidentally skip the role/tenant
- * check just because it called authenticate().
+ * separate (RBAC and object ownership are enforced server-side, per
+ * endpoint) so a controller can't accidentally skip the role/tenant check
+ * just because it called authenticate().
  */
 final class AuthMiddleware
 {
-    // Sliding renewal: §6 says a valid session's expiry may be extended;
-    // it doesn't say how eagerly. Renewing only once remaining life drops
-    // below half the token lifetime avoids a write on every single
-    // request while still keeping an active user's session alive
-    // indefinitely. Logged as a resolved decision (not stated in the
-    // reference) in DEVLOG.md.
+    // Sliding renewal: renewing only once remaining life drops below half the
+    // token lifetime avoids a write on every request while still keeping an
+    // active user's session alive.
     private const RENEW_WHEN_REMAINING_FRACTION = 0.5;
 
     /**
@@ -92,17 +88,17 @@ final class AuthMiddleware
         }
         if ((int) $row['is_active'] !== 1) {
             // Deactivation is supposed to revoke sessions transactionally
-            // (§6 PATCH /users/:id) — this is defense in depth for the
-            // window between deactivation and that revocation landing.
+            // (PATCH /users/:id); this is defense in depth for the window
+            // between deactivation and that revocation landing.
             throw new ApiError(401, 'UNAUTHORIZED', 'Invalid or expired token.');
         }
         if ((int) $row['is_suspended'] === 1) {
-            // Migration 0011: is_suspended is a third, independent axis from
-            // is_active (§4). UsersController::updateStatus() revokes every
-            // session transactionally when it suspends someone, same as
-            // deactivation above — this is the matching defense-in-depth for
-            // the window between that suspension and the revocation landing,
-            // or for a suspension set outside that endpoint entirely.
+            // is_suspended is a third, independent axis from is_active.
+            // UsersController::updateStatus() revokes every session
+            // transactionally when it suspends someone, same as deactivation
+            // above; this is the matching defense-in-depth for the window
+            // between that suspension and the revocation landing, or for a
+            // suspension set outside that endpoint entirely.
             throw new ApiError(401, 'UNAUTHORIZED', 'Invalid or expired token.');
         }
 
@@ -111,7 +107,7 @@ final class AuthMiddleware
             'barangay_id' => (int) $row['barangay_id'],
             'role' => (string) $row['role'],
         ];
-        // Decision 15C (2026-10-07): an ADMIN device session (the Chief
+        // An ADMIN device session (the Chief
         // Tanod's phone) is scope-limited to SessionPolicy's allow-list.
         // Checked BEFORE renewal so a denied probe never extends the token.
         if ((string) $row['session_kind'] === SessionPolicy::KIND_DEVICE && $identityForScope['role'] === 'admin') {
@@ -135,13 +131,13 @@ final class AuthMiddleware
     /**
      * Scope gate for an admin DEVICE session (SessionPolicy::
      * ADMIN_DEVICE_ALLOWLIST). Anything off the table is 403
-     * DEVICE_SESSION_SCOPE and audited (ids/method+path only, Rule 8).
+     * DEVICE_SESSION_SCOPE and audited (ids/method+path only).
      *
      * Allow-listed STATE-CHANGING calls (marked signed_write) follow the same
      * mobile-write rules as a Tanod's: an `X-Device-Id` header is required
      * (400), it must be an active device registered to THIS account (422,
      * same code Tanod writes use), and when that device has a hardware key on
-     * file the H-09 signature must verify (401) — reusing
+     * file the device signature must verify (401) — reusing
      * DeviceSignature::verifyOrReject() unchanged, so the same phased rollout
      * applies (a keyless device is held to the header + ownership check, not
      * less). Reads and the bootstrap calls (register, logout,
@@ -183,14 +179,13 @@ final class AuthMiddleware
     }
 
     /**
-     * A deliberately looser resolver, for logout only. §6: "The server
-     * ignores a second logout safely" — but the strict authenticate()
-     * above rejects an already-revoked session with 401, so a repeat
-     * logout call (client retry, double-click, race between two tabs)
-     * would fail instead of getting the idempotent {success:true} the
-     * spec asks for. This still requires a validly-signed, unexpired JWT
+     * A deliberately looser resolver, for logout only: a repeat logout call
+     * must be safe. The strict authenticate() above rejects an already-revoked
+     * session with 401, so a repeat logout (client retry, double-click, race
+     * between two tabs) would fail instead of getting the idempotent
+     * {success:true}. This still requires a validly-signed, unexpired JWT
      * matching a real session row (so a forged/garbage token still gets
-     * 401) — it just doesn't reject an already-revoked or deactivated-user
+     * 401); it just doesn't reject an already-revoked or deactivated-user
      * session, since "log out of a session that's already logged out" is
      * a no-op, not an auth failure.
      *
@@ -257,8 +252,8 @@ final class AuthMiddleware
     }
 
     /**
-     * §2 Rule 8: the four barangays are isolated tenants; every
-     * resource-scoped endpoint must enforce this, not just role.
+     * The four barangays are isolated tenants; every resource-scoped
+     * endpoint must enforce this, not just role.
      */
     public static function requireTenant(array $identity, int $resourceBarangayId): void
     {
@@ -273,19 +268,15 @@ final class AuthMiddleware
     }
 
     /**
-     * Code-review finding H-06/H-07 (2026-09-24): neither denial above was
-     * ever audited. Both this method's callers are frequently invoked from
-     * INSIDE a controller's own open transaction (e.g.
-     * DispatchController::create()'s requireTenant() call at line ~134) —
-     * writing on the same connection as that transaction would have this
-     * row erased by the controller's own rollBack() in its catch block. So
-     * this uses baranguard_db_fresh() (a new, non-memoized connection),
-     * never the baranguard_db() singleton, specifically so the audit row
-     * commits independently of whatever the caller's transaction does.
+     * Audits a role/tenant denial. Callers are frequently inside a
+     * controller's own open transaction, and a write on that connection would
+     * be erased by the controller's rollBack(). So this uses
+     * baranguard_db_fresh() (a new, non-memoized connection), never the
+     * baranguard_db() singleton, so the audit row commits independently.
      *
      * @param array{user_id?:int,barangay_id?:int,role?:string} $identity
      * @param array<string,mixed> $metadata identifiers/statuses only,
-     *        per Rule 8 — never resource content.
+     *        never resource content.
      */
     private static function auditDenial(string $action, array $identity, array $metadata): void
     {
@@ -303,7 +294,7 @@ final class AuthMiddleware
 
     private static function maybeRenew(PDO $pdo, int $sessionId, string $jti, int $userId, int $barangayId, string $role, int $currentExpiresAt, string $sessionKind, int $issuedAt): ?string
     {
-        // Lifetime by session kind (SessionPolicy, 2026-09-19): 24h for a
+        // Lifetime by session kind (SessionPolicy): 24h for a
         // registered device, JWT_EXPIRES_IN_MINUTES for the dashboard.
         $lifetimeSeconds = SessionPolicy::lifetimeSeconds($sessionKind);
         $remaining = $currentExpiresAt - time();
@@ -315,7 +306,7 @@ final class AuthMiddleware
         // A device session never slides past issued_at + 7 days; once the
         // cap is reached it simply runs out and the Tanod signs in again.
         $newExpiresAt = SessionPolicy::capExpiry($sessionKind, $issuedAt, time() + $lifetimeSeconds);
-        // Non-decreasing per §6: only ever push the expiry forward.
+        // Only ever push the expiry forward.
         if ($newExpiresAt <= $currentExpiresAt) {
             return null;
         }

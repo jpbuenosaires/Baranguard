@@ -1,4 +1,4 @@
-/* Extracted from inline styles and split components (UI overhaul Phase 6). Tokens only. */
+/* Extracted from inline styles and split components. Tokens only. */
 
 /* LiveMapCanvas wrapper */
 .lm-canvas {
@@ -43,7 +43,7 @@
 /* ODbL credit: under the zoom buttons (top-right), clear of the bottom drawer, recenter FAB and top-left HUD/rail. */
 .lm-canvas__credit {
   position: absolute;
-  top: 108px; /* below the filter rail (top 52px, about 46px tall), which used to cover it */
+  top: 108px; /* below the filter rail (top 52px, about 46px tall) */
   right: max(10px, env(safe-area-inset-right, 0px));
   z-index: 8;
   max-width: 60%;

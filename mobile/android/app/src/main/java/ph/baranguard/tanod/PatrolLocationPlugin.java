@@ -20,19 +20,16 @@ import com.getcapacitor.annotation.PermissionCallback;
 
 /**
  * PatrolLocationPlugin — the JS-facing start/stop switch for
- * `PatrolLocationService.java` (Mobile Improvement Plan Phase 4.1).
+ * `PatrolLocationService.java`.
  *
  * Deliberately does NOT itself request ACCESS_FINE_LOCATION — the JS
  * caller (`patrolLocationService.ts`'s `startPatrolTracking()`) runs
- * `@capacitor/geolocation`'s `requestPermissions()` first (explicitly,
- * since 2026-09-19 — before that the prompt only ever appeared as a side
- * effect of the Live Map/SOS, so a fresh install going on duty from Home
- * first landed here ungranted), so this plugin only CHECKS the grant and
- * refuses cleanly if it's missing rather than duplicating a second
- * permission-request path for the same runtime permission.
+ * `@capacitor/geolocation`'s `requestPermissions()` first, so this plugin
+ * only CHECKS the grant and refuses cleanly if it's missing rather than
+ * duplicating a second permission-request path for the same permission.
  *
- * DOES request ACCESS_BACKGROUND_LOCATION itself (`requestBackgroundLocationPermission`,
- * added for C7, docs/REMAINING.md) — that one has no equivalent in
+ * DOES request ACCESS_BACKGROUND_LOCATION itself (`requestBackgroundLocationPermission`)
+ * — that one has no equivalent in
  * `@capacitor/geolocation` at all, and Android requires it be requested
  * as a genuinely separate call from FINE/COARSE (see this method's own
  * doc), which only makes sense living next to the plugin that already
@@ -83,7 +80,7 @@ public class PatrolLocationPlugin extends Plugin {
 
     /**
      * Shows the OS's own "ignore battery optimizations" system dialog for
-     * this app — C7 (docs/REMAINING.md): a locked-screen patrol shift is
+     * this app. A locked-screen patrol shift is
      * exactly the scenario Doze/App Standby targets, and this is the
      * documented leading fix if a real device kill is ever reproduced.
      * Grants nothing itself; the user approves or denies the real OS
@@ -136,9 +133,8 @@ public class PatrolLocationPlugin extends Plugin {
     }
 
     /**
-     * Requests ACCESS_BACKGROUND_LOCATION — C7 research finding,
-     * 2026-09-24 (docs/REMAINING.md, AndroidManifest.xml's own comment on
-     * this permission has the full reasoning): declaring
+     * Requests ACCESS_BACKGROUND_LOCATION (AndroidManifest.xml's own comment
+     * on this permission has the full reasoning): declaring
      * `foregroundServiceType="location"` on `PatrolLocationService` is
      * necessary but NOT sufficient for it to keep receiving fixes once
      * the app itself drops out of the foreground (screen locked) — that

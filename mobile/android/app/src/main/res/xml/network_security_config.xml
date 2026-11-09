@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Production traffic is HTTPS only (https://api.baranguardph.win, REFERENCE.md
-  §1), so cleartext is refused for every host. Local development against
+  Production traffic is HTTPS only (https://api.baranguardph.win), so cleartext is refused for every host. Local development against
   http://localhost:8081 (adb reverse) needs cleartext to localhost only; that
   lives in src/debug/res/xml/network_security_config.xml, which replaces this
   file in debug builds and is never packaged in a release APK.

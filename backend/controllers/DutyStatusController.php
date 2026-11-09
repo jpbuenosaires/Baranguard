@@ -11,45 +11,36 @@ use Baranguard\Middleware\AuthMiddleware;
 use PDO;
 
 /**
- * GET /duty-status — Master Reference §6 "Duty status" section, §5
- * `duty_status` table, §9 W3 (Tanod picker only offers currently
- * eligible/on-duty Tanods).
+ * GET /duty-status — two query shapes on the same path: `?user_id=me`
+ * (Tanod, own history) and `?barangay_id=` (Admin/PB, current status per
+ * active user; the Tanod picker only offers eligible/on-duty Tanods).
  *
- * §6 documents two distinct query shapes on the same path:
- * `?user_id=me` (Tanod, own history) and `?barangay_id=` (Admin/PB,
- * current status per active user).
+ * `POST /duty-status` — Tanod only; body `{status,client_event_id}` ->
+ * `{status_id,status,channel:"app",changed_at}`. Valid statuses are
+ * on_duty|responding|off_duty; the server writes channel=app.
  *
- * `POST /duty-status` — added for Sprint 2's M2 Home box. §6: "Tanod
- * only; body `{status,client_event_id}` -> `{status_id,status,
- * channel:"app",changed_at}`. Valid statuses are on_duty|responding|
- * off_duty; server writes channel=app."
+ * Idempotent retry via `client_event_id`: `duty_status` has
+ * `UNIQUE(user_id,client_event_id)` so a retried toggle (e.g. a double-tap
+ * on a slow connection) returns the original row instead of erroring or
+ * creating a second status change.
  *
- * Resolved decision (logged in DEVLOG.md — §6 states the contract but not
- * this specific): **idempotent retry via `client_event_id`.** §5's
- * `duty_status` table has `UNIQUE(user_id,client_event_id)` specifically
- * so a retried toggle (e.g. a Tanod double-tapping on a slow connection)
- * returns the original row instead of erroring or creating a second
- * status change — same pattern already used by `POST /dispatch`'s
- * `request_id` and `POST /shifts`'s `request_id`.
+ * `applyToggle()` is `public` so `SyncController::batch()`
+ * (`duty_status_updates[]` items) reuses the exact same lookup-then-insert
+ * logic `create()` uses.
  *
- * `applyToggle()` (Sprint 3 cut) is `public` so `SyncController::batch()`
- * (POST /sync/batch's `duty_status_updates[]` items) reuses the exact same
- * lookup-then-insert logic `create()` already used inline.
- *
- * OFFLINE OFF-DUTY (closes the A4 / Rule 49 gap): going OFF duty may be
- * queued on the device while offline and arrive later through
- * `/sync/batch`'s `duty_status_updates[]` carrying the device's real tap
- * time as `changed_at`. `applyToggle()` then records the row AT THAT TIME
- * (not the arrival time), so the suggested duty duration
+ * OFFLINE OFF-DUTY: going OFF duty may be queued on the device while
+ * offline and arrive later through `/sync/batch` carrying the device's real
+ * tap time as `changed_at`. `applyToggle()` then records the row AT THAT
+ * TIME (not the arrival time), so the suggested duty duration
  * (`AccomplishmentController::computeSuggestedMinutes()`) ends the on-duty
  * interval when the Tanod actually went off duty. Going ON duty stays
  * online-only: a client `changed_at` is refused for any status other than
  * off_duty. Validation of the client time: not more than
  * FUTURE_SKEW_SECONDS ahead of the server clock, not older than
  * MAX_BACKDATE_DAYS, and not before the Tanod's latest on_duty/responding
- * row (the off-duty must close the shift it belongs to). The active-
- * dispatch block (H-02) applies exactly as for a live toggle, so a queued
- * off-duty is rejected while the server still sees an active dispatch.
+ * row (the off-duty must close the shift it belongs to). The active-dispatch
+ * block applies exactly as for a live toggle, so a queued off-duty is
+ * rejected while the server still sees an active dispatch.
  */
 final class DutyStatusController
 {
@@ -135,13 +126,11 @@ final class DutyStatusController
      * Core duty-status-toggle logic, shared by the direct POST /duty-status
      * path and `SyncController::batch()`'s `duty_status_updates[]` items.
      *
-     * @param string $channel §5 `duty_status.channel` ENUM('app','sms').
-     *        Defaults to 'app'. §2 Rule 13: "`duty_status.channel = 'sms'`
-     *        is written only by the validated internal SMS handler" —
-     *        `SmsGatewayService`'s `/sms/duty-status` handler is the one
-     *        caller that passes 'sms', and only after resolving the
-     *        caller's identity server-side from the device mapping, never
-     *        from anything embedded in the SMS payload.
+     * @param string $channel `duty_status.channel` ENUM('app','sms'). Defaults
+     *        to 'app'. 'sms' is written only by the validated internal SMS
+     *        handler (`SmsGatewayService`'s `/sms/duty-status`), which
+     *        resolves the caller's identity server-side from the device
+     *        mapping, never from anything embedded in the SMS payload.
      * @param mixed $clientChangedAt Optional device time (ISO-8601 with Z or
      *        offset) of a queued OFF-duty toggle — see the class doc. Only
      *        `SyncController` passes it; null keeps the server-time behaviour.
@@ -193,14 +182,11 @@ final class DutyStatusController
             $changedAt = self::validateClientChangedAt($pdo, (int) $identity['user_id'], $clientChangedAt);
         }
 
-        // Code-review finding H-02 (2026-09-24): nothing here checked
-        // whether the caller had an active dispatch before letting them go
-        // off_duty, so live rosters and actual field coverage could
-        // silently diverge. Checked only for a genuinely NEW status change
-        // (after the idempotent-retry return above), so replaying an
-        // already-recorded off_duty transition via the same client_event_id
-        // still short-circuits to the original success rather than
-        // re-running this check.
+        // Going off_duty with an active dispatch is blocked, so live rosters
+        // and field coverage cannot silently diverge. Checked only for a
+        // genuinely NEW status change (after the idempotent-retry return above),
+        // so replaying an already-recorded off_duty transition still
+        // short-circuits to the original success.
         if ($status === 'off_duty') {
             $activeDispatchStmt = $pdo->prepare(
                 "SELECT 1 FROM dispatch
@@ -328,7 +314,7 @@ final class DutyStatusController
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     private static function currentByBarangay(PDO $pdo, array $identity): void
     {
-        // "Current" = latest row by changed_at per active Tanod (§6).
+        // "Current" = latest row by changed_at per active Tanod.
         $stmt = $pdo->prepare(
             "SELECT ds.user_id, ds.status, ds.channel, ds.changed_at
              FROM duty_status ds

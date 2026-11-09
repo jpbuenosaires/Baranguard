@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Baranguard — offline OFF-duty (closes WORKFLOWS_AND_RULES assumption A4).
+# Baranguard — offline OFF-duty.
 #
 # Going OFF duty may be queued on the device while offline and reach the
 # server later through POST /sync/batch's `duty_status_updates[]`, carrying

@@ -1,5 +1,5 @@
 # Baranguard - Task Scheduler entry point for the night-time dispatch offer
-# sweeper (Wave 2). Runs backend/scripts/dispatch-offer-sweeper.php --once,
+# sweeper. Runs backend/scripts/dispatch-offer-sweeper.php --once,
 # registered by install-scheduled-backup-jobs.ps1 as
 # BaranguardDispatchOfferSweeper, every minute.
 #

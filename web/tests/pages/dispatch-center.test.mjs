@@ -155,7 +155,7 @@ describe('Dispatch Center behaviour', () => {
     let calls = api.callsTo('POST', '/dispatch');
     assert.equal(calls.length, 1);
     assert.equal(calls[0].body.override_reason, undefined, 'the first attempt must not pre-fill an override');
-    // The override dialog now asks for a REQUIRED reason.
+    // The override dialog asks for a REQUIRED reason.
     assert.match(text(dialog()), /No published shift/i);
     assert.ok($('#confirm-dialog-input', dialog()), 'override reason field missing');
     click(confirmButton());

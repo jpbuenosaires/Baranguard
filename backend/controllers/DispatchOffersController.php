@@ -13,9 +13,9 @@ use Baranguard\Services\Scheduling\RosterSupport;
 use PDO;
 
 /**
- * Dispatch offers (Wave 2 review decision, migration 0038). The model, the
- * night window, the 180 s timeout and the escalation rules are documented on
- * `OfferService`; this class is the HTTP surface.
+ * Dispatch offers. The model, the night window, the 180 s timeout and the
+ * escalation rules are documented on `OfferService`; this class is the HTTP
+ * surface.
  *
  *   GET   /dispatch-offers              tanod: own still-acceptable offers;
  *                                       admin|secretary|punong_barangay:
@@ -26,7 +26,6 @@ use PDO;
  *                                       body {request_id}: first accept wins
  *   PATCH /dispatch-offers/:id/cancel   admin, Idempotency-Key
  *
- * Resolved decisions (logged for DOC NOTES):
  *   - ACCEPT IS ONLINE-ONLY. It is not a /sync/batch kind and never enters
  *     the offline queue: whether you won can only be known by the server.
  *   - The dispatch an accept creates uses `DispatchController::
@@ -44,8 +43,8 @@ use PDO;
  *   - Timestamps in this API are ISO-8601 UTC (`...Z`) so a phone can run a
  *     countdown to `expires_at` without guessing a timezone.
  *
- * Cross-tenant and non-recipient are 404, never 403 (Rule 2). Audit metadata
- * is identifiers, rounds, statuses and counts only (Rule 8).
+ * Cross-tenant and non-recipient are 404, never 403. Audit metadata is
+ * identifiers, rounds, statuses and counts only.
  */
 final class DispatchOffersController
 {

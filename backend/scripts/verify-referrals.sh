@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Baranguard — incident referral ("Delegated to") backend verification.
-# docs/FEATURE_CONTRACT_2026-10.md §5, migration 0032, ReferralsController.
+# Migration 0032, ReferralsController.
 #
 # Covers: POST /incidents/:id/referrals (happy path, validation, web
 # Idempotency-Key replay, Tanod client_event_id + ownership, role 403s,
@@ -29,8 +29,7 @@ step() { echo; echo "=== $1 ==="; }
 expect_eq() { if [ "$1" = "$2" ]; then pass "$3 ($2)"; else fail "$3 — expected '$2', got '$1'"; fi; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: backend/.env's DB_PORT (this machine's XAMPP MariaDB is
-# not on 3306 — see docs/REFERENCE.md Sec 8), then the stock 3306.
+# Port default: backend/.env's DB_PORT, else 3306.
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -46,7 +45,7 @@ echo "Baranguard referral backend verification — $(date -u +%Y-%m-%dT%H:%M:%SZ
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path first, PATH only as a fallback (docs/REFERENCE.md Sec 8).
+  # Explicit XAMPP path first, PATH only as a fallback.
   for c in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$c" ] && { echo "$c"; return; }
   done

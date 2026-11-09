@@ -1,6 +1,6 @@
 /**
  * swap-requests.js — Personnel > Swap Requests Tab.
- * Overhauled UI/UX:
+ * Features:
  * - Visual Swap Flow Cell: Requester avatar ➔ Target avatar / "Open Request" tag
  * - Dedicated reason quote callout box
  * - Shift details with patrol zone badge and calculated duration
@@ -221,7 +221,7 @@ export function renderSwapRequestsTab(container, user, onCountsChanged) {
     try {
       const [requestsRes, shiftsRes, tanodsRes] = await Promise.all([
         getShiftSwapRequests({ limit: 100 }),
-        // Shifts for the lookup: a window from 30 days ago onward, all pages (audit F-09).
+        // Shifts for the lookup: a window from 30 days ago onward, all pages.
         fetchAllPages((p) => getShifts({ from: addDays(manilaToday(), -30), ...p })),
         loadTanodRoster(user).then((items) => ({ items })),
       ]);
@@ -632,7 +632,7 @@ function formatDuration(startAt, endAt) {
   return hours % 1 === 0 ? `${hours} hrs` : `${hours.toFixed(1)} hrs`;
 }
 
-// 2026-10-12: approving a swap on a published shift keeps it PUBLISHED —
+// Approving a swap on a published shift keeps it PUBLISHED —
 // the roster was already signed, only the name changes, so there is no
 // re-approval step. Releasing with no named target leaves it unassigned
 // (assigning someone later is a normal edit, which does return it to draft).

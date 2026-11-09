@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/** Route table for /shift-swap-requests (§6 "Shifts" section). */
+/** Route table for /shift-swap-requests. */
 
 use Baranguard\Controllers\ShiftSwapRequestsController;
 

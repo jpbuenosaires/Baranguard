@@ -1,8 +1,7 @@
 /**
- * SmsFallbackBadge.tsx — the display half of M13 SMS Fallback Confirmation
- * (§9). Renders nothing when `deriveSmsFallbackState` returns null (the
- * record already reached the workstation — there is no fallback state to
- * confirm). See smsFallbackState.ts for the current-capability scope note.
+ * SmsFallbackBadge.tsx — the display half of the SMS fallback confirmation. Renders nothing when
+ * `deriveSmsFallbackState` returns null (the record already reached the workstation — there is no
+ * fallback state to confirm).
  */
 
 import type { SmsFallbackInput } from '../services/smsFallbackState';

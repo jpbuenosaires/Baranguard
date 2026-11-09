@@ -1,6 +1,6 @@
 /**
  * routeProgress.ts — client-side route progress engine for live
- * turn-by-turn navigation (M6 Assignment Detail).
+ * turn-by-turn navigation (Assignment Detail).
  *
  * Given the Tanod's current GPS position, the route geometry (GeoJSON
  * LineString coordinates), and the route steps from ORS, computes the

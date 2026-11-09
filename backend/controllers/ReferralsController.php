@@ -13,8 +13,7 @@ use DateTimeZone;
 use PDO;
 
 /**
- * Incident referrals ("Delegated to") — docs/FEATURE_CONTRACT_2026-10.md §5,
- * migration 0032, table `incident_referral`.
+ * Incident referrals ("Delegated to"), table `incident_referral`.
  *
  * A referral records that an incident was handed to another agency/office.
  * It is a DELEGATION LOG, not a case registry:
@@ -29,17 +28,17 @@ use PDO;
  *   GET  /incidents/:id/referrals  tanod (own scope) | admin | secretary | punong_barangay
  *   GET  /referrals                admin | secretary | punong_barangay
  *
- * Authorization (Rule 2): role -> tenant (cross-tenant is 404, never 403)
+ * Authorization: role -> tenant (cross-tenant is 404, never 403)
  * -> Tanod ownership (reported the incident, or has/had a dispatch on it;
  * anything else is 404 as well, so existence is never confirmed).
  *
- * Idempotency (Rule 3, the two mechanisms are not interchangeable):
+ * Idempotency (the two mechanisms are not interchangeable):
  *   - Tanod/mobile/sync: body `client_event_id` (+ `X-Device-Id`, ownership
  *     verified server-side).
  *   - Admin/Secretary/web: `Idempotency-Key` UUID header. It is stored in
- *     the same `client_event_id` column (same precedent as
- *     IncidentsController::createWeb()); UNIQUE(created_by, client_event_id)
- *     makes a retry return the original row, never a second one.
+ *     the same `client_event_id` column (as IncidentsController::createWeb()
+ *     does); UNIQUE(created_by, client_event_id) makes a retry return the
+ *     original row, never a second one.
  *
  * `createItem()` is the sync entry point (POST /sync/batch `referrals[]`).
  * A sync item may carry `incident_client_event_id` instead of `incident_id`
@@ -49,7 +48,7 @@ use PDO;
  * maps SQLSTATE 23000 to a 'duplicate' result.
  *
  * Audit `incident_referral_created`, metadata `{incident_id, referred_to}`
- * only (Rule 8: never the free-text labels, contact or reference number).
+ * only (never the free-text labels, contact or reference number).
  */
 final class ReferralsController
 {
@@ -86,7 +85,7 @@ final class ReferralsController
                 throw new ApiError(400, 'VALIDATION_ERROR', 'X-Device-Id header is required.');
             }
             self::assertDeviceOwnership($pdo, $identity, $deviceId);
-            // H-09: no-op for a device that has no registered Keystore key.
+            // No-op for a device that has no registered Keystore key.
             DeviceSignature::verifyOrReject($pdo, $deviceId, $identity['user_id']);
             $clientEventId = $body['client_event_id'] ?? null;
             if (!is_string($clientEventId) || !preg_match(self::UUID_PATTERN, $clientEventId)) {
@@ -134,7 +133,7 @@ final class ReferralsController
     {
         AuthMiddleware::requireRole($identity, ['tanod']);
         self::assertDeviceOwnership($pdo, $identity, $deviceId);
-        // H-09, per item: one signature covers the sync batch request and every
+        // Per item: one signature covers the sync batch request and every
         // item is held to it exactly like GpsController::createItem. No-op for a
         // device with no registered Keystore key.
         DeviceSignature::verifyOrReject($pdo, $deviceId, $identity['user_id']);
@@ -189,7 +188,7 @@ final class ReferralsController
      * {referral_id, incident_id, display_id, incident_type, referred_to,
      * other_text, referred_at, reference_no}: no narrative, names, contacts
      * or coordinates. `from`/`to` are inclusive Manila calendar dates
-     * (YYYY-MM-DD), bucketed in PHP against a fixed +08:00 (Rule 11).
+     * (YYYY-MM-DD), bucketed in PHP against a fixed +08:00.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -293,7 +292,7 @@ final class ReferralsController
             throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
         }
         $incidentId = (int) $incident['incident_id'];
-        // Cross-tenant is 404, never 403 (Rule 2).
+        // Cross-tenant is 404, never 403.
         AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
         if ($identity['role'] === 'tanod' && !self::tanodMayAccess($pdo, $incidentId, $identity['user_id'])) {
             throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
@@ -332,7 +331,7 @@ final class ReferralsController
         ]);
         $referralId = (int) $pdo->lastInsertId();
 
-        // Identifiers and the enum value only (Rule 8).
+        // Identifiers and the enum value only.
         Audit::record(
             $pdo,
             $identity['barangay_id'],
@@ -408,8 +407,8 @@ final class ReferralsController
     }
 
     /**
-     * §6/§7's Tanod relationship rule: an incident they reported, or one
-     * they have (or had) a dispatch for. Mirrors
+     * The Tanod relationship rule: an incident they reported, or one they
+     * have (or had) a dispatch for. Mirrors
      * IncidentsController::tanodMayAccess() (private there).
      */
     private static function tanodMayAccess(PDO $pdo, int $incidentId, int $userId): bool
@@ -466,7 +465,7 @@ final class ReferralsController
             throw new ApiError(400, 'VALIDATION_ERROR', 'referred_at must be an ISO 8601 date-time.');
         }
         try {
-            // A value with no zone designator is read as UTC (storage is UTC, Rule 11).
+            // A value with no zone designator is read as UTC (storage is UTC).
             $parsed = new DateTimeImmutable($value, $utc);
         } catch (\Exception) {
             throw new ApiError(400, 'VALIDATION_ERROR', 'referred_at must be an ISO 8601 date-time.');
@@ -478,7 +477,7 @@ final class ReferralsController
         return $parsed->format('Y-m-d H:i:s');
     }
 
-    /** Manila midnight of a YYYY-MM-DD date, expressed in UTC (fixed +08:00, Rule 11). */
+    /** Manila midnight of a YYYY-MM-DD date, expressed in UTC (fixed +08:00). */
     private static function manilaDayStartUtc(string $date, string $field): DateTimeImmutable
     {
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {

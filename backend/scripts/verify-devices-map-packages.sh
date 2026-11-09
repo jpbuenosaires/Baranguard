@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Baranguard — Sprint 2 backend: POST /devices/register,
+# Baranguard — POST /devices/register,
 # PATCH /devices/:id/deactivate, GET /map-packages/:barangay_id,
 # GET /map-packages/:barangay_id/download.
 #
@@ -7,12 +7,11 @@
 # (baranguard_devices_check) with a disposable app-user, disposable test
 # accounts, disposable package files, and a PHP dev server on a throwaway
 # port. Your real `baranguard` database, real backend/.env, and Apache are
-# never touched. Mirrors the prior verify-*.sh scripts' conventions.
+# never touched.
 #
 # NOTE: this script deliberately does NOT pass `-d variables_order=EGPCS`
 # to `php -S`. It relies on config/env.php honoring an exported env var
-# over backend/.env — which is exactly the regression fixed on
-# 2026-09-02. If that fix is ever reverted, this script's very first
+# over backend/.env. If that behavior regresses, this script's very first
 # login will fail (it would be talking to the real database, where these
 # test accounts don't exist), which is the intended early warning.
 #
@@ -33,10 +32,8 @@ expect_eq() { # expect_eq <actual> <expected> <label>
 }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -53,12 +50,8 @@ echo "Baranguard Sprint 2 devices + map-packages validation — $(date -u +%Y-%m
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for candidate in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$candidate" ] && { echo "$candidate"; return; }
   done
@@ -100,11 +93,10 @@ mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CH
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0001_baseline_schema.sql" && pass "0001 baseline applied" || fail "0001 apply failed"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0002_seed_barangays.sql" && pass "0002 barangays seeded" || fail "0002 seed failed"
 # 0007 adds mobile_device.deactivated_at, which DevicesController now
-# writes on every deactivation (§11's 90-day device-retention clock).
+# writes on every deactivation (the device-retention clock).
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0007_retention_columns.sql" && pass "0007 applied" || fail "0007 failed"
 
-# FULL CHAIN — see verify-sprint1-auth.sh's note. This suite applied a
-# partial schema and so 500'd at login from 2026-09-05 onward.
+# Apply the full migration chain, not a subset.
 for m in $(cd "$BACKEND_DIR/migrations" && ls [0-9]*.sql | grep -v '\.down\.sql$' | sed 's/\.sql$//' | sort | awk -v s=0003_shift_schedule_nullable_user '$0 >= s'); do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
@@ -189,13 +181,13 @@ db_one() { mysql_exec -N -s "$VALDB" -e "$1"; }
 # POST /devices/register
 # ============================================================
 step "4. POST /devices/register — role gating and validation"
-# 2026-10-07 (decision 15C, Wave 3-G): the Chief Tanod's phone is an admin device, so Admin may now register one.
+# The Chief Tanod's phone is an admin device, so Admin may register one.
 expect_eq "$(status_of POST /devices/register "$ADMIN_TOKEN" '{"device_id":"admin-device-001","fcm_token":"tok","platform":"android"}')" "200" "Admin can register a device (Chief Tanod phone, decision 15C)"
 expect_eq "$(db_one "SELECT user_id FROM mobile_device WHERE device_id='admin-device-001';")" "$(db_one "SELECT user_id FROM user WHERE username='dev_admin';")" "Admin device row belongs to the admin"
 expect_eq "$(status_of POST /devices/register "$SEC_TOKEN" '{"device_id":"sec-device-001","fcm_token":"tok","platform":"android"}')" "403" "Secretary cannot register a device"
 expect_eq "$(status_of POST /devices/register "$T1_TOKEN" '{"device_id":"short","fcm_token":"tok","platform":"android"}')" "400" "device_id shorter than 8 chars rejected"
 expect_eq "$(status_of POST /devices/register "$T1_TOKEN" '{"device_id":"tanod1-device-aaa","fcm_token":"tok","platform":"ios"}')" "400" "platform other than android rejected"
-# fcm_token is OPTIONAL as of 2026-09-13 (DevicesController.php's class
+# fcm_token is OPTIONAL (see DevicesController.php's class
 # doc) — a device without a real Firebase project must still be able to
 # register, storing '' the same way RetentionService's scrub already
 # represents "no token". Uses a throwaway device_id so it doesn't collide
@@ -217,10 +209,8 @@ expect_eq "$(echo "$REG" | "$PHP_BIN" -r '$d=json_decode(file_get_contents("php:
 if echo "$REG" | grep -qi "fcm"; then fail "Response leaked an FCM token/field (§6: returns no FCM token)"; else pass "Response contains no FCM token (§6)"; fi
 expect_eq "$(db_one "SELECT is_active FROM mobile_device WHERE device_id='tanod1-device-aaa';")" "1" "Device row is active in DB"
 expect_eq "$(db_one "SELECT fcm_token FROM mobile_device WHERE device_id='tanod1-device-aaa';")" "fcm-token-one" "fcm_token stored server-side"
-# Scoped to THIS device_id specifically — step 4 above now also registers
-# a real device (the missing-fcm_token case), which legitimately writes
-# its own device_registered row, so an unscoped COUNT(*) over the whole
-# table is no longer "exactly one" account-wide.
+# Scoped to THIS device_id: step 4 also registers a device (the
+# missing-fcm_token case), which writes its own device_registered row.
 expect_eq "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='device_registered' AND metadata_json LIKE '%tanod1-device-aaa%';")" "1" "audit_log has one device_registered row for this device"
 if db_one "SELECT metadata_json FROM audit_log WHERE action='device_registered' AND metadata_json LIKE '%tanod1-device-aaa%';" | grep -qi "fcm-token-one"; then
   fail "Audit metadata leaked the FCM token (§2 Rule 17)"

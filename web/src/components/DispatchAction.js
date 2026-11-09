@@ -2,7 +2,7 @@
  * DispatchAction.js — the Tanod-picker-dialog + `POST /dispatch` flow,
  * extracted from `dispatch-center.js`'s Pending Incidents queue so
  * `incident-management.js`'s detail pane can trigger the exact same
- * dispatch (§9 W3) instead of growing a second, drifting copy of it.
+ * dispatch instead of growing a second, drifting copy of it.
  *
  * Admin-only by construction: `createDispatch` -> `POST /dispatch` 403s
  * for any other role server-side (`DispatchController::create`), so this
@@ -53,8 +53,7 @@ function formatFixAge(seconds) {
  * in and nothing else. The Admin still chooses, `POST /dispatch` still
  * enforces its own rules, and no automatic assignment happens anywhere.
  *
- * HONESTY RULES, because a wrong distance is worse than no distance
- * (§2 Rule 6):
+ * HONESTY RULES, because a wrong distance is worse than no distance:
  *   - A Tanod with no live fix is never given a guessed position. They
  *     sort last, labelled "location unknown", and stay selectable — an
  *     Admin who knows where their people are must not be blocked by a
@@ -129,7 +128,7 @@ function rankByProximity(eligibleTanods, positions, incident) {
  */
 export async function promptDispatchTanod({ incident, incidentTypeLabel, eligibleTanods, tanodPositions }) {
   if (eligibleTanods.length === 0) {
-    // Never fail silently (audit A-01): the Chief must learn why nothing
+    // Never fail silently: the Chief must learn why nothing
     // opened, and what to do at the worst moment, e.g. a night call.
     showToast('No tanod is on duty. Open Personnel > Scheduler or use Broadcast to on-duty tanods.', { variant: 'warning', duration: 8000 });
     return false;

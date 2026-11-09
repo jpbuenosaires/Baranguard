@@ -22,7 +22,7 @@ export function isActiveDispatchStatus(status: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// List helpers (Phase 4): client-side filtering and capping for the console.
+// List helpers: client-side filtering and capping for the console.
 
 export const LIST_PAGE_SIZE = 20;
 export const LIVE_OFFER_STATUSES = ['open', 'escalated'];
@@ -74,7 +74,7 @@ export function formatUpdatedAt(d: Date | null): string {
 }
 
 // ---------------------------------------------------------------------------
-// SOS helpers (Phase 4)
+// SOS helpers
 
 /** Newest first by raised time; unparsable times sort last. Does not mutate. */
 export function sortNewestFirst<T extends { triggeredAt: string }>(items: T[]): T[] {

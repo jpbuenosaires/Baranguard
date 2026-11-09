@@ -1,7 +1,6 @@
 /**
- * deviceKey.ts — the TypeScript edge of `DeviceKeyPlugin.java` (Android),
- * a LOCAL custom Capacitor plugin for code-review finding H-09
- * (2026-09-24 external audit): "X-Device-Id is an identifier, not strong
+ * deviceKey.ts — the TypeScript edge of `DeviceKeyPlugin.java` (Android), a LOCAL custom Capacitor
+ * plugin that gives each device a Keystore-backed signing key: "X-Device-Id is an identifier, not strong
  * proof of device authenticity."
  *
  * Real usage lives in `deviceIdentity.ts`'s `getDevicePublicKeyPem()` /

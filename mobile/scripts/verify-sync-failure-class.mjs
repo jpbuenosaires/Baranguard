@@ -1,5 +1,5 @@
-// verify-sync-failure-class.mjs — pins how a failed dispatch-status sync result is classified
-// (docs/OFFLINE_SYNC_CONFLICT_RULES.md gap 3). Run: node scripts/verify-sync-failure-class.mjs
+// verify-sync-failure-class.mjs — pins how a failed dispatch-status sync result is classified.
+// Run: node scripts/verify-sync-failure-class.mjs
 // (Node >= 22.18, no install, no server). The reason strings below are copied from backend/ source.
 
 const { classifyDispatchFailure } = await import('../src/services/syncFailureClass.ts');

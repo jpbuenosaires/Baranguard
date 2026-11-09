@@ -12,56 +12,44 @@ use Baranguard\Services\Pdf\SimplePdf;
 use PDO;
 
 /**
- * GET /reports/summary — Master Reference §6 "Audit / reports" section,
- * §9 W2 Admin Dashboard screen spec, §7 role matrix ("View/generate
- * reports": Admin full, Punong Barangay read-only — both simply GET here,
- * there is no separate write path to restrict further).
+ * GET /reports/summary — Admin full, Punong Barangay read-only (both simply
+ * GET; there is no write path to restrict further).
  *
- * The reference fixes the response's top-level keys
- * ({total_incidents,resolved_count,avg_response_time_minutes,active_tanods,
- * by_incident_type,by_status,trend}) and states avg_response_time_minutes
- * is exactly incident.created_at -> dispatch.arrived_at for incidents that
- * reached arrived (§6) — but the "?..." after the endpoint is never
- * expanded, and by_incident_type/by_status/trend[]'s internal shapes are
- * only described in prose ("trend[] with a defined date bucket and
- * counts", §9). Resolved decisions, logged in DEVLOG.md:
+ * Top-level keys: {total_incidents,resolved_count,avg_response_time_minutes,
+ * active_tanods,by_incident_type,by_status,trend} plus the extras noted at
+ * each computation below. avg_response_time_minutes is incident.created_at ->
+ * dispatch.arrived_at for incidents that reached arrived.
  *
- *   - **Fixed 2026-09 (REMAINING.md F8):** an incident with more than one
- *     arrived dispatch was being averaged once per dispatch row, double-
- *     (or triple-) counting it against §6's "per incident" definition.
- *     The query now takes the per-incident MIN(arrived_at) — the first
- *     responder to reach the scene — so every incident contributes
- *     exactly one data point. Applies to the summary scalar, the
- *     per-day response_time_trend[], and the export path's
- *     averageResponseTimeMinutes() — all three shared the same bug.
+ *   - The response time takes the per-incident MIN(arrived_at) (the first
+ *     responder to reach the scene), so every incident contributes exactly
+ *     one data point even with several arrived dispatches. This applies to
+ *     the summary scalar, the per-day response_time_trend[], and the export
+ *     path's averageResponseTimeMinutes().
  *
  *   - Query params: optional `date_from` / `date_to` (YYYY-MM-DD,
- *     inclusive, calendar days in Asia/Manila per §5's UI-display-uses-
- *     Asia/Manila rule). Default range when neither is given: trailing 30
- *     days (today back 29 days). Range capped at 366 days to keep trend[]
- *     bounded. date_from later than date_to, or either malformed, is 400
- *     VALIDATION_ERROR.
- *   - by_incident_type / by_status: objects keyed by every §5 enum member
+ *     inclusive, calendar days in Asia/Manila). Default range when neither
+ *     is given: trailing 30 days (today back 29 days). Range capped at 366
+ *     days to keep trend[] bounded. date_from later than date_to, or either
+ *     malformed, is 400 VALIDATION_ERROR.
+ *   - by_incident_type / by_status: objects keyed by every enum member
  *     (incident_type / status respectively), value = count in range,
- *     always present at 0 rather than omitted — so the dashboard never has
+ *     always present at 0 rather than omitted, so the dashboard never has
  *     to assume which keys can appear.
  *   - trend[]: one entry per calendar day in the range, in order,
- *     {date:"YYYY-MM-DD", count:N} — count is incidents created that
+ *     {date:"YYYY-MM-DD", count:N}: count is incidents created that
  *     Asia/Manila day. Every day in the range is present even at count 0,
  *     so the chart never has to infer a gap in the series.
  *   - avg_response_time_minutes is null (not 0) when no incident in range
- *     reached `arrived` — a real zero-minute average and "no data" are
+ *     reached `arrived`: a real zero-minute average and "no data" are
  *     different facts and must not collide on the same value.
  *   - active_tanods is a current-state count (same-barangay active tanods
  *     whose most recently recorded duty_status is on_duty/responding), not
- *     filtered by the date range — "active" is a snapshot, not a report
- *     metric over a period. Sprint 1 hasn't built duty-toggle yet (that's
- *     mobile M2, Sprint 2), so this is legitimately 0 until then — the
- *     dashboard's fresh-deployment empty state (§9) covers this case too.
+ *     filtered by the date range: "active" is a snapshot, not a report
+ *     metric over a period.
  *
  * Day-boundary math is done in PHP against a fixed Asia/Manila = UTC+8
  * offset (the Philippines has no DST) rather than MariaDB's CONVERT_TZ(),
- * which depends on the mysql.time_zone_name tables being loaded — not
+ * which depends on the mysql.time_zone_name tables being loaded, not
  * guaranteed on a stock XAMPP install. incident_created_at is fetched as
  * stored UTC and converted in PHP for trend bucketing instead.
  */
@@ -73,11 +61,9 @@ final class ReportsController
         'missing_person', 'animal_complaint', 'other',
     ];
     /**
-     * Every incident status (migration 0025 added the four lifecycle
-     * states). Audit P-06 (2026-10-09): only the first three used to be
-     * counted, so by_status stopped adding up to total_incidents as soon as
-     * one incident was reopened/cancelled/invalid/duplicate. Additive keys,
-     * always present at 0.
+     * Every incident status, including the four lifecycle states, so
+     * by_status always adds up to total_incidents. Keys are always present
+     * at 0.
      */
     private const INCIDENT_STATUSES = ['pending', 'dispatched', 'resolved', 'reopened', 'cancelled', 'invalid', 'duplicate'];
     private const MAX_RANGE_DAYS = 366;
@@ -116,12 +102,9 @@ final class ReportsController
         $byType = array_fill_keys(self::INCIDENT_TYPES, 0);
         $byStatus = array_fill_keys(self::INCIDENT_STATUSES, 0);
         // by_hour[]: incidents by Asia/Manila hour-of-day, 0-23, summed
-        // across every day in the range — Phase 9 of the mockup-driven UI
-        // round 2 (see .claude/plans/clever-wishing-hummingbird.md). §8
-        // names this the legitimate replacement for the rejected
-        // cross-barangay "Performance by Barangay" chart: a real,
-        // single-barangay time-of-day distribution, not a comparison
-        // across tenants the current model can't produce.
+        // across every day in the range: a real, single-barangay
+        // time-of-day distribution (there is no cross-barangay comparison,
+        // since the model has one tenant per caller).
         $byHour = array_fill(0, 24, 0);
 
         $trendMap = [];
@@ -151,11 +134,11 @@ final class ReportsController
             $byHour[(int) $createdAtManila->format('G')]++;
         }
 
-        // Second trend series: incidents CLOSED OUT per day, for W2's
+        // Second trend series: incidents CLOSED OUT per day, for the
         // reported-vs-resolved line chart.
         //
         // Bucketed on dispatch.completed_at because that is the only
-        // resolution moment this schema actually records — `incident` has
+        // resolution moment this schema actually records: `incident` has
         // no resolved_at column, and `updated_at` moves on any write, so
         // neither can honestly answer "resolved on which day". An incident
         // closed by the Admin resolve action without a completed dispatch
@@ -163,9 +146,8 @@ final class ReportsController
         // to this per-day series (a timing series); the two answer
         // different questions and are not expected to reconcile.
         //
-        // Audit P-07 (2026-10-09): counted per INCIDENT per day, not per
-        // completed dispatch -- a multi-responder incident used to count
-        // once per responder, so the "resolved" line could exceed the
+        // Counted per INCIDENT per day, not per completed dispatch, so a
+        // multi-responder incident cannot push the "resolved" line above the
         // "reported" one. One incident counts at most once per Manila day.
         $resolvedMap = array_fill_keys(array_keys($trendMap), 0);
         $resolvedSeen = [];
@@ -194,11 +176,11 @@ final class ReportsController
         }
 
         // Response-time metric: incident.created_at -> FIRST dispatch
-        // arrived_at, per incident (de-duplicated, F8). The clock starts
+        // arrived_at, per incident (de-duplicated). The clock starts
         // when the incident reached the server: an incident captured
         // offline on a Tanod's phone gets created_at at SYNC time
         // (device_offline_created_at holds the capture time), so for those
-        // the interval starts at sync -- the UI footnotes this (audit P-04).
+        // the interval starts at sync; the UI footnotes this.
         $stmt = $pdo->prepare(
             'SELECT AVG(TIMESTAMPDIFF(MINUTE, i.created_at, d.first_arrived_at)) AS avg_minutes,
                     COUNT(*) AS sample_size
@@ -223,13 +205,12 @@ final class ReportsController
         $responseSampleSize = (int) $avgRow['sample_size'];
 
         // response_time_trend[]: avg response minutes PER DAY, alongside
-        // the single range-level scalar above — Phase 9. Bucketed the same
-        // way as trend[]/trend[].resolved: on the incident's own
-        // created_at day, only for incidents that actually reached
-        // `arrived` (the same population avg_response_time_minutes
-        // already restricts to). A day with no arrivals has `null`, not
-        // 0 — a real zero-minute average and "no data" are different
-        // facts, same reasoning as the range-level scalar.
+        // the single range-level scalar above. Bucketed the same way as
+        // trend[]/trend[].resolved: on the incident's own created_at day,
+        // only for incidents that actually reached `arrived` (the same
+        // population avg_response_time_minutes restricts to). A day with no
+        // arrivals has `null`, not 0, same reasoning as the range-level
+        // scalar.
         $responseTimeMap = array_fill_keys(array_keys($trendMap), []);
         $stmt = $pdo->prepare(
             'SELECT i.created_at, TIMESTAMPDIFF(MINUTE, i.created_at, d.first_arrived_at) AS minutes
@@ -266,13 +247,10 @@ final class ReportsController
 
         $trend = [];
         foreach ($trendMap as $date => $count) {
-            // `count` keeps its existing meaning (incidents reported that
-            // day) so every current consumer is unaffected; `resolved` is
-            // additive, same precedent as officer_name on GET /incidents.
-            // `arrivals` (audit N-02/P-04, 2026-10-09): how many of that
-            // day's incidents had a first Tanod arrival, i.e. the per-day
-            // sample size behind response_time_trend -- summing it equals
-            // response_sample_size.
+            // `count` is incidents reported that day; `resolved` is
+            // additive. `arrivals`: how many of that day's incidents had a
+            // first Tanod arrival, i.e. the per-day sample size behind
+            // response_time_trend; summing it equals response_sample_size.
             $trend[] = [
                 'date' => $date,
                 'count' => $count,
@@ -307,33 +285,26 @@ final class ReportsController
             'by_incident_type' => $byType,
             'by_status' => $byStatus,
             'trend' => $trend,
-            // Phase 9 additions — see the comments at each computation
-            // above for what each one means and why.
+            // See the comments at each computation above for what each one
+            // means and why.
             'by_hour' => $byHour,
             'response_time_trend' => $responseTimeTrend,
         ]);
     }
 
     /**
-     * GET /reports/heatmap -- W5 Historical Heatmap. Section 6: "Admin/PB
-     * own barangay -> {items:[{latitude,longitude,weight}]}; historical
-     * coordinates only." Resolved decisions, logged in DEVLOG.md:
+     * GET /reports/heatmap -- Historical Heatmap. Admin/PB own barangay ->
+     * {items:[{latitude,longitude,weight}]}; historical coordinates only.
      *   - Reuses the exact same date_from/date_to query shape as
-     *     GET /reports/summary (trailing-30-day default, 366-day cap) --
-     *     Section 6 doesn't restate the param names for this endpoint, but
-     *     nothing suggests a different convention, and reusing one date-
-     *     range contract across both report endpoints avoids two subtly
-     *     different date-handling rules in the same file.
-     *   - "Historical coordinates only" is read as: source from
-     *     incident.latitude/longitude (a point per incident with known
-     *     coordinates in range), never gps_track -- that's live/near-live
-     *     Tanod movement (W4's own data source), a different concept from
-     *     a historical incident-density heatmap.
+     *     GET /reports/summary (trailing-30-day default, 366-day cap), so the
+     *     two report endpoints share one date-range contract.
+     *   - Points come from incident.latitude/longitude (one per incident with
+     *     known coordinates in range), never gps_track, which is live Tanod
+     *     movement, a different concept from a historical incident-density
+     *     heatmap.
      *   - weight is always 1 per point rather than a pre-aggregated grid
-     *     count: MapLibre's heatmap layer (like most GIS heatmap
-     *     renderers) computes visual density itself from overlapping
-     *     weighted points -- pre-binning into a grid isn't needed and
-     *     Section 6 doesn't describe a grid/cell shape to bin into.
+     *     count: MapLibre's heatmap layer computes visual density itself from
+     *     overlapping weighted points.
      *   - Incidents with NULL latitude/longitude are excluded (nothing to
      *     plot), not counted as zero-weight points.
      *
@@ -407,22 +378,14 @@ final class ReportsController
     }
 
     /**
-     * GET /reports/nav-counts — §4.1 of the UI/UX review (sidebar badge
-     * counts). NOT in §6's original documented endpoint list — a resolved,
-     * logged addition, same precedent as `GET /barangays`/`GET /search`
-     * earlier this project: the sidebar needs a small, real count per
-     * relevant nav item (Dispatch Center's pending queue, the Citizen
-     * Reports inbox, Swap Requests), and fetching that as
-     * THREE separate round-trips on every single page load — every
-     * navigation, not just once — would be real, avoidable load for
-     * something that isn't time-critical. One small object instead.
+     * GET /reports/nav-counts — the small, real count per relevant nav item
+     * (Dispatch Center's pending queue, Swap Requests) for the sidebar badges,
+     * as one small object instead of separate round-trips on every page load.
      *
-     * Admin-only: every one of the three counts feeds a nav item that is
-     * itself Admin-only (`AppShell.js`'s `NAV_ITEMS`), so a non-Admin has
-     * no use for this and no route to it either — same reasoning
-     * `GET /system/health` already uses.
+     * Admin-only: every count feeds a nav item that is itself Admin-only
+     * (`AppShell.js`'s `NAV_ITEMS`), so a non-Admin has no use for this.
      *
-     * Tenant-scoped exactly like every other endpoint here — each count is
+     * Tenant-scoped exactly like every other endpoint here: each count is
      * `WHERE barangay_id = :barangay_id`, never a cross-tenant total.
      */
     public static function navCounts(PDO $pdo, array $identity): void
@@ -448,46 +411,34 @@ final class ReportsController
     }
 
     /**
-     * GET /reports/export — §6: "Admin/PB own barangay → {file_url,
-     * format,generated_at} for approved formats; request is scoped and
-     * audited." §9 W9: "Generate and Export are separate; Export calls
-     * GET /reports/export and is audited."
+     * GET /reports/export — Admin/PB own barangay → {file_url, format,
+     * generated_at}; the request is scoped and audited. Export calls this
+     * endpoint (Generate and Export are separate).
      *
-     * Resolved decisions (logged in DEVLOG.md):
+     *   - CSV and PDF are the two supported formats. CSV is the
+     *     dependency-free default; PDF reuses `SimplePdf`, a hand-rolled,
+     *     dependency-free writer (one column, no images, no embedded fonts,
+     *     not a general report/table renderer; see that class's own doc).
+     *     Both formats render the exact same aggregates, so neither can
+     *     drift from the other. An unsupported `format=` is a 400 naming
+     *     what IS supported, never a silent fallback: a caller asking for
+     *     XLSX and receiving CSV bytes is worse than an honest refusal.
      *
-     *   - **CSV and PDF are the two approved formats.** §6 says "for
-     *     approved formats" without listing them. CSV remains the
-     *     dependency-free default; PDF was added 2026-09-06 on explicit
-     *     user request, reusing `SimplePdf` — the same hand-rolled,
-     *     dependency-free writer §6's Lupon packet endpoint already
-     *     built (there is still no Composer here, so this is the same
-     *     one-column, no-images, no-embedded-fonts writer, not a
-     *     general report/table renderer — see that class's own doc).
-     *     Both formats render the exact same aggregates (below), so
-     *     neither can drift from the other. An unsupported `format=` is
-     *     still a 400 naming what IS supported, never a silent fallback —
-     *     a caller asking for XLSX and receiving CSV bytes is worse than
-     *     an honest refusal.
+     *   - The file is written OUTSIDE the web root and served through an
+     *     authorized download route, like map packages. An export contains
+     *     a barangay's whole incident summary; a guessable path under the
+     *     web root would make tenant scoping decorative. `file_url` is
+     *     API-relative, like `download_url`.
      *
-     *   - **The file is written OUTSIDE the web root and served through
-     *     an authorized download route**, exactly like the Lupon packet
-     *     and map packages. An export contains a barangay's whole
-     *     incident summary; a guessable path under the web root would
-     *     make tenant scoping decorative. `file_url` is API-relative for
-     *     the same Rule 7 reason `download_url` already is.
+     *   - Content is exactly what `GET /reports/summary` returns for the same
+     *     range: the same numbers the screen shows, not a second query that
+     *     could disagree with it. No narrative, no coordinates, no personal
+     *     data.
      *
-     *   - **Content is exactly what `GET /reports/summary` already
-     *     returns** for the same range — the same numbers the screen
-     *     shows, not a second query that could disagree with it. No
-     *     narrative, no coordinates, no personal data: the export is the
-     *     aggregate report, and §6's own summary shape is aggregate-only.
-     *
-     *   - **The audit row is written on GENERATE, not on download**, and
-     *     records the range and format only (Rule 17's allow-list). §6
-     *     says "request is scoped and audited"; the request is the
-     *     generate call. The download route re-checks authorization
-     *     independently (Rule 30) rather than trusting that whoever holds
-     *     the URL was the one who generated it.
+     *   - The audit row is written on GENERATE, not on download, and records
+     *     the range and format only (allow-list). The download route
+     *     re-checks authorization independently rather than trusting that
+     *     whoever holds the URL was the one who generated it.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -495,8 +446,8 @@ final class ReportsController
     {
         AuthMiddleware::requireRole($identity, ['admin', 'punong_barangay']);
 
-        // H-11: exports are the expensive part (CSV/PDF generation), not
-        // the download — this is the generation call, deliberately not
+        // Exports are the expensive part (CSV/PDF generation), not the
+        // download: this is the generation call, deliberately not
         // exportDownload() which just streams an already-built file.
         if (!RateLimiter::check($pdo, 'report_export:user:' . $identity['user_id'], 3600, 20)) {
             throw new ApiError(429, 'RATE_LIMITED', 'Too many report exports generated recently. Please wait before generating another.');
@@ -538,14 +489,10 @@ final class ReportsController
 
     /**
      * GET /reports/export/download — streams the caller's own barangay's
-     * most recently generated export.
-     *
-     * Not in §6's endpoint list, added for the same reason
-     * `GET /incidents/:id/lupon-packet/download` was: §6 promises a
-     * `file_url` while the file must not sit in the web root. Every
-     * download re-checks that the caller is logged in and belongs to
-     * this barangay (Rule 30) rather than trusting the requestor just
-     * holds the URL.
+     * most recently generated export. The file must not sit in the web root,
+     * so every download re-checks that the caller is logged in and belongs to
+     * this barangay rather than trusting that the requestor just holds the
+     * URL.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -569,10 +516,8 @@ final class ReportsController
             throw new ApiError(404, 'NOT_FOUND', 'No export has been generated for this barangay yet.');
         }
 
-        // Code-review finding H-06/H-07 (2026-09-24): export() already
-        // audits 'report_exported' at generate time; the actual download
-        // fetch never was. Distinct action string, same rationale as the
-        // Lupon packet's matching fix.
+        // export() already audits 'report_exported' at generate time; the
+        // actual download fetch is audited under a distinct action string.
         Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'report_export_downloaded', 'report', null, [
             'format' => $format,
         ]);
@@ -588,26 +533,23 @@ final class ReportsController
     }
 
     /**
-     * The periodic PB digest (REMAINING.md §G) — CLI-only, same
-     * "no HTTP surface for a background job" discipline as
-     * `retention-job.php` (the same no-HTTP-surface reasoning applies
-     * here too: this runs unattended on a schedule, not on a request).
-     * Called from `scripts/generate-pb-digest.php` via
-     * `install-scheduled-backup-jobs.ps1`'s sibling task, never over HTTP.
+     * The periodic PB digest: CLI-only, the same "no HTTP surface for a
+     * background job" discipline as `retention-job.php` (it runs unattended
+     * on a schedule, not on a request). Called from
+     * `scripts/generate-pb-digest.php`, never over HTTP.
      *
-     * Reuses `buildSummaryPdf()` byte-for-byte — the digest is exactly
-     * the same aggregate-only PDF a PB can already generate by hand via
-     * `GET /reports/export?format=pdf`, just produced on a timer instead
-     * of a click, and written to a SEPARATE path (`digestPath()`, not
-     * `exportPath()`) so a scheduled digest run can never clobber an
-     * Admin's or PB's own just-generated manual export, or vice versa.
+     * Reuses `buildSummaryPdf()` byte-for-byte: the digest is exactly the
+     * same aggregate-only PDF a PB can generate by hand via
+     * `GET /reports/export?format=pdf`, produced on a timer, and written to a
+     * SEPARATE path (`digestPath()`, not `exportPath()`) so a scheduled digest
+     * run can never clobber a manually generated export, or vice versa.
      * `identity['user_id'] = null` signals "unattended" to
-     * `buildSummaryPdf()`'s generator-name block above.
+     * `buildSummaryPdf()`'s generator-name block.
      *
      * Writes a small sidecar `.meta.json` (`generated_at`/`date_from`/
-     * `date_to`) next to the PDF — `digestMeta()` below reads it rather
-     * than trusting the PDF file's own mtime, which a filesystem restore/
-     * copy could make misleading.
+     * `date_to`) next to the PDF; `digestMeta()` below reads it rather than
+     * trusting the PDF file's own mtime, which a filesystem restore/copy
+     * could make misleading.
      */
     public static function generateDigest(PDO $pdo, int $barangayId, \DateTimeImmutable $from, \DateTimeImmutable $to): void
     {
@@ -634,11 +576,11 @@ final class ReportsController
 
     /**
      * `GET /reports/digest` — Admin + Punong Barangay, same role list as
-     * `export()`. Reports whether a periodic digest exists for the
-     * CALLER's own barangay (never a parameter, same non-guessable-by-
-     * construction pattern `exportDownload()` uses) — `available: false`
-     * is a neutral, honest answer (§2 Rule 6) for a fresh install where
-     * the scheduled job hasn't run yet, not an error.
+     * `export()`. Reports whether a periodic digest exists for the CALLER's
+     * own barangay (never a parameter, same non-guessable-by-construction
+     * pattern `exportDownload()` uses). `available: false` is a neutral,
+     * honest answer for a fresh install where the scheduled job hasn't run
+     * yet, not an error.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -771,12 +713,11 @@ final class ReportsController
 
     /**
      * Same population and definition `GET /reports/summary`'s
-     * `avg_response_time_minutes` uses (§6 summary() above): incidents in
-     * range whose dispatch actually reached `arrived_at`. A fresh,
-     * independent query rather than a call into summary() — that method
-     * writes its own HTTP response and isn't structured to hand back a
-     * value — but it is intentionally the exact same SQL shape, so the
-     * export can never disagree with the screen it's exporting.
+     * `avg_response_time_minutes` uses: incidents in range whose dispatch
+     * actually reached `arrived_at`. A fresh, independent query rather than a
+     * call into summary() (that method writes its own HTTP response), but
+     * intentionally the exact same SQL shape, so the export can never
+     * disagree with the screen it's exporting.
      *
      * @return array{avg:?float, n:int} average minutes (null = no data) and
      *         the number of incidents it is based on.
@@ -903,14 +844,9 @@ final class ReportsController
 
         // Who asked for this file (shown as "requested by", never as a
         // signer). A null user_id means the unattended weekly digest
-        // (generateDigest()). Audit P-01/N-18 (2026-10-09): this name used
-        // to be printed as "Prepared By" over a signature line, and the
-        // Punong Barangay's real name was printed under a pre-written
-        // sworn attestation ("certify under oath ... Attested & Approved")
-        // that nobody had made -- on a timer-generated digest too. The
-        // file now says it is a system-generated, unsigned summary and
-        // leaves the reviewer's signature, name and date blank for a
-        // person to fill in on paper.
+        // (generateDigest()). The file says it is a system-generated, unsigned
+        // summary and leaves the reviewer's signature, name and date blank for
+        // a person to fill in on paper.
         if ($identity['user_id'] === null) {
             $requestedBy = 'the scheduled weekly digest job';
         } else {
@@ -922,9 +858,9 @@ final class ReportsController
                 : 'user #' . (int) $identity['user_id'];
         }
 
-        // Tanod ACCOUNTS that are active right now (audit P-16): a
-        // snapshot at generation time, not a figure for the coverage
-        // period, and labelled that way below.
+        // Tanod ACCOUNTS that are active right now: a snapshot at
+        // generation time, not a figure for the coverage period, and
+        // labelled that way below.
         $tanodStmt = $pdo->prepare(
             "SELECT COUNT(*) FROM user WHERE barangay_id = :bid AND role = 'tanod' AND is_active = 1"
         );
@@ -986,9 +922,8 @@ final class ReportsController
             ->metaBar([
                 [
                     'label' => 'Report Reference',
-                    // Audit P-17: a fixed BRGY-<id>-RPT on every file
-                    // looked like a control number; now it names the
-                    // generation minute so two files can be told apart.
+                    // Names the generation minute so two files can be told
+                    // apart (a fixed number would look like a control number).
                     'value' => "BRGY-{$barangayId}-" . $nowStamp,
                 ],
                 [
@@ -1097,9 +1032,8 @@ final class ReportsController
         $pdf->tableRow(['PERIOD TOTAL', '-', (string) $total, (string) $total], [0.28, 0.28, 0.22, 0.22], ['left', 'left', 'right', 'right'], true, true)
             ->spacer(10.0)
 
-            // 8. Notes + blank sign-off (audit P-01/N-18, 2026-10-09). No
-            // oath, no pre-filled signer: the reviewer signs, prints their
-            // name and dates it on paper.
+            // 8. Notes + blank sign-off. No oath, no pre-filled signer: the
+            // reviewer signs, prints their name and dates it on paper.
             ->calloutSection(
                 'NOTES',
                 'System-generated summary, not signed or attested. Compiled automatically from Baranguard records on '
@@ -1141,11 +1075,10 @@ final class ReportsController
     }
 
     /**
-     * One file per barangay, overwritten by each generate — an export is
-     * a transient artifact regenerated on demand, not an archive. Keeping
-     * every historical export would accumulate a barangay's whole report
-     * history outside the retention job's reach (§11/Rule 11), which is
-     * exactly the kind of shadow copy Rule 11 warns about.
+     * One file per barangay, overwritten by each generate: an export is a
+     * transient artifact regenerated on demand, not an archive. Keeping every
+     * historical export would accumulate a barangay's whole report history
+     * outside the retention job's reach, a shadow copy.
      */
     private static function exportPath(int $barangayId, string $format): string
     {
@@ -1154,12 +1087,10 @@ final class ReportsController
             ? rtrim((string) $base, '/\\')
             : dirname(__DIR__) . '/storage/report-exports';
 
-        // One file per barangay PER FORMAT — csv and pdf are independent
-        // artifacts now (a Punong Barangay generating a PDF must not
-        // clobber an Admin's just-generated CSV, or vice versa), each
-        // still following the same "overwritten by each generate, not an
-        // archive" rule the original one-file-per-barangay comment above
-        // this method described.
+        // One file per barangay PER FORMAT: csv and pdf are independent
+        // artifacts (a Punong Barangay generating a PDF must not clobber an
+        // Admin's just-generated CSV, or vice versa), each overwritten by each
+        // generate, not an archive.
         return $directory . '/barangay-' . $barangayId . '.' . $format;
     }
 
@@ -1173,13 +1104,12 @@ final class ReportsController
 
     /**
      * GET /reports/school-term?term_start=&term_end= -- Safer School Zones
-     * Annex D, computed LIVE from current data and not persisted
-     * (docs/FEATURE_CONTRACT_2026-10.md section 7). Admin, Secretary and
-     * Punong Barangay, own barangay only. Returns the same count fields a
-     * saved `ssz_term_report` snapshot carries, plus the requested range.
-     * The computation itself (and its day-bucketing at a fixed +08:00)
-     * lives in `SszTermReportsController::compute()`; counts only, no
-     * person/narrative/coordinate data.
+     * Annex D, computed LIVE from current data and not persisted. Admin,
+     * Secretary and Punong Barangay, own barangay only. Returns the same
+     * count fields a saved `ssz_term_report` snapshot carries, plus the
+     * requested range. The computation itself (and its day-bucketing at a
+     * fixed +08:00) lives in `SszTermReportsController::compute()`; counts
+     * only, no person/narrative/coordinate data.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */

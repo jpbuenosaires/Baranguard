@@ -5,14 +5,13 @@ namespace Baranguard\Services\Sms;
 
 /**
  * DeviceSecretVault — encrypts/decrypts `mobile_device.device_secret_ref`
- * at rest (§5's own column doc: "protected at rest"; §2 Rule 26: "message-
- * encryption keys ... are never exposed through ordinary API payloads,
- * audit logs, debug logs, or UI").
+ * at rest. Message-encryption keys are never exposed through ordinary API
+ * payloads, audit logs, debug logs, or UI.
  *
  * WHAT THIS SECRET IS: a per-device 32-byte symmetric key, generated once
  * at that device's FIRST registration (`DevicesController::register()`),
  * used by `EnvelopeCrypto` to authenticate-and-encrypt/decrypt the SMS
- * envelope §6 documents for `/sms/*`. Both the server and the device must
+ * envelope used by `/sms/*`. Both the server and the device must
  * hold the same raw key — this is symmetric crypto, not a hash — so the
  * server cannot simply hash-and-forget it the way it does a password. The
  * `DEVICE_SECRET_MASTER_KEY` env var wraps it before it ever touches the

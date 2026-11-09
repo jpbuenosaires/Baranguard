@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Baranguard — runs every backend verify suite one after another and prints
 # one table of passed/failed checks per suite plus the total, so the counts
-# in REFERENCE.md section 9 and manuscript Tables 4-13/4-14 come from one
-# command instead of 40 runs added up by hand.
+# come from one command instead of 40 runs added up by hand.
 #
 # Each suite already builds and drops its own disposable database, so the
 # suites run sequentially (two at once would fight over MariaDB and ports).

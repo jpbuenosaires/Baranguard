@@ -1,8 +1,8 @@
 /**
- * role.ts — which console this install shows (decision 15C, 2026-10-07).
+ * role.ts — which console this install shows.
  *
  * The server derives role from the account; the stored session just carries
- * it. UX only (Rule 2/6): an Admin device session is also scope-limited
+ * it. UX only: an Admin device session is also scope-limited
  * server-side (backend SessionPolicy::ADMIN_DEVICE_ALLOWLIST), so hiding
  * Tanod screens here is never the security boundary.
  */

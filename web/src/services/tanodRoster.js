@@ -4,8 +4,7 @@
  *
  * Both Admin and Secretary read `GET /users/directory?purpose=tanod`: a thin,
  * same-barangay feed of active, non-suspended tanods ({user_id, full_name,
- * official_title}). It replaces the earlier Secretary workaround that derived
- * names from availability submissions. Any other role gets an empty roster
+ * official_title}). Any other role gets an empty roster
  * (the screens never offer these controls to them).
  *
  * A failure resolves to an empty roster rather than throwing: the screens

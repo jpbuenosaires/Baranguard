@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Route table for /search (§6 "Reference / lookup" section). Authenticated
+ * Route table for /search. Authenticated
  * — the topbar's real global search box.
  */
 

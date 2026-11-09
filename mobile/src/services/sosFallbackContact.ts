@@ -1,6 +1,5 @@
 /**
- * sosFallbackContact.ts — caches G1's SOS fallback backup contact number
- * locally (Mobile Improvement Plan Phase 4.3).
+ * sosFallbackContact.ts — caches the SOS fallback backup contact number locally.
  *
  * WHY THIS EXISTS AS A CACHE, NOT A LIVE FETCH: the moment this number is
  * actually needed is the exact moment `GET /tanod-sos/fallback-contact`

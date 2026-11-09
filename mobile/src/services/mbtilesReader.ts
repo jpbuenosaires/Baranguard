@@ -2,11 +2,9 @@
  * mbtilesReader.ts — reads raster tiles out of a downloaded MBTiles
  * (SQLite) basemap package entirely in JS/WASM via sql.js.
  *
- * This is what lets M7 Live Map render a real offline basemap without the
- * native map-rendering plugin `live-map.tsx`'s own header comment used to
- * flag as the blocker (see REMAINING.md C4): MapLibre GL JS and sql.js
- * both run inside the same Capacitor WebView as the rest of this app —
- * no AndroidManifest change, no new native Capacitor plugin.
+ * This is what lets the Live Map render a real offline basemap without a native map-rendering plugin:
+ * MapLibre GL JS and sql.js both run inside the same Capacitor WebView as the rest of this app, with no
+ * AndroidManifest change and no new native Capacitor plugin.
  *
  * MBTiles spec (https://github.com/mapbox/mbtiles-spec): a `tiles(
  * zoom_level, tile_column, tile_row, tile_data)` table using TMS row

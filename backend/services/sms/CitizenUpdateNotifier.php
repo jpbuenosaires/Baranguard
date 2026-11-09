@@ -9,16 +9,11 @@ use PDO;
  * CitizenUpdateNotifier — closes the loop with the person who filed a
  * citizen report.
  *
- * THE GAP THIS FILLS: `citizen_report.contact_number` has been collected
- * since Sprint 1 and, until now, never used for anything. A resident
- * texted or submitted a report and then heard nothing — not when it was
- * accepted as an incident, not when it was resolved. The number was
- * gathered for exactly this purpose, so leaving it unused was both a
- * missed courtesy and, arguably, collecting data for a stated reason and
- * then not honouring it.
+ * `citizen_report.contact_number` is collected so the resident hears back
+ * when the report is accepted as an incident and when it is resolved.
  *
- * §2 RULE 1 IS THE BINDING CONSTRAINT, and it shapes every message here:
- * an SMS leaves the system entirely, through a third-party gateway, so
+ * raw_narrative NEVER LEAVES THE SYSTEM, and that shapes every message
+ * here: an SMS leaves the system entirely, through a third-party gateway, so
  * **no narrative text of any kind may appear in one**. These messages
  * are fixed templates plus two identifiers — the barangay name and the
  * incident's `display_id`. No complainant name, no respondent name, no
@@ -42,8 +37,8 @@ use PDO;
  * an incident that somehow passes through `resolved` twice, cannot text
  * the same resident twice about the same thing.
  *
- * WITHOUT THE GSM GATEWAY CONFIGURED (`GSM_GATEWAY_ENABLED` unset —
- * `docs/REMAINING.md` A4) `sendOutbound()` still writes the `sms_log` row
+ * WITHOUT THE GSM GATEWAY CONFIGURED (`GSM_GATEWAY_ENABLED` unset)
+ * `sendOutbound()` still writes the `sms_log` row
  * and marks it `failed` / `GSM_GATEWAY_NOT_CONFIGURED`. That is the
  * honest outcome and it is what makes this testable here: the intent,
  * recipient and body are all recorded truthfully, and nothing claims a

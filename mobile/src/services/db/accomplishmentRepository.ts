@@ -1,23 +1,20 @@
 /**
- * accomplishmentRepository.ts — `accomplishment_entry_local` (contract §4,
- * migration 6) plus a tiny Preferences cache of the month's report status.
+ * accomplishmentRepository.ts — `accomplishment_entry_local` (migration 6) plus a tiny Preferences cache
+ * of the month's report status.
  *
- * A Tanod logs what they did on a work day and how long it took. Entries are
- * offline-first (Rule 7): persisted to encrypted SQLite first, then sent via
- * `/sync/batch`'s `accomplishment_entries[]` keyed by `client_event_id`. The
- * duration the Tanod types is the CONFIRMED one; the server separately
- * computes `suggested_duration_minutes` from the on-duty intervals it already
- * holds and flags a large disagreement — that suggestion only exists once the
- * entry has reached the server, so it is read back later
- * (`applyServerEntryDurations`) and shown "when available".
+ * A Tanod logs what they did on a work day and how long it took. Entries are offline-first: persisted
+ * to encrypted SQLite first, then sent via `/sync/batch`'s `accomplishment_entries[]` keyed by
+ * `client_event_id`. The duration the Tanod types is the CONFIRMED one; the server separately computes
+ * `suggested_duration_minutes` from the on-duty intervals it already holds and flags a large
+ * disagreement. That suggestion only exists once the entry has reached the server, so it is read back
+ * later (`applyServerEntryDurations`) and shown "when available".
  *
- * Submitting the month (open/returned -> prepared) is ONLINE-ONLY by contract
- * and is not stored here; only the last-known report STATUS is cached
- * (`cacheReportSummary`) so the status chip and an approver's return reason
- * still render offline.
+ * Submitting the month (open/returned -> prepared) is ONLINE-ONLY and is not stored here; only the
+ * last-known report STATUS is cached (`cacheReportSummary`) so the status chip and an approver's return
+ * reason still render offline.
  *
- * Privacy: the entry text stays on the device and in the server tables; it is
- * never written to logs, and nothing here ever includes names.
+ * Privacy: the entry text stays on the device and in the server tables; it is never written to logs,
+ * and nothing here ever includes names.
  */
 
 import { Preferences } from '@capacitor/preferences';
@@ -28,7 +25,7 @@ import { addDays, daysBetween, manilaToday, monthOf } from '../../utils/manilaTi
 import { markWorkflowSyncFailed } from './workflowSync';
 import type { AccomplishmentReportSummary, AccomplishmentEntryServerView } from '../apiService';
 
-/** Contract §4: `work_date` may not be older than this many days. */
+/** `work_date` may not be older than this many days. */
 export const MAX_BACKDATE_DAYS = 62;
 export const MAX_ENTRY_TEXT = 2000;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -47,7 +44,7 @@ export function earliestWorkDate(): string {
   return addDays(manilaToday(), -MAX_BACKDATE_DAYS);
 }
 
-/** Returns a human-readable problem, or null when the input satisfies contract §4's validation. */
+/** Returns a human-readable problem, or null when the input satisfies the server's validation. */
 export function validateAccomplishment(input: AccomplishmentInput, opts: { allowDateChange?: boolean } = {}): string | null {
   const text = input.text.trim();
   if (!text) return 'Describe what you did.';

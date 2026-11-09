@@ -4,12 +4,9 @@ declare(strict_types=1);
 namespace Baranguard\Services\Notifications;
 
 /**
- * LocalGsmOutboundClient — replaces `SemaphoreClient` (removed 2026-09-23,
- * explicit user decision: a paid per-SMS aggregator cost too much for this
- * project's actual volume, see DEVLOG.md). Sends outbound SMS through the
- * SAME tethered Android phone `gsm-ingest-daemon.php` already reads
- * INBOUND SMS off (§1's "GSM modem" — now genuinely bidirectional, no
- * separate hardware).
+ * LocalGsmOutboundClient — sends outbound SMS through the SAME tethered
+ * Android phone `gsm-ingest-daemon.php` reads INBOUND SMS off (one phone,
+ * both directions, no per-message aggregator fee).
  *
  * MECHANISM: a small companion Android app (`sms-gateway/`, its own
  * standalone Gradle project, NOT part of the Capacitor Tanod app) runs a
@@ -19,32 +16,20 @@ namespace Baranguard\Services\Notifications;
  * (an explicit, targeted broadcast — not an implicit one Android would
  * restrict) and reads the result back via `adb logcat`, filtering for that
  * app's own "BaranguardSmsGateway" tag and this call's `correlation_id`.
- * Same trust boundary and same "shell out to adb, no network call this
- * phone has to make" design `gsm-ingest-daemon.php` already established
- * for the read side — deliberately NOT a phone-side HTTP server polling
- * the backend, which would need its own auth story this design avoids
- * entirely (adb access to a physically-controlled device already IS the
+ * Same trust boundary as `gsm-ingest-daemon.php`: shell out to adb, no
+ * network call the phone has to make, no phone-side HTTP server needing its
+ * own auth (adb access to a physically-controlled device already IS the
  * authorization).
  *
- * COST: sends over the gateway phone's own SIM plan, not a per-message
- * aggregator fee — the entire point of this replacement.
+ * CONFIGURATION (.env): `GSM_GATEWAY_ENABLED` (must be explicitly `true`;
+ * unset/false means `isConfigured()` is false and `not_configured` stays
+ * neutral, never silently attempted). `GSM_GATEWAY_ADB_PATH` (optional
+ * override; same auto-detection as `gsm-ingest-daemon.php`, see
+ * `defaultAdbPath()`). `GSM_GATEWAY_DEVICE_SERIAL` (optional; only needed
+ * if more than one device is attached).
  *
- * CONFIGURATION (.env — see .env.example): `GSM_GATEWAY_ENABLED` (must be
- * explicitly `true`; unset/false means `isConfigured()` is false, exactly
- * mirroring how an absent `SEMAPHORE_API_KEY` used to behave — §2 Rule 6,
- * `not_configured` stays neutral, never silently attempted).
- * `GSM_GATEWAY_ADB_PATH` (optional override; same auto-detection
- * `gsm-ingest-daemon.php` uses if unset — see `defaultAdbPath()` below).
- * `GSM_GATEWAY_DEVICE_SERIAL`
- * (optional; only needed if more than one device is ever attached at
- * once).
- *
- * TIMEOUT MECHANISM (2026-09-24): `dispatch()` IS real timeout-bound now
- * — see `runWithTimeout()`'s own doc block for why plain `exec()`/
- * `proc_open()` couldn't do this on Windows PHP, and why a PowerShell
- * wrapper using .NET's `Process.WaitForExit(ms)` was used instead (a
- * genuinely different, working mechanism, not the same broken approach
- * retried).
+ * TIMEOUT: `dispatch()` is timeout-bound through `runWithTimeout()`, which
+ * explains why plain `exec()`/`proc_open()` cannot do it on Windows PHP.
  */
 class LocalGsmOutboundClient
 {
@@ -52,29 +37,24 @@ class LocalGsmOutboundClient
     private const RECEIVER_COMPONENT = 'ph.baranguard.smsgateway/.SendSmsReceiver';
     // The Infinix (HiOS) puts a background app in a "Hiber/broadcast restricted" queue: a broadcast to the
     // gateway app 15 s after it left the foreground was silently NOT delivered (result=0, nothing sent).
-    // Bringing the app to the front right before each send fixes it (checked on the device 2026-11-07).
+    // Bringing the app to the front right before each send fixes it.
     private const WAKE_COMPONENT = 'ph.baranguard.smsgateway/.MainActivity';
     // The app appends every RESULT line here (the phone's log buffer loses it within ~2 min, the carrier
     // result takes ~60 s). adb's shell user can read it.
     private const RESULT_FILE = '/sdcard/Android/data/ph.baranguard.smsgateway/files/results.log';
-    // Real device, 2026-09-23: `am broadcast` waiting on this receiver's
-    // goAsync() finish() (itself gated on the carrier's own sent-status
-    // callback) took up to ~60s under this specific phone's OEM
-    // background-freeze churn. 12s is deliberately shorter than that
-    // observed worst case — a send that times out here may still have
-    // gone out on the phone (this only bounds how long THIS PROCESS
-    // waits), and 12s keeps an SOS-triggering request from hanging a
-    // full minute. Tune upward if legitimate sends start timing out more
-    // than rarely; this number came from one real device's worst case,
-    // not an exhaustive study.
+    // `am broadcast` waits on this receiver's goAsync() finish() (gated on the
+    // carrier's own sent-status callback), which took up to ~60s on the test
+    // phone under OEM background-freeze churn. 12s is deliberately shorter: a
+    // send that times out here may still have gone out (this only bounds how
+    // long THIS PROCESS waits), and it keeps an SOS-triggering request from
+    // hanging a full minute. Tune upward if legitimate sends time out often.
     private const BROADCAST_TIMEOUT_SECONDS = 12;
     /** Sentinel our own PowerShell wrapper script exits with on a real timeout kill — distinct from any real adb.exe exit code. */
     private const TIMEOUT_EXIT_CODE = 124;
     private const RESULT_POLL_ATTEMPTS = 4;
     private const RESULT_POLL_DELAY_MICROSECONDS = 700_000; // 0.7s between polls, ~7s total.
-    // Each poll attempt's own bound (not yet device-tuned — a stuck adb
-    // connection during a `logcat -d` dump should never be able to hang
-    // longer than this, worst case ~10*(0.7s+3s) if every attempt times out.
+    // Each poll attempt's own bound: a stuck adb connection during a
+    // `logcat -d` dump must never hang longer than this.
     private const POLL_TIMEOUT_SECONDS = 3;
     private const MAX_MESSAGE_LENGTH = 1600; // 10 concatenated GSM-7 SMS segments — generous; SmsManager itself declines to send anything absurd.
     private const POWERSHELL_PATH = 'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
@@ -136,10 +116,9 @@ class LocalGsmOutboundClient
     }
 
     /**
-     * No separate "priority" transport exists on this phone's own SIM the
-     * way Semaphore offered a distinct priority API route — a native SMS
-     * IS already the fastest path this hardware has. Kept as a separate
-     * method only so `SmsGatewayService::sendOutbound()`'s call site
+     * No separate "priority" transport exists on this phone's own SIM — a
+     * native SMS IS already the fastest path this hardware has. Kept as a
+     * separate method only so `SmsGatewayService::sendOutbound()`'s call site
      * (`$priority ? ...->sendPriority() : ...->send()`) needs no change.
      *
      * @return array{gateway_message_id:string}
@@ -205,8 +184,7 @@ class LocalGsmOutboundClient
         // `adb shell am broadcast` waits for the receiver's `goAsync()`
         // PendingResult to finish before returning — and this receiver's
         // `finish()` is only called once the SMS's own carrier-confirmed
-        // sent/failed result arrives (real device, 2026-09-23: observed up
-        // to ~60s under this phone's OEM background-freeze churn). This
+        // sent/failed result arrives (up to ~60s on the test phone). This
         // transport backs the SOS fallback ladder, so a genuinely stuck
         // gateway must not hang whatever request triggered a send
         // (possibly a Tanod's own emergency POST) — bounded via
@@ -217,7 +195,7 @@ class LocalGsmOutboundClient
 
         if ($exitCode === self::TIMEOUT_EXIT_CODE) {
             // Only THIS process stopped waiting; the broadcast may already have been delivered,
-            // so this is "unconfirmed", not "failed" (Rule 6).
+            // so this is "unconfirmed", not "failed".
             throw new GsmUnconfirmedException("The gateway phone did not answer within " . self::BROADCAST_TIMEOUT_SECONDS . "s (correlation_id={$correlationId}); the SMS may still have been sent. " . $output, $correlationId);
         }
         if ($exitCode !== 0) {
@@ -240,7 +218,7 @@ class LocalGsmOutboundClient
 
         // No result line within the poll window: the carrier result may just
         // be slow (~60 s observed). The SMS may well have gone out, so this is
-        // "unconfirmed", not "failed" (Rule 6: claim neither).
+        // "unconfirmed", not "failed": claim neither.
         throw new GsmUnconfirmedException("No delivery confirmation from the gateway phone within " . (self::RESULT_POLL_ATTEMPTS * self::RESULT_POLL_DELAY_MICROSECONDS / 1_000_000) . "s (correlation_id={$correlationId}); it may still have been sent.", $correlationId);
     }
 
@@ -253,18 +231,17 @@ class LocalGsmOutboundClient
     /**
      * Runs `$adbPath $adbArgs` with a REAL enforced timeout.
      *
-     * WHY NOT PLAIN `exec()`/`proc_open()`: a 2026-09-23 attempt using
-     * `proc_open()` + non-blocking pipes was built and directly tested —
-     * confirmed BROKEN on this Windows workstation.
+     * WHY NOT PLAIN `exec()`/`proc_open()`: `proc_open()` with non-blocking
+     * pipes does not work on Windows PHP.
      * `stream_set_blocking($pipes[n], false)` is a documented no-op for
      * `proc_open` pipes on Windows PHP, so `stream_get_contents()` blocks
      * exactly like plain `exec()` would until the child produces output
-     * or exits — proven with a real test (`adb shell sleep 30` capped at
-     * a 3s timeout still took the full 30.3s). `stream_select()` is
+     * or exits (`adb shell sleep 30` capped at a 3s timeout still took the
+     * full 30s). `stream_select()` is
      * *also* documented as unsupported for non-socket streams on
      * Windows, so that isn't a fallback either.
      *
-     * WHAT ACTUALLY WORKS: shelling out to `powershell.exe`, which starts
+     * WHAT WORKS: shelling out to `powershell.exe`, which starts
      * `adb.exe` via .NET's `System.Diagnostics.Process` and waits with
      * `Process.WaitForExit(ms)` — a real, OS-level timeout unrelated to
      * PHP's broken pipe-blocking behavior. If it expires, the wrapper
@@ -277,15 +254,9 @@ class LocalGsmOutboundClient
      * so the outer `exec()` is bounded transitively, not by anything PHP
      * has to enforce itself.
      *
-     * `-EncodedCommand` (base64 of UTF-16LE script text) is used instead
-     * of building a quoted command-line string, deliberately — this
-     * session already found two real bugs from shell-requoting across
-     * process boundaries (`adb shell`'s own re-joining behavior,
-     * HANDOFF.md gotcha #17); base64-encoding the whole script sidesteps
-     * that class of bug entirely rather than trying to get it right a
-     * third time. `Start-Process -ArgumentList <array>` (not a hand-
-     * quoted string) is used for the SAME reason on the adb.exe call
-     * inside the script.
+     * `-EncodedCommand` (base64 of UTF-16LE script text) is used instead of
+     * a quoted command-line string, to sidestep shell-requoting bugs across
+     * process boundaries (`adb shell` re-joins its arguments).
      *
      * @param list<string> $adbArgs
      * @return array{0:int, 1:string} [exitCode, combined stdout+stderr] — exitCode is TIMEOUT_EXIT_CODE (124) on a real kill.
@@ -302,8 +273,7 @@ class LocalGsmOutboundClient
         $psAdbPath = self::psSingleQuote($adbPath);
         $psOutFile = self::psSingleQuote($outFile);
         $psErrFile = self::psSingleQuote($errFile);
-        // A code-review finding (2026-09-2x, not yet device-retested) caught
-        // that `-ArgumentList @(...)` — a PowerShell ARRAY — is silently
+        // `-ArgumentList @(...)` — a PowerShell ARRAY — is silently
         // space-joined into one string by Windows PowerShell 5.1's
         // Start-Process BEFORE CreateProcess ever runs, so adb.exe ends up
         // reparsing that joined string with ITS OWN Windows argv rules,
@@ -330,11 +300,8 @@ class LocalGsmOutboundClient
         $encoded = base64_encode(mb_convert_encoding($script, 'UTF-16LE', 'UTF-8'));
         $psOutput = [];
         $psExitCode = 0;
-        // The full path is used deliberately, not a bare `powershell.exe` —
-        // confirmed the hard way that PATH as seen by PHP's own exec()
-        // context (under Apache/XAMPP) does not reliably include
-        // C:\Windows\System32, so a bare command name failed with "is not
-        // recognized as an internal or external command" before this fix.
+        // Full path, not a bare `powershell.exe`: PATH as seen by PHP's exec()
+        // under Apache/XAMPP does not reliably include C:\Windows\System32.
         exec(self::POWERSHELL_PATH . ' -NoProfile -NonInteractive -EncodedCommand ' . escapeshellarg($encoded) . ' 2>&1', $psOutput, $psExitCode);
 
         $stdout = is_file($outFile) ? (string) file_get_contents($outFile) : '';
@@ -365,8 +332,8 @@ class LocalGsmOutboundClient
      * a string that round-trips correctly through it). This is a THIRD,
      * distinct quoting dialect from `posixShellQuote()` (for the REMOTE
      * Android shell) and `psSingleQuote()` (for a PowerShell string
-     * LITERAL) above — conflating any two of the three is exactly how a
-     * `"` in a message body could previously corrupt what got sent.
+     * LITERAL) above — conflating any two of the three lets a `"` in a
+     * message body corrupt what gets sent.
      */
     private static function windowsArgQuote(string $arg): string
     {

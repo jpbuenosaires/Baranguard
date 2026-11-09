@@ -1,6 +1,6 @@
 /**
  * accomplishment-reports.js — monthly Accomplishment Reports for Barangay
- * Tanods (contract §4 / §10): list by person, month and status; a detail
+ * Tanods: list by person, month and status; a detail
  * view with every entry (system-flagged durations marked); a return action
  * for officials who hold the authority; and a print layout
  * that mirrors the barangay's own form (letterhead, name / position /
@@ -12,7 +12,7 @@
  * Statuses: open (tanod still editing), prepared (submitted by the tanod),
  * returned (sent back by an official).
  *
- * Gating, all UX only (REFERENCE.md §2 Rule 2 — the server re-checks):
+ * Gating, all UX only (the server re-checks):
  *   - Return ............... status prepared, viewer holds
  *                            note_report or approve_report
  * A 409 for the preparer-must-differ rule is shown as a plain-language

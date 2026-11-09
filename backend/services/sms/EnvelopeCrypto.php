@@ -4,12 +4,12 @@ declare(strict_types=1);
 namespace Baranguard\Services\Sms;
 
 /**
- * EnvelopeCrypto — AES-256-GCM authenticated encryption for the §6 SMS
- * envelope: "version, message_id, device_id, client_event_id, created_at,
- * nonce, ciphertext, authentication tag, expiry, and message type."
+ * EnvelopeCrypto — AES-256-GCM authenticated encryption for the SMS
+ * envelope: version, message_id, device_id, client_event_id, created_at,
+ * nonce, ciphertext, authentication tag, expiry, and message type.
  *
- * §2 Rule 1/4: "Plaintext raw narrative is never transported as ordinary
- * SMS" — everything business-sensitive (an incident's raw_narrative, a
+ * Plaintext raw narrative is never transported as ordinary SMS —
+ * everything business-sensitive (an incident's raw_narrative, a
  * GPS point, a duty-status change, an SOS location) travels only inside
  * `ciphertext`, encrypted under the SENDING DEVICE'S OWN symmetric key
  * (see `DeviceSecretVault` for how that key is provisioned/stored).
@@ -24,9 +24,8 @@ namespace Baranguard\Services\Sms;
  * to `sos`, or swap `device_id` to impersonate a different Tanod) while
  * leaving the ciphertext itself untouched — GCM's tag alone doesn't catch
  * that unless the header is part of what got authenticated. This is also
- * what makes device_id itself trustworthy for §2 Rule 13's "sender
- * identity is derived server-side from a registered Tanod/device
- * mapping": device_id has to travel in the clear (the server needs it to
+ * what makes device_id itself trustworthy (sender identity is derived
+ * server-side from a registered Tanod/device mapping): device_id has to travel in the clear (the server needs it to
  * know WHICH device's key to try before it can decrypt anything), but
  * because it's AAD, a forged/altered device_id in the header would fail
  * authentication against the real sender's ciphertext.

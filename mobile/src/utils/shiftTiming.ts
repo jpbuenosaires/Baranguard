@@ -1,4 +1,4 @@
-/** Shift date/time labels for the Tanod roster screens (moved out of my-shifts.tsx, Phase 6). */
+/** Shift date/time labels for the Tanod roster screens (moved out of my-shifts.tsx). */
 
 export interface FormattedShiftTime {
   dateLabel: string;

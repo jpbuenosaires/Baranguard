@@ -1,44 +1,36 @@
 /**
- * gis-live-tracking.js — W4 GIS Live Tracking (§9): "Shows freshness
- * (age_seconds, stale badge) on every responder marker. A stale location
- * is not visually presented as live. SOS markers remain visible above
- * ordinary map filters." Roles: Admin, Punong Barangay (read-only) — §7
- * "View live tracking": Admin full, PB read-only; since this screen has
- * no write action, both roles just render the same GET calls.
+ * gis-live-tracking.js — GIS Live Tracking: shows freshness (age_seconds,
+ * stale badge) on every responder marker. A stale location is not visually
+ * presented as live. SOS markers remain visible above ordinary map filters.
+ * Roles: Admin, Secretary and Punong Barangay (read-only: no write action,
+ * so every role renders the same GET calls).
  *
- * Extended by the 2026-09-05 UX pass (see
- * .claude/plans/fancy-crafting-lark.md) with a stat strip, roster
- * filters, a Call action, and a Live Activity feed — all built from
- * endpoints this app already has:
+ * A stat strip, roster filters, a Call action and a Live Activity feed are
+ * built from existing endpoints:
  *   - Stat strip / roster filters / activity feed use `GET /duty-status`
- *     and `GET /dispatch`, both already open to Admin AND Punong
- *     Barangay server-side (`DutyStatusController`/`DispatchController`),
- *     so they render identically for both roles.
+ *     and `GET /dispatch`, both open to Admin AND Punong Barangay
+ *     server-side (`DutyStatusController`/`DispatchController`), so they
+ *     render identically for both roles.
  *   - The Call button additionally needs `GET /users` for a contact
  *     number, which is Admin-only server-side (`UsersController::index`)
- *     — so it only renders for Admin; PB's roster row simply has no Call
- *     action, same graceful degradation `incident-management.js` uses
- *     for the same reason.
+ *     — so it only renders for Admin; other roles' roster rows simply have
+ *     no Call action, same graceful degradation `incident-management.js`
+ *     uses for the same reason.
  *   - The activity feed is assembled CLIENT-SIDE from real timestamped
  *     rows already returned by the endpoints above (each dispatch's own
  *     stage timestamps, each duty_status row's changed_at, each SOS's
  *     triggered_at) — not a new backend endpoint, and not fabricated
- *     data (§2 Rule 6): every line traces to a real row this screen
- *     already fetched.
+ *     data: every line traces to a real row this screen already fetched.
  *   - Everything here stays scoped to the signed-in user's own
- *     `barangayId`, exactly as before — no cross-barangay data is ever
- *     requested or displayed.
+ *     `barangayId` — no cross-barangay data is ever requested or displayed.
  *
- * Reuses the shared `LiveMap` component built for W3 — §9 is explicit
- * this does not get a second map implementation.
+ * Reuses the shared `LiveMap` component rather than a second map
+ * implementation.
  *
- * Polling: §6 doesn't specify a refresh cadence for `GET /gps/live`;
- * resolved decision (logged in DEVLOG.md) — poll every 15 seconds while
- * this page is open, matching the same order of magnitude as the
- * 120-second staleness threshold without being wasteful. Stops polling
- * when the user navigates away (own `stop()` returned to main.js).
- *
- * kebab-case filename per §4.
+ * Live positions arrive over a server-push stream (`openGpsStream`), with
+ * polling every POLL_INTERVAL_MS as the fallback, well inside the 120-second
+ * staleness threshold. Everything stops when the user navigates away (own
+ * `stop()` returned to main.js).
  */
 
 import {
@@ -52,7 +44,7 @@ import { escapeHtml } from '../utils/escapeHtml.js';
 import { formatIncidentCode } from '../services/tanodWorkflowUi.js';
 import { formatManilaTime, formatManilaTimeSeconds } from '../utils/manilaTime.js';
 
-const POLL_INTERVAL_MS = 5000; // 2026-11-06: was 15000; live positions should trail the phone by seconds, not tens of seconds
+const POLL_INTERVAL_MS = 5000; // live positions should trail the phone by seconds, not tens of seconds
 const ACTIVE_DISPATCH_STATUSES = ['assigned', 'en_route', 'arrived'];
 // What the quick filter is currently showing, in plain words.
 const FILTER_LABELS = {
@@ -138,7 +130,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
   let legendWidgetEl = null;
   let isLegendCollapsed = false;
 
-  // Stale-data tracking (audit X-01/A-03). `navigator.onLine` is only a hint.
+  // Stale-data tracking. `navigator.onLine` is only a hint.
   let staleBannerEl = null;
   let lastGoodAt = null;
   let isStale = false;
@@ -184,7 +176,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
     try {
       const [gpsItems, sosItems, dutyStatuses, dispatchesRes, usersRes, incidentsRes] = await Promise.all([
         getGpsLive(user.barangayId),
-        // A failed SOS read must not look like "no alerts" (audit P-14).
+        // A failed SOS read must not look like "no alerts".
         getTanodSos({}),
         getDutyStatus(user.barangayId).catch(() => []),
         getDispatches({ limit: 100 }).catch(() => ({ items: [] })),
@@ -778,18 +770,11 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
         const dispatchObj = dispatchedMap.get(g.userId);
         const tanodUser = tanodRosterById.get(g.userId);
         const badgeCode = tanodUser?.badgeNumber || `T-${String(g.userId).padStart(3, '0')}`;
-        // 2026-09-13: was `tanodUser?.barangayName ? ... : 'Brgy. Dao'` —
-        // GET /users never returns a barangayName field at all (see
-        // apiClient.js's mapUser shape), so this fell back to the
-        // literal 'Brgy. Dao' UNCONDITIONALLY, for every Tanod, on every
-        // installation — wrong for barangays 2-4 every single time, a
-        // live §2 Rule 6 violation found in the same sweep as the SMS
-        // Monitor and incident-management.js fabrications. Every Tanod on
-        // this screen is already the viewer's own barangay by tenant
-        // scoping, so a per-card barangay label added no real
-        // information anyway; replaced with real, already-computed GPS
-        // recency instead (same `formatAge()` the map's own marker
-        // popups already use).
+        // GET /users never returns a barangayName field (see apiClient.js's
+        // mapUser shape), and every Tanod on this screen is already the
+        // viewer's own barangay by tenant scoping, so the card shows real,
+        // already-computed GPS recency instead (same `formatAge()` the map's
+        // own marker popups use).
         const locationText = `Last seen ${formatAge(g.ageSeconds)}`;
 
         const card = document.createElement('div');
@@ -868,7 +853,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
         personnelListEl.appendChild(card);
       }
 
-      // On-duty tanods with no GPS fix are not on the map; say so rather than hide them (audit A-27).
+      // On-duty tanods with no GPS fix are not on the map; say so rather than hide them.
       if (rosterFilter === 'all' || rosterFilter === 'available') {
         const located = new Set(gpsItems.map((g) => g.userId));
         const missing = [...onDutyIds].filter((id) => !located.has(id) && !dispatchedIds.has(id));
@@ -939,7 +924,7 @@ export function renderGisLiveTrackingPage(root, user, onLoggedOut, navigate) {
 
     for (const s of openSos) {
       const code = resolveName(s.userId);
-      // Never invent a place name (Rule 6): say what the server actually knows.
+      // Never invent a place name: say what the server actually knows.
       let where = '';
       if (s.locationSource === 'no_fix' || s.latitude == null || s.longitude == null) {
         where = ' - no location available, call the tanod';

@@ -1,5 +1,5 @@
 /* ---- home ---- */
-/* Phase 4 (UI overhaul 2026-10-14): home screens. Tokens and shared ui/ components only; consolidated in Phase 6. */
+/* home screens: tokens and shared ui/ components only. */
 
 /* ---- Home ---- */
 .h4-home { gap: var(--spacing-md); }
@@ -79,7 +79,7 @@
 .h4-submit__hint { margin: 0; text-align: center; font-size: var(--text-sm); color: var(--color-text-secondary); }
 
 /* ---- workflow ---- */
-/* Phase 4 (UI overhaul 2026-10-14): workflow screens. Tokens and shared ui/ components only; consolidated in Phase 6. */
+/* workflow screens: tokens and shared ui/ components only. */
 
 /* Inline validation: the rule shows first (.wf-hint), the same line turns into the message. */
 .p4w-error {
@@ -188,7 +188,7 @@
 }
 
 /* ---- dispatch ---- */
-/* Phase 4 (UI overhaul 2026-10-14): dispatch screens. Tokens and shared ui/ components only; consolidated in Phase 6. */
+/* dispatch screens: tokens and shared ui/ components only. */
 
 /* ---- Dispatches list --------------------------------------------------- */
 .dispatch-card--p4 {
@@ -521,7 +521,7 @@
 }
 
 /* ---- map ---- */
-/* Phase 4 (UI overhaul 2026-10-14): map screens. Tokens and shared ui/ components only; consolidated in Phase 6. */
+/* map screens: tokens and shared ui/ components only. */
 
 /* --- No blur on overlays that sit over a moving map --------------------- */
 .lm-rail,
@@ -630,7 +630,7 @@
 }
 
 /* ---- admin ---- */
-/* Phase 4 (UI overhaul 2026-10-14): admin screens. Tokens and shared ui/ components only; consolidated in Phase 6. */
+/* admin screens: tokens and shared ui/ components only. */
 
 .admin-actions {
   display: flex;

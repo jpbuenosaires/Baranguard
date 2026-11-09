@@ -9,7 +9,7 @@ declare(strict_types=1);
  *
  * Maps Baranguard\Services\Auth\Jwt -> backend/services/auth/Jwt.php:
  * every namespace segment except the class name itself is lowercased to
- * match this repo's lowercase folder convention (§4: /routes /controllers
+ * match this repo's lowercase folder convention (/routes /controllers
  * /middleware /services /config /migrations); the class name is kept
  * verbatim as the filename, one class per file.
  */

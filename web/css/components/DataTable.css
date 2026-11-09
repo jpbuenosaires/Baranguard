@@ -1,8 +1,7 @@
 /**
- * DataTable.css — co-located with DataTable.js. Matches the Figma
- * reference's table spec: --color-bg header row, uppercase 12px grey
- * column labels, --color-divider row dividers, --color-bg hover,
- * --color-row-active-bg for the selected row.
+ * DataTable.css — co-located with DataTable.js: --color-bg header row,
+ * uppercase 12px grey column labels, --color-divider row dividers,
+ * --color-bg hover, --color-row-active-bg for the selected row.
  */
 
 .data-table-wrap {
@@ -40,12 +39,12 @@
 
 .data-table tbody tr { border-top: 1px solid var(--color-divider); }
 .data-table tbody tr:first-child { border-top: none; }
-/* Zebra striping (§3.3 of the UI/UX review) — applies to every DataTable
-   automatically, no per-page opt-in needed. color-mix against
-   --color-bg (not a second hardcoded tint) so it derives from the current
-   theme's own tokens and needs no separate dark-mode value. Low enough
-   specificity that .is-selected/.is-clickable:hover (both carry an extra
-   class) still win, same as the pre-existing hover rule below. */
+/* Zebra striping — applies to every DataTable automatically, no per-page
+   opt-in needed. color-mix against --color-bg (not a second hardcoded tint)
+   so it derives from the current theme's own tokens and needs no separate
+   dark-mode value. Low enough specificity that
+   .is-selected/.is-clickable:hover (both carry an extra class) still win,
+   same as the hover rule below. */
 .data-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--color-bg) 55%, transparent); }
 .data-table tbody td {
   padding: var(--pad-table-cell-y, var(--spacing-sm)) var(--pad-table-cell-x, var(--spacing-md));
@@ -90,17 +89,17 @@
   color: var(--color-link);
 }
 /* Neutral ↕ at rest so a sortable column is identifiable before it has
-   been clicked (audit A12); the active column's arrow takes full weight. */
+   been clicked; the active column's arrow takes full weight. */
 .data-table__sort-icon { font-size: 0.625rem; width: 0.625rem; display: inline-block; opacity: 0.4; }
 .data-table__sort-icon.is-active { opacity: 1; color: var(--color-link); }
 
 /* Sort arrow rotation animation. */
 .data-table__sort-icon { transition: transform 0.2s ease; }
 
-/* audit A11: the first cell of a clickable row is a real button carrying
-   the row's accessible name — the row itself stays a row, so header/cell
-   association survives. Styled to disappear into the cell: it must read
-   as the cell's own text, not as a button inside a table. */
+/* The first cell of a clickable row is a real button carrying the row's
+   accessible name — the row itself stays a row, so header/cell association
+   survives. Styled to disappear into the cell: it must read as the cell's
+   own text, not as a button inside a table. */
 .data-table__row-activator {
   min-height: 0;
   padding: 0;
@@ -137,7 +136,7 @@
 /* Row action cluster (view / edit / delete icon buttons). */
 .data-table__actions { display: flex; align-items: center; gap: var(--spacing-xs); justify-content: flex-end; }
 
-/* --- Empty state + pagination (§3.3 of the UI/UX review) ---------------- */
+/* --- Empty state + pagination ------------------------------------------- */
 
 .data-table__empty {
   text-align: center;
@@ -168,12 +167,9 @@
   white-space: nowrap;
 }
 
-/* Two-line cell (primary value above a muted secondary). Restored
-   2026-09-06: the Antigravity pass deleted this rule from
-   pages/incident-management.css, which silently broke Audit Log, Service
-   Health and SMS Monitor — three screens that pass never touched. Moved
-   here, next to the component whose markup actually uses it, so a future
-   page-level restyle can't take it out again. */
+/* Two-line cell (primary value above a muted secondary). Lives here, next
+   to the component whose markup uses it (Audit Log, Service Health and SMS
+   Monitor depend on it), so a page-level restyle can't take it out. */
 .data-table__stacked {
   display: flex;
   flex-direction: column;

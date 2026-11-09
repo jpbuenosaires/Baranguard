@@ -23,16 +23,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 /**
- * SosSmsPlugin — G1's third SOS fallback tier (Mobile Improvement Plan
- * Phase 4.3, docs/REMAINING.md).
+ * SosSmsPlugin — the third SOS fallback tier.
  *
- * §2 Rule 27: "SOS must have a local/offline fallback path so a
- * workstation/LAN outage does not silently suppress a personal-safety
- * emergency." The app-POST fallback (queued to offline_queue_local) and
- * the server's own GSM-modem SMS envelope path BOTH still terminate on
- * this same workstation (see REMAINING.md G1's own framing) — neither
- * survives the workstation itself being down. This plugin is the tier
- * that doesn't: it sends a plain SMS directly from the device's own SIM,
+ * SOS must have a local/offline fallback so a workstation/LAN outage does
+ * not silently suppress a personal-safety emergency. The app-POST fallback
+ * (queued to offline_queue_local) and the server's GSM-modem SMS envelope
+ * path both terminate on the workstation, so neither survives it being
+ * down. This plugin does: it sends a plain SMS directly from the device's own SIM,
  * via Android's SmsManager, to a human-monitored backup number — no
  * gateway, no workstation, no LAN required.
  *
@@ -47,22 +44,17 @@ import java.util.regex.Pattern;
  * SEND_SMS is a dangerous-protection-level runtime permission Google
  * Play restricts to an app's DEFAULT SMS handler — but that restriction
  * is a Play Store distribution policy, not an Android OS restriction;
- * Baranguard is sideloaded (§1: LAN-only, no cloud, not Play-distributed),
+ * Baranguard is sideloaded (LAN-only, not Play-distributed),
  * so a normal runtime grant is sufficient here, same as CAMERA/RECORD_AUDIO
  * elsewhere in this app.
  *
- * 2026-09-24 fix (docs/HANDOFF.md M13 section): a malformed
- * `sos_fallback.backup_contact_number` used to make this silently report
- * `{sent:true}` while nothing was actually transmitted — `SmsManager`
- * doesn't synchronously validate the destination address, and a rejected
- * send left zero trace in `content://sms/sent`/`/failed`/`/outbox`. Two
- * independent fixes: (1) a format check before ever calling SmsManager,
- * same PH-mobile-number shape `SettingsController::update()` now enforces
- * server-side; (2) a real `sentIntent`-based result instead of trusting
- * `sendTextMessage()`'s synchronous return, which only ever throws for
- * permission/argument errors, never for a carrier-rejected send. Both are
- * code-only as of this commit — not yet device-verified for the failure
- * path (needs airplane-mode/no-SIM testing per docs/HANDOFF.md).
+ * `SmsManager` doesn't synchronously validate the destination address, and
+ * a rejected send leaves no trace in `content://sms/sent`/`/failed`/`/outbox`,
+ * so this (1) checks the PH-mobile-number format (same shape
+ * `SettingsController::update()` enforces server-side) before calling
+ * SmsManager, and (2) reports a real `sentIntent`-based result instead of
+ * trusting `sendTextMessage()`'s synchronous return, which only throws for
+ * permission/argument errors, never for a carrier-rejected send.
  */
 @CapacitorPlugin(
     name = "SosSms",

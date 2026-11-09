@@ -1,23 +1,20 @@
 /**
- * LineChart — multi-series line chart for W2's trend[] (replaces the
- * earlier bar-only TrendChart; see that file's own note).
+ * LineChart — multi-series line chart for the dashboard's trend[].
  *
  * Renders exactly the series it is given, in the order given, one point
- * per entry — the same "never invent a client-side data shape" rule the
- * old TrendChart followed. A series with no real data behind it is simply
- * not passed in; this component never synthesises one to fill the legend.
+ * per entry — never inventing a client-side data shape. A series with no
+ * real data behind it is simply not passed in; this component never
+ * synthesises one to fill the legend.
  *
- * Hand-rolled inline SVG, no charting library (§1's stack has no bundler,
- * and the existing DonutChart/HeatmapMap are hand-rolled for the same
- * reason). SVG rather than the old div-per-bar approach because a line
- * needs real coordinate geometry, gridlines and axis ticks, which divs
+ * Hand-rolled inline SVG, no charting library (there is no bundler, and
+ * DonutChart/HeatmapMap are hand-rolled for the same reason). SVG because a
+ * line needs real coordinate geometry, gridlines and axis ticks, which divs
  * can't express without a pile of absolute positioning.
  *
  * Colours come from --chart-line-1/2, --chart-grid and --chart-axis-text,
  * read at render time via getComputedStyle rather than hardcoded, so the
  * chart follows a theme change like everything else (a literal hex here
- * would be invisible in one of the two themes — the exact class of bug
- * the token audit found across the app).
+ * would be invisible in one of the two themes).
  *
  * A `null`/`undefined` entry in a point's `values[]` is a genuine gap —
  * "no data that day" — not a zero. It breaks the line/area for that
@@ -43,8 +40,8 @@ const PAD = { top: 14, right: 14, bottom: 36, left: 42 };
 // Colours are CSS custom-property references, applied through `style`
 // (SVG presentation attributes do not resolve var()). The browser then
 // re-resolves them the moment the theme flips, so a chart already on screen
-// follows a light/dark toggle with no redraw (audit 2026-10-09 D-10), and no
-// hex fallback has to be duplicated here (D-12).
+// follows a light/dark toggle with no redraw, and no
+// hex fallback has to be duplicated here.
 const cssVar = (name) => `var(${name})`;
 
 /**
@@ -204,7 +201,7 @@ export function LineChart({ points, series, caption }) {
 
     // Point markers, but only when they won't collapse into a solid bar —
     // a 30-day range at this width has no room for 30 dots. The hover
-    // crosshair below (added 2026-09-06) covers every range regardless of
+    // crosshair below covers every range regardless of
     // this density limit — these are the always-visible dots, not the
     // only way to read a value off the line. Gaps (null) have no dot.
     if (points.length <= 14) {
@@ -224,9 +221,9 @@ export function LineChart({ points, series, caption }) {
   });
 
   // --- hover crosshair + tooltip -------------------------------------------
-  // 2026-09-06 UX pass: point markers (above) only render up to 14 points,
-  // so a 30/90-day range — the dashboard's own default — had no hover
-  // affordance at all. This works at any density: a transparent capture
+  // Point markers (above) only render up to 14 points, so a 30/90-day range
+  // — the dashboard's own default — needs this hover
+  // affordance. This works at any density: a transparent capture
   // rect spanning the whole plot picks the nearest data index by x
   // position, regardless of how many discrete dots are actually drawn.
   const crosshair = document.createElementNS(svgNS, 'line');
@@ -344,10 +341,10 @@ export function LineChart({ points, series, caption }) {
   host.appendChild(legend);
 
   // --- accessible equivalent ----------------------------------------------
-  // Same pattern the old TrendChart and DonutChart already use: the
+  // Same pattern DonutChart uses: the
   // visual chart is aria-hidden and a real data table carries the numbers.
   //
-  // 2026-09-06 fix: `.sr-only` (position:absolute, width/height:1px) went
+  // `.sr-only` (position:absolute, width/height:1px) goes
   // on a WRAPPER div, not the `<table>` itself. A `<table>` in the default
   // `table-layout: auto` algorithm ignores an explicit width/height
   // smaller than its content's minimum size — the table still lays out at

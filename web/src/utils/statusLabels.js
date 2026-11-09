@@ -1,7 +1,7 @@
 /**
  * statusLabels.js — the ONE place incident and dispatch statuses get their
- * plain-English wording, so every screen names the same state the same way
- * (audit D-05). Labels only: API values and CSS class names that derive from
+ * plain-English wording, so every screen names the same state the same way.
+ * Labels only: API values and CSS class names that derive from
  * the raw status are never changed.
  */
 

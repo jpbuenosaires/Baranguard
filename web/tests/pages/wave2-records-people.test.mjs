@@ -1,5 +1,5 @@
 // Must run before anything formats a date: a workstation set to US Pacific
-// time must still show Asia/Manila (Rule 11).
+// time must still show Asia/Manila.
 process.env.TZ = 'America/Los_Angeles';
 
 import { describe, test, afterEach } from 'node:test';

@@ -1,5 +1,5 @@
 # Reviewed role matrix for verify-auth-sweep.sh: METHOD<TAB>path<TAB>roles allowed by the handler's requireRole().
-# Generated 2026-10-29 from the code and checked against docs/REFERENCE.md section 3. Empty = role checked indirectly.
+# Generated from the code and reviewed by hand. Empty = role checked indirectly.
 # If a handler's roles change on purpose, update the matching line here in the same commit.
 POST	/accomplishment-entries	tanod
 PATCH	/accomplishment-entries/1	tanod

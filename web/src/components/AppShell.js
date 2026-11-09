@@ -1,18 +1,11 @@
 /**
- * AppShell — the sidebar + topbar nav shell (§8 "Nav shell: Web — dark
- * navy collapsible sidebar, role-filtered per §7; white top bar
- * (breadcrumbs, search, avatar dropdown)"). Extracted here once a second
- * real screen existed (W2 originally inlined its own single-item nav in
- * admin-dashboard.js — that was fine when only one screen existed; with
- * three now built this session, every screen should show the same real
- * nav rather than three slightly different hand-rolled copies).
+ * AppShell — the sidebar + topbar nav shell: dark navy collapsible sidebar,
+ * role-filtered; white top bar (breadcrumbs, search, avatar dropdown). Every
+ * screen shows the same real nav rather than hand-rolled copies.
  *
- * §8 "no demo/prototype tells": the nav lists only screens that actually
- * exist, same rule W2 already followed when it shipped with just one
- * item.
+ * No demo/prototype tells: the nav lists only screens that actually exist.
  *
- * PascalCase filename per §4 (component convention), plain
- * DOM-returning function like KpiCard.js/TrendChart.js.
+ * Plain DOM-returning function like KpiCard.js/DataTable.js.
  */
 import { icons } from './icons.js';
 import { avatarInitials } from './Avatar.js';
@@ -31,14 +24,13 @@ import { startTabA11y } from './tabA11y.js';
 // bell to notice. Plain 'dispatch'/'other' notifications stay silent.
 const AUDIBLE_NOTIFICATION_TYPES = new Set(['sos', 'priority_alert']);
 
-// The four barangays are fixed (REFERENCE.md §1), so one lookup serves
+// The four barangays are fixed, so one lookup serves
 // every navigation instead of one per AppShell mount.
 let barangaysPromise = null;
 
 // Shared by the topbar jurisdiction chip and the avatar-menu jurisdiction
 // label — both resolve the same user.barangayId to a name and reveal
-// themselves once it's known; previously duplicated near-identically in
-// two places (a code-review finding).
+// themselves once it's known.
 function applyBarangayName(chipEl, barangayId, { setTitle = false } = {}) {
   barangaysPromise ??= getBarangays().catch((err) => { barangaysPromise = null; throw err; });
   barangaysPromise.then((items) => {
@@ -70,13 +62,12 @@ const INCIDENT_TYPE_LABELS = {
 };
 const SEARCH_DEBOUNCE_MS = 300;
 
-// --- Theme toggle (§1.1/§7.1 of the UI/UX review) --------------------------
+// --- Theme toggle -----------------------------------------------------------
 // Two explicit states only (light/dark), not a three-way light/dark/system
 // cycle — a single icon button can't cleanly expose a third state without a
 // dropdown, and once a Tanod/Admin has clicked it once they have expressed
-// a real preference that should stick, not silently fall back to "system"
-// again. No stored preference at all (first-ever load) still follows the
-// OS: since the 2026-09-06 UI/UX audit, index.html's bootstrap always
+// a real preference that should stick. No stored preference at all
+// (first-ever load) still follows the OS: index.html's bootstrap always
 // stamps a RESOLVED data-theme (and keeps following the OS until a value
 // is actually stored), so `[data-theme]` is always present and page-level
 // `[data-theme="dark"]` rules apply in every dark state. Only an explicit
@@ -310,24 +301,19 @@ function resetNotificationBaselineOnLogout() {
 let lastPollOkAt = null;
 
 
-// §9 role gates: W2 Dashboard and W4 Live Map are Admin + Punong Barangay
-// (read-only); W3 Dispatch Center's create/cancel actions are Admin only,
-// with no separate read-only variant built this session — so PB simply
-// doesn't get that nav item rather than landing on a page that silently
-// can't do anything. Icons match the Figma export's DashboardLayout.tsx
-// nav (LayoutDashboard/Radio/Map from lucide-react) — see icons.js.
-// `countKey`, when present, keys into GET /reports/nav-counts' response
-// (§4.1 of the UI/UX review) — Admin-only, matching that endpoint's own
-// gating, so a nav item shared with Punong Barangay
-// still only shows a badge for the Admin viewing it.
+// Role gates: Dashboard is Admin + Punong Barangay (read-only); a role simply
+// doesn't get a nav item for a page it can't use, rather than landing on a
+// page that silently can't do anything. Icons are lucide's
+// (LayoutDashboard/Radio/Map) — see icons.js.
+// `countKey`, when present, keys into GET /reports/nav-counts' response —
+// Admin-only, matching that endpoint's own gating, so a nav item shared with
+// Punong Barangay still only shows a badge for the Admin viewing it.
 //
-// `group` clusters related items under a small-caps sidebar header (the
-// 2026-09-05 sidebar redesign — 17 flat items for Admin had become hard
-// to scan). `null` means no header (Dashboard sits alone at the top, the
-// implicit "home"). A header only ever renders if at least one item in
-// that group is visible to the signed-in role — see the render loop
-// below — so Secretary/Punong Barangay still see small, sparse groups
-// rather than empty headers.
+// `group` clusters related items under a small-caps sidebar header. `null`
+// means no header (Dashboard sits alone at the top, the implicit "home"). A
+// header only ever renders if at least one item in that group is visible to
+// the signed-in role — see the render loop below — so Secretary/Punong
+// Barangay still see small, sparse groups rather than empty headers.
 const SYSTEM_TOOLS_MENU = 'System Tools';
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', roles: ['admin', 'punong_barangay'], icon: icons.layoutDashboard, group: null },
@@ -336,43 +322,38 @@ const NAV_ITEMS = [
   { key: 'incident-management', label: 'Incident Management', roles: ['admin', 'secretary'], icon: icons.alertTriangle, group: 'Operations' },
   { key: 'gis', label: 'Live Map', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.map, group: 'Operations' },
 
-  // There is no browsable incident-records list: DILG BIMSS's KPIS module
-  // is the mandated case ledger (REFERENCE.md §1). The per-incident detail
+  // There is no browsable incident-records list: barangays keep the case
+  // ledger in their own binders. The per-incident detail
   // view is 'incident-detail' — reached from Incident Management, the
   // dashboard, search and notifications.
-  // 2026-10 tanod-workflow build (docs/FEATURE_CONTRACT_2026-10.md §10).
   // No count badge on Approvals: GET /reports/nav-counts has no approvals
   // figure and a badge computed any other way would be a fabricated number
-  // (§2 Rule 6) — the page itself lists what is waiting.
+  // — the page itself lists what is waiting.
   { key: 'approvals', label: 'Approvals', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.checkCircle, group: 'Records & Reporting' },
   { key: 'accomplishment-reports', label: 'Accomplishment Reports', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.fileText, group: 'Records & Reporting' },
   { key: 'referrals', label: 'Referral Log', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.send, group: 'Records & Reporting' },
   { key: 'school-zones', label: 'Safer School Zones', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.mapPin, group: 'Records & Reporting' },
-  // 2026-09-05 merge of Historical Heatmap + Analytics (W5 + W9) into one
-  // tabbed screen — see pages/analytics.js. Same role pair both already
-  // had, so no per-tab gating needed there (unlike Personnel below).
+  // Historical Heatmap + Analytics in one tabbed screen — see
+  // pages/analytics.js. Same role pair for both, so no per-tab gating needed
+  // there (unlike Personnel below).
   { key: 'analytics', label: 'Analytics', roles: ['admin', 'punong_barangay'], icon: icons.barChart, group: 'Records & Reporting' },
-  // 2026-09-05 merge of what used to be separate nav items (Shift
-  // Scheduler/Swap Requests/User Management) into one tabbed screen — see
-  // pages/personnel.js. No countKey here: the badge those used to carry
-  // (pendingSwapRequests) moved onto the matching tab chip inside the page
-  // itself instead of the sidebar.
-  // 2026-10: Secretary and Punong Barangay reach this hub too, but only its
+  // User Management / Shift Scheduler / Swap Requests in one tabbed screen —
+  // see pages/personnel.js. No countKey here: the pending-swap badge sits on
+  // the matching tab chip inside the page instead of the sidebar.
+  // Secretary and Punong Barangay reach this hub too, but only its
   // Scheduler tab (see personnel.js): read-only tanod availability (Admin/Secretary)
   // and roster publishing (whoever holds approve_roster, typically the PB)
   // happen there, and the Approvals page deep-links to it.
   { key: 'personnel', label: 'Personnel', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.users, group: 'Personnel' },
 
-  // 2026-10-07 grouped these under a collapsible "System Tools" menu; 2026-10-17 they are plain
-  // top-level rows again (the `menu` support below is kept but unused). PAGE_ROLES in main.js
-  // still gates every one of them to Admin.
-  // §9 W14 — Admin only, explicitly.
+  // Plain top-level rows (the `menu` support below is kept but unused).
+  // PAGE_ROLES in main.js still gates every one of them to Admin.
+  // SMS Monitor — Admin only, explicitly.
   { key: 'sms-log', label: 'SMS Monitor', roles: ['admin'], icon: icons.messageSquare, group: 'System' },
-  // §9 W17 / W20 — Admin-only operational screens.
+  // Audit Log / Service Health — Admin-only operational screens.
   { key: 'audit-log', label: 'Audit Log', roles: ['admin'], icon: icons.shield, group: 'System' },
   { key: 'service-health', label: 'Service Health', roles: ['admin'], icon: icons.activity, group: 'System' },
-  // §D/W18 — Admin only, built as a deliberate Sprint 8 exception.
-  // Back in the sidebar (2026-10-17); Settings > Map Packages also opens it.
+  // Map Packages — Admin only; Settings > Map Packages also opens it.
   { key: 'map-packages', label: 'Map Packages', roles: ['admin'], icon: icons.map, group: 'System' },
   { key: 'settings', label: 'Settings', roles: ['admin', 'secretary', 'punong_barangay'], icon: icons.settings, group: 'System' },
 ];
@@ -426,7 +407,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   const el = document.createElement('div');
   el.className = 'app-shell';
 
-  // §6.1: skip-navigation link — off-screen until Tab-focused, first
+  // Skip-navigation link — off-screen until Tab-focused, first
   // focusable element on every authenticated page. Targets #page-main
   // below via a real anchor jump (no JS needed for the focus move itself).
   const skipLink = document.createElement('a');
@@ -435,15 +416,14 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   skipLink.textContent = 'Skip to main content';
   el.appendChild(skipLink);
 
-  // <aside>, not <div> (audit A5) — the app had no landmark elements at
-  // all, so screen-reader landmark navigation, the main way a non-visual
-  // user moves around a console this dense, was unavailable. Purely an
-  // element swap; the classes still carry every bit of the layout.
+  // <aside>, not <div>: landmark elements let a screen-reader user move
+  // around a console this dense. Purely an element swap; the classes still
+  // carry every bit of the layout.
   const sidebar = document.createElement('aside');
   sidebar.setAttribute('aria-label', 'Sidebar');
   sidebar.className = 'sidebar' + (readSidebarCollapsed() ? ' is-collapsed' : '');
 
-  // Off-canvas drawer state for the ≤768px breakpoint (audit A13). Above
+  // Off-canvas drawer state for the ≤768px breakpoint. Above
   // that breakpoint the scrim is display:none and these classes do
   // nothing, so one implementation covers both without a media query in
   // JS (which would need a resize listener to stay correct).
@@ -489,12 +469,11 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   nav.className = 'sidebar__nav';
   nav.setAttribute('aria-label', 'Main navigation');
 
-  // Real <button> elements (were clickable <div>s — not focusable, not
-  // operable by keyboard or screen reader at all). aria-current marks
+  // Real <button> elements. aria-current marks
   // the active page instead of relying on the `.active` class alone;
   // aria-label guarantees an accessible name even at the collapsed
   // 768px breakpoint where the visible label text is hidden via CSS.
-  // §4.1 of the UI/UX review — badge dots populated below, once
+  // Badge dots are populated below, once
   // GET /reports/nav-counts resolves (Admin only; see NAV_ITEMS' own
   // comment on why a shared item still only badges for an Admin viewer).
   const countBadges = {};
@@ -522,7 +501,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
     navItem.setAttribute('aria-label', item.label);
     // Sighted users get no hover tooltip on touch, and the collapsed rail
     // shows icons only — `title` at least covers the desktop collapsed
-    // case, where hover does exist (audit A13).
+    // case, where hover does exist.
     navItem.title = item.label;
     navItem.innerHTML = `<span class="sidebar__nav-icon" aria-hidden="true">${item.icon(18)}</span><span class="sidebar__nav-label">${item.label}</span>`;
     if (item.countKey && user.role === 'admin') {
@@ -583,7 +562,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   // Applying counts is its own function because three things call it: the
   // first load, the poll, and refreshNavCounts() on the returned handle —
   // which a page calls straight after a mutating action so the sidebar
-  // can't sit contradicting the screen for up to a minute (audit A16).
+  // can't sit contradicting the screen for up to a minute.
   function applyCounts(counts) {
     for (const [key, badge] of Object.entries(countBadges)) {
       const n = counts[key] ?? 0;
@@ -623,10 +602,9 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
     // interval for the badges to appear on initial load.
     refreshNavCounts();
   }
-  // Sidebar user footer (reference shows avatar + name + a second line).
-  // The reference's second line is an email address; §5's `user` table
-  // has no email column, so this shows the role instead of inventing a
-  // field — same rule that keeps every other identity real.
+  // Sidebar user footer: avatar + name + a second line. The `user` table has
+  // no email column, so the second line shows the role instead of inventing
+  // a field — same rule that keeps every other identity real.
   const sidebarUser = document.createElement('div');
   sidebarUser.className = 'sidebar__user';
   const sidebarUserName = document.createElement('div');
@@ -660,12 +638,12 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   const mainColumn = document.createElement('div');
   mainColumn.className = 'main-column';
 
-  // <header> landmark (audit A5).
+  // <header> landmark.
   const topbar = document.createElement('header');
   topbar.className = 'topbar';
 
   // Drawer trigger — only visible at ≤768px (CSS), where the sidebar is
-  // off-canvas (audit A13).
+  // off-canvas.
   const drawerButton = document.createElement('button');
   drawerButton.type = 'button';
   drawerButton.className = 'icon-btn topbar__menu';
@@ -677,9 +655,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
     else openDrawer();
   });
   topbar.appendChild(drawerButton);
-  // audit 2026-10-09 D-06/X-23: the Punong Barangay approves reports and
-  // rosters since 2026-10-01, so "(read-only)" was simply wrong. The
-  // account's own official_title (e.g. "Chief Tanod") is shown when the
+  // The account's own official_title (e.g. "Chief Tanod") is shown when the
   // session carries one, so officials recognise their own role.
   const ROLE_LABELS = { admin: 'Admin', secretary: 'Secretary', punong_barangay: 'Punong Barangay' };
   const baseRoleLabel = ROLE_LABELS[user.role] ?? user.role;
@@ -775,8 +751,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   topbar.appendChild(mobileSearchBtn);
 
   // Real search — GET /search, incidents only (see SearchController.php's
-  // own doc for scope). Replaces a prior placeholder input that called
-  // nothing (§8: no decorative control that does nothing when used).
+  // own doc for scope). No decorative control that does nothing when used.
   const searchHost = document.createElement('div');
   searchHost.className = 'topbar__search';
   const searchLabel = document.createElement('label');
@@ -834,7 +809,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   const searchResults = document.createElement('div');
   searchResults.className = 'topbar__search-results';
   searchResults.hidden = true;
-  // X-20: the result count is announced; the list itself is not live.
+  // The result count is announced; the list itself is not live.
   const searchStatus = document.createElement('span');
   searchStatus.className = 'sr-only';
   searchStatus.setAttribute('role', 'status');
@@ -1025,7 +1000,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   });
 
   // Escape closes the dropdown; Down arrow moves into the results, so the
-  // list is reachable without tabbing through it (audit A15 group).
+  // list is reachable without tabbing through it.
   searchInput.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       searchResults.hidden = true;
@@ -1048,8 +1023,8 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   });
 
   async function runSearch(q) {
-    // Between the debounce and the response the dropdown used to sit
-    // empty or stale, with nothing to say a request was in flight.
+    // Between the debounce and the response, show that a request is in
+    // flight so the dropdown isn't left empty or stale.
     searchResults.innerHTML = '<div class="topbar__search-empty">Searching…</div>';
     searchResults.hidden = false;
     const qLower = q.toLowerCase();
@@ -1119,10 +1094,10 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   topbarUser.className = 'topbar__user';
 
   // Live Manila clock and active shift. Pinned to Asia/Manila through
-  // manilaTime.js (audit 2026-10-09 X-24): it used the browser's own zone
-  // and was labelled "PST", which most readers take as US Pacific time.
+  // manilaTime.js (the browser's own zone would be labelled "PST", which
+  // most readers take as US Pacific time).
   // role="timer" with aria-live off: a once-a-second update must not be
-  // read out continuously (X-15).
+  // read out continuously.
   const clockContainer = document.createElement('div');
   clockContainer.className = 'topbar__clock';
   clockContainer.setAttribute('role', 'timer');
@@ -1162,15 +1137,12 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   updateClock();
   clockInterval = setInterval(updateClock, 1000);
 
-  // Real system-status badge — GET /system/health (Admin only per §6).
-  // Replaces a hardcoded permanently-green "All Systems Operational"
-  // badge (§8's exclusions) — this one reflects the API/DB check that
-  // actually ran, and is simply omitted for roles that can't call the
-  // endpoint rather than showing a fake status for them.
+  // Real system-status badge — GET /system/health (Admin only). It reflects
+  // the API/DB check that actually ran, and is simply omitted for roles that
+  // can't call the endpoint rather than showing a fake status for them.
   if (user.role === 'admin') {
-    // A real <button> (audit 2026-10-09 X-15): it was a div with
-    // role=button whose fixed aria-label hid the live state, so a screen
-    // reader never heard whether the system was up.
+    // A real <button> so it is keyboard-operable and its live state can be
+    // read out by a screen reader.
     const statusBadge = document.createElement('button');
     statusBadge.type = 'button';
     statusBadge.className = 'status-badge status-badge--checking';
@@ -1184,7 +1156,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
     statusBadge.addEventListener('click', () => navigate('service-health'));
     topbarUser.appendChild(statusBadge);
     getSystemHealth().then((health) => {
-      // X-22: name the cause instead of calling every core failure
+      // Name the cause instead of calling every core failure
       // "Database Unavailable", and do not claim "All Systems Operational"
       // while a non-core service reports a failure.
       const nonCore = [health.ors, health.gsmIngestion, health.notificationConfig];
@@ -1222,7 +1194,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
     writeStoredTheme(next);
     syncThemeToggleIcon();
   });
-  // D-10: the Settings page's theme cards and the OS-following bootstrap
+  // The Settings page's theme cards and the OS-following bootstrap
   // also change data-theme; keep the icon and menu label in step with them.
   onThemeChange(themeToggle, () => syncThemeToggleIcon());
   topbarUser.appendChild(themeToggle);
@@ -1738,17 +1710,15 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
       markPollOk();
     } catch {
       // A failed fetch leaves the previous bell state rather than replacing
-      // the panel with an error, but it is no longer silent: the topbar
-      // says updates are paused until a poll succeeds again (X-01).
+      // the panel with an error; the topbar says updates are paused until a
+      // poll succeeds again.
       markPollFailed();
     }
   }
 
   // --- Avatar menu -------------------------------------------------------
-  // Replaces avatar + full name + a separate Sign out button, which was
-  // three controls' worth of topbar for one identity (audit A15). §8's own
-  // nav-shell spec already called for an "avatar dropdown"; it was never
-  // built until now.
+  // One avatar dropdown instead of avatar + full name + a separate Sign out
+  // button.
   const avatarTrigger = document.createElement('button');
   avatarTrigger.type = 'button';
   avatarTrigger.className = 'topbar__avatar-button';
@@ -1762,7 +1732,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
 
   const avatarMenu = Menu({ trigger: avatarTrigger, label: 'Account', panelClass: 'menu__panel--account' });
 
-  // Overhauled Rich User Identity Header
+  // Rich user identity header
   const menuHeader = document.createElement('div');
   menuHeader.className = 'menu__account-header menu__header';
 
@@ -1860,7 +1830,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
 
   ensureGlobalShortcuts();
 
-  // V-06/N-03: the data-privacy notice (draft) is a static page, so it opens
+  // The data-privacy notice (draft) is a static page, so it opens
   // even when the API is down; a new tab keeps the console where it was.
   const privacyItem = MenuItem({
     label: 'Privacy notice',
@@ -1895,7 +1865,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   };
   renderUserLabel(user.fullName);
 
-  // --- "Updates paused" indicator (audit 2026-10-09 X-01) -----------------
+  // --- "Updates paused" indicator ------------------------------------------
   // The bell and nav counts poll in the background; when those polls fail
   // the screen silently goes stale. role=status announces the change once.
   const staleIndicator = document.createElement('span');
@@ -1930,7 +1900,7 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   const header = document.createElement('div');
   header.className = 'page-header-host';
 
-  // <main> landmark (audit A5) — the skip-link's target, and the element a
+  // <main> landmark — the skip-link's target, and the element a
   // screen-reader user jumps to first on every page.
   const content = document.createElement('main');
   content.className = 'page-content';
@@ -1973,9 +1943,8 @@ export function AppShell(user, activePage, navigate, onLogout, options = {}) {
   };
   document.addEventListener('keydown', onKeydown);
 
-  // W15 Settings can rename the signed-in user without a full page
-  // navigation (so its own success message stays visible) — a real bug
-  // caught by this session's own Playwright walkthrough: the topbar name
+  // Settings can rename the signed-in user without a full page
+  // navigation (so its own success message stays visible): the topbar name
   // is otherwise only ever set once, from the `user` object AppShell was
   // constructed with, and a sessionStorage update after the fact doesn't
   // retroactively touch an already-rendered DOM text node.

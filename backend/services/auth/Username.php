@@ -4,13 +4,10 @@ declare(strict_types=1);
 namespace Baranguard\Services\Auth;
 
 /**
- * Master Reference §5 (`user` table note): "Username normalization is
- * deterministic: trim surrounding whitespace, convert to lowercase using
- * application-defined ASCII username rules, then validate and persist the
- * normalized value before uniqueness/authentication checks." The ASCII
- * shape (3-64 chars: lowercase letters, digits, dot, underscore, hyphen)
- * matches Sprint 0's bootstrap-admin.js exactly, for the same reason as
- * PasswordPolicy — one definition of "valid username" across the system.
+ * Username normalization is deterministic: trim, lowercase, then validate
+ * (3-64 chars: lowercase letters, digits, dot, underscore, hyphen) and
+ * persist the normalized value before any uniqueness/authentication check.
+ * Matches bootstrap-admin.js exactly.
  */
 final class Username
 {

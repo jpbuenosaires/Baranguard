@@ -5,16 +5,12 @@ namespace Baranguard\Lib;
 
 /**
  * Shared HTTP helpers: JSON body parsing, JSON responses, and the
- * standard error envelope. Master Reference §6 defines the standard error
- * *codes* (400 VALIDATION_ERROR, 401 UNAUTHORIZED, 403 FORBIDDEN,
- * 404 NOT_FOUND, 409 CONFLICT, 422 UNPROCESSABLE_ENTITY, 429 RATE_LIMITED,
- * 500 SERVER_ERROR, 503 SERVICE_UNAVAILABLE) but never states the exact
- * JSON envelope shape — that's a decision this file makes and every
- * future controller must reuse verbatim, not reinvent per-endpoint:
+ * standard error envelope. Standard error codes: 400 VALIDATION_ERROR,
+ * 401 UNAUTHORIZED, 403 FORBIDDEN, 404 NOT_FOUND, 409 CONFLICT,
+ * 422 UNPROCESSABLE_ENTITY, 429 RATE_LIMITED, 500 SERVER_ERROR,
+ * 503 SERVICE_UNAVAILABLE. Every controller reuses this envelope verbatim:
  *
  *   { "error": { "code": "UNAUTHORIZED", "message": "..." } }
- *
- * Logged as a resolved decision in DEVLOG.md.
  */
 final class Http
 {
@@ -51,13 +47,7 @@ final class Http
         return $token !== '' ? $token : null;
     }
 
-    /**
-     * Added for W2 (GET /reports/summary?date_from=&date_to=) — the first
-     * endpoint in this repo that reads query-string params. No prior
-     * controller needed this, so it wasn't part of Sprint 1's original
-     * auth cut; adding it here is new scope on top of that file, not a
-     * rewrite of anything DEVLOG already lists as done.
-     */
+    /** A non-empty query-string param, or null. */
     public static function query(string $name): ?string
     {
         $value = $_GET[$name] ?? null;

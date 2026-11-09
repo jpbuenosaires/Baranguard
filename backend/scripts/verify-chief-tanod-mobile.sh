@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Baranguard — Chief Tanod on mobile, stage 1 (Wave 3-G, review decision 15C,
-# item 24) + the users directory.
+# Baranguard — Chief Tanod on mobile + the users directory.
 #
 # Proves over real HTTP that:
 #   1. SessionPolicy: an ADMIN login with a well-formed X-Device-Id gets a
@@ -14,7 +13,7 @@
 #   3. Admin can register / deactivate its OWN device (and nobody else's).
 #   4. Mobile writes from an admin device follow the Tanod device rules:
 #      X-Device-Id required (400), must be this account's active device
-#      (422), H-09 signature enforced when a key is on file (401), phased
+#      (422), device signature enforced when a key is on file (401), phased
 #      rollout (no key on file -> header + ownership check only).
 #   5. Revocation (logout, suspension, deactivation, change-password) still
 #      kills an admin device session on the very next request; the 7-day cap
@@ -23,10 +22,10 @@
 #      on-duty/responding tanod and every active admin of the SAME barangay
 #      excluding the sender, and an admin with a registered device gets an
 #      FCM-channel delivery row (which only fails because no FCM project is
-#      configured in the test env — Rule 12 then falls back to SMS).
-#   6b. Workflow gap #6 (2026-10-12): the Admin device session may RESOLVE an
+#      configured in the test env; the SMS fallback then applies).
+#   6b. The Admin device session may RESOLVE an
 #      SOS (PATCH /tanod-sos/:id/resolve is on the allow-list as a signed
-#      write: header 400, ownership 422, H-09 signature 401), active or
+#      write: header 400, ownership 422, signature 401), active or
 #      acknowledged; a Tanod session (web or device) still cannot (403); a
 #      barangay-2 Admin device gets 404 for a barangay-1 SOS (tenant rule).
 #   7. GET /users/directory (admin|secretary): thin {user_id, full_name,
@@ -34,7 +33,7 @@
 #      purpose=tanod | purpose=signer&authority=..., other roles 403.
 #
 # Safe to run: disposable database, disposable app-user, throwaway port
-# (Wave 3 agent G range 9101-9199). Real databases and backend/.env are never
+# (port range 9101-9199). Real databases and backend/.env are never
 # touched. Uses the FULL migration chain.
 #
 # Usage: bash backend/scripts/verify-chief-tanod-mobile.sh

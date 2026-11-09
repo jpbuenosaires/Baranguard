@@ -1,14 +1,11 @@
 /**
- * dispatchRepository.ts — the local cache for `dispatch_local` (§5),
- * backing M5 Assignments List and M6 Assignment Detail/Navigation so both
- * screens keep working when the workstation/API is unreachable (§9 M5:
- * "Reads cached assignments so the screen still works when the
- * workstation/API is unreachable. Shows stale/cached indicator.").
+ * dispatchRepository.ts — the local cache for `dispatch_local`, backing the Assignments List and
+ * Assignment Detail/Navigation so both keep working when the workstation/API is unreachable (cached
+ * assignments, with a stale/cached indicator).
  *
- * Server-sourced rows use a DETERMINISTIC local_id ('srv-<server_dispatch_id>')
- * rather than a fresh UUID per cache refresh — refreshing upserts the same
- * row instead of accumulating a duplicate every time M5 polls
- * `GET /dispatch`.
+ * Server-sourced rows use a DETERMINISTIC local_id ('srv-<server_dispatch_id>') rather than a fresh
+ * UUID per cache refresh, so refreshing upserts the same row instead of accumulating a duplicate on
+ * every `GET /dispatch` poll.
  */
 
 import { openLocalDatabase, withTransaction } from './localDatabase';
@@ -19,12 +16,10 @@ import { resolveMissingIncidentCodes } from '../incidentCodeService';
 import { setTrackingDispatches } from '../trackingRate';
 
 /**
- * How long a cached dispatch snapshot is treated as fresh before the UI
- * must switch to a cached/last-known label (§9 M6). Not a number §6/§5
- * states explicitly — resolved here (logged in DEVLOG.md) at 10 minutes:
- * long enough that a normal refresh cadence never flickers into "stale",
- * short enough that a genuinely disconnected Tanod sees an honest label
- * within one shift, not days later.
+ * How long a cached dispatch snapshot is treated as fresh before the UI must switch to a
+ * cached/last-known label. 10 minutes: long enough that a normal refresh cadence never flickers into
+ * "stale", short enough that a genuinely disconnected Tanod sees an honest label within one shift,
+ * not days later.
  */
 const CACHE_FRESH_MINUTES = 10;
 
@@ -107,12 +102,10 @@ async function refreshTrackingRate(): Promise<void> {
   }
 }
 
-// Home, Dispatches, Profile, the offer cards and the sync scheduler each
-// refresh this cache on their own, often within the same second. Every write
-// opens its own transaction on the one connection, so two overlapping calls
-// made the second begin fail and its rollback undo the first: nothing was
-// cached and "Recent history" stayed empty (2026-10-22, Realme RMX3760,
-// tanod.delacruz). Run the writes one at a time.
+// Home, Dispatches, Profile, the offer cards and the sync scheduler each refresh this cache on their
+// own, often within the same second. Every write opens its own transaction on the one connection, so
+// two overlapping calls made the second begin fail and its rollback undo the first (nothing cached,
+// "Recent history" empty). Run the writes one at a time.
 let dispatchCacheQueue: Promise<unknown> = Promise.resolve();
 
 export function cacheDispatchesFromServer(entries: DispatchEntry[]): Promise<void> {
@@ -121,14 +114,14 @@ export function cacheDispatchesFromServer(entries: DispatchEntry[]): Promise<voi
   return run;
 }
 
-/** Sign-out: drop server-confirmed cached assignments so the next user starts clean. Unsynced status changes stay (Rule 7). */
+/** Sign-out: drop server-confirmed cached assignments so the next user starts clean. Unsynced status changes stay. */
 export async function clearSyncedDispatchCache(): Promise<void> {
   const db = await openLocalDatabase();
   await db.run('DELETE FROM dispatch_local WHERE synced = 1', [], false);
   void refreshTrackingRate();
 }
 
-/** Non-terminal cached assignments, newest first — M5's list. */
+/** Non-terminal cached assignments, newest first — the assignments list. */
 export async function listActiveCachedDispatches(): Promise<DispatchLocalRow[]> {
   const db = await openLocalDatabase();
   const result = await db.query(
@@ -147,7 +140,7 @@ export async function listRecentFinishedDispatches(limit = 20): Promise<Dispatch
   return (result.values ?? []) as DispatchLocalRow[];
 }
 
-/** One cached assignment by its local_id — M6's detail screen. */
+/** One cached assignment by its local_id — the detail screen. */
 export async function getCachedDispatch(localId: string): Promise<DispatchLocalRow | null> {
   const db = await openLocalDatabase();
   const result = await db.query('SELECT * FROM dispatch_local WHERE local_id = ?', [localId]);
@@ -155,7 +148,7 @@ export async function getCachedDispatch(localId: string): Promise<DispatchLocalR
   return row ?? null;
 }
 
-/** True once `stale_after` has passed — the cache must be labeled cached/last-known, not live (§9 M6). */
+/** True once `stale_after` has passed — the cache must be labeled cached/last-known, not live. */
 export function isCacheStale(row: DispatchLocalRow): boolean {
   return new Date(row.stale_after).getTime() <= Date.now();
 }
@@ -167,23 +160,19 @@ const NEXT_STATUS: Record<string, 'en_route' | 'arrived' | 'completed' | undefin
 };
 
 /**
- * The only forward transition available from a cached status, or null at a
- * terminal one. §9 M6: "A client must not locally skip states" — this is
- * the one place that rule is enforced client-side (the server enforces it
- * independently and authoritatively either way).
+ * The only forward transition available from a cached status, or null at a terminal one. A client must
+ * not locally skip states: this is the one place that rule is enforced client-side (the server
+ * enforces it independently and authoritatively either way).
  */
 export function nextStatusFor(currentStatus: string): 'en_route' | 'arrived' | 'completed' | null {
   return NEXT_STATUS[currentStatus] ?? null;
 }
 
 /**
- * Applies a status transition to the LOCAL cache immediately (optimistic
- * update — §9 M6: "status changes may be made offline"), stamping
- * `last_status_event_id` with a fresh client_event_id. The caller either
- * confirms it online right away (`apiService.updateDispatchStatus`) or, on
- * failure, hands the SAME event id to `offlineQueueRepository.ts` for
- * later sync — one identity follows whichever path succeeds (§5 sync
- * invariants).
+ * Applies a status transition to the LOCAL cache immediately (optimistic update: status changes may be
+ * made offline), stamping `last_status_event_id` with a fresh client_event_id. The caller either
+ * confirms it online right away (`apiService.updateDispatchStatus`) or, on failure, hands the SAME
+ * event id to `offlineQueueRepository.ts` for later sync — one identity follows whichever path succeeds.
  */
 export async function applyLocalStatusChange(
   localId: string,
@@ -247,12 +236,10 @@ export async function markStatusSynced(localId: string): Promise<void> {
 }
 
 /**
- * Caches the result of an explicit `apiService.getDispatchRoute()` call
- * (assignment-detail.tsx's "Get Route" button) onto the already-existing
- * `route_json`/`route_status` columns — no `localSchema.ts` migration
- * needed, `cacheDispatchesFromServer()` above has written these same
- * columns since M7's build. Route-only, deliberately narrower than that
- * function: a route fetch shouldn't touch this row's status/priority/etc.
+ * Caches the result of an explicit `apiService.getDispatchRoute()` call (assignment-detail.tsx's "Get
+ * Route" button) onto the existing `route_json`/`route_status` columns. Route-only, deliberately
+ * narrower than `cacheDispatchesFromServer()`: a route fetch shouldn't touch this row's
+ * status/priority/etc.
  */
 export async function cacheRouteFetch(
   localId: string,

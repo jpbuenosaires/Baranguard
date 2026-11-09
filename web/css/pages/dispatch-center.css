@@ -386,9 +386,8 @@
   transform: translateY(-1px);
 }
 
-/* 2026-09-13: wraps one-or-more .queue-incident-card__dispatched-info
-   rows when an incident has more than one concurrent responder
-   (docs/REMAINING.md G-backlog "second responder") — each row already
+/* Wraps one-or-more .queue-incident-card__dispatched-info rows when an
+   incident has more than one concurrent responder — each row already
    carries its own margin-top, so this just needs to stack them. */
 .queue-incident-card__dispatched-list {
   display: flex;
@@ -1295,7 +1294,7 @@
   }
 }
 
-/* ── Stale-data banner (audit X-01/A-03): shown while background polls fail.
+/* ── Stale-data banner: shown while background polls fail.
    Icon + words, never colour alone. ── */
 .dispatch-stale-banner {
   display: flex;

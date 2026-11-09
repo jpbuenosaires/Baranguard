@@ -1,7 +1,7 @@
 /**
  * PrintPreviewModal.js — Shared A4 print-preview modal and working-copy
  * print controller used across Incident Detail, Statistical Reports,
- * Audit Log, Citizen Report Receipts, and Public Transparency.
+ * Audit Log, and Public Transparency.
  *
  * Ensures consistent official barangay document typography, dark-mode-safe
  * paper contrast, and reliable `window.print()` execution (unlocking the

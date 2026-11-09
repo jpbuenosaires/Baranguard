@@ -1,6 +1,6 @@
 /**
  * user-management.js — Personnel > Users Tab.
- * Overhauled UI/UX:
+ * Features:
  * - Floating Add User modal dialog with 2-column layout and password visibility toggle
  * - Identity cell with initials avatar and styled username
  * - Interactive filter bar with role chips, status chips, and live search
@@ -460,10 +460,9 @@ function buildCreateModal(onSuccess, onCancel) {
   });
 
   passWrap.append(passwordInput, passToggle);
-  // The character-rule reminder used to live only in the placeholder, which
-  // vanishes the moment the user starts typing — exactly when they'd need
-  // it to know why a submit was rejected (§13: don't rely on a message
-  // that's gone before the mistake happens).
+  // The character-rule reminder lives in visible text, not only the
+  // placeholder, which vanishes the moment the user starts typing — exactly
+  // when they'd need it to know why a submit was rejected.
   const passRuleHint = document.createElement('span');
   passRuleHint.className = 'personnel-form-hint';
   passRuleHint.textContent = 'At least 12 characters, with mixed case and a digit.';

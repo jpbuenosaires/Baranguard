@@ -1,15 +1,15 @@
 /**
- * tanodWorkflowUi.js — small shared helpers for the four 2026-10 pages
+ * tanodWorkflowUi.js — small shared helpers for the four tanod-workflow pages
  * (Approvals, Accomplishment Reports, Referral Log, Safer School Zones):
  * page frame, tab bar, state blocks, Manila-time formatters, the viewer's
  * approval authority (cached), printed-form letterhead.
  *
  * Kept next to tanodWorkflowApi.js rather than in components/ because
- * components/ belongs to the shared design system and is not part of this
- * build's ownership; nothing here is generic enough to promote yet.
+ * components/ belongs to the shared design system; nothing here is generic
+ * enough to promote yet.
  *
  * Every function that puts server data into the DOM uses textContent or
- * escapeHtml (REFERENCE.md §6). Printed-form HTML builders return strings
+ * escapeHtml. Printed-form HTML builders return strings
  * and escape every interpolation.
  */
 
@@ -96,7 +96,7 @@ export function buildTabBar(tabs, onSelect) {
   };
 }
 
-// --- The four states (REFERENCE.md §6) --------------------------------------
+// --- The four states --------------------------------------------------------
 
 export function showLoading(container, label) {
   renderLoadingSkeleton({ container, count: 3, ariaLabel: label });
@@ -118,7 +118,7 @@ export function showEmpty(container, title, message) {
   container.appendChild(block);
 }
 
-// --- Dates, durations (Asia/Manila display, REFERENCE.md §2 Rule 11) --------
+// --- Dates, durations (Asia/Manila display) ---------------------------------
 
 const MANILA = 'Asia/Manila';
 
@@ -220,7 +220,7 @@ export function statusPill(status, kind = 'report') {
 // --- Errors -----------------------------------------------------------------
 
 /**
- * The same-person rule (contract §4/§7: preparer != approver) arrives as a
+ * The same-person rule (preparer != approver) arrives as a
  * 409 with the server's own message. Surface it as something an official
  * can act on; any other error keeps the server's real message.
  */
@@ -245,7 +245,7 @@ export function clearAuthorityCache() {
 
 /**
  * The signed-in viewer's own authorities + official title, via GET
- * /users/:id (contract §10). Cached for a minute so Approvals and the
+ * /users/:id. Cached for a minute so Approvals and the
  * detail views do not each refetch. A failed lookup resolves to "holds
  * nothing" — action buttons stay hidden rather than showing controls the
  * server may refuse — and `failed` lets the page say so honestly.
@@ -299,7 +299,7 @@ const BLANK_LINE = '________________';
 /**
  * Letterhead block shared by every printed form (Republic / Province /
  * Municipality / Barangay). No logo circles: the API holds no seal image, and
- * an empty circle on an official form reads as an unfinished draft (Rule 6).
+ * an empty circle on an official form reads as an unfinished draft.
  */
 export function letterheadHtml(lh, { office = false } = {}) {
   return `
@@ -335,7 +335,7 @@ export function signatureBlockHtml(caption, name, title) {
 /** Fixed pursuant-to line printed under the SSZ annex titles (text taken from the user's own forms). */
 export const SSZ_PURSUANT_HTML = '<b>[Pursuant to</b> DILG Memorandum Circular No. <u>2026-037</u> dated <u>June 25, 2026</u> - SAFER SCHOOL ZONES (SSZ) UNDER THE SAFER CITIES AND SAFER COMMUNITIES INITIATIVE<b>]</b>';
 
-/** DILG MC 2026-037's own annex layouts were not readable, so B, C-1 and D follow the barangay's forms (Rule 88). */
+/** DILG MC 2026-037's own annex layouts were not readable, so B, C-1 and D follow the barangay's forms. */
 export const SSZ_DRAFT_LAYOUT_NOTICE = 'Draft layout: this annex follows the barangay\'s own form. Check it against DILG MC 2026-037 before filing.';
 
 /** Print-preview opener that also switches the sheet to landscape for wide annexes. */

@@ -8,11 +8,9 @@ namespace Baranguard\Services\Pdf;
  * reports (statistical report, PB digest; see ReportsController).
  *
  * WHY THIS EXISTS RATHER THAN A LIBRARY: this repo has no Composer and no
- * vendored PDF library, and §2 Rule 7 makes the deployment local-only —
- * pulling a dependency at deploy time is not a thing this project does.
- * The alternatives were vendoring FPDF (~2000 lines of third-party code
- * for one endpoint) or serving print-styled HTML (which is not the PDF
- * §6 asks for). A text-only PDF is a genuinely small format, so this
+ * vendored PDF library, and the deployment is local-only. Vendoring FPDF
+ * (~2000 lines for one endpoint) or serving print-styled HTML (not a real
+ * PDF) were the alternatives; a text-only PDF is a small format, so this
  * writes one directly.
  *
  * SCOPE, HONESTLY: this produces a plain text document — the base-14

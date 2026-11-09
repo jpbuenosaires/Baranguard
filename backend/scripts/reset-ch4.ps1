@@ -7,7 +7,7 @@
 # `baranguard_uiseed`.
 #
 # -Profile uat builds the FINAL-TESTING database `baranguard_uat` instead (same simulated
-# Dao data plus the fixtures the UAT sign-off scenarios need; docs/UAT_DATA_REQUIREMENTS.md).
+# Dao data plus the fixtures the UAT sign-off scenarios need).
 # Normally via "Reset UAT Data.bat". It likewise only ever touches its own database.
 #
 # Usage (normally via "Reset Chapter 4 Data.bat" at the repo root):

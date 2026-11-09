@@ -9,8 +9,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * CriticalAlertMessagingService — Mobile Improvement Plan Phase 4.2's
- * hook into a REAL incoming FCM message.
+ * CriticalAlertMessagingService — the hook into a REAL incoming FCM message.
  *
  * Extends `@capacitor/push-notifications`' own `MessagingService`
  * (rather than `FirebaseMessagingService` directly) so `super.onMessageReceived()`
@@ -25,12 +24,9 @@ import java.util.Set;
  * (`tools:node="remove"`) and declares this class in its place with the
  * identical `com.google.firebase.MESSAGING_EVENT` intent-filter — the
  * standard Android technique for overriding a library's FCM service. This
- * is the one piece of Phase 4.2 that is genuinely unverifiable in this
- * environment: there is no real Firebase project configured
- * (REMAINING.md A4), so this class has never received a real RemoteMessage.
- * `FullScreenAlertPlugin.java` exists specifically so the full-screen
- * behavior ITSELF (as opposed to this FCM plumbing) has a way to be
- * exercised today.
+ * FCM path needs a real Firebase project to exercise.
+ * `FullScreenAlertPlugin.java` lets the full-screen behavior ITSELF (as
+ * opposed to this FCM plumbing) be exercised without one.
  */
 public class CriticalAlertMessagingService extends MessagingService {
 

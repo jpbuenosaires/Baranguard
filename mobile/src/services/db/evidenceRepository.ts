@@ -1,13 +1,9 @@
 /**
  * evidenceRepository.ts — the local write path for `evidence_attachment_local`.
  *
- * Mirrors `incidentRepository.ts`'s shape deliberately: a stable
- * `local_id` per row, nothing here touches the network, and a row is
- * fully written or not at all. §9 M3 groups "local SQLite, POST incident,
- * sync, evidence upload" under the same API list — this file is the
- * local-SQLite quarter of that; the evidence UPLOAD half
- * (`/incidents/:id/evidence`, per §6's sync section) is Sprint 3+ scope,
- * same as incident sync itself.
+ * Mirrors `incidentRepository.ts`'s shape deliberately: a stable `local_id` per row, nothing here
+ * touches the network, and a row is fully written or not at all. This file is the local-SQLite half;
+ * the evidence UPLOAD (`/incidents/:id/evidence`) is driven by `syncService.ts`.
  */
 
 import { openLocalDatabase, withTransaction } from './localDatabase';
@@ -20,12 +16,8 @@ export interface SavedEvidence {
 }
 
 /**
- * Persists one captured photo/voice attachment, linked to an
- * already-saved `incident_local` row by its `local_id`. Callers must save
- * the incident FIRST (`saveIncidentLocally`) so `incidentLocalId` is real
- * — this mirrors §9 M3's own ordering ("every field writes locally
- * immediately... a stable client_event_id is created when the record is
- * first saved").
+ * Persists one captured photo/voice attachment, linked to an already-saved `incident_local` row by its
+ * `local_id`. Callers must save the incident FIRST (`saveIncidentLocally`) so `incidentLocalId` is real.
  */
 export async function saveEvidenceLocally(
   incidentLocalId: string,
@@ -46,7 +38,7 @@ export async function saveEvidenceLocally(
   return { localId };
 }
 
-/** All evidence captured for one incident, for M3's staged-list display and M4's confirmation screen. */
+/** All evidence captured for one incident, for the staged-list display and the confirmation screen. */
 export async function getEvidenceForIncident(incidentLocalId: string): Promise<EvidenceAttachmentLocalRow[]> {
   const db = await openLocalDatabase();
   const result = await db.query('SELECT * FROM evidence_attachment_local WHERE incident_local_id = ?', [
@@ -68,7 +60,7 @@ export async function getEvidenceCountsByIncident(): Promise<Record<string, numb
   return map;
 }
 
-// --- Upload worker support (Mobile Improvement Plan Phase 3.2, closes F4) ---
+// --- Upload worker support ---------------------------------------------------
 // Mirrors incidentRepository.ts's own "capture screens only read; the sync
 // worker owns everything below" split.
 
@@ -93,7 +85,7 @@ export async function listPendingEvidenceUploads(): Promise<PendingEvidenceUploa
   const result = await db.query(
     // `incident_local_id` is either an `incident_local.local_id` (evidence
     // captured on New Incident) or a `dispatch_local.local_id` (evidence added
-    // to an assigned incident from the assignment screen, Gap-X2) - local ids
+    // to an assigned incident from the assignment screen) - local ids
     // are random UUIDs, so the two can't collide.
     `SELECT e.local_id, COALESCE(i.server_incident_id, d.server_incident_id) AS server_incident_id,
             e.type, e.file_path, e.mime_type, e.sha256
@@ -121,7 +113,7 @@ export async function listPendingEvidenceUploads(): Promise<PendingEvidenceUploa
   }));
 }
 
-/** Applies a confirmed upload. `synced_at` (migration 4) is what Phase 3.3's cleanup rule measures 30 days from. */
+/** Applies a confirmed upload. `synced_at` (migration 4) is what the cleanup rule measures 30 days from. */
 export async function markEvidenceSynced(localId: string, serverAttachmentId: number): Promise<void> {
   const db = await openLocalDatabase();
   const now = new Date().toISOString();
@@ -180,7 +172,7 @@ export async function resetFailedEvidence(): Promise<void> {
   );
 }
 
-// --- Storage cleanup (Mobile Improvement Plan Phase 3.3) --------------------
+// --- Storage cleanup ---------------------------------------------------------
 
 export interface PrunableEvidence {
   localId: string;
@@ -210,7 +202,7 @@ export async function listPrunableEvidence(retentionDays: number): Promise<Pruna
   }));
 }
 
-/** Clears the local file reference after the file itself has been deleted — the row and its metadata (sha256, byte_size, timestamps) stay for M14's history. */
+/** Clears the local file reference after the file itself has been deleted — the row and its metadata (sha256, byte_size, timestamps) stay for My Reports history. */
 export async function clearEvidenceFilePath(localId: string): Promise<void> {
   const db = await openLocalDatabase();
   await db.run(`UPDATE evidence_attachment_local SET file_path = '' WHERE local_id = ?`, [localId], /* transaction */ false);

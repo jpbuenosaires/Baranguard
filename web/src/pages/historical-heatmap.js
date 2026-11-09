@@ -1,10 +1,8 @@
 /**
- * historical-heatmap.js — W5 Historical Heatmap (§9): "Historical only,
- * bounded date range, explicit non-predictive label." Roles: Admin,
- * Punong Barangay (read-only) — this screen has no write action, so both
- * roles just call the same `GET /reports/heatmap`.
- *
- * kebab-case filename per §4 (pages/routes convention).
+ * historical-heatmap.js — Historical Heatmap: historical only, bounded date
+ * range, explicit non-predictive label. Roles: Admin, Punong Barangay
+ * (read-only) — no write action, so both roles call the same
+ * `GET /reports/heatmap`.
  */
 
 import { getReportsHeatmap, ApiClientError } from '../api/apiClient.js';
@@ -13,7 +11,7 @@ import { DateRangePicker } from '../components/DateRangePicker.js';
 import { StatStrip } from '../components/StatStrip.js';
 import { formatManilaDate } from '../utils/manilaTime.js';
 
-// The 11 real incident types (REFERENCE section 4); same labels as the
+// The 11 real incident types; same labels as the
 // Dashboard and Reports so one type never reads two ways.
 const TYPE_LABELS = {
   theft: 'Theft',
@@ -46,7 +44,7 @@ const TYPE_COLOR_TOKENS = {
 /** Below this many plotted incidents the colour scale is too coarse to read as a trend. */
 const SMALL_SAMPLE = 10;
 
-/** "2026-10-09" (a Manila calendar day) -> "Oct 9, 2026". */
+/** "YYYY-MM-DD" (a Manila calendar day) -> "Oct 9, 2026". */
 function dayLabel(iso) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(iso || '')) ? formatManilaDate(`${iso}T00:00:00+08:00`) : '';
 }

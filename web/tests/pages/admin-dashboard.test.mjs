@@ -11,7 +11,7 @@ describePage({
   roles: ['admin', 'punong_barangay'],
   heading: 'Dashboard',
   expectText: ['Total Incidents', '20.3 min', 'Maria Dela Cruz'],
-  // The attention banner re-reads live counts every 15 s (audit A-06).
+  // The attention banner re-reads live counts every 15 s.
   polls: true,
 });
 

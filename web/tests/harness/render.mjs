@@ -211,7 +211,7 @@ export function assertNoStuckLoading(scope = window.document.body) {
   assert.equal(skeletons.length, 0, `${skeletons.length} loading skeleton(s) still showing after all data loaded`);
 }
 
-/** No user/server-supplied markup became live DOM (the 2026-09-07 audit's bug class). */
+/** No user/server-supplied markup became live DOM (unescaped server data in innerHTML). */
 export function assertNoInjectedMarkup() {
   const injected = window.document.querySelectorAll('[data-xss-canary]');
   assert.equal(injected.length, 0, `${injected.length} element(s) created from untrusted text via innerHTML: ${[...injected].map((n) => n.parentElement?.outerHTML.slice(0, 160)).join(' | ')}`);

@@ -1,9 +1,7 @@
 /**
- * WorkflowBits.tsx — two tiny presentational pieces the 2026-10 tanod
- * workflow screens share: the sync-state chip and the banner strip. Since the
- * Phase 2 UI overhaul both delegate to `components/ui` (SyncLabel, Banner), so
- * there is ONE implementation and one wording; the exports and props are
- * unchanged for existing callers.
+ * WorkflowBits.tsx — two tiny presentational pieces the tanod workflow screens share: the sync-state
+ * chip and the banner strip. Both delegate to `components/ui` (SyncLabel, Banner), so there is ONE
+ * implementation and one wording.
  */
 
 import type { ReactNode } from 'react';

@@ -2,8 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Route table for /devices (§6 "Users & device lifecycle"). Built for
- * Sprint 2's M1 Login box.
+ * Route table for /devices (register / deactivate).
  *
  * The `:id` here is a client-generated VARCHAR device id, not the numeric
  * `(\d+)` every other `/:id` route in this app uses — the pattern is kept

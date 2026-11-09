@@ -7,32 +7,24 @@ use Baranguard\Services\Sms\SmsGatewayService;
 use PDO;
 
 /**
- * NotificationDispatcher — Phase 2 of the split `NotificationService` (see
- * that class's own doc). This is where §2 Rule 12's fallback ladder
- * actually lives:
+ * NotificationDispatcher — delivery half of the split `NotificationService`
+ * (see that class's doc). This is where the fallback ladder lives:
  *
- *   "if no active FCM registration, go straight to SMS with no FCM
- *    attempt; FCM send error/timeout -> retry once, then SMS on second
- *    failure; FCM sent but no client ack within 60s -> record
- *    ack_timeout, do NOT auto-send SMS."
+ *   no active FCM registration -> straight to SMS, no FCM attempt;
+ *   FCM send error/timeout -> retry once, then SMS on second failure;
+ *   FCM sent but no client ack within 60s -> record ack_timeout, do NOT
+ *   auto-send SMS.
  *
- * The first two clauses happen HERE, synchronously, right after the
- * caller's notification+target transaction commits — §6 says SOS
- * "immediately attempts configured FCM/SMS channels", and the same
- * urgency applies to a dispatch assignment. The third clause (the 60s
- * ack-timeout sweep) CANNOT happen synchronously — nothing should block
- * an HTTP response for a minute — so it is `scripts/notification-worker.php`'s
- * job instead; this class never marks anything `ack_timeout`.
+ * The first two happen HERE, synchronously, right after the caller's
+ * notification+target transaction commits. The 60s ack-timeout sweep cannot
+ * block an HTTP response, so it is `scripts/notification-worker.php`'s job;
+ * this class never marks anything `ack_timeout`.
  *
- * Every `notification_delivery` row this class writes follows §5's shape
- * exactly: `attempt_no` is per (target, channel) — an FCM retry is
- * attempt_no=2 on channel='fcm'; the SMS fallback that follows is its OWN
- * attempt_no=1 on channel='sms', a DIFFERENT row, never a continuation of
- * the FCM attempts. Rule 24: "An FCM ack timeout does not automatically
- * become an SMS attempt unless the fallback rule explicitly requires it"
- * — the fallback rule here explicitly requires it only for a SEND
- * failure, never for an ack timeout, which is exactly why this class and
- * the worker never call into each other.
+ * `attempt_no` is per (target, channel): an FCM retry is attempt_no=2 on
+ * channel='fcm'; the SMS fallback that follows is its OWN attempt_no=1 on
+ * channel='sms', a DIFFERENT row. SMS is a fallback only for a SEND failure,
+ * never for an ack timeout, which is why this class and the worker never
+ * call into each other.
  *
  * A transport failure NEVER throws out of `dispatchAll()` — every branch
  * is caught internally and recorded as a `failed` delivery row. The
@@ -64,10 +56,9 @@ final class NotificationDispatcher
      * Idempotent-ish in practice: a target that already has delivery rows
      * from an earlier call (e.g. a retried request that re-ran the
      * caller's whole flow under a different notification, or a manual
-     * re-run) simply gets a fresh attempt sequence — §5's
-     * UNIQUE(notification_target_id,channel,attempt_no) makes a genuine
-     * duplicate attempt_no impossible, so this only ever adds rows,
-     * never conflicts with itself under normal operation.
+     * re-run) simply gets a fresh attempt sequence — the table's
+     * UNIQUE(notification_target_id,channel,attempt_no) makes a duplicate
+     * attempt_no impossible, so this only ever adds rows.
      */
     public function dispatchAll(PDO $pdo, int $notificationId): void
     {
@@ -78,7 +69,7 @@ final class NotificationDispatcher
 
         $message = $this->composeMessage($pdo, $notification);
         if ($message === null) {
-            return; // §6's entity-integrity matrix already prevents this in practice.
+            return; // The notification entity-integrity matrix already prevents this in practice.
         }
         $message['sms'] = self::gsm7($message['sms']);
 
@@ -134,7 +125,7 @@ final class NotificationDispatcher
     }
 
     /**
-     * §2 Rule 1: raw_narrative never leaves the trusted store — every
+     * raw_narrative never leaves the trusted store — every
      * message below is composed only from redacted-safe fields already
      * exposed elsewhere (incident_type, coordinates, a Tanod's own name),
      * the same allow-list `GET /incidents`/`GET /dispatch` already use.
@@ -344,7 +335,7 @@ final class NotificationDispatcher
 
     /**
      * "a fire incident reported in Dao at 21:40" -- Manila clock, fixed
-     * +08:00 (Rule 11).
+     * +08:00.
      *
      * @param array{incident_type:string,barangay_name:string,created_at:string} $offer
      */
@@ -399,10 +390,8 @@ final class NotificationDispatcher
     /**
      * Human wording for an `incident.incident_type` enum value in a push/SMS
      * body: `animal_complaint` -> "an animal complaint incident", `theft` ->
-     * "a theft incident". Observed on the Infinix 2026-09-19 (HANDOFF
-     * "observed, not yet fixed"): the raw enum was being interpolated, so
-     * the heads-up read "a animal_complaint incident". `other` stays the
-     * generic "an active incident" rather than "an other incident".
+     * "a theft incident" (never the raw enum). `other` stays the generic
+     * "an active incident" rather than "an other incident".
      */
     private static function describeIncidentType(string $incidentType): string
     {
@@ -481,8 +470,7 @@ final class NotificationDispatcher
         }
 
         if ($fcmToken === null) {
-            // Rule 12: "if no active FCM registration, go straight to SMS
-            // with no FCM attempt."
+            // No active FCM registration: straight to SMS, no FCM attempt.
             $this->attemptSms($pdo, $notification, $message, $target, attemptNo: 1);
             return;
         }
@@ -494,13 +482,13 @@ final class NotificationDispatcher
             return;
         }
 
-        // Rule 12: "FCM send error/timeout -> retry once".
+        // FCM send error/timeout: retry once.
         $sent = $this->attemptFcm($pdo, $target, $fcmToken, $message, attemptNo: 2, data: $data);
         if ($sent) {
             return;
         }
 
-        // Rule 12: "...then SMS on second failure."
+        // Then SMS on second failure.
         $this->attemptSms($pdo, $notification, $message, $target, attemptNo: 1);
     }
 
@@ -550,8 +538,8 @@ final class NotificationDispatcher
             return;
         }
 
-        // Rule 5: "Critical alerts use the configured priority SMS
-        // path." SOS and priority_alert both count as critical here;
+        // Critical alerts use the priority SMS path: SOS and priority_alert
+        // both count as critical here;
         // ordinary dispatch instructions use the regular endpoint. Delegated
         // to SmsGatewayService — see this class's constructor doc for why.
         $usePriority = in_array($notification['notification_type'], ['sos', 'priority_alert'], true);
@@ -615,7 +603,7 @@ final class NotificationDispatcher
 
     private static function truncateReason(string $reason): string
     {
-        // §5 notification_delivery.failure_reason / sms_log.failure_reason
+        // notification_delivery.failure_reason / sms_log.failure_reason
         // are both VARCHAR(255).
         return mb_strlen($reason) > 255 ? mb_substr($reason, 0, 254) . '…' : $reason;
     }

@@ -1,5 +1,5 @@
 /* ---- home ---- */
-/* Phase 1 (UI overhaul 2026-10-14): home. Tokens only; consolidated into the design system in Phase 2/6. */
+/* home: tokens only. */
 
 /* SOS dock: fixed above the tab bar (IonContent slot="fixed"), always in the thumb zone. */
 .home-sos-dock {
@@ -92,7 +92,7 @@
 }
 
 /* ---- dispatch ---- */
-/* Phase 1 (UI overhaul 2026-10-14): dispatch. Tokens only; consolidated into the design system in Phase 2/6. */
+/* dispatch: tokens only. */
 
 .p1-note-toast {
   display: flex;
@@ -125,7 +125,7 @@
 }
 
 /* ---- nav ---- */
-/* Phase 1 (UI overhaul 2026-10-14): nav. Tokens only; consolidated into the design system in Phase 2/6. */
+/* nav: tokens only. */
 
 /* Chief Tanod SOS list: collapsed history toggle and secondary resolve button. */
 .sos-earlier-toggle {

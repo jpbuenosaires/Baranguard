@@ -1,42 +1,24 @@
 /**
- * LiveMapCanvas.tsx — the rendered basemap for M7 Live Map, and (since
- * 2026-09-13) for M6 Assignment Detail's in-app destination view.
+ * LiveMapCanvas.tsx — the rendered basemap for the Live Map and for Assignment Detail's in-app
+ * destination view.
  *
- * Renders via MapLibre GL JS, installed as a real npm dependency (mobile
- * has a genuine Vite bundle, unlike `web/`, which hand-vendors everything
- * because it has no build step at all — see package.json). Tile source is
- * OFFLINE-FIRST: when this barangay has a downloaded, checksum-verified
- * MBTiles package (`mapPackageService.ts`), tiles are read locally
- * through sql.js (`mbtilesReader.ts`) via a MapLibre custom protocol — no
- * network request per tile, honoring §2 Rule 7/15's offline-first
- * requirement for the field app. Falls back to online OpenStreetMap
- * raster tiles (the same source `web/src/components/LiveMap.js` already
- * uses, and the same "deliberate, logged deviation" reasoning applies
- * here — see that file's header comment) at TWO levels: whole-session
- * (no package installed yet, or the installed one fails to open — see
- * init() below) AND per-tile (2026-09-18: a package exists and opens
- * fine, but the requested z/x/y simply isn't in it — e.g. a Tanod has
- * walked outside their downloaded package's covered area. The offline
- * reader stays PRIMARY either way — this only reaches the network for
- * the specific tiles the local package doesn't have, never for ones it
- * does, so the common in-barangay/poor-signal case still costs zero
- * network requests).
+ * Renders via MapLibre GL JS, a real npm dependency. Tile source is OFFLINE-FIRST: when this barangay
+ * has a downloaded, checksum-verified MBTiles package (`mapPackageService.ts`), tiles are read locally
+ * through sql.js (`mbtilesReader.ts`) via a MapLibre custom protocol, with no network request per
+ * tile. Falls back to online OpenStreetMap raster tiles (the same source
+ * `web/src/components/LiveMap.js` uses) at TWO levels: whole-session (no package installed yet, or the
+ * installed one fails to open; see init() below) AND per-tile (a package exists and opens fine, but the
+ * requested z/x/y isn't in it, e.g. a Tanod walked outside the covered area). The offline reader stays
+ * PRIMARY either way: the network is only reached for tiles the local package lacks.
  *
- * Everything here runs inside the existing Capacitor WebView. No native
- * map plugin, no AndroidManifest change — this is what removes the
- * "materially bigger native dependency" blocker `live-map.tsx` used to
- * document (REMAINING.md C4).
+ * Everything runs inside the existing Capacitor WebView: no native map plugin, no AndroidManifest
+ * change.
  *
- * `focusTarget` (2026-09-13): assignment-detail.tsx has exactly ONE point
- * of interest (the assignment's destination), unlike Live Map's
- * open-ended incident/Tanod lists — passing it here makes the camera fit
- * self+destination via `fitBounds` instead of centering on self alone.
- * This is also what replaced assignment-detail's old `geo:` intent
- * hand-off to the device's external maps app: a Tanod now sees the
- * destination on Baranguard's OWN map instead of losing focus to Google
- * Maps. `LiveMapCanvasHandle.recenter()` (via `forwardRef`) is what that
- * screen's "Navigate" button now calls, reusing the exact same framing
- * logic (`centerMap`) the internal recenter FAB already used.
+ * `focusTarget`: assignment-detail.tsx has exactly ONE point of interest (the destination), unlike Live
+ * Map's open-ended incident/Tanod lists, so passing it makes the camera fit self+destination via
+ * `fitBounds` instead of centering on self alone. `LiveMapCanvasHandle.recenter()` (via `forwardRef`) is
+ * what that screen's "Navigate" button calls, reusing the same framing logic (`centerMap`) as the
+ * internal recenter FAB.
  */
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
@@ -96,8 +78,8 @@ interface Props {
   focusTarget?: FocusTarget | null;
   /**
    * When set, tapping the map calls this with the tapped coordinate
-   * instead of doing nothing — `LocationPickerModal.tsx` (M3 GPS/map
-   * picker, Mobile Improvement Plan Phase 2.1) uses this to let a Tanod
+   * instead of doing nothing — `LocationPickerModal.tsx` (the map picker)
+   * uses this to let a Tanod
    * drop a pin rather than only ever trusting the device's own GPS fix.
    */
   onMapClick?: (point: FocusTarget) => void;
@@ -371,19 +353,14 @@ const LiveMapCanvas = forwardRef<LiveMapCanvasHandle, Props>(function LiveMapCan
     });
   }, [navigationMode, position, routeProgress]);
 
-  // 2026-09-18: `containerRef`'s height is CSS-animated (340px <-> 68vh
-  // <-> 100%, `transition: 'height 0.3s ease'`) whenever navigationMode/
-  // fullScreen/height change — e.g. assignment-detail.tsx switching from
-  // the briefing view into turn-by-turn navigation. MapLibre sizes its
-  // WebGL canvas from the container's dimensions AT THE TIME IT LAST
-  // measured them; nothing here was ever calling `map.resize()` after a
-  // layout change, so the canvas could stay sized for the OLD (briefing)
-  // container while `getCenter()`/`getZoom()` correctly reported the new
-  // camera — the route was really being drawn, just into a canvas that
-  // no longer matched what was visually on screen. Resize once
-  // immediately (covers a discrete height prop change) and once after
-  // the CSS transition finishes (covers the animated navigationMode
-  // switch, which fires no resize-observer-friendly single event).
+  // `containerRef`'s height is CSS-animated (340px <-> 68vh <-> 100%) whenever navigationMode/
+  // fullScreen/height change, e.g. assignment-detail.tsx switching from the briefing view into
+  // turn-by-turn navigation. MapLibre sizes its WebGL canvas from the container's dimensions at the
+  // time it last measured them, so without `map.resize()` after a layout change the canvas stays sized
+  // for the OLD container while `getCenter()`/`getZoom()` report the new camera (the route is drawn
+  // into a canvas that no longer matches the screen). Resize once immediately (a discrete height prop
+  // change) and once after the CSS transition finishes (the animated navigationMode switch fires no
+  // single resize event).
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;

@@ -20,7 +20,7 @@ function withNow(iso, fn) {
 
 describe('Asia/Manila day boundaries (§2 Rule 11)', () => {
   test('between 00:00 and 08:00 Manila it is already "tomorrow" relative to UTC', () => {
-    // 2026-09-22 20:00 UTC == 2026-09-23 04:00 in Manila.
+    // 20:00 UTC on one day is 04:00 the next day in Manila.
     withNow('2026-09-22T20:00:00Z', () => {
       assert.equal(manilaTodayIso(), '2026-09-23');
       assert.equal(manilaDaysAgoIso(6), '2026-09-17');

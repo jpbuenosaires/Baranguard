@@ -1,7 +1,7 @@
 /**
  * main.js — boot/router: session gate, per-role landing page, the
  * default-landing preference, document title, focus management, and the
- * absence of the removed public #/citizen-report entry point. main.js boots itself on import, so
+ * absence of a public #/citizen-report entry point. main.js boots itself on import, so
  * each case imports a fresh copy (cache-busting query) after arranging
  * the session it needs.
  */

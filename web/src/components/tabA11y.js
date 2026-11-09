@@ -1,6 +1,6 @@
 /**
- * tabA11y.js — tab semantics for every `.page-tabs` bar, applied centrally
- * (audit 2026-10-09 X-11/D-18). Analytics, Personnel, SMS Monitor and the
+ * tabA11y.js — tab semantics for every `.page-tabs` bar, applied centrally.
+ * Analytics, Personnel, SMS Monitor and the
  * tanod-workflow pages each hand-build the shared `.page-tabs > .page-tab`
  * DOM and mark the active tab with the `.is-active` class only, so a screen
  * reader could not tell which tab was selected and there was no arrow-key
@@ -36,7 +36,7 @@ function syncList(list) {
   tabs.forEach(syncTab);
   // No tab marked active yet: keep the first reachable by keyboard.
   if (tabs.length && !tabs.some((t) => t.getAttribute('tabindex') === '0')) tabs[0].setAttribute('tabindex', '0');
-  // X-19: the browser tab title names the selected tab too, so switching
+  // The browser tab title names the selected tab too, so switching
   // tabs on Personnel / Analytics / Safer School Zones is reflected there.
   const selected = tabs.find((t) => t.getAttribute('aria-selected') === 'true');
   const heading = document.querySelector('.page-header__title');

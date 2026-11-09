@@ -18,47 +18,33 @@ use Baranguard\Services\Routing\OrsUnavailableException;
 use PDO;
 
 /**
- * Dispatch — Master Reference §6 "Dispatch" section, §5 `dispatch` table,
- * §7 role matrix (create/cancel/override: Admin only; Tanod: own
- * assigned only — not reachable yet, no Tanod app exists), §9 W3
- * Dispatch Center (create/cancel are this session's W3b box; the
- * read-only queue/list side is W3a).
+ * Dispatch (`dispatch` table). Create/cancel/override: Admin (and Secretary as
+ * back-up dispatcher); Tanod: own assigned only. W3 Dispatch Center is the
+ * web surface; M5/M6 the mobile one.
  *
- * Two things §6 describes in prose but doesn't fully pin down, resolved
- * here and logged in DEVLOG.md:
- *   - **Notification creation WAS deferred here and is now done**
- *     (Sprint 4). Sprint 1 declined to write a bare `notification` row
- *     while no transport existed to deliver it; Sprint 4 built the
- *     notification model, the entity-integrity enforcement, and the
- *     FCM/SMS ladder, so `create()` now records the notification in the
- *     same transaction as the dispatch.
- *   - **Routing is NOT computed at creation time.** Every new dispatch
- *     still gets `route_status="unavailable"` and `route_json=NULL` at
- *     `create()` — §6's "OSRM failure does not roll back dispatch
- *     creation" allowance is honored the same way regardless of which
- *     routing backend is behind it. `route()` below (2026-09-13, turn-
- *     by-turn build, docs/REMAINING.md §C4) is what actually populates
- *     these fields, on demand, once the Tanod has a current GPS fix to
- *     route FROM — computing it eagerly at creation time would mean
- *     routing from the Admin's desk, not the Tanod's position.
- *   - **Tanod eligibility ("on-duty")** means the Tanod's most recent
- *     `duty_status` row (by `changed_at`) is exactly `on_duty` —
- *     `responding` is excluded (already engaged elsewhere) and so is
- *     `off_duty`. No prior duty_status row at all means not eligible.
- *   - **Validation error shape.** To avoid leaking cross-tenant/role
- *     details through error-message differences, every reason a
- *     `tanod_id` is unusable (doesn't exist, wrong barangay, wrong role,
- *     inactive, not on-duty) collapses into the same generic 422
- *     message. Incident-not-found/wrong-barangay uses the same 404
- *     pattern as `AuthMiddleware::requireTenant()` elsewhere in this
- *     codebase.
- *   - **`GET /dispatch`'s item shape gained `incident_type`/`latitude`/
- *     `longitude`** (Sprint 3 cut) — §6's documented shape doesn't list
- *     them, but M5 Assignments List / M6 Assignment Detail have no other
- *     redacted-safe way to know what/where a cached assignment is. Same
- *     precedent as `GET /incidents`'s own `officer_name` addition; never
- *     raw_narrative, and these two fields are already exposed to a Tanod
- *     via `GET /incidents`'s own list item shape.
+ *   - `create()` records the notification in the same transaction as the
+ *     dispatch (the FCM/SMS ladder then delivers it after commit).
+ *   - Routing is NOT computed at creation time. Every new dispatch gets
+ *     `route_status="unavailable"` and `route_json=NULL` at `create()`; a
+ *     routing failure never rolls back dispatch creation. `route()` below
+ *     populates these fields on demand, once the Tanod has a current GPS fix
+ *     to route FROM (computing it eagerly would mean routing from the Admin's
+ *     desk, not the Tanod's position).
+ *   - Tanod eligibility ("on-duty") means the Tanod's most recent
+ *     `duty_status` row (by `changed_at`) is exactly `on_duty`: `responding`
+ *     is excluded (already engaged elsewhere) and so is `off_duty`. No prior
+ *     duty_status row at all means not eligible.
+ *   - Validation error shape: to avoid leaking cross-tenant/role details
+ *     through error-message differences, every reason a `tanod_id` is
+ *     unusable (doesn't exist, wrong barangay, wrong role, inactive, not
+ *     on-duty) collapses into the same generic 422 message.
+ *     Incident-not-found/wrong-barangay uses the same 404 pattern as
+ *     `AuthMiddleware::requireTenant()`.
+ *   - `GET /dispatch`'s item shape includes `incident_type`/`latitude`/
+ *     `longitude`: M5 Assignments List / M6 Assignment Detail have no other
+ *     redacted-safe way to know what/where a cached assignment is. Never
+ *     raw_narrative; these fields are already exposed to a Tanod via
+ *     `GET /incidents`'s own list item shape.
  */
 final class DispatchController
 {
@@ -69,19 +55,18 @@ final class DispatchController
     private const PB_LIST_WINDOW_DAYS = 30;
     private const UUID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
 
-    // §6 PATCH /dispatch/:id/status: "Allowed transitions only:
-    // assigned->en_route, en_route->arrived, arrived->completed." This is
-    // the single source of truth for that matrix — M6's mobile status
-    // buttons, the direct PATCH endpoint, and SyncController's
-    // dispatch_status_updates[] items all defer to applyStatusTransition()
-    // below rather than re-deriving this table.
+    // PATCH /dispatch/:id/status allows only assigned->en_route,
+    // en_route->arrived, arrived->completed. This is the single source of
+    // truth for that matrix: M6's mobile status buttons, the direct PATCH
+    // endpoint, and SyncController's dispatch_status_updates[] items all defer
+    // to applyStatusTransition() below rather than re-deriving this table.
     private const STATUS_TRANSITIONS = [
         'assigned' => 'en_route',
         'en_route' => 'arrived',
         'arrived' => 'completed',
     ];
 
-    /** Max length of `cancel_reason` / `override_reason` (VARCHAR(255), migration 0034). */
+    /** Max length of `cancel_reason` / `override_reason` (VARCHAR(255)). */
     private const MAX_REASON_LENGTH = 255;
 
     /**
@@ -132,7 +117,7 @@ final class DispatchController
         $overrideReason = self::optionalReason($body['override_reason'] ?? null, 'override_reason');
 
         // Idempotency: a retry with the same request_id returns the
-        // original dispatch instead of creating a duplicate (§6).
+        // original dispatch instead of creating a duplicate.
         $existingStmt = $pdo->prepare(
             'SELECT d.dispatch_id, d.status, d.incident_id, d.route_status
              FROM dispatch d
@@ -166,13 +151,12 @@ final class DispatchController
             $dispatchId = $created['dispatch_id'];
             $notificationResult = ['notification_id' => $created['notification_id']];
 
-            // Wave 2 (migration 0038): an Admin assigning a responder
-            // directly settles any live night-time offer on this incident --
-            // somebody IS responding, so the broadcast is closed and its
-            // recipients released. Same transaction as the dispatch, and the
-            // incident row is already locked, so this cannot interleave with
-            // a Tanod accepting the same offer (OfferService's lock order is
-            // incident, then offer).
+            // An Admin assigning a responder directly settles any live
+            // night-time offer on this incident: somebody IS responding, so the
+            // broadcast is closed and its recipients released. Same transaction
+            // as the dispatch, and the incident row is already locked, so this
+            // cannot interleave with a Tanod accepting the same offer
+            // (OfferService's lock order is incident, then offer).
             OfferService::closeLiveOffersForIncident($pdo, $identity, $incidentId, 'admin_dispatch');
 
             $pdo->commit();
@@ -245,9 +229,9 @@ final class DispatchController
         ?string $overrideReason,
         array $extraAudit = []
     ): array {
-        // Lock the incident row first — this is what makes "at most
-        // one active dispatch per incident" (§5) safe under
-        // concurrent requests, not just the status check below.
+        // Lock the incident row first: this is what makes "at most one
+        // active dispatch per incident per responder" safe under concurrent
+        // requests, not just the status check below.
         $incidentStmt = $pdo->prepare(
             'SELECT incident_id, barangay_id, status, priority FROM incident WHERE incident_id = :incident_id FOR UPDATE'
         );
@@ -257,18 +241,10 @@ final class DispatchController
             throw new ApiError(404, 'NOT_FOUND', 'Incident not found.');
         }
         AuthMiddleware::requireTenant($identity, (int) $incident['barangay_id']);
-        // 2026-09-13, explicit user-approved architecture change
-        // (docs/REMAINING.md G-backlog "backup/second responder"):
-        // an incident may now have MORE THAN ONE concurrent active
-        // dispatch — Admin's own judgment call, no incident-type or
-        // priority gate. `dispatched` is therefore also acceptable
-        // here, not just `pending`; only `resolved` (or any other
-        // non-actionable status) is still refused. See that plan's
-        // own "what already works with zero changes" section for
-        // why the resolve-gate, response-time metric, dispatch list
-        // endpoint, mobile, and the notification target were all
-        // already safe under N concurrent dispatches without any
-        // change of their own.
+        // An incident may have MORE THAN ONE concurrent active dispatch
+        // (Admin's own judgment call, no incident-type or priority gate).
+        // `dispatched` is therefore acceptable here, not just `pending`; only
+        // `resolved` (or any other non-actionable status) is refused.
         // 'reopened' (Secretary lifecycle action) means "reconsidered, back
         // to active handling": it is dispatchable like a pending incident,
         // otherwise a reopened incident would be a dead end.
@@ -307,15 +283,13 @@ final class DispatchController
             throw new ApiError(409, 'CONFLICT', 'This Tanod already has an active dispatch on this incident.');
         }
 
-        // Code-review finding H-01 (2026-09-24): the check above only
-        // catches the SAME tanod being double-assigned to the SAME
-        // incident — it did nothing to stop a Tanod who already has an
-        // active dispatch on a DIFFERENT incident from being assigned
-        // here too. That's a real double-booking gap, not the
-        // sanctioned multi-responder feature above (which is about one
-        // INCIDENT accepting several different Tanods, not one Tanod
-        // covering several incidents at once). Hard reject, no admin-
-        // override escape hatch for this pass.
+        // The check above only catches the SAME tanod being double-assigned
+        // to the SAME incident. A Tanod who already has an active dispatch on
+        // a DIFFERENT incident must not be assigned here too: that is a
+        // double-booking, not the sanctioned multi-responder feature (one
+        // INCIDENT accepting several different Tanods, not one Tanod covering
+        // several incidents at once). Hard reject, no admin-override escape
+        // hatch.
         $otherActiveStmt = $pdo->prepare(
             "SELECT 1 FROM dispatch
              WHERE tanod_id = :tanod_id AND incident_id != :incident_id
@@ -327,23 +301,22 @@ final class DispatchController
             throw new ApiError(409, 'CONFLICT', 'This Tanod already has an active dispatch on a different incident.');
         }
 
-        // Review decision 2026-10-07: a dispatch normally goes to a Tanod
-        // who is on the PUBLISHED roster right now. The check is a
-        // plain UTC compare of now against [start_at, end_at) of a
-        // `published` shift (draft shifts, including a legacy shift still
-        // flagged pending_reapproval, do not count; an approved swap keeps
-        // the shift published since 2026-10-12). Without one the call is a 422
-        // NO_PUBLISHED_SHIFT, unless the Admin supplies an
-        // `override_reason` — a deliberate, audited escape hatch for a
-        // real emergency, stored on the row.
+        // A dispatch normally goes to a Tanod who is on the PUBLISHED roster
+        // right now. The check is a plain UTC compare of now against
+        // [start_at, end_at) of a `published` shift (draft shifts, including a
+        // shift still flagged pending_reapproval, do not count; an approved
+        // swap keeps the shift published). Without one the call is a 422
+        // NO_PUBLISHED_SHIFT, unless the Admin supplies an `override_reason`:
+        // a deliberate, audited escape hatch for a real emergency, stored on
+        // the row.
         //
-        // Wave 2: a Tanod who ACCEPTS a night-time offer skips this check
-        // ($enforcePublishedShift = false) — the offer already decided who
-        // may take it. 2026-10-12 (gap #5): when no rostered Tanod qualified
-        // the offer falls back to every eligible on-duty Tanod whose own
-        // declared availability covers now; such an
-        // accept arrives with the fixed system override reason and is
-        // recorded exactly like an Admin override (row text + audit boolean).
+        // A Tanod who ACCEPTS a night-time offer skips this check
+        // ($enforcePublishedShift = false): the offer already decided who may
+        // take it. When no rostered Tanod qualified, the offer falls back to
+        // every eligible on-duty Tanod whose own declared availability covers
+        // now; such an accept arrives with the fixed system override reason and
+        // is recorded exactly like an Admin override (row text + audit
+        // boolean).
         $overrideUsed = false;
         if (!$enforcePublishedShift) {
             $overrideUsed = $overrideReason !== null;
@@ -389,13 +362,9 @@ final class DispatchController
         );
         $updateIncidentStmt->execute(['incident_id' => $incidentId]);
 
-        // §6: dispatch creation "records notification creation". Sprint 1
-        // deliberately deferred this rather than write a bare row with no
-        // transport able to deliver it (see the class doc's resolved
-        // decisions); Sprint 4 built that transport layer, so the
-        // deferral is resolved here. The assigned Tanod is the sole
-        // target — a dispatch is an instruction to one person, unlike an
-        // SOS, which fans out.
+        // Dispatch creation records a notification. The assigned Tanod is
+        // the sole target: a dispatch is an instruction to one person,
+        // unlike an SOS, which fans out.
         $notificationResult = NotificationService::create(
             $pdo,
             $identity['barangay_id'],
@@ -405,11 +374,8 @@ final class DispatchController
             [$tanodId]
         );
 
-        // Rule 17 names "dispatch create/override/cancel" — override
-        // was already audited (applyStatusTransition), these two were
-        // the gap, closed in Sprint 7's audit-completeness cut.
-        // Identifiers and statuses only, never narrative (Rule 17's
-        // own allow-list).
+        // Dispatch create/override/cancel are audited: identifiers and
+        // statuses only, never narrative.
         Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'dispatch_created', 'dispatch', $dispatchId, [
             'incident_id' => $incidentId,
             'tanod_id' => $tanodId,
@@ -419,11 +385,11 @@ final class DispatchController
             'route_status' => 'unavailable',
             // True when this call added a responder to an incident
             // that was ALREADY dispatched (read from the row fetched
-            // before the UPDATE above changed it) — distinguishes a
+            // before the UPDATE above changed it): distinguishes a
             // primary assignment from a backup one in the trail.
             'is_additional_responder' => $incident['status'] === 'dispatched',
-            // Boolean only — the override reason's text never enters
-            // audit metadata (Rule 8).
+            // Boolean only: the override reason's text never enters
+            // audit metadata.
             'shift_override' => $overrideUsed,
         ] + $extraAudit);
 
@@ -456,18 +422,18 @@ final class DispatchController
         $where = ['i.barangay_id = :barangay_id'];
         $params = ['barangay_id' => $identity['barangay_id']];
 
-        // §6: Tanod is forced to own tanod_id and same barangay.
+        // Tanod is forced to own tanod_id and same barangay.
         if ($identity['role'] === 'tanod') {
             $where[] = 'd.tanod_id = :tanod_id';
             $params['tanod_id'] = $identity['user_id'];
         }
-        // Punong Barangay (audit V-02, 2026-10-09; REFERENCE.md section 3:
-        // the Dispatch page is Admin-only, PB has no list of cases). The
-        // PB's only caller is the Live Map, which needs which tanod is on
-        // which open incident plus recent dispatch events for its activity
-        // feed. So: first page only, active dispatches plus those started
-        // in the last PB_LIST_WINDOW_DAYS days, and no tanod name, route
-        // geometry or (once closed) incident coordinates in the rows.
+        // Punong Barangay: the Dispatch page is Admin-only and PB has no
+        // list of cases. The PB's only caller is the Live Map, which needs
+        // which tanod is on which open incident plus recent dispatch events
+        // for its activity feed. So: first page only, active dispatches plus
+        // those started in the last PB_LIST_WINDOW_DAYS days, and no tanod
+        // name, route geometry or (once closed) incident coordinates in the
+        // rows.
         $isPunongBarangay = $identity['role'] === 'punong_barangay';
         if ($isPunongBarangay) {
             if ($page > 1) {
@@ -480,13 +446,12 @@ final class DispatchController
             $where[] = 'd.status = :status';
             $params['status'] = $status;
         }
-        // `incident_id` filter (Sprint 6 addition, not in §6's listed query
-        // params): W7's timeline needs this incident's dispatched_at and
-        // arrived_at, which §9 names as required timeline stages, and W7's
-        // Admin resolve button needs to know whether an active dispatch
-        // still exists. Filtering an already-tenant-scoped list is strictly
-        // narrower than the unfiltered call the caller could already make —
-        // it discloses nothing new.
+        // `incident_id` filter: the incident detail timeline needs this
+        // incident's dispatched_at and arrived_at, and the Admin resolve
+        // button needs to know whether an active dispatch still exists.
+        // Filtering an already-tenant-scoped list is strictly narrower than
+        // the unfiltered call the caller could already make, so it discloses
+        // nothing new.
         $incidentIdParam = Http::query('incident_id');
         if ($incidentIdParam !== null) {
             if (!ctype_digit($incidentIdParam)) {
@@ -501,20 +466,13 @@ final class DispatchController
         $countStmt->execute($params);
         $total = (int) $countStmt->fetchColumn();
 
-        // incident_type/latitude/longitude: §6's documented GET /dispatch
-        // item shape doesn't list these, but without them Sprint 3's M5
-        // Assignments List / M6 Assignment Detail have no redacted-safe
-        // way to show what/where a cached assignment even is — the same
-        // "necessary plumbing beyond the literal spec" precedent as
-        // GET /incidents' own officer_name addition. Never raw_narrative;
-        // incident_type/coordinates are already exposed to a Tanod via
-        // GET /incidents' own list item shape, so this adds no new
-        // disclosure, just reaches it from the dispatch side too.
-        // tanod_name (2026-09-05 UX pass): same "necessary plumbing beyond
-        // the literal spec" precedent this class doc already cites for
-        // incident_type/latitude/longitude — Dispatch Center's Active
-        // Dispatches table had no way to show a name instead of a bare
-        // "Tanod #{id}" without this.
+        // incident_type/latitude/longitude: without them M5/M6 have no
+        // redacted-safe way to show what/where a cached assignment even is.
+        // Never raw_narrative; incident_type/coordinates are already exposed
+        // to a Tanod via GET /incidents' own list item shape, so this adds no
+        // new disclosure, just reaches it from the dispatch side too.
+        // tanod_name: lets the Dispatch Center's Active Dispatches table show
+        // a name instead of a bare "Tanod #{id}".
         $stmt = $pdo->prepare(
             "SELECT d.dispatch_id, d.incident_id, d.tanod_id, d.priority, d.route_json, d.route_status,
                     d.status, d.dispatched_at, d.en_route_at, d.arrived_at, d.completed_at, d.cancelled_at,
@@ -608,18 +566,18 @@ final class DispatchController
             }
             AuthMiddleware::requireTenant($identity, (int) $dispatch['barangay_id']);
 
-            // Review decision 2026-10-07: a reason is now REQUIRED, and a
-            // dispatch may be cancelled from `arrived` too (a Tanod who got
-            // there and found the call void / handled by someone else).
-            // Validated after the tenant check so a cross-tenant caller
-            // still gets 404 and never learns anything from a 400.
+            // A reason is REQUIRED, and a dispatch may be cancelled from
+            // `arrived` too (a Tanod who got there and found the call void /
+            // handled by someone else). Validated after the tenant check so a
+            // cross-tenant caller still gets 404 and never learns anything
+            // from a 400.
             $reason = self::optionalReason($body['reason'] ?? null, 'reason');
             if ($reason === null) {
                 throw new ApiError(400, 'VALIDATION_ERROR', 'reason is required (1-' . self::MAX_REASON_LENGTH . ' characters).');
             }
 
             // Only a live dispatch can be cancelled; completed/cancelled are
-            // final (§5 Rule 28's non-destructive cancellation).
+            // final (cancellation is non-destructive).
             if (!in_array($dispatch['status'], ['assigned', 'en_route', 'arrived'], true)) {
                 throw new ApiError(409, 'CONFLICT', 'Only an assigned, en-route or arrived dispatch can be cancelled.');
             }
@@ -636,17 +594,14 @@ final class DispatchController
                 'dispatch_id' => $dispatchId,
             ]);
 
-            // §5 Rule 21/28: dispatched -> pending only through valid
-            // cancellation before arrival — this is that transition.
-            //
-            // 2026-09-13: now conditional on no OTHER dispatch still
-            // being active on this incident. Since a second/backup
-            // responder can exist (docs/REMAINING.md G-backlog), cancelling
-            // one of two active dispatches must NOT un-dispatch an
-            // incident the other responder is still actively working.
-            // The just-cancelled row above already excludes itself from
-            // this COUNT — its status was just flipped away from the
-            // assigned/en_route/arrived set.
+            // dispatched -> pending only through valid cancellation before
+            // arrival: this is that transition. It is conditional on no OTHER
+            // dispatch still being active on this incident: since a
+            // second/backup responder can exist, cancelling one of two active
+            // dispatches must NOT un-dispatch an incident the other responder
+            // is still actively working. The just-cancelled row above already
+            // excludes itself from this COUNT (its status was just flipped away
+            // from the assigned/en_route/arrived set).
             $remainingActiveStmt = $pdo->prepare(
                 "SELECT COUNT(*) FROM dispatch
                  WHERE incident_id = :incident_id AND status IN ('assigned','en_route','arrived')"
@@ -669,17 +624,16 @@ final class DispatchController
             $readBackStmt->execute(['dispatch_id' => $dispatchId]);
             $cancelledAt = $readBackStmt->fetchColumn();
 
-            // Rule 17: "dispatch create/override/cancel". See create()'s
-            // own note — this half was the other Sprint 7 audit gap.
+            // Dispatch create/override/cancel are audited; see create()'s
+            // own note.
             Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'dispatch_cancelled', 'dispatch', $dispatchId, [
                 'incident_id' => (int) $dispatch['incident_id'],
-                // 2026-09-13: reflects the real outcome now that a second
-                // responder can keep an incident 'dispatched' after this
-                // cancellation — no longer always 'pending'.
+                // Reflects the real outcome: a second responder can keep an
+                // incident 'dispatched' after this cancellation.
                 'incident_status' => $revertedToPending ? 'pending' : 'dispatched',
                 'from_status' => $dispatch['status'],
-                // Only THAT a reason exists and how long it is — never its
-                // text (Rule 8).
+                // Only THAT a reason exists and how long it is, never its
+                // text.
                 'has_reason' => true,
                 'reason_length' => mb_strlen($reason),
             ]);
@@ -694,19 +648,18 @@ final class DispatchController
             'dispatch_id' => $dispatchId,
             'status' => 'cancelled',
             'incident_id' => (int) $dispatch['incident_id'],
-            // 2026-09-13: was hardcoded 'pending' — no longer correct
-            // once a second responder can keep the incident 'dispatched'
-            // after this specific cancellation.
+            // Not hardcoded 'pending': a second responder can keep the
+            // incident 'dispatched' after this specific cancellation.
             'incident_status' => $revertedToPending ? 'pending' : 'dispatched',
             'cancelled_at' => $cancelledAt,
         ]);
     }
 
     /**
-     * PATCH /dispatch/:id/status (Sprint 3 cut) — §6: "Tanod own assigned
-     * dispatch or Admin override. Allowed transitions only:
-     * assigned->en_route, en_route->arrived, arrived->completed. Admin
-     * corrections require explicit override_reason and audit event."
+     * PATCH /dispatch/:id/status — Tanod own assigned dispatch or Admin
+     * override. Allowed transitions only: assigned->en_route,
+     * en_route->arrived, arrived->completed. Admin corrections require an
+     * explicit override_reason and an audit event.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */
@@ -730,18 +683,17 @@ final class DispatchController
      * Core status-transition logic, shared by the direct PATCH endpoint
      * above and `SyncController::batch()`'s `dispatch_status_updates[]`
      * items (which always call this as the owning Tanod, `$overrideReason`
-     * null — a sync item can never carry Admin override authority).
+     * null: a sync item can never carry Admin override authority).
      *
-     * §6's transition rule applies identically to both roles — the only
+     * The transition rule applies identically to both roles; the only
      * difference is WHO may invoke it without extra authority: a Tanod may
      * only move their OWN assigned dispatch through the matrix; an Admin
      * may move ANY same-barangay dispatch through it too, but must supply
      * `override_reason` (audited) since they are not the assigned party.
      * Neither role may reach any state outside `STATUS_TRANSITIONS` from
-     * here — `cancelled` and reversing `completed` are deliberately
-     * unreachable through this endpoint (§5 Rule 28; use
-     * `PATCH /dispatch/:id/cancel` instead, which has its own tighter
-     * rules).
+     * here: `cancelled` and reversing `completed` are deliberately
+     * unreachable through this endpoint (use `PATCH /dispatch/:id/cancel`
+     * instead, which has its own tighter rules).
      *
      * `$clientEventTime` (sync items only: the item's optional
      * `created_offline_at`) is when the Tanod actually pressed the step. It
@@ -758,11 +710,11 @@ final class DispatchController
             throw new ApiError(400, 'VALIDATION_ERROR', 'status must be one of: en_route, arrived, completed.');
         }
 
-        // H-09: Tanod-initiated updates only — an Admin override already
-        // goes through its own audited `override_reason` path (see this
-        // method's own doc) and isn't a mobile-device write at all.
-        // Optional/no-op for a device with no header or no key on file yet
-        // — see DeviceSignature's own phased-rollout doc.
+        // Tanod-initiated updates only: an Admin override already goes
+        // through its own audited `override_reason` path (see this method's
+        // own doc) and isn't a mobile-device write at all. No-op for a
+        // device with no header or no key on file; see DeviceSignature's own
+        // doc.
         if ($identity['role'] === 'tanod') {
             $deviceId = Http::header('X-Device-Id');
             if (is_string($deviceId) && $deviceId !== '') {
@@ -816,10 +768,9 @@ final class DispatchController
             }
 
             if ($isAdmin) {
-                // §6: "Admin corrections require explicit override_reason
-                // and audit event" — an Admin is never the assigned Tanod,
-                // so every Admin-initiated move through this endpoint
-                // needs one.
+                // Admin corrections require an explicit override_reason and
+                // audit event: an Admin is never the assigned Tanod, so every
+                // Admin-initiated move through this endpoint needs one.
                 if (!is_string($overrideReason) || trim($overrideReason) === '') {
                     throw new ApiError(400, 'VALIDATION_ERROR', 'override_reason is required for an Admin-initiated status change.');
                 }
@@ -832,7 +783,7 @@ final class DispatchController
             ][$newStatus];
 
             // Plausible client event time (Tanod only), never before the
-            // dispatch or the previous step; null -> server time as before.
+            // dispatch or the previous step; null -> server time.
             $eventTime = $isAdmin ? null : ClientEventTime::eventOrServerTime($clientEventTime, [
                 $dispatch['dispatched_at'],
                 $newStatus === 'arrived' || $newStatus === 'completed' ? $dispatch['en_route_at'] : null,
@@ -847,15 +798,13 @@ final class DispatchController
                 Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'dispatch_status_override', 'dispatch', $dispatchId, [
                     'from' => $currentStatus,
                     'to' => $newStatus,
-                    // Rule 8: only THAT an override reason was given (it is
-                    // required above) and its length — never its text. This
-                    // used to write the free text under `reason` (found by
-                    // Wave 1 agent A, fixed Wave 2).
+                    // Only THAT an override reason was given (it is required
+                    // above) and its length, never its text.
                     'has_reason' => true,
                     'reason_length' => mb_strlen(trim($overrideReason)),
                 ]);
             } else {
-                // Tanod-initiated transition audit: ids/statuses only (Rule 8).
+                // Tanod-initiated transition audit: ids/statuses only.
                 Audit::record($pdo, $identity['barangay_id'], $identity['user_id'], 'dispatch_status_changed', 'dispatch', $dispatchId, [
                     'from' => $currentStatus,
                     'to' => $newStatus,
@@ -906,44 +855,31 @@ final class DispatchController
     }
 
     /**
-     * `GET /dispatch/:id/route?latitude=&longitude=&mode=car|foot`
-     * (2026-09-13, turn-by-turn build, docs/REMAINING.md §C4). Computes
-     * a road-snapped route from the caller's CURRENT position (the
-     * Tanod's live GPS fix, passed as query params — not read from any
-     * stored position) to the dispatch's incident, via `OrsClient`, and
-     * persists the result onto `dispatch.route_json`/`route_status`.
+     * `GET /dispatch/:id/route?latitude=&longitude=&mode=car|foot`. Computes
+     * a road-snapped route from the caller's CURRENT position (the Tanod's
+     * live GPS fix, passed as query params, not read from any stored
+     * position) to the dispatch's incident, via `OrsClient`, and persists the
+     * result onto `dispatch.route_json`/`route_status`.
      *
-     * WHY A GET WRITES: same justification `SystemHealthController`'s
-     * own class doc already gives for its endpoint — this is a probe,
-     * not a plain read (it actively calls ORS), and recording what it
-     * found is the point of having called it. It is naturally
-     * idempotent regardless: the route depends on the Tanod's current
-     * position, which changes constantly, so this is "compute against
-     * live input" rather than "create a resource once" — the same shape
-     * `IncidentsController::nearby()` already has, which is why this
-     * mirrors that endpoint's validation instead of `POST /dispatch`'s
-     * `Idempotency-Key` pattern. Recomputing is naturally idempotent too:
-     * the same inputs give the same ORS answer, and different inputs
-     * just replace the cached value — no duplicate-row risk an
-     * idempotency key would need to guard against.
+     * WHY A GET WRITES: like `SystemHealthController`, this is a probe, not a
+     * plain read (it actively calls ORS), and recording what it found is the
+     * point of having called it. It is naturally idempotent: the route depends
+     * on the Tanod's current position, which changes constantly, so this is
+     * "compute against live input" rather than "create a resource once" (the
+     * same shape as `IncidentsController::nearby()`, whose validation this
+     * mirrors). Recomputing is harmless: the same inputs give the same ORS
+     * answer, and different inputs just replace the cached value.
      *
      * NEVER 500s on a routing failure, and NEVER silently discards a
-     * previously-good route: if ORS can't be reached or rejects the
-     * request (unconfigured, rate-limited, no road within range of the
-     * given position — a real, observed failure mode, see
-     * `OrsClient`'s own doc block), any existing `route_json` is KEPT
-     * and `route_status` is set to `stale` rather than `unavailable` —
-     * exactly what that status value and the Master Reference's M6
-     * "cached route labeled as such" line exist for. Only a dispatch
-     * that has NEVER had a successful route falls to `unavailable`.
-     * Mirrors `POST /dispatch`'s own documented "routing failure doesn't
-     * roll back dispatch creation" philosophy, applied to a read.
+     * previously-good route: if ORS can't be reached or rejects the request
+     * (unconfigured, rate-limited, no road within range of the given
+     * position; see `OrsClient`'s own doc), any existing `route_json` is KEPT
+     * and `route_status` is set to `stale` rather than `unavailable`. Only a
+     * dispatch that has NEVER had a successful route falls to `unavailable`.
      *
-     * Not audited: Rule 8 forbids raw coordinates in `audit_log`, and a
-     * Tanod's position updates repeatedly per assignment (unlike a
-     * status transition, at most ~3 times total) — logging every fetch
-     * would be operational noise closer to `GET /dispatch` (not
-     * audited) than `dispatch_status_override` (audited, but rare).
+     * Not audited: raw coordinates are forbidden in `audit_log`, and a
+     * Tanod's position updates repeatedly per assignment, so logging every
+     * fetch would be operational noise.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      */

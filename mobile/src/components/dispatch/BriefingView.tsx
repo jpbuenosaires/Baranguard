@@ -1,4 +1,4 @@
-/** Field briefing and operation mode of the assignment detail page (Phase 6 split; markup unchanged). */
+/** Field briefing and operation mode of the assignment detail page. */
 import { IonIcon } from '@ionic/react';
 import { callOutline, checkmarkOutline, copyOutline, navigateOutline } from 'ionicons/icons';
 import type { RefObject } from 'react';

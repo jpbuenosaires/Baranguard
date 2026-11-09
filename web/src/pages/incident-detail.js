@@ -1,21 +1,14 @@
 /**
- * incident-detail.js — the app's single per-incident detail view (§9's
- * W7): dossier, narrative, evidence, response timeline, the Admin
- * resolve control, and the Secretary's lifecycle actions
- * (duplicate/invalid/cancelled/reopened).
+ * incident-detail.js — the app's single per-incident detail view: dossier,
+ * narrative, evidence, response timeline, the Admin resolve control, and the
+ * Secretary's lifecycle actions (duplicate/invalid/cancelled/reopened).
  *
- * This page used to be a three-tab case workspace (Incident / Redaction /
- * Blotter). The Electronic Blotter and the local-AI redaction pipeline
- * were removed (migration 0029): barangays keep the blotter and the
- * Lupon records in their own binders, and DILG BIMSS/KPIS remains the
- * mandated case ledger (docs/REFERENCE.md §1). Nothing here lists or
- * browses incidents; it is only reachable per-incident, from Incident
- * Management, the dashboard, SMS Monitor, the audit log, search and
- * notifications. The action panels are driven entirely by REAL server
- * state (§8) — an unavailable action says which prerequisite is missing
+ * Nothing here lists or browses incidents (barangays keep the blotter and
+ * Lupon records in their own binders); it is only reachable per-incident,
+ * from Incident Management, the dashboard, SMS Monitor, the audit log,
+ * search and notifications. The action panels are driven entirely by REAL
+ * server state — an unavailable action says which prerequisite is missing
  * rather than hiding the control.
- *
- * kebab-case filename per §4.
  */
 
 import {
@@ -52,12 +45,12 @@ const INCIDENT_TYPE_LABELS = {
   animal_complaint: 'Animal Complaint', other: 'Other',
 };
 
-// Rule 1 (amended 2026-10-13): the narrative and party details go to the Secretary (custodian) and the Chief Tanod (Admin),
+// The narrative and party details go to the Secretary (custodian) and the Chief Tanod (Admin),
 // who needs them to brief a responding Tanod. Everyone else is told plainly that they are restricted.
 const RESTRICTED_TO_SECRETARY = 'Restricted to the Barangay Secretary and the Chief Tanod';
 const NOT_AVAILABLE_FOR_ROLE = 'Not available for your role';
 // Raw narratives are deleted by the retention job one year (365 days) after creation
-// (RetentionService; Rule 10 constant). GET /incidents/:id does not return
+// (RetentionService constant). GET /incidents/:id does not return
 // raw_narrative_purged_at, so age is the only signal the screen has.
 const NARRATIVE_RETENTION_DAYS = 365;
 
@@ -71,7 +64,7 @@ function parseApiDate(value) {
 
 /**
  * "2 h 10 min", "45 min", "3 days". A real elapsed time between two real
- * timestamps; no target or threshold is implied (Rule 6).
+ * timestamps; no target or threshold is implied.
  */
 function formatElapsed(ms) {
   const min = Math.max(0, Math.floor(ms / 60000));
@@ -83,7 +76,7 @@ function formatElapsed(ms) {
   return `${Math.floor(h / 24)} days`;
 }
 
-/** Operational times are shown in Asia/Manila (Rule 11). */
+/** Operational times are shown in Asia/Manila. */
 function formatDateTime(value) {
   const d = parseApiDate(value);
   if (!d) return null;
@@ -195,7 +188,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     }
   }
 
-  // --- States (§8: Loading / Empty / Error / Populated) ---
+  // --- States (Loading / Empty / Error / Populated) ---
 
   function renderLoading() {
     renderLoadingSkeleton({ container: content, count: 3, ariaLabel: 'Loading incident' });
@@ -962,7 +955,7 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     return 'No narrative recorded.';
   }
 
-  /** Every responder ever dispatched to this incident (A-13). Names are shown to the Admin only. */
+  /** Every responder ever dispatched to this incident. Names are shown to the Admin only. */
   function buildResponders() {
     const card = document.createElement('div');
     card.className = 'card dossier-card';
@@ -1219,15 +1212,11 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
   }
 
   /**
-   * §9 W7: "Admin incident resolution is shown only when the dispatch/state
-   * prerequisites are met" — i.e. the incident is `dispatched` and no
-   * dispatch is still active. Those are exactly the conditions the server
-   * enforces (§6 PATCH /incidents/:id/status), checked here so the button
-   * is never a control that would 409 on click.
-   *
-   * §8 forbids the mockup's invented 4-state model: the label and
-   * availability come from the real `incident.status` and real dispatch
-   * rows, nothing else.
+   * Admin incident resolution is shown only when the dispatch/state
+   * prerequisites the server enforces (PATCH /incidents/:id/status) are met,
+   * checked here so the button is never a control that would 409 on click.
+   * The label and availability come from the real `incident.status` and real
+   * dispatch rows, nothing else.
    */
   function buildAdminResolvePanel() {
     if (incident.status === 'resolved') {
@@ -1292,8 +1281,8 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
     return button;
   }
 
-  // Mirrors IncidentsController::LIFECYCLE_TRANSITIONS exactly (H-16/M-03,
-  // migration 0025) -- UI-only convenience for which buttons to show; the
+  // Mirrors IncidentsController::LIFECYCLE_TRANSITIONS exactly --
+  // UI-only convenience for which buttons to show; the
   // server is still the real enforcement point, so a stale client copy
   // here only means a button that would 409, not a bypass.
   const LIFECYCLE_TRANSITIONS = {
@@ -1329,14 +1318,12 @@ export function renderIncidentDetailPage(root, user, onLoggedOut, navigate, inci
   };
 
   /**
-   * W21: the web UI for `PATCH /incidents/:id/lifecycle` (H-16/M-03),
-   * Secretary-only — the backend/policy side of this has existed since
-   * migration 0025, but nothing in the web app ever called it (a
-   * Secretary had to hit the endpoint directly). Card shows only the
-   * legal targets from the incident's CURRENT status (forward-only, same
-   * table the server enforces), disables every target except `reopened`
-   * while a dispatch is still active (same guard the server applies),
-   * and surfaces the duplicate link / last-change timestamp once set.
+   * The web UI for `PATCH /incidents/:id/lifecycle`, Secretary-only. The
+   * card shows only the legal targets from the incident's CURRENT status
+   * (forward-only, same table the server enforces), disables every target
+   * except `reopened` while a dispatch is still active (same guard the
+   * server applies), and surfaces the duplicate link / last-change
+   * timestamp once set.
    */
   function buildLifecycleCard() {
     const card = document.createElement('div');

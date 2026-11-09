@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Baranguard — Sprint 0 end-to-end validation against a REAL local XAMPP
-# MariaDB instance (not a cloud sandbox). Safe to run: everything happens
+# Baranguard — baseline schema, seed, rollback, bootstrap CLI and backup/restore
+# validation against a REAL local XAMPP MariaDB instance. Safe to run: everything happens
 # in a disposable database (baranguard_sprint0_check) plus a disposable
 # restore-verification database (baranguard_sprint0_check_restore_test).
 # Your real `baranguard` database and backend/backups/ are never touched.
@@ -14,9 +14,7 @@
 # root account has a password:
 #   XAMPP_MYSQL_USER=root XAMPP_MYSQL_PASSWORD=yourpass bash backend/scripts/verify-sprint0.sh
 #
-# Writes a timestamped log next to this script so results can be reviewed
-# afterward (including by Claude, via the device bridge) without needing
-# to paste terminal output back manually.
+# Writes a timestamped log next to this script.
 
 set -uo pipefail
 
@@ -33,10 +31,8 @@ fail() { echo "[FAIL] $1"; FAIL=$((FAIL+1)); }
 step() { echo; echo "=== $1 ==="; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -49,12 +45,8 @@ echo "Target: $XAMPP_MYSQL_HOST:$XAMPP_MYSQL_PORT as $XAMPP_MYSQL_USER"
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for candidate in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}"; do
     [ -x "$candidate" ] && { echo "$candidate"; return; }
   done

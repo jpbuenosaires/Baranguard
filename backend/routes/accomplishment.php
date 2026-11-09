@@ -2,8 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Route table for the monthly accomplishment report
- * (docs/FEATURE_CONTRACT_2026-10.md section 4).
+ * Route table for the monthly accomplishment report.
  */
 
 use Baranguard\Controllers\AccomplishmentController;

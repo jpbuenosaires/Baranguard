@@ -1,7 +1,7 @@
 /**
  * pageSuite.mjs — the checks every data-driven screen owes its users
- * (REFERENCE.md §6: "Every data-driven screen needs all four states:
- * Loading / Empty / Error-with-retry / Populated"), generated per page ×
+ * (every data-driven screen needs all four states:
+ * Loading / Empty / Error-with-retry / Populated), generated per page ×
  * per role so a new page or role gets the full set by adding one config.
  */
 

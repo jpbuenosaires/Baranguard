@@ -2,7 +2,7 @@
  * rosterWindow.js - date-window helpers for the roster screens (Scheduler,
  * Swap requests, Approvals). `GET /shifts` is ordered oldest-first and capped
  * at 100 rows per page, so an unbounded request hides the shifts being
- * planned once a barangay has more than 100 (audit 2026-10-09 F-09 / R-02).
+ * planned once a barangay has more than 100.
  * Every roster screen therefore asks for an explicit Manila-date window
  * (`from` / `to`, both inclusive, supported by the server) and walks the
  * pages of that window.

@@ -1,7 +1,6 @@
 /**
- * StatStrip.css — co-located with StatStrip.js. Big coloured number over
- * a small grey label, laid out inline, per the Figma reference's header
- * count rows.
+ * StatStrip.css — co-located with StatStrip.js. Big coloured number over a
+ * small grey label, laid out inline.
  */
 
 .stat-strip {
@@ -31,7 +30,7 @@
   white-space: nowrap;
 }
 
-/* ─── Premium polish (UI/UX improvement pass) ─────────────────────────── */
+/* ─── Polish ─────────────────────────────────────────────────────────────── */
 .stat-strip__item {
   padding: var(--spacing-sm) var(--spacing-md);
   border-radius: var(--radius-lg);

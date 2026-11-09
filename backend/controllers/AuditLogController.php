@@ -9,55 +9,34 @@ use Baranguard\Middleware\AuthMiddleware;
 use PDO;
 
 /**
- * GET /audit-log — §6: "Admin own barangay → {items:[{audit_id,
- * actor_user_id,action,entity_type,entity_id,metadata_json,created_at}],
- * page,limit,total}, paginated newest-first." §9 W17 Audit Log Viewer:
- * "Roles: Admin only · Last 7 days default, paginated, no edit/delete
- * controls."
+ * GET /audit-log — Admin, own barangay, paginated newest-first:
+ * {items:[{audit_id, actor_user_id, action, entity_type, entity_id,
+ * metadata_json, created_at}], page, limit, total}. No edit/delete controls.
  *
- * READ-ONLY BY CONSTRUCTION. §5 calls `audit_log` "write-once except
- * controlled retention deletion" and Rule 17 makes the audit trail the
- * thing that survives a dispute — so this controller has exactly one
- * method and there is no route anywhere that edits or deletes an audit
- * row. The single legitimate deletion path is
- * `RetentionService::purgeAuditLog()` (Sprint 7's retention cut), which
- * is a CLI job with an age filter and no other conditional logic,
- * precisely so it cannot be used to make specific rows disappear.
+ * READ-ONLY BY CONSTRUCTION. `audit_log` is write-once except controlled
+ * retention deletion, so this controller has exactly one method and no
+ * route edits or deletes an audit row. The single legitimate deletion path
+ * is `RetentionService::purgeAuditLog()`, a CLI job with an age filter and
+ * no other conditional logic, so it cannot be used to make specific rows
+ * disappear.
  *
- * Resolved decisions (logged in DEVLOG.md):
- *
- *   - **"Last 7 days default" is a DEFAULT, not a cap.** §9 W17 names it
- *     as the default view; an Admin investigating something older can
- *     pass `date_from`/`date_to` (same Asia/Manila calendar-day contract
- *     as `GET /reports/summary`, reused rather than invented). Capping
- *     the window would make the viewer useless for the exact
- *     investigation an audit log exists for.
- *
- *   - **`metadata_json` is returned as parsed JSON, not a string.** §6
- *     lists it in the item shape; handing the client a JSON string to
- *     re-parse would be a worse contract, and every writer in this
- *     codebase goes through `Audit::record()`, which always writes valid
- *     JSON.
- *
- *   - **No tenant escape hatch.** Every row is filtered on
- *     `barangay_id = caller's`, exactly like every other list endpoint
- *     here. Rows written by system jobs carry a NULL `barangay_id` (see
- *     `RetentionService`'s own note on why retention rows have no
- *     invented actor or tenant) and are therefore NOT visible to a
- *     barangay Admin — a deliberate consequence, not an oversight: those
- *     rows describe workstation-wide maintenance, not that barangay's
- *     operations, and `NULL = 1` is false in SQL rather than a leak.
- *
- *   - **`actor_username` is joined in.** §6 fixes the item shape and
- *     `actor_user_id` is in it, but a screen showing "user 7 did X"
- *     forces a second lookup the API can do once. Same precedent as
- *     `officer_name` on `GET /incidents`. The raw id is still returned.
+ *   - "Last 7 days" is a DEFAULT, not a cap: an Admin investigating
+ *     something older can pass `date_from`/`date_to` (same Asia/Manila
+ *     calendar-day contract as `GET /reports/summary`).
+ *   - `metadata_json` is returned as parsed JSON, not a string; every
+ *     writer goes through `Audit::record()`, which always writes valid JSON.
+ *   - No tenant escape hatch: every row is filtered on the caller's
+ *     `barangay_id`. Rows written by system jobs carry a NULL `barangay_id`
+ *     and are therefore not visible to a barangay Admin (they describe
+ *     workstation-wide maintenance; `NULL = 1` is false in SQL, not a leak).
+ *   - `actor_username` is joined in so the screen needs no second lookup;
+ *     the raw `actor_user_id` is still returned.
  */
 final class AuditLogController
 {
     private const DEFAULT_LIMIT = 25;
     private const MAX_LIMIT = 100;
-    private const DEFAULT_WINDOW_DAYS = 7; // §9 W17's documented default view
+    private const DEFAULT_WINDOW_DAYS = 7; // default view; a default, not a cap
 
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function index(PDO $pdo, array $identity): void

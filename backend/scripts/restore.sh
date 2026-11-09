@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Baranguard — restore verification companion to backup.sh (§11: "periodic
-# restore verification" is a required pre-UAT exit condition, not optional).
+# Baranguard — restore verification companion to backup.sh (periodic restore
+# verification is required, not optional).
 #
 # Usage: DB_PASSWORD=... BACKUP_ENCRYPTION_PASSPHRASE=... \
 #        ./scripts/restore.sh /path/to/backup.sql.enc [target_db_name]

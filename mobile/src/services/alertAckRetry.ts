@@ -1,9 +1,9 @@
 /**
  * alertAckRetry.ts — a critical alert's Acknowledge must not be lost when the
- * workstation is unreachable. The overlay still dismisses at once (Rule 7: the
+ * workstation is unreachable. The overlay still dismisses at once (the
  * Tanod must be able to act); the ack is remembered here and re-sent when the
  * network returns, the app is foregrounded, or on a slow timer. The server
- * treats a repeat ack as idempotent (§6), so a duplicate is harmless.
+ * treats a repeat ack as idempotent, so a duplicate is harmless.
  *
  * Only failures that can succeed later are kept: unreachable, 5xx, 401 (sign
  * in again). Any other 4xx is the server's answer (not ours, gone), so it is

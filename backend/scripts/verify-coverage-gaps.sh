@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Baranguard — closes the route gaps found by verify-route-coverage.php
-# (2026-10-29): three routes no suite ever called, and one method never sent.
+# Baranguard — covers the routes verify-route-coverage.php found no other suite
+# calling: three routes, and one method never sent.
 #
 #   GET    /incidents/:id/evidence/:attachmentId/download
 #   GET    /reports/digest
@@ -8,8 +8,8 @@
 #   DELETE /shift-swap-requests/:id
 #
 # Each is checked for the happy path AND its guards: role, barangay (a
-# cross-tenant request is 404, never 403 — Rule 2), ownership, state, the
-# bytes served, and the audit row (identifiers only — Rule 8).
+# cross-tenant request is 404, never 403), ownership, state, the
+# bytes served, and the audit row (identifiers only).
 #
 # Safe to run: disposable database, disposable app user, throwaway port and
 # scratch storage directories. The real databases and backend/.env are

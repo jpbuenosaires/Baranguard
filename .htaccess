@@ -1,16 +1,11 @@
-# Repo root — reachable directly over HTTP once htdocs\baranguard points
-# here instead of at web\ only (2026-09-03, at the user's request, so
-# backend/mobile/docs are all browsable via the same htdocs working
-# directory they always use). This file exists purely to deny anything
-# that should never be served: VCS metadata (.git), tool config (.claude),
+# Repo root — htdocs\baranguard points here, so this file exists purely to
+# deny anything that should never be served: VCS metadata (.git), tool config (.claude),
 # and any other dotfile/dotdir at any depth. `backend/.htaccess` already
 # denies the whole backend/ subtree (including backend/.env) on its own —
 # this is the repo-root-level equivalent for everything else.
 #
 # <DirectoryMatch> is NOT permitted inside a .htaccess file (server-config
-# context only) — it 500'd every request the first time this was written
-# with it (confirmed via C:\xampp\apache\logs\error.log: "<DirectoryMatch
-# not allowed here"). mod_rewrite IS permitted here and is the standard
+# context only; it 500s every request). mod_rewrite IS permitted here and is the standard
 # .htaccess-safe way to block a whole dot-prefixed path segment at any
 # depth (covers /.git/config, /.git/HEAD, etc. — a plain <FilesMatch>
 # alone only matches the final filename, so it would miss anything nested

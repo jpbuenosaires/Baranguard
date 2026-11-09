@@ -1,6 +1,5 @@
 # Baranguard - Task Scheduler entry point for the DAILY backup +
-# retention job (Sprint 8's C2: "nothing is scheduled" -- REMAINING.md
-# section C, docs/REMAINING.md's "Current priority" item 2).
+# retention job.
 #
 # Does two things in order, each independently safe to fail without
 # blocking the other from being tried:
@@ -8,19 +7,18 @@
 #      backup FILES past BACKUP_RETENTION_DAYS (legal-hold-aware, fails
 #      closed -- see that script's own header).
 #   2. backend/scripts/retention-job.php (no --dry-run) -- purges DB ROWS
-#      past their section 11 retention period (legal-hold-aware). This is
-#      REAL, IRREVERSIBLE deletion by design -- retention-job.php's own
-#      header explains why an unattended daily run is the intended
-#      steady state once the FIRST run on a given database has been
-#      reviewed by hand (a --dry-run was run and read before this task
-#      was ever registered -- see DEVLOG 2026-09-26 (35)/(36)).
+#      past their retention period (legal-hold-aware). This is REAL,
+#      IRREVERSIBLE deletion by design -- retention-job.php's own header
+#      explains why an unattended daily run is the intended steady state
+#      once the FIRST run on a given database has been reviewed by hand
+#      (run a --dry-run and read it before registering this task).
 #
 # backup.sh/restore-drill.sh are plain bash scripts that read
 # DB_*/BACKUP_ENCRYPTION_PASSPHRASE from the PROCESS environment (they
 # don't source backend/.env themselves) -- this wrapper reads exactly
 # those keys out of backend/.env with a targeted grep (never a blanket
 # `set -a; . .env`, which inverts config/env.php's own "already-set env
-# var wins" precedence rule -- see docs/REFERENCE.md section 8) and passes
+# var wins" precedence rule) and passes
 # them through explicitly.
 #
 # Not meant to be run by hand day-to-day (though it's safe to -- both

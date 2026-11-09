@@ -1,12 +1,11 @@
 /**
- * AssignmentEvidencePanel.tsx — photo / voice evidence for an incident the
- * Tanod is already ASSIGNED to (Gap-X2). Before this, evidence could only be
- * attached on the New Incident screen, before submit.
+ * AssignmentEvidencePanel.tsx — photo / voice evidence for an incident the Tanod is already ASSIGNED to
+ * (the New Incident screen only covers evidence attached before submit).
  *
  * Reuses, rather than duplicating, the existing pipeline:
  *   - capture: `evidenceCapture.ts` (capturePhoto / voice recording), the
  *     same functions New Incident calls;
- *   - durability (Rule 7): the capture is written to the encrypted local
+ *   - durability: the capture is written to the encrypted local
  *     `evidence_attachment_local` table FIRST (`saveEvidenceLocally`), keyed by
  *     the dispatch's `local_id`; `syncService.ts`'s existing evidence step then
  *     uploads it (`POST /incidents/:id/evidence`, X-Device-Id + signature,
@@ -103,7 +102,7 @@ const AssignmentEvidencePanel: React.FC<Props> = ({ dispatchLocalId, hideTitle =
     };
   }, [reload]);
 
-  // Leaving the screen mid-recording must not lose the note (Rule 7): stop it and save it
+  // Leaving the screen mid-recording must not lose the note: stop it and save it
   // to the encrypted local table, then let the sync worker upload it later.
   useEffect(() => {
     return () => {

@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Route table for /sync (§6 "Sync" section). POST /sync/batch — Sprint 3.
+ * Route table for /sync. POST /sync/batch.
  */
 
 use Baranguard\Controllers\SyncController;

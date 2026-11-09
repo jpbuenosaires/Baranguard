@@ -1,29 +1,10 @@
 /**
- * statistical-reports.js — W9 Statistical Reports, Generate only (§9):
- * "Contains exact trend, incident, status, response-time, and
- * notification reliability datasets. Generate and Export are separate;
- * Export calls GET /reports/export and is audited." Roles: Admin, Punong
- * Barangay (read-only) — same as W2, both just call the same GET.
- *
- * Two things deliberately scoped out of this cut, logged in DEVLOG.md:
- *   - **Export** is `GET /reports/export`, a separate Sprint 7 "Today's
- *     cut" box per Sprint_Prompts.md ("excluding export/service-health
- *     which are S7") — not built here, no Export button on this page.
- *   - **Notification reliability** isn't shown. §6's
- *     `GET /reports/notifications-summary` isn't in Sprint 1's own listed
- *     endpoint set, and its data model (notification/notification_target/
- *     notification_delivery) is Sprint 4 scope — nothing would ever
- *     populate it yet. Building an endpoint outside this sprint's listed
- *     set risked getting ahead of a dependency chain the same way
- *     `DispatchController` deliberately didn't write bare `notification`
- *     rows for the same reason.
- *
- * Deliberately distinct from W2 Admin Dashboard: this is an explicit
- * "Generate" action for a chosen range (no auto-load on open), producing
- * the fuller trend/type/status/response-time breakdown — not just the
- * top-line KPI cards.
- *
- * kebab-case filename per §4 (pages/routes convention).
+ * statistical-reports.js — Statistical Reports (the Reports tab of
+ * Analytics): an explicit "Generate" action for a chosen range (no auto-load
+ * on open), producing the fuller trend/type/status/response-time breakdown
+ * rather than the Admin Dashboard's top-line KPI cards. Roles: Admin,
+ * Punong Barangay (read-only). Generate and Export are separate; Export
+ * calls GET /reports/export and is audited.
  */
 
 import { getReportsSummary, exportReport, downloadReportExport, getBarangays, ApiClientError } from '../api/apiClient.js';
@@ -54,8 +35,8 @@ const INCIDENT_TYPE_LABELS = {
   medical_emergency: 'Medical Emergency', missing_person: 'Missing Person',
   animal_complaint: 'Animal Complaint', other: 'Other',
 };
-// §8 "Adopted UI reference": categorical chart palette, cycled since §5
-// fixes incident_type to exactly these 11 enum members.
+// Categorical chart palette, cycled since incident_type is exactly these 11
+// enum members.
 const INCIDENT_TYPE_COLORS = {
   theft: 'var(--cat-theft)',
   physical_injury: 'var(--cat-injury)',
@@ -69,8 +50,8 @@ const INCIDENT_TYPE_COLORS = {
   animal_complaint: 'var(--cat-animal)',
   other: 'var(--cat-other)',
 };
-// Audit P-06 (2026-10-09): by_status now carries every incident status
-// (migration 0025's lifecycle states too), so the rows add up to the total.
+// by_status carries every incident status (including the lifecycle states),
+// so the rows add up to the total.
 const STATUS_LABELS = INCIDENT_STATUS_LABELS;
 const STATUS_PILL_CLASS = {
   pending: 'status-pill--pending', dispatched: 'status-pill--info', resolved: 'status-pill--success',
@@ -85,11 +66,10 @@ const STATUS_STYLE_KEY = { reopened: 'pending', cancelled: 'settled', invalid: '
 const OPEN_STATUSES = ['pending', 'dispatched', 'reopened'];
 
 /**
- * One wording for the response-time metric everywhere (audits N-01, N-02,
- * P-02..P-05, 2026-10-09). The backend measures incident.created_at to the
- * FIRST dispatch arrived_at, per incident (de-duplicated), so the clock
- * starts when the incident was recorded, NOT at dispatch. No target or
- * benchmark exists in any project document, so none is shown. It is an
+ * One wording for the response-time metric everywhere. The backend measures
+ * incident.created_at to the FIRST dispatch arrived_at, per incident
+ * (de-duplicated), so the clock starts when the incident was recorded, NOT
+ * at dispatch. No target or benchmark is defined, so none is shown. It is an
  * operational measure for the barangay, never a ranking of tanods.
  */
 const RESPONSE_METRIC_LABEL = 'Incident reported to first Tanod arrival (average)';
@@ -115,7 +95,7 @@ function responseFooter(summary) {
   return `Based on ${n} incident${n === 1 ? '' : 's'} with a Tanod arrival`;
 }
 
-/** YYYYMMDD-HHMM (Asia/Manila) suffix for a unique-per-print reference (audit P-17). */
+/** YYYYMMDD-HHMM (Asia/Manila) suffix for a unique-per-print reference. */
 function referenceStamp(now) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
@@ -126,7 +106,7 @@ function referenceStamp(now) {
 
 
 /** 14 -> "2:00 PM – 3:00 PM" */
-/** "2026-10-09" (a Manila calendar day from the API) -> "Oct 9, 2026". */
+/** "YYYY-MM-DD" (a Manila calendar day from the API) -> "Oct 9, 2026". */
 function dayLabel(iso) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(iso || '')) ? formatManilaDate(`${iso}T00:00:00+08:00`) : 'Not recorded';
 }
@@ -187,17 +167,14 @@ function cardHeader(title, subtitle, icon, description, viewAll, chip) {
 }
 
 /**
- * Personnel > Reports tab. Was the standalone W9 Statistical Reports
- * page (`renderStatisticalReportsPage`) before the 2026-09-05 Analytics
- * merge — see `pages/analytics.js` for the shared AppShell/PageHeader/
- * tab shell (and why Heatmap was the one screen worth merging this into,
- * unlike Incident Management).
+ * Analytics > Reports tab; see `pages/analytics.js` for the shared
+ * AppShell/PageHeader/tab shell.
  *
  * @param {HTMLElement} container tab body to render into
  * @param {ReturnType<import('../components/PageHeader.js').PageHeader>} pageHeader shared page header (for the Export CSV action)
  * @param {{fullName:string, role:string, barangayId?:number}} user
  */
-/** "2026-09-04" -> "Sep 4", for chart tick labels. */
+/** "YYYY-MM-DD" -> "Sep 4", for chart tick labels. */
 function shortDate(iso) {
   if (!iso) return '';
   const [, m, d] = iso.split('-');
@@ -241,10 +218,7 @@ function openStatisticalReportPrintModal(summary, range, user, barangayInfo, tri
   const activeLoad = OPEN_STATUSES.reduce((sum, key) => sum + (summary.byStatus?.[key] || 0), 0);
   const now = new Date();
   const nowStr = formatManilaDateTime(now);
-  // Audit P-01/N-18 (2026-10-09): this sheet used to print the viewer as
-  // "Prepared By" over a signature line and "HON. PUNONG BARANGAY ·
-  // Attested & Approved" under a pre-written sworn oath nobody had made.
-  // It is now an unsigned system summary; the person who asked for it is
+  // This sheet is an unsigned system summary: the person who asked for it is
   // named only as the requester, and the reviewer block stays blank until
   // someone signs on paper.
   const requestedBy = user?.fullName || 'a signed-in user';
@@ -452,11 +426,9 @@ export function renderReportsTab(container, pageHeader, user, navigate) {
     });
   }
 
-  // 2026-09-06 UI/UX audit: was a copy of the Admin Dashboard's ~120-line
-  // picker (one of five that had drifted apart). Now the shared component.
-  // Unlike the dashboard this screen has no "server default range" to
-  // reconcile against — every load is an explicit, client-chosen range —
-  // so it never calls reconcile()/setDates().
+  // The shared DateRangePicker. Unlike the dashboard this screen has no
+  // "server default range" to reconcile against — every load is an
+  // explicit, client-chosen range — so it never calls reconcile()/setDates().
   const rangePicker = DateRangePicker({
     value: '30',
     ariaLabel: 'Date range',
@@ -598,9 +570,9 @@ function renderReport(container, summary, role, navigate) {
       sparkline: summary.trend?.map((day) => day.count),
       description: 'Every incident reported in the selected date range, alongside resolution progress and trend activity.',
     }),
-    // Audits N-01/P-03 (2026-10-09): the "Target < 20m" chip is gone -- no
-    // document defines a response target, and a null value was painted as
-    // a warning. See RESPONSE_METRIC_LABEL for the one wording used.
+    // No "Target < 20m" chip: no response target is defined, and a null value
+    // must not be painted as a warning. See RESPONSE_METRIC_LABEL for the one
+    // wording used.
     KpiCard({
       label: 'Avg. Response Time',
       value: summary.avgResponseTimeMinutes === null ? null : `${summary.avgResponseTimeMinutes} min`,
@@ -878,9 +850,7 @@ function renderBreakdownCard(title, counts, labels, pillClasses) {
 
   // Operational Pipeline Summary Footer
   if (total > 0) {
-    // "Open" = still needs work: pending, dispatched or reopened (audit
-    // P-06; "Active in Field" used to include pending, which is not in the
-    // field yet, and left out reopened).
+    // "Open" = still needs work: pending, dispatched or reopened.
     const activeCount = OPEN_STATUSES.reduce((sum, key) => sum + (counts[key] || 0), 0);
     const activePct = Math.round((activeCount / total) * 100);
     const resolvedCount = counts.resolved || 0;

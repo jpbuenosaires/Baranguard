@@ -1,7 +1,6 @@
 /**
- * Toast.js — lightweight notification component (§3.1 of the UI/UX
- * review). Replaces scattered inline success/error feedback and
- * `alert()` calls with a consistent, non-blocking pattern.
+ * Toast.js — lightweight notification component: a consistent, non-blocking
+ * replacement for scattered inline success/error feedback and `alert()`.
  *
  * Deliberately appended to `document.body`, NOT `#app` — main.js's
  * `boot()` does `root.innerHTML = ''` on every navigation, which would
@@ -12,9 +11,8 @@
  * `innerHTML` — a server error message ends up here unmodified, and this
  * app doesn't trust it as markup.
  *
- * PascalCase filename per §4 (component convention), plain function
- * exports rather than a DOM-returning component — a toast has no single
- * owning parent element the way KpiCard/DataTable do.
+ * Plain function exports rather than a DOM-returning component — a toast has
+ * no single owning parent element the way KpiCard/DataTable do.
  */
 import { icons } from './icons.js';
 
@@ -30,7 +28,7 @@ function ensureContainer() {
   if (container) return container;
   container = document.createElement('div');
   container.className = 'toast-container';
-  // No aria-live on the container (audit 2026-10-09 X-08): each toast is
+  // No aria-live on the container: each toast is
   // its own live region, role=status (polite) for success/info/warning and
   // role=alert (assertive) for errors. A polite container around an alert
   // made some screen readers queue the error behind other speech.
@@ -44,7 +42,7 @@ function ensureContainer() {
  * @returns {() => void} dismiss function, in case the caller wants to close it early
  */
 export function showToast(message, { variant = 'info', duration } = {}) {
-  // X-08: an error stays until it is dismissed (a 4-second error was easy
+  // An error stays until it is dismissed (a 4-second error was easy
   // to miss and could not be paused by keyboard); everything else
   // auto-dismisses after 4 s unless the caller sets a duration.
   // `duration: 0` (or Infinity) also means "until dismissed".
@@ -122,7 +120,7 @@ export function showToast(message, { variant = 'info', duration } = {}) {
     event.stopPropagation();
     dismiss();
   });
-  // "Dismiss on click" (§3.1) — clicking the toast body itself also closes it.
+  // "Dismiss on click" — clicking the toast body itself also closes it.
   toast.addEventListener('click', dismiss);
 
   if (!persistent) timeoutHandle = setTimeout(dismiss, duration);

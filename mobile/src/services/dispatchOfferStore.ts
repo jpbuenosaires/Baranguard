@@ -3,7 +3,7 @@
  * offers (`GET /dispatch-offers`), shared by the Home card, the Dispatches tab
  * and the tab-bar badge.
  *
- * ONLINE-ONLY BY DESIGN (Wave 2 decision): an offer is a broadcast the server
+ * ONLINE-ONLY BY DESIGN: an offer is a broadcast the server
  * arbitrates ("first accept wins"), so it is never cached in SQLite, never put
  * in `offline_queue_local`, and never claimed as taken locally. Everything in
  * this file lives in module memory and disappears with the process; the next
@@ -62,7 +62,7 @@ let nativeListenersStarted = false;
 
 /**
  * Parses a server timestamp as UTC. The API emits ISO-8601 with a `Z`, but a
- * naive `YYYY-MM-DD HH:MM:SS` (UTC by the project's Rule 11) is accepted too.
+ * naive `YYYY-MM-DD HH:MM:SS` (UTC) is accepted too.
  */
 export function parseServerTime(value: string): number {
   const hasZone = /(Z|[+-]\d{2}:?\d{2})$/.test(value);

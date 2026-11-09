@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Baranguard — backup/restore drill (Sprint 7's "Backup/restore drill"
-# box: "restore is actually tested, not assumed to work because a backup
-# file exists").
+# Baranguard — backup/restore drill: restore is actually tested, not
+# assumed to work because a backup file exists.
 #
 # WHAT MAKES THIS A DRILL RATHER THAN A BACKUP TEST:
 # `scripts/backup.sh` already proves a file can be written and
@@ -96,9 +95,8 @@ DRILL_DB="${DB_NAME}_drill"
 #                the account a real scheduled backup runs as.
 #   DRILL_DB_*  — a DBA account, used ONLY to create/drop the throwaway
 #                drill database and load the dump into it. `baranguard_app`
-#                deliberately has no CREATE DATABASE grant (Sprint 0's
-#                DEVLOG records this as a correct least-privilege
-#                default), and it must not be given one just to make this
+#                deliberately has no CREATE DATABASE grant (least
+#                privilege), and it must not be given one just to make this
 #                script easier to run.
 #
 # Defaults to XAMPP's stock root/no-password, which is what this
@@ -116,9 +114,9 @@ find_bin() {
   # Explicit XAMPP path checked FIRST, not `command -v`: this machine
   # (and possibly others) has an unrelated same-named binary earlier on
   # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # fail against XAMPP's own MariaDB -- that `command -v` would otherwise
+  # prefer over the XAMPP install these scripts are meant for. PATH is only
+  # a fallback.
   for c in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}"; do
     [ -x "$c" ] && { echo "$c"; return; }
   done
@@ -212,9 +210,8 @@ step "3. Restore into the disposable drill database"
 # --------------------------------------------------------------------------
 # A drill needs CREATE DATABASE, which the application's own DB user
 # deliberately does NOT have — `baranguard_app` is least-privilege by
-# design (Sprint 0's DEVLOG records the same finding). That is correct and
-# must not be "fixed" by granting the app user more: a drill is a
-# supervised operation, so it runs with DBA credentials.
+# design. That must not be "fixed" by granting the app user more: a drill is
+# a supervised operation, so it runs with DBA credentials.
 if mysql_admin -e "DROP DATABASE IF EXISTS \`$DRILL_DB\`; CREATE DATABASE \`$DRILL_DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>/dev/null; then
   pass "Created disposable '$DRILL_DB'"
 else
@@ -231,7 +228,7 @@ else
   exit 1
 fi
 
-# `restore.sh` refuses an empty DB_PASSWORD by design (§11: backups and
+# `restore.sh` refuses an empty DB_PASSWORD by design (backups and
 # restores are never run with a passwordless account), and XAMPP's stock
 # root has none. So the drill mints a throwaway user with a real
 # password, scoped to the drill database only, and drops it in cleanup —
@@ -280,7 +277,7 @@ else
 fi
 
 # Spot-check a table whose content is structural, not incidental: the
-# four barangay rows are deterministic (§5), so a restore that lost or
+# four barangay rows are deterministic, so a restore that lost or
 # altered them is broken in a way row counts alone might not reveal.
 LIVE_BRGY=$(mysql_admin -N -s "$DB_NAME" -e "SELECT GROUP_CONCAT(CONCAT(barangay_id,':',name) ORDER BY barangay_id) FROM barangay;" 2>/dev/null)
 DRILL_BRGY=$(mysql_admin -N -s "$DRILL_DB" -e "SELECT GROUP_CONCAT(CONCAT(barangay_id,':',name) ORDER BY barangay_id) FROM barangay;" 2>/dev/null)

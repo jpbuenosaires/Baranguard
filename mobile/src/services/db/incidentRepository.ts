@@ -1,29 +1,24 @@
 /**
- * incidentRepository.ts — the M3 local write path for `incident_local`.
+ * incidentRepository.ts — the local write path for `incident_local`.
  *
- * §2 Rule 2 is the governing constraint: "Every incident is persisted to
- * encrypted mobile SQLite BEFORE the user can leave the capture flow. The
- * local record remains available until the server confirms acceptance or
- * a duplicate has been safely correlated."
+ * Governing constraint: every incident is persisted to encrypted mobile SQLite BEFORE the user can
+ * leave the capture flow, and the local record remains until the server confirms acceptance or a
+ * duplicate has been safely correlated.
  *
- * §5's sync invariants add: "each local write has a stable
- * `client_event_id`; `/sync/batch` uses that identity for deduplication;
- * SMS fallback and direct POST use the same event ID". That ID is
- * therefore minted HERE, at first save — not at sync time, and not
- * regenerated on retry. Sprint 3/4 must reuse it verbatim; inventing a
- * second identifier scheme later would break deduplication across the
- * three transports.
+ * Each local write has a stable `client_event_id`; `/sync/batch` uses it for deduplication, and the SMS
+ * fallback and direct POST use the same event ID. It is therefore minted HERE, at first save, never at
+ * sync time and never regenerated on retry: a second identifier scheme would break deduplication
+ * across the transports.
  *
- * Nothing in this file talks to the network. Capture must succeed while
- * the workstation is unreachable and while the auth session has expired
- * (§2 Rule 7 and Rule 9's "offline mobile capture is unaffected").
+ * Nothing in this file talks to the network. Capture must succeed while the workstation is unreachable
+ * and while the auth session has expired.
  */
 
 import { openLocalDatabase, withTransaction } from './localDatabase';
 import { uuid } from '../uuid';
 import type { IncidentLocalRow } from './localSchema';
 
-/** §5 `incident.incident_type` enum — the only accepted values. */
+/** `incident.incident_type` enum — the only accepted values. */
 export const INCIDENT_TYPES = [
   'theft',
   'physical_injury',
@@ -49,7 +44,7 @@ export interface NewIncidentInput {
   latitude?: number | null;
   longitude?: number | null;
   /**
-   * Safer School Zones link (contract §7) — a server school id from the cached
+   * Safer School Zones link — a server school id from the cached
    * `school_local` list. Optional; null for an ordinary incident.
    */
   schoolId?: number | null;
@@ -63,7 +58,7 @@ export interface NewIncidentInput {
   c1StatusNotes?: string | null;
 }
 
-/** Contract §7: each C-1 field is VARCHAR(500). */
+/** Each C-1 field is VARCHAR(500). */
 export const C1_FIELD_MAX = 500;
 
 function blankToNull(value: string | null | undefined): string | null {
@@ -80,9 +75,8 @@ export interface SavedIncident {
 /**
  * Persists a captured incident locally and returns its identifiers.
  *
- * Runs inside a transaction so the row is either fully written or not at
- * all — "atomic before the user can leave" (Sprint 2's own wording). The
- * caller must not navigate away until this resolves.
+ * Runs inside a transaction so the row is either fully written or not at all. The caller must not
+ * navigate away until this resolves.
  */
 export async function saveIncidentLocally(input: NewIncidentInput): Promise<SavedIncident> {
   const narrative = input.rawNarrative.trim();
@@ -100,10 +94,10 @@ export async function saveIncidentLocally(input: NewIncidentInput): Promise<Save
 
 
   const localId = uuid();
-  // Minted once, here. See the file header: Sprint 3's /sync/batch and
-  // Sprint 4's SMS fallback must send THIS value, not a new one.
+  // Minted once, here. See the file header: /sync/batch and the SMS fallback must send THIS value,
+  // not a new one.
   const clientEventId = uuid();
-  // §5: "All local timestamps are stored as ISO 8601 UTC strings".
+  // All local timestamps are stored as ISO 8601 UTC strings.
   const createdOfflineAt = new Date().toISOString();
 
   await withTransaction(async (db) => {
@@ -135,7 +129,7 @@ export async function saveIncidentLocally(input: NewIncidentInput): Promise<Save
   return { localId, clientEventId, createdOfflineAt };
 }
 
-/** Reads one locally-captured incident back, for M4's confirmation screen. */
+/** Reads one locally-captured incident back, for the confirmation screen. */
 export async function getLocalIncident(localId: string): Promise<IncidentLocalRow | null> {
   const db = await openLocalDatabase();
   const result = await db.query('SELECT * FROM incident_local WHERE local_id = ?', [localId]);
@@ -144,9 +138,8 @@ export async function getLocalIncident(localId: string): Promise<IncidentLocalRo
 }
 
 /**
- * The sync states §9 M4 is allowed to display. Derived strictly from what
- * the local row actually says — M4 "never claims server submission when
- * only local persistence has occurred".
+ * The sync states the confirmation screen is allowed to display. Derived strictly from what the local
+ * row actually says, never claiming server submission when only local persistence has occurred.
  */
 export type SyncState = 'saved_locally' | 'queued' | 'synced' | 'duplicate_reconciled' | 'needs_attention';
 
@@ -158,23 +151,19 @@ export function deriveSyncState(row: IncidentLocalRow): SyncState {
     // to an existing server record.
     return row.server_incident_id === null ? 'duplicate_reconciled' : 'synced';
   }
-  // 'queued' becomes reachable once syncService.ts has actually attempted
-  // (and not yet resolved) an upload for this row — see markIncidentSynced/
-  // markIncidentSyncFailed below, added for Sprint 3's /sync/batch worker.
+  // 'queued' becomes reachable once syncService.ts has actually attempted (and not yet resolved) an
+  // upload for this row — see markIncidentSynced/markIncidentSyncFailed below.
   return 'saved_locally';
 }
 
-// --- Sprint 3: /sync/batch worker support -----------------------------------
-// Everything below is read/written by `syncService.ts`, never by M3/M4
-// directly — the capture screens only ever read the row back via
-// `getLocalIncident`/`deriveSyncState` above.
+// --- /sync/batch worker support -----------------------------------------------
+// Everything below is read/written by `syncService.ts`, never by the capture screens directly: they
+// only read the row back via `getLocalIncident`/`deriveSyncState` above.
 
 /**
- * Every incident this DEVICE has ever captured, newest first — M14 "My
- * Reports" (Mobile Improvement Plan Phase 2.2). Deliberately not scoped
- * to unsynced-only like `listUnsyncedIncidents()` below: a Tanod checking
- * "what happened to the report I filed" needs to see synced rows too, not
- * just the ones still in flight.
+ * Every incident this DEVICE has ever captured, newest first (My Reports). Deliberately not scoped to
+ * unsynced-only like `listUnsyncedIncidents()` below: a Tanod checking "what happened to the report I
+ * filed" needs to see synced rows too, not just the ones still in flight.
  */
 /** Reports created on this phone since `sinceIso` (a COUNT, so Home does not load every row to show one number). */
 export async function countLocalIncidentsSince(sinceIso: string): Promise<number> {
@@ -191,9 +180,9 @@ export async function listAllLocalIncidents(reportedBy: number): Promise<Inciden
 }
 
 /**
- * Rows not yet confirmed by the server, oldest first (§5 sync invariants).
+ * Rows not yet confirmed by the server, oldest first.
  * Rows that hit the retry cap (`permanent_failure`) are excluded — they stay
- * on the device (Rule 2) but wait for a manual retry, so one poison row can't
+ * on the device but wait for a manual retry, so one poison row can't
  * be re-sent on every pass forever or crowd out healthy ones.
  */
 export async function listUnsyncedIncidents(): Promise<IncidentLocalRow[]> {
@@ -298,7 +287,7 @@ export async function upsertServerIncidents(
 }
 
 /**
- * Records why a sync attempt failed, for M4's "needs_attention" state
+ * Records why a sync attempt failed, for the "needs_attention" state
  * (deriveSyncState above). Counts one server-reported failure and flips
  * `permanent_failure` once `maxAttempts` is reached.
  */

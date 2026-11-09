@@ -1,10 +1,10 @@
 /**
- * school-zones.js — Safer School Zones (DILG MC 2026-037), contract §7 /
- * §10. Three tabs, each with a printable form that mirrors the barangay's
+ * school-zones.js — Safer School Zones (DILG MC 2026-037). Three tabs, each
+ * with a printable form that mirrors the barangay's
  * own file:
  *
  *   Schools      Annex B inventory. Admin/Secretary add, edit, deactivate
- *                (no delete — contract §7); Punong Barangay reads.
+ *                (no delete); Punong Barangay reads.
  *   Incidents    Annex C-1 view: incidents linked to a school, with the
  *                short NON-identifying C-1 summary / action / status notes
  *                and the offices each was referred to (from
@@ -18,12 +18,12 @@
  *                deadline is hardcoded anywhere; the form text defers to
  *                the circular exactly as the user's file does.
  *
- * Authority gating is UX only (REFERENCE.md §2 Rule 2); the server
+ * Authority gating is UX only; the server
  * re-checks. The preparer-must-differ rule surfaces as a plain message on
  * a 409. `param`: `{tab?: 'schools'|'incidents'|'term', reportId?}`.
  *
  * Data limits stated honestly in the UI: the Incidents tab filters school-
- * linked incidents client-side (the contract defines no server filter) and
+ * linked incidents client-side (there is no server filter) and
  * says so when its page cap is hit.
  */
 

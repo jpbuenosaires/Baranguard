@@ -2,7 +2,7 @@
  * reasonText.js — shared client-side check for the free-text "reason"
  * fields the server requires (dispatch cancel reason, dispatch override
  * reason: 1-255 characters after trimming). The server validates again and
- * is the boundary (§2 Rule 6); this only saves a round trip and gives the
+ * is the boundary; this only saves a round trip and gives the
  * Admin the exact limit up front.
  */
 

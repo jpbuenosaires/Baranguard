@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Baranguard -- Safer School Zones backend (docs/FEATURE_CONTRACT_2026-10.md
-# section 7, migration 0033): schools CRUD, Tanod school check-ins (incl. the
+# Baranguard -- Safer School Zones backend (migration 0033): schools CRUD, Tanod school check-ins (incl. the
 # close-by-resend rule), incident school_id + Annex C-1 fields, the live
 # GET /reports/school-term Annex D computation, and the ssz_term_report
-# draft -> prepared -> submitted state machine (no approval step since 0041:
+# draft -> prepared -> submitted state machine (no approval step:
 # the report is printed and signed on paper).
 #
 # Covers per endpoint: no token (401), wrong role (403), cross-tenant (404),
@@ -334,7 +333,7 @@ call POST /sync/batch "$T1" "{\"device_id\":\"$DEV1\",\"school_checkins\":[{\"cl
 expect_eq "$(printf '%s' "$BODY" | "$PHP_BIN" -r '$d=json_decode(stream_get_contents(STDIN),true); echo $d["results"][0]["status"];')" "failed" "Close-by-reference with checked_out_at > 24h after the check-in fails per item"
 expect_eq "$(db_one "SELECT checked_out_at IS NULL FROM school_checkin WHERE checkin_id=$CI_LATE;")" "1" "  ...and the check-in stays open"
 
-# H-09: a device with a registered key must sign direct POSTs and each sync item
+# A device with a registered key must sign direct POSTs and each sync item
 SIG_TMP="$(mktemp -d)"; SIG_TMP_W="$(cygpath -m "$SIG_TMP")"
 OPENSSL_BIN="$(command -v openssl || true)"
 DEVK="school-keyed-$(uuid)"
@@ -451,8 +450,8 @@ I8=$(mk_inc NULL '2026-03-12 02:00:00'); mk_ref $I8 pnp   # no school -> exclude
 I9=$(mk_inc $SB2 '2026-03-12 02:00:00' 2 $TB2_ID); mk_ref $I9 pnp   # other barangay -> excluded
 I11=$(mk_inc $S1 '2026-03-12 02:00:00'); mk_ref $I11 ambulance_ems
 # check-ins: Mar 10 x3 (UTC Mar 9 17:00 is still Manila Mar 10), Mar 15, Mar 1 (UTC Feb 28 17:00), and Apr 1 (OUT)
-# (Seeded by SQL: the API now refuses a check-in older than 62 days, which is correct
-# for live traffic but would also refuse these deliberately historical boundary rows.)
+# (Seeded by SQL: the API refuses a check-in older than 62 days, which would
+# also refuse these deliberately historical boundary rows.)
 for ts in '2026-03-10 00:30:00' '2026-03-10 08:00:00' '2026-03-09 17:00:00' '2026-03-15 01:00:00' '2026-02-28 17:00:00' '2026-03-31 17:00:00'; do
   mysql_exec "$VALDB" -e "INSERT INTO school_checkin (school_id, barangay_id, user_id, checked_in_at, client_event_id, created_at) VALUES ($S1, 1, $T1_ID, '$ts', '$(uuid)', UTC_TIMESTAMP());"
 done
@@ -541,7 +540,7 @@ expect_eq "$(code_of PATCH /ssz-term-reports/$R1 "$ADMIN" '{"remarks":"x"}')" "4
 # --- illegal transitions out of draft
 expect_eq "$(code_of POST /ssz-term-reports/$R1/mark-submitted "$SEC" '{"mayor_office_received_by":"Clerk","mayor_office_received_at":"2026-04-02"}' -H "Idempotency-Key: $(uuid)")" "409" "Submitting a DRAFT is 409"
 
-# --- removed endpoints (0041): no approve / paper-signature / record-paper-approval routes
+# --- absent endpoints: no approve / paper-signature / record-paper-approval routes
 for ep in approve paper-signature record-paper-approval; do
   expect_eq "$(code_of POST /ssz-term-reports/$R1/$ep "$PB" '{}' -H "Idempotency-Key: $(uuid)")" "404" "POST /ssz-term-reports/:id/$ep is gone (404)"
 done
@@ -587,7 +586,7 @@ expect_eq "$(code_of POST /ssz-term-reports/$R1/mark-submitted "$SEC" '{"mayor_o
 expect_eq "$(code_of POST /ssz-term-reports/$R1/prepare "$ADMIN" '{}' -H "Idempotency-Key: $(uuid)")" "409" "Nothing moves a submitted report backwards (prepare is 409)"
 expect_eq "$(db_one "SELECT CONCAT(status,'|',version) FROM ssz_term_report WHERE report_id=$R1;")" "submitted|4" "Terminal state reached; version counts every accepted write (patch, prepare, submit)"
 
-# --- fix review finding 10: preparer name + title joined server-side
+# --- preparer name + title joined server-side
 mysql_exec "$VALDB" -e "UPDATE user SET official_title='Chief Tanod' WHERE user_id=$ADMIN_ID; UPDATE user SET official_title='Punong Barangay' WHERE user_id=$PB_ID;"
 call GET /ssz-term-reports/$R1 "$SEC"
 expect_eq "$CODE|$(jf prepared_by_name)|$(jf prepared_by_title)" "200|SZ Admin Preparer|Chief Tanod" "GET /ssz-term-reports/:id (as Secretary, who cannot read /users) carries the preparer's name and title"

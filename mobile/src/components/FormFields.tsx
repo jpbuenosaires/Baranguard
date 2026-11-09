@@ -3,22 +3,15 @@
  * that binds to the underlying custom element's NATIVE events via a ref,
  * instead of React's `onIonInput` / `onIonChange` props.
  *
- * WHY THIS EXISTS (found by browser-testing M1 on 2026-09-02, not by
- * inspection): with the installed combination — @ionic/react 9.0.1 (its
- * new Stencil React output target) on React 19.0.0 — the `onIonInput`
- * prop type-checks and the component renders, but the handler is NEVER
- * invoked. Diagnosed by attaching a raw listener in the page: the
- * `ionInput` DOM event fires correctly and the web component holds the
- * right value, while React state stayed empty, so the login form's own
- * validation rejected a filled-in form as blank. The browser console was
- * clean, so nothing was throwing — React simply never wired the listener.
+ * WHY THIS EXISTS: with @ionic/react 9.0.1 (its Stencil React output target) on React 19.0.0, the
+ * `onIonInput` prop type-checks and the component renders, but the handler is NEVER invoked. Diagnosed
+ * by attaching a raw listener in the page: the `ionInput` DOM event fires correctly and the web component
+ * holds the right value, while React state stayed empty, so the login form rejected a filled-in form as
+ * blank. The console was clean: React simply never wired the listener.
  *
- * Binding to the real DOM event is version-proof: it depends only on the
- * Stencil component's documented event, not on how the React wrapper of
- * the day maps props. If a future @ionic/react fixes the prop binding,
- * these wrappers keep working unchanged.
- *
- * PascalCase filename per §4 (components).
+ * Binding to the real DOM event is version-proof: it depends only on the Stencil component's documented
+ * event, not on how the React wrapper maps props. If a future @ionic/react fixes the prop binding, these
+ * wrappers keep working unchanged.
  */
 
 import { useEffect, useId, useRef, useState } from 'react';

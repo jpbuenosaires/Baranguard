@@ -1,30 +1,23 @@
 /**
- * audit-log.js — W17 Audit Log Viewer (§9): "Roles: Admin only ·
- * API: GET /audit-log · Last 7 days default, paginated, no edit/delete
- * controls."
+ * audit-log.js — Audit Log Viewer. Admin only; GET /audit-log; last 7 days
+ * by default, paginated, no edit/delete controls.
  *
- * "No edit/delete controls" is the defining constraint of this screen,
- * not a detail: §5 makes `audit_log` write-once except controlled
- * retention deletion, and the whole value of an audit trail is that the
- * people it records cannot curate it. So this screen renders rows and
- * nothing else — no row actions, no bulk selection, no delete, and the
- * server offers no endpoint that would let one exist.
+ * "No edit/delete controls" is the defining constraint of this screen:
+ * `audit_log` is write-once except controlled retention deletion, and the
+ * whole value of an audit trail is that the people it records cannot curate
+ * it. So this screen renders rows and nothing else — no row actions, no bulk
+ * selection, no delete, and the server offers no endpoint that would let one
+ * exist.
  *
- * The 7-day default is applied SERVER-SIDE (see AuditLogController), so
- * an empty date range here means "the documented default view", not
- * "everything ever".
+ * The 7-day default is applied SERVER-SIDE (see AuditLogController), so an
+ * empty date range here means "the default view", not "everything ever".
  *
- * Fully overhauled with:
- * - Design token compliance and light/dark theme support
- * - Branded statutory compliance notice banner (§5/§9 W17)
- * - Interactive StatStrip with category quick-filters
- * - Full-width 4-column filter toolbar with chevron dropdown indicators
- * - Standardized Date Range picker with anchored popover dialog
- * - High-density cell renderers (Avatar initials, status pills, entity chips, metadata tags)
- * - Click-to-inspect Audit Event Modal with formatted JSON payload & Copy JSON utility
- * - Admin CSV Export tool in header actions
- *
- * kebab-case filename per §4.
+ * Features: design-token compliance with light/dark support; a statutory
+ * compliance notice banner; an interactive StatStrip with category
+ * quick-filters; a 4-column filter toolbar; the shared DateRangePicker;
+ * high-density cell renderers (Avatar initials, status pills, entity chips,
+ * metadata tags); a click-to-inspect event modal with formatted JSON payload
+ * and Copy JSON; CSV export in the header actions.
  */
 
 import { getAuditLog, logout, ApiClientError } from '../api/apiClient.js';
@@ -75,7 +68,7 @@ function formatAuditEntity(entityType, entityId, displayId = null) {
 
 const PAGE_SIZE = 25;
 
-// Rule 17's action list, grouped for the filter dropdown.
+// The audit action list, grouped for the filter dropdown.
 const ACTION_LABELS = {
   login_success: 'Login — success',
   login_failure: 'Login — failure',
@@ -91,8 +84,8 @@ const ACTION_LABELS = {
   shift_updated: 'Shift updated',
   swap_request_resolved: 'Swap decision',
   fatigue_flag_acknowledged: 'Fatigue flag acknowledged',
-  // Legacy labels: rows written before migration 0029 removed the blotter
-  // and AI redaction pipeline still exist in audit_log (write-once).
+  // Legacy labels: audit_log is write-once, so rows from the removed blotter
+  // and AI redaction pipeline still exist.
   ai_redaction_queued: 'AI redaction queued',
   ai_redaction_approved: 'AI redaction approved',
   ai_summary_regeneration_queued: 'AI summary rerun',
@@ -230,7 +223,7 @@ function getTodayISO() {
   return manilaDateKey(new Date());
 }
 
-/** "2026-10-09" (a Manila calendar day) -> "Oct 9, 2026". */
+/** "YYYY-MM-DD" (a Manila calendar day) -> "Oct 9, 2026". */
 function dayLabel(iso) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(iso || '')) ? formatManilaDate(`${iso}T00:00:00+08:00`) : '';
 }
@@ -244,7 +237,7 @@ function actionText(action) {
 }
 
 /**
- * Formats an instant as Manila date + time parts (Rule 11).
+ * Formats an instant as Manila date + time parts.
  * @param {string|Date} value
  * @returns {{ date: string, time: string }}
  */
@@ -562,22 +555,13 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
   actionChevron.setAttribute('aria-hidden', 'true');
   actionWrapper.append(actionSelect, actionChevron);
 
-  // Col 4: Date range. 2026-09-06 UI/UX audit — this screen used to build
-  // its own picker, the most divergent of the five copies in the app: it
-  // labelled its default option "Last 7 days (Default)", used "From Date"/
-  // "To Date" where the others used "From"/"To", titled the popover
-  // "Select Custom Date Range", used a typographic ellipsis where the
-  // others used three dots, and swapped the shared select styling for a
-  // bespoke wrapper plus a JS-injected chevron. All of that is now the
-  // shared component.
+  // Col 4: Date range — the shared DateRangePicker.
   //
-  // "All time" is kept (SMS Monitor is the only other screen with it) and
-  // still resolves to a REAL bound, because GET /audit-log has no
-  // unbounded mode — omitting date_from makes the controller default to
-  // its own short window, not "everything". The bound is the audit
-  // retention horizon (RetentionService::AUDIT_LOG_DAYS, 7 years), so
-  // nothing older can exist and the label is honest rather than
-  // decorative.
+  // "All time" resolves to a REAL bound, because GET /audit-log has no
+  // unbounded mode — omitting date_from makes the controller default to its
+  // own short window, not "everything". The bound is the audit retention
+  // horizon (RetentionService::AUDIT_LOG_DAYS, 7 years), so nothing older can
+  // exist and the label is honest rather than decorative.
   const ALL_TIME_DAYS = 365 * 7;
 
   let activeDateFrom = getPastDateISO(7);
@@ -885,7 +869,7 @@ export function renderAuditLogPage(root, user, onLoggedOut, navigate) {
     document.body.appendChild(backdrop);
 
     // Focus management: remember the opener, move focus into the dialog,
-    // keep Tab inside it, and give focus back on close (audit X-10).
+    // keep Tab inside it, and give focus back on close.
     const opener = document.activeElement;
     const closeModal = () => {
       document.removeEventListener('keydown', handleKey);

@@ -1,8 +1,8 @@
 /**
- * KpiCard.css — co-located with KpiCard.js (used by W2 Dashboard, W9
- * Statistical Reports). Redesigned with Layout A: "Hero Volume + Companion Telemetry"
- * hierarchy (Asymmetric 1.85fr 1fr 1fr grid, luminous dual-tone badges,
- * resolution rate progress bar, and status capsule chips).
+ * KpiCard.css — co-located with KpiCard.js (Dashboard, Statistical Reports).
+ * Layout: "Hero Volume + Companion Telemetry" hierarchy (asymmetric
+ * 1.85fr 1fr 1fr grid, luminous dual-tone badges, resolution rate progress
+ * bar, and status capsule chips).
  */
 
 .kpi-grid {

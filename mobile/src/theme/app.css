@@ -1,24 +1,15 @@
 /**
- * app.css — shared layout/utility classes for the Tanod app, built only
- * from §8's tokens.
+ * app.css — shared layout/utility classes for the Tanod app, built only from design tokens, so
+ * component files carry no inline `style={{ ... }}` objects with raw pixel and colour values.
  *
- * Exists so component files can stop carrying inline `style={{ ... }}`
- * objects with raw pixel and colour values — §8: "Never hardcode a hex
- * value, pixel spacing, or font name in a component file." (The first
- * version of these screens did exactly that; this is the correction.)
+ * Mirrors the WEB dashboard's `base.css` in spirit (same tokens, same status-pill treatment) while
+ * keeping mobile-native layout. It deliberately does NOT copy the web's `html { font-size: 75% }`
+ * density knob: shrinking a touch UI by a quarter would undercut minimum touch-target sizes.
  *
- * Mirrors the WEB dashboard's `base.css` in spirit — same tokens, same
- * status-pill treatment — while keeping mobile-native layout. Notably it
- * does NOT copy the web's `html { font-size: 75% }` density knob: that
- * was tuned for desktop information density, and shrinking a touch UI by
- * a quarter would undercut minimum touch-target sizes.
- *
- * Some rules below reference a `--dark-*` token (e.g. `--dark-success`)
- * outside of any `[data-theme="dark"]` selector. That's intentional: a
- * handful of "tactical hero" cards (Home's officer hub, Profile's header,
- * the Live Map GPS HUD) are permanently dark regardless of the app's own
- * theme, and reuse the dark palette's fixed hex values as named constants
- * rather than re-declaring the same hex as a fresh literal.
+ * Some rules below reference a `--dark-*` token (e.g. `--dark-success`) outside any
+ * `[data-theme="dark"]` selector. That's intentional: a handful of "tactical hero" cards (Home's
+ * officer hub, Profile's header, the Live Map GPS HUD) are permanently dark regardless of the app's
+ * theme, and reuse the dark palette's fixed hex values as named constants.
  */
 
 /* --- Layout ---------------------------------------------------------- */
@@ -54,9 +45,8 @@
 }
 
 /* --- Status pills ---------------------------------------------------- */
-/* §8: "fully-rounded (999px), small uppercase label, tinted low-opacity
-   background of the status color, solid color as text — never a flat
-   solid-fill badge." WCAG AA audited. */
+/* Fully-rounded (999px), small uppercase label, tinted low-opacity background of the status
+   colour, solid colour as text — never a flat solid-fill badge. WCAG AA audited. */
 
 .status-pill {
   display: inline-flex;
@@ -350,10 +340,9 @@
 
 /* --- Reference / monospace identifiers -------------------------------- */
 
-/* --- Cards (M5 Assignments List, M6 Assignment Detail) ----------------- */
-/* §9 M5's own UI reference: "card per assignment (priority dot, ID,
-   priority pill, type, location, distance)". Built from tokens only, same
-   discipline as every other block in this file. */
+/* --- Cards (assignments list, assignment detail) ---------------------- */
+/* Card per assignment (priority dot, ID, priority pill, type, location, distance). Built from
+   tokens only, same discipline as every other block in this file. */
 
 .card-list > * + * {
   margin-top: var(--spacing-md);
@@ -397,15 +386,10 @@
   margin-top: var(--spacing-md);
 }
 
-/* --- Critical Alert Overlay (M12) -------------------------------------- */
-/* §9 M12: "high-priority/full-screen presentation where the OS permits ...
-   heads-up/banner fallback". A true OS full-screen-intent activity needs
-   native manifest/channel configuration this cut does not add (see
-   DEVLOG.md) — this is the JS-reachable approximation: a fixed, full-
-   viewport overlay above every screen (mounted at the App.tsx root, not
-   inside any one tab), which is exactly what §9's "banner fallback" half
-   describes and is honest about not being the native full-screen-intent
-   variant. */
+/* --- Critical Alert Overlay ------------------------------------------- */
+/* In-app approximation of a full-screen alert: a fixed, full-viewport overlay above every screen
+   (mounted at the App.tsx root, not inside any one tab). The OS-level full-screen-intent alert
+   is separate (see fullScreenAlert.ts). */
 
 .critical-alert-overlay {
   position: fixed;
@@ -1124,9 +1108,8 @@ ion-tab-bar.mobile-tab-bar,
 
 /* --- Dark Theme Component Overrides --------------------------------- */
 
-/* index.html always stamps a resolved data-theme before first paint
-   (mirrors the web dashboard, §6) — no @media(prefers-color-scheme)
-   fallback is needed here or anywhere else in this file. */
+/* index.html always stamps a resolved data-theme before first paint, so no
+   @media(prefers-color-scheme) fallback is needed here or anywhere else in this file. */
 [data-theme="dark"] .mobile-login-card {
   background: rgba(30, 41, 59, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.1);

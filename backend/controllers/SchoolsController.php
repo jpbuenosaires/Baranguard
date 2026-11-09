@@ -10,8 +10,7 @@ use Baranguard\Middleware\AuthMiddleware;
 use PDO;
 
 /**
- * Safer School Zones registry (docs/FEATURE_CONTRACT_2026-10.md section 7,
- * migration 0033, DILG Annex B).
+ * Safer School Zones registry (DILG Annex B).
  *
  *   GET   /schools        every role incl. tanod (own barangay, `?active=`)
  *   POST  /schools        admin + secretary, Idempotency-Key
@@ -22,14 +21,14 @@ use PDO;
  * `is_active = false`. The registry carries NO student data of any kind; the
  * focal person is school staff and only a name + contact number is kept.
  *
- * Idempotency (Rule 3): `POST` stores the Idempotency-Key in
+ * Idempotency: `POST` stores the Idempotency-Key in
  * `school.client_request_id`, so a retry returns the original row (200).
  * `PATCH` has no natural unique column, so it replays off
- * `audit_log.idempotency_key` (migration 0019), the same shape
- * `IncidentsController::update()` uses.
+ * `audit_log.idempotency_key`, the same shape `IncidentsController::update()`
+ * uses.
  *
- * Audit metadata is ids + changed field NAMES only (Rule 8): never the
- * school name, address or focal-person details.
+ * Audit metadata is ids + changed field NAMES only: never the school name,
+ * address or focal-person details.
  *
  * `GET /schools` is not paginated by default the way other lists are
  * (default limit 100, max 100): a barangay has a handful of schools and the

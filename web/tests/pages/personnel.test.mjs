@@ -220,7 +220,7 @@ describe('Personnel behaviour', () => {
     click(tab('Swap'));
     await settle();
     assert.equal(api.callsTo('GET', '/users').length, 0, 'GET /users is Admin-only');
-    assert.ok(api.callsTo('GET', '/shift-swap-requests').length >= 1); // the page walks all pages (audit F-09)
+    assert.ok(api.callsTo('GET', '/shift-swap-requests').length >= 1); // the page walks all pages
     assert.match(text($('.page-content')), /Jose Reyes|Maria Dela Cruz/, 'names come from availability');
     click(buttonByText(/^approve$/i, ctx.root));
     await settle();

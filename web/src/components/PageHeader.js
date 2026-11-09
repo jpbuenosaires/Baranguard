@@ -5,10 +5,8 @@
  * StatStrip). Sits above the scrolling content area, not inside it, so
  * it stays put while content scrolls — see AppShell's `header` slot.
  *
- * Replaces the old per-page pattern of writing an <h2> with an inline
- * margin/flex style straight into the content area, which produced a
- * different header treatment on every screen and consumed ~140px of
- * vertical space before any data appeared.
+ * One shared header, so every screen has the same header treatment instead
+ * of a per-page <h2> with inline styles written into the content area.
  *
  * @param {{title:string, subtitle?:string, icon?:(size:number)=>string}} props
  * @returns {{el:HTMLElement, actions:HTMLElement}} `actions` is an empty
@@ -21,7 +19,7 @@ export function PageHeader({ title, subtitle, icon }) {
   const titleBlock = document.createElement('div');
   titleBlock.className = 'page-header__titles';
 
-  // h1 (audit 2026-10-09 X-12): the page title is the top-level heading of
+  // h1: the page title is the top-level heading of
   // every screen; the class carries the look, so the level is semantic only.
   const heading = document.createElement('h1');
   heading.className = 'page-header__title';

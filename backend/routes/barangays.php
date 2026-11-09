@@ -2,8 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Route table for /barangays (§6 "Reference / lookup" section).
- * Public — needed pre-auth by W19's barangay picker.
+ * Route table for /barangays. Public: needed pre-auth by the barangay picker.
  */
 
 use Baranguard\Controllers\BarangaysController;

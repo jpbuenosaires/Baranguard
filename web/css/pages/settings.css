@@ -1,7 +1,6 @@
 /**
- * settings.css — W15 Settings & Account + W21 System Configuration
- * Tokenized with Baranguard Design System, dark mode compatibility,
- * and responsive rail + panel layouts.
+ * settings.css — Settings & Account + System Configuration. Tokenized, dark
+ * mode compatible, responsive rail + panel layouts.
  */
 
 /* ==========================================================================
@@ -371,11 +370,10 @@
 }
 
 .settings-security-notice__icon {
-  /* 2026-09-06 UI/UX audit: was --color-warning-solid, which the working
-     reference §6 defines as a saturated FILL for white text and which
-     stays dark in dark mode. Measured on the warning tint in dark mode it
-     gave 4.18:1 — below AA's 4.5:1 for this 12px bold text.
-     --color-warning-text gives 16.84:1. */
+/* --color-warning-text, not --color-warning-solid: *-solid is a saturated
+   FILL for white text and stays dark in dark mode; on the warning tint in
+   dark mode it gives 4.18:1, below AA's 4.5:1 for this 12px bold text.
+   --color-warning-text gives 16.84:1. */
   color: var(--color-warning-text);
   flex-shrink: 0;
   margin-top: var(--spacing-3xs);

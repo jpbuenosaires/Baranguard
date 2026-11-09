@@ -1,13 +1,10 @@
 /**
  * uuid.ts — shared client-side UUID generator.
  *
- * `incidentRepository.ts` and `deviceIdentity.ts` each already carry a
- * private copy of this exact function (predates this file). Left
- * untouched — same precedent as `backend/lib/Audit.php`'s own doc
- * comment: existing, already-tested copies are not rewritten for
- * tidiness. This shared version exists so the THIRD and FOURTH callers
- * (M2's duty-toggle client_event_id, evidenceRepository.ts's evidence
- * local_id) don't each grow a fifth/sixth copy.
+ * `incidentRepository.ts` and `deviceIdentity.ts` each already carry a private copy of this exact function,
+ * left untouched (existing, already-tested copies are not rewritten for tidiness). This shared version
+ * exists so later callers (the duty-toggle client_event_id, evidenceRepository.ts's evidence local_id)
+ * don't each grow another copy.
  */
 export function uuid(): string {
   const c: Crypto = crypto;

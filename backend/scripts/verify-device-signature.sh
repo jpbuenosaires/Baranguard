@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
-# Baranguard — device signature (code-review finding H-09, 2026-09-24
-# external audit): "X-Device-Id is an identifier, not strong proof of
-# device authenticity." Proves the real fix end-to-end against a real
+# Baranguard — device signature: "X-Device-Id is an identifier, not strong
+# proof of device authenticity." Proves the signature check end-to-end against a real
 # HTTP server + real database: a device that registers a public key gets
 # every signed request cryptographically verified (evidence upload/GPS/
 # dispatch reject a bad/missing signature; SOS never rejects, only logs —
 # see TanodSosController's own doc for why); a device with NO key on file
-# is completely unaffected (phased rollout, not a hard cutover).
+# is completely unaffected (phased rollout).
 #
 # No real Android device is used or needed here — an EC P-256 keypair
 # generated with the `openssl` CLI stands in for the mobile app's
 # Keystore key for the purpose of proving the SERVER-side verification
-# logic is correct. The mobile-side Keystore plugin itself is
-# code-complete but device-unverified this session (no phone attached) —
-# see DEVLOG.md.
+# logic is correct. The mobile-side Keystore plugin is not covered here.
 #
 # Safe to run: disposable database, disposable app-user, throwaway port.
 # Your real `baranguard`/`baranguard_uiseed` databases and backend/.env
@@ -34,10 +31,8 @@ step() { echo; echo "=== $1 ==="; }
 expect_eq() { if [ "$1" = "$2" ]; then pass "$3 ($2)"; else fail "$3 — expected '$2', got '$1'"; fi; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -54,12 +49,8 @@ echo "Baranguard device signature (H-09) validation — $(date -u +%Y-%m-%dT%H:%
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for candidate in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$candidate" ] && { echo "$candidate"; return; }
   done
@@ -187,9 +178,9 @@ step "6. POST /incidents/:id/evidence — device A (has a key): valid signature 
 TS=$(date +%s)
 SIG=$(sign_request "$KEY_DIR/device_a.key" "POST" "/api/v1/incidents/$INCIDENT_ID/evidence" "devsig-a-00000001" "$TS")
 # A tiny real JPEG (1x1 pixel), same fixture verify-evidence-upload.sh
-# uses — required by the (unrelated) H-10 magic-byte check, plus its own
+# uses — required by the magic-byte check, plus its own
 # required sha256/mime_type fields, so this test isolates the signature
-# check under test from H-10's.
+# check from the magic-byte check.
 printf '\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9' > "$KEY_DIR/photo.jpg"
 PHOTO_SHA256=$("$OPENSSL_BIN" dgst -sha256 "$KEY_DIR/photo.jpg" | awk '{print $NF}')
 VALID_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${BASE_URL}/incidents/$INCIDENT_ID/evidence" \

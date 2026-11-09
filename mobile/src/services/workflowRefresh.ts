@@ -1,5 +1,5 @@
 /**
- * workflowRefresh.ts — pulls the server's side of the 2026-10 tanod workflow
+ * workflowRefresh.ts — pulls the server's side of the tanod workflow
  * back into local state. Everything the Tanod WRITES goes up through
  * `syncService.ts`; this is the read direction:
  *

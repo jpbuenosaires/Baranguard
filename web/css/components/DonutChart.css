@@ -1,8 +1,7 @@
 /**
- * DonutChart.css — co-located with DonutChart.js (W2/W9 "By Incident
- * Type"). Split out of base.css during the 2026-09-02 responsive/density
- * pass. Ring shrinks and the legend drops below it on narrow screens
- * instead of the two staying side-by-side and squeezing.
+ * DonutChart.css — co-located with DonutChart.js ("By Incident Type"). The
+ * ring shrinks and the legend drops below it on narrow screens instead of
+ * the two staying side-by-side and squeezing.
  */
 
 .donut-chart {
@@ -33,7 +32,7 @@
   from { transform: rotate(-90deg) scale(0.85); opacity: 0; }
   to { transform: rotate(0deg) scale(1); opacity: 1; }
 }
-/* Legend-hover highlight (§4.5): dim the whole ring slightly while one
+/* Legend-hover highlight: dim the whole ring slightly while one
    legend item is hovered, and boost that one segment's own swatch/label
    via .is-active below — cheap, no per-segment DOM slicing needed since
    the ring is one conic-gradient. */
@@ -234,7 +233,7 @@
   .donut-chart__legend { grid-template-columns: 1fr; }
 }
 
-/* ─── Premium polish (UI/UX improvement pass) ─────────────────────────── */
+/* ─── Polish ─────────────────────────────────────────────────────────────── */
 .donut-chart__total {
   animation: count-up 0.4s ease-out;
 }

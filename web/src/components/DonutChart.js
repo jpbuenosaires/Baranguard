@@ -1,14 +1,11 @@
 /**
- * DonutChart — donut/pie rendering for a category breakdown (§8 "Adopted
- * UI reference": "a donut/pie rendering of by_incident_type is an
- * acceptable visual upgrade of the existing breakdown card, same data, no
- * API change"). Pure CSS `conic-gradient` on a ring div — no charting
- * library (§1 stack has no bundler/npm install step, same reasoning as
- * TrendChart.js's hand-rolled bars).
+ * DonutChart — donut/pie rendering for a category breakdown. Pure CSS
+ * `conic-gradient` on a ring div — no charting library (no bundler/npm step,
+ * same reasoning as LineChart.js).
  *
  * Renders exactly the {label, count, color}[] rows it's given — never
  * invents categories or drops zero-count ones, same "never invent a
- * client-side data shape" rule TrendChart.js follows for trend[].
+ * client-side data shape" rule LineChart.js follows for trend[].
  *
  * @param {{rows: Array<{key:string, label:string, count:number, color:string}>}} props
  * @returns {HTMLElement}
@@ -161,8 +158,8 @@ export function DonutChart({ rows }) {
   });
 
   // Screen-reader-only data table — same accessible-fallback pattern as
-  // TrendChart.js (§8: "any chart/graphic that conveys data has a
-  // text/data-table equivalent, not color/shape alone").
+  // LineChart.js (a chart that conveys data has a text/data-table
+  // equivalent, not color/shape alone).
   //
   // `.sr-only` goes on a wrapper div, not the `<table>` — a `<table>`
   // ignores an explicit width/height smaller than its content (default

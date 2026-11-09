@@ -1,16 +1,12 @@
 /**
- * login.js — W1 Login (§9: "No role selector. Submit is disabled during
+ * login.js — Login: no role selector. Submit is disabled during
  * authentication. Failed authentication uses a generic message such as
- * 'Unable to sign in with those credentials.'").
+ * 'Unable to sign in with those credentials.'.
  *
- * Markup matches Proposal B (Modern SaaS Restructure):
+ * Markup:
  * - Semantic landmarks: <aside> for hero and <main> for authentication panel
  * - Persistent visible micro-labels for WCAG 3.3.2 / 1.3.1 compliance
  * - Accessible input field groups with high-contrast borders and focus rings
- * - Seamless zero-regression preservation of all auth logic, session handling,
- *   caps-lock detection, and verification test contracts.
- *
- * kebab-case filename per §4 (pages/routes convention).
  */
 
 import { login, ApiClientError } from '../api/apiClient.js';
@@ -28,7 +24,7 @@ const REMEMBERED_USERNAME_KEY = 'baranguard.rememberedUsername';
  * @param {HTMLElement} root
  * @param {(user: object) => void} onSuccess
  * @param {{notice?: string}} [options] `notice`: why the user is back here
- *   (session expired / signed out for inactivity, audit 2026-10-09 X-02),
+ *   (session expired / signed out for inactivity),
  *   shown above the form until the next sign-in attempt.
  */
 export function renderLoginPage(root, onSuccess, { notice } = {}) {

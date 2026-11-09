@@ -1,8 +1,8 @@
 /**
  * Audible cue for a NEW sos/priority_alert notification landing on the
  * web dashboard, so a dispatcher with the tab backgrounded or the sound
- * off their attention doesn't rely on the topbar bell's badge dot alone
- * (an 2026-09-24 audit finding: the bell had no sound at all). Synthesized
+ * off their attention doesn't rely on the topbar bell's badge dot alone.
+ * Synthesized
  * via Web Audio, same technique as mobile/src/utils/tacticalFeedback.ts's
  * `playTone` — kept as an independent copy since the two apps share no JS
  * runtime.
@@ -10,10 +10,9 @@
  * Browsers block audio until the page has had a user gesture (a click,
  * keypress) at least once — a real platform limitation, not a bug here.
  * `isAlertSoundUnlocked()` / `onAlertSoundUnlocked()` let a caller show a
- * "Click anywhere to enable alert sound" hint while that is the case
- * (audit 2026-10-09 A-08).
+ * "Click anywhere to enable alert sound" hint while that is the case.
  *
- * De-duplication (audit 2026-10-09 A-08/X-01): the site-wide SOS bar in
+ * De-duplication: the site-wide SOS bar in
  * AppShell and the Dispatch Center's own banner both repeat the tone every
  * 10 s while an SOS is unacknowledged. Two independent 10 s loops would
  * play two overlapping chimes per period, so `playCriticalAlertTone()` is

@@ -13,25 +13,21 @@ use Baranguard\Services\Auth\Username;
 use PDO;
 
 /**
- * POST /auth/login and POST /auth/logout — Master Reference §6 "Auth"
- * section, plus §2 Rule 9's session-lifecycle rules.
+ * POST /auth/login, POST /auth/logout and POST /auth/change-password,
+ * including the session-lifecycle rules.
  */
 final class AuthController
 {
-    // §2 Rule 9: "Failed-login handling is externally indistinguishable
-    // for unknown, invalid-password, and locked-account cases." This is a
-    // pre-computed Argon2id hash of an arbitrary string, used ONLY so an
-    // unknown username still pays the same password_verify() cost as a
-    // known one — it is not a real credential and never matches any real
-    // password.
+    // Failed-login handling is externally indistinguishable for unknown,
+    // invalid-password, and locked-account cases. This is a pre-computed
+    // Argon2id hash of an arbitrary string, used ONLY so an unknown username
+    // still pays the same password_verify() cost as a known one; it is not
+    // a real credential and never matches any real password.
     private const DUMMY_HASH = '$argon2id$v=19$m=65536,t=4,p=1$NTQuTlJtUnhaVHBjMHlHVw$jiM71tWhw5bBkHF+pbZndSERQcgNlimNT6C6jmdptaI';
 
-    // Lockout numbers: the schema (§5 `user` table: failed_login_attempts,
-    // login_failure_window_started_at, locked_until) clearly expects a
-    // lockout policy to exist, but no section of the reference states the
-    // actual thresholds. Resolved decision, logged in DEVLOG.md: 5 failed
-    // attempts inside a rolling 15-minute window locks the account for 15
-    // minutes.
+    // Lockout: 5 failed attempts inside a rolling 15-minute window locks
+    // the account for 15 minutes (`user`: failed_login_attempts,
+    // login_failure_window_started_at, locked_until).
     private const MAX_FAILED_ATTEMPTS = 5;
     private const FAILURE_WINDOW_MINUTES = 15;
     private const LOCKOUT_MINUTES = 15;
@@ -77,11 +73,10 @@ final class AuthController
         if ($user === false) {
             $genericDenied();
         }
-        // `lupon` is DB-enum-only, never an active login role (§3, §5 note).
-        // `is_suspended` (migration 0011, 2026-09-05 UX pass) rejects the
-        // same generic way as inactive — a suspended account gives no
-        // hint distinguishing it from a wrong password, same as every
-        // other denial reason here (Rule 9).
+        // `lupon` is DB-enum-only, never an active login role.
+        // `is_suspended` rejects the same generic way as inactive: a
+        // suspended account gives no hint distinguishing it from a wrong
+        // password, same as every other denial reason here.
         if ($user['role'] === 'lupon' || (int) $user['is_active'] !== 1 || (int) $user['is_suspended'] === 1) {
             $genericDenied();
         }
@@ -90,9 +85,9 @@ final class AuthController
         }
 
         // Success: reset lockout state, issue a session. Lifetime depends on
-        // the session KIND (SessionPolicy, 2026-09-19): a Tanod signing in
-        // from the app (well-formed X-Device-Id) gets a 24h device session;
-        // everything else is the dashboard's 15-minute one.
+        // the session KIND (SessionPolicy): a Tanod signing in from the app
+        // (well-formed X-Device-Id) gets a 24h device session; everything
+        // else is the dashboard's 15-minute one.
         $sessionKind = SessionPolicy::kindForLogin(Http::header('X-Device-Id'), (string) $user['role']);
         $expiresAt = $now->add(new \DateInterval('PT' . SessionPolicy::lifetimeSeconds($sessionKind) . 'S'));
         $jti = self::generateUuidV4();
@@ -117,7 +112,7 @@ final class AuthController
                 'kind' => $sessionKind,
             ]);
 
-            // session_kind is a status enum — allow-listed audit metadata (Rule 8).
+            // session_kind is a status enum — allow-listed audit metadata.
             self::audit($pdo, (int) $user['barangay_id'], (int) $user['user_id'], 'login_success', 'user', (int) $user['user_id'], ['username' => $username, 'session_kind' => $sessionKind]);
 
             $pdo->commit();
@@ -149,12 +144,11 @@ final class AuthController
 
     public static function logout(PDO $pdo): void
     {
-        // Deliberately NOT AuthMiddleware::authenticate() — that rejects
-        // an already-revoked session with 401, which would break §6's
-        // "server ignores a second logout safely" on any repeat call.
-        // resolveForLogout() only requires a validly-signed, unexpired
-        // token tied to a real session row; it tolerates the session
-        // already being revoked.
+        // Deliberately NOT AuthMiddleware::authenticate(): that rejects an
+        // already-revoked session with 401, which would break a safe repeat
+        // logout. resolveForLogout() only requires a validly-signed,
+        // unexpired token tied to a real session row; it tolerates the
+        // session already being revoked.
         $identity = AuthMiddleware::resolveForLogout($pdo);
 
         if (!$identity['alreadyRevoked']) {
@@ -169,19 +163,15 @@ final class AuthController
     }
 
     /**
-     * POST /auth/change-password -- Section 6 Auth section: "any
-     * authenticated role, self only. Rehashes Argon2id and revokes every
-     * other active session for the user. Current session remains valid
-     * with updated authentication state." W15 Settings/Account's own
-     * change-password action.
+     * POST /auth/change-password — any authenticated role, self only.
+     * Rehashes Argon2id and revokes every other active session for the user;
+     * the current session remains valid with updated authentication state.
      *
-     * Resolved decision, logged in DEVLOG.md: a wrong current_password
-     * returns the same generic 401 shape as a failed login (not a
-     * distinguishable "current password incorrect" 400/422) -- the
-     * schema's lockout counters are login-specific
-     * (login_failure_window_started_at etc.), so this endpoint doesn't
-     * feed them, but it still shouldn't hand back a message shape that's
-     * easier to probe than the login endpoint itself.
+     * A wrong current_password returns the same generic 401 shape as a failed
+     * login (not a distinguishable "current password incorrect" 400/422). The
+     * lockout counters are login-specific so this endpoint doesn't feed them,
+     * but it still shouldn't hand back a message shape that is easier to probe
+     * than the login endpoint itself.
      *
      * @param array{user_id:int,barangay_id:int,role:string,jti:string} $identity
      */
@@ -215,8 +205,8 @@ final class AuthController
                 'UPDATE user SET password_hash = :hash, updated_at = UTC_TIMESTAMP() WHERE user_id = :user_id'
             )->execute(['hash' => $newHash, 'user_id' => $identity['user_id']]);
 
-            // "Revokes every other active session for the user. Current
-            // session remains valid" -- exclude this request's own jti.
+            // Revokes every other active session for the user; the current
+            // session remains valid: exclude this request's own jti.
             $pdo->prepare(
                 'UPDATE auth_session SET revoked_at = UTC_TIMESTAMP()
                  WHERE user_id = :user_id AND jti != :current_jti AND revoked_at IS NULL'
@@ -279,7 +269,7 @@ final class AuthController
         ]);
     }
 
-    /** @param array<string,mixed> $metadata allow-listed only — never raw narrative or credentials (§2 Rule 17). */
+    /** @param array<string,mixed> $metadata allow-listed only — never raw narrative or credentials. */
     private static function audit(PDO $pdo, ?int $barangayId, ?int $actorUserId, string $action, string $entityType, ?int $entityId, array $metadata): void
     {
         $stmt = $pdo->prepare(

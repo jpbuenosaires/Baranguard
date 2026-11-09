@@ -12,13 +12,13 @@ use Throwable;
  *
  * Why: a phone that syncs late must not make a Tanod look late. Dispatch step
  * times (`dispatch.en_route_at/arrived_at/completed_at`), SOS `triggered_at`
- * and `duty_status.changed_at` used to be the server's RECEIVE time. A sync
- * item may now carry the optional field `created_offline_at` (ISO-8601 UTC,
+ * and `duty_status.changed_at` default to the server's RECEIVE time. A sync
+ * item may carry the optional field `created_offline_at` (ISO-8601 UTC,
  * `Y-m-d\TH:i:s\Z`; the field name the phone's SOS queue already sent).
  * Incidents keep their own older field `device_offline_created_at`; it goes
  * through the same parser (see IncidentsController::createMobileItem).
  *
- * Rule (docs/OFFLINE_SYNC_CONFLICT_RULES.md, gaps 2 and 4):
+ * Rule:
  *   - the value must be a string in ISO-8601 / "Y-m-d H:i:s" form that really
  *     parses (a bare date-less word such as "now" or "tomorrow" does not);
  *     a value with no zone designator is read as UTC;

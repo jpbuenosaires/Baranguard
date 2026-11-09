@@ -1,8 +1,8 @@
 /**
- * admin-sos.tsx — Chief Tanod console, SOS tab (decision 15C, stage 1).
+ * admin-sos.tsx — Chief Tanod console, SOS tab.
  *
  * Lists the barangay's SOS alerts and lets the Chief Tanod ACKNOWLEDGE one
- * and, since 2026-10-12 (workflow gap #6), MARK RESOLVED an active or
+ * and MARK RESOLVED an active or
  * acknowledged one after an in-app confirmation, so an SOS raised at night
  * with nobody at the desk does not stay open. Online-only: both actions are
  * disabled offline, nothing is queued, and a success

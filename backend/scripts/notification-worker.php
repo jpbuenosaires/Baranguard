@@ -2,32 +2,30 @@
 declare(strict_types=1);
 
 /**
- * notification-worker.php — the ONLY process that performs §6's
- * "Notification lifecycle automation" 60-second ack-timeout sweep:
+ * notification-worker.php — the ONLY process that performs the 60-second
+ * ack-timeout sweep:
  *
- *   "After an FCM delivery is marked `sent`, a local worker waits 60
- *    seconds for `notification_target.acknowledged_at`. If no
- *    acknowledgement exists, that delivery row becomes `ack_timeout`.
- *    This does not create an SMS row unless the original fallback rule
- *    explicitly calls for SMS because the FCM send itself failed."
+ *   After an FCM delivery is marked `sent`, a local worker waits 60
+ *   seconds for `notification_target.acknowledged_at`. If no
+ *   acknowledgement exists, that delivery row becomes `ack_timeout`. This
+ *   does not create an SMS row: SMS is a fallback only when the FCM send
+ *   itself failed.
  *
  * Everything else in the fallback ladder (no-device -> SMS; FCM error ->
  * retry once -> SMS on 2nd failure) happens SYNCHRONOUSLY inside the web
- * request, in `NotificationDispatcher::dispatchAll()` — §6 says SOS
- * "immediately attempts" its channels, and the same urgency applies to a
- * dispatch assignment. This worker's ONE job is the thing that genuinely
- * cannot happen synchronously: nothing should block an HTTP response for
- * a minute waiting to see if a Tanod taps acknowledge.
+ * request, in `NotificationDispatcher::dispatchAll()`. This worker's ONE
+ * job for delivery is the thing that cannot happen synchronously: nothing
+ * should block an HTTP response for a minute waiting to see if a Tanod
+ * taps acknowledge.
  *
- * §2 Rule 24 is the reason this file NEVER does anything else: "Ack
- * timeout never silently changes delivery truth." It flips exactly one
- * status, on exactly one already-`sent` FCM delivery row, based on
- * exactly one fact (whether the target acknowledged within 60s) — it
+ * Ack timeout never silently changes delivery truth, so this sweep flips
+ * exactly one status, on exactly one already-`sent` FCM delivery row, based
+ * on exactly one fact (whether the target acknowledged within 60s) — it
  * never re-attempts FCM, never sends SMS, and never touches a delivery
  * row that already failed or already timed out.
  *
  * Same process, two more jobs that also cannot run inside an HTTP request
- * (neither touches Rule 24's delivery truth): (1) SosEscalation re-alerts an
+ * (neither touches delivery truth): (1) SosEscalation re-alerts an
  * SOS that is still `active` (Admin again, then Secretary + Punong Barangay);
  * (2) it sends the `queued` SMS outbox rows that broadcasts leave behind.
  *
@@ -37,10 +35,9 @@ declare(strict_types=1);
  *   php scripts/notification-worker.php --daemon   keep sweeping every 15s (Ctrl-C to stop)
  *   php scripts/notification-worker.php --status   print pending-ack counts and exit
  *
- * Unlike ai-worker.php, this has no external service to be unreachable —
- * it is a pure DB sweep, so there is no "unavailable, requeue" case to
- * handle. Run it via cron/Task Scheduler every 15-30s in production, or
- * `--daemon` for a long-lived local process.
+ * It is a pure DB sweep with no external service to be unreachable. Run it
+ * via Task Scheduler every 15-30s, or `--daemon` for a long-lived local
+ * process.
  */
 
 if (PHP_SAPI !== 'cli') {

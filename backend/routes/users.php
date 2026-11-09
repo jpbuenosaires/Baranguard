@@ -2,10 +2,10 @@
 declare(strict_types=1);
 
 /**
- * Route table for /users (§6 "Users & device lifecycle" section). GET
- * (list, W3 Tanod-picker plumbing), POST (Admin creates an account, W10),
- * and PATCH (self-only edit, W15; admin-editing-others is_active, W10) —
- * reset-password remains a separate, unbuilt endpoint.
+ * Route table for /users: GET (list, and the directory picker feed), POST
+ * (Admin creates an account), PATCH (self-only edit; admin editing
+ * others' is_active/is_suspended/authorities). There is no reset-password
+ * endpoint.
  */
 
 use Baranguard\Controllers\UsersController;

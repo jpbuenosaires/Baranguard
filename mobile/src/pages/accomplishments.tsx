@@ -1,25 +1,20 @@
 /**
- * accomplishments.tsx — My Accomplishment Report (contract §4, §9).
+ * accomplishments.tsx — My Accomplishment Report.
  *
- * A Tanod logs what they did on each work day and how long it took; at the end
- * of the month they SUBMIT the month for noting/approval by the barangay
- * officials. Entry capture is OFFLINE-FIRST (Rule 7): Save persists to encrypted
- * SQLite before the sheet closes and goes out via `/sync/batch`. The duration
- * the Tanod enters is the CONFIRMED one; the server separately computes a
- * suggestion from the Tanod's on-duty time and flags a large disagreement —
- * that suggestion only exists after the entry has synced, so it is shown "when
- * available" and the screen says why it is missing otherwise.
+ * A Tanod logs what they did on each work day and how long it took; at the end of the month they
+ * SUBMIT the month for noting/approval by the barangay officials. Entry capture is OFFLINE-FIRST: Save
+ * persists to encrypted SQLite before the sheet closes and goes out via `/sync/batch`. The duration the
+ * Tanod enters is the CONFIRMED one; the server separately computes a suggestion from the Tanod's
+ * on-duty time and flags a large disagreement. That suggestion only exists after the entry has synced,
+ * so it is shown "when available" and the screen says why it is missing otherwise.
  *
- * SUBMIT MONTH IS ONLINE-ONLY by contract: there is deliberately no offline
- * queue behind it. Offline, the button explains that entries are safe on the
- * phone and the month can be submitted once connected. Before submitting, any
- * entries still waiting to sync are pushed first (the server can only submit
- * what it has).
+ * SUBMIT MONTH IS ONLINE-ONLY: there is deliberately no offline queue behind it. Offline, the button
+ * explains that entries are safe on the phone and the month can be submitted once connected. Before
+ * submitting, any entries still waiting to sync are pushed first (the server can only submit what it has).
  *
- * Status chip: open / prepared / returned (+ the return
- * reason, shown verbatim). While prepared the entries are locked
- * on this screen — the server would 409 any change. The text of an entry is
- * never logged, and the form tells the Tanod to leave out victim/student names.
+ * Status chip: open / prepared / returned (+ the return reason, shown verbatim). While prepared the
+ * entries are locked on this screen: the server would 409 any change. The text of an entry is never
+ * logged, and the form tells the Tanod to leave out victim/student names.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -253,7 +248,7 @@ const AccomplishmentsPage: React.FC = () => {
         setNote({ tone: 'success', text: 'Updated. Saved on this phone, will send when online.' });
         void forceSyncNow();
       } else if (existing.server_entry_id !== null) {
-        // Already on the server: the edit is an online PATCH (contract §4).
+        // Already on the server: the edit is an online PATCH.
         await updateAccomplishmentEntry(existing.server_entry_id, {
           accomplishment_text: input.text.trim(),
           start_time: input.startTime,
@@ -290,7 +285,7 @@ const AccomplishmentsPage: React.FC = () => {
     setSubmitting(true);
     tacticalFeedback.onTap();
     try {
-      // Online-only action (contract §4): say so plainly instead of queueing it.
+      // Online-only action: say so plainly instead of queueing it.
       if (!(await checkHealth())) {
         setNote({
           tone: 'warning',

@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
-# Baranguard — Sprint 2 backend follow-up: POST /duty-status (M2 Home's
-# duty toggle) and POST /map-packages (Admin upload).
+# Baranguard — POST /duty-status (duty toggle) and POST /map-packages (Admin upload).
 #
 # Safe to run: everything happens in a disposable database
 # (baranguard_duty_map_check) with a disposable app-user, disposable test
 # accounts, disposable package files, and a PHP dev server on a throwaway
 # port. Your real `baranguard` database, real backend/.env, and Apache are
-# never touched. Mirrors the prior verify-*.sh scripts' conventions.
+# never touched.
 #
 # NOTE: this script deliberately does NOT pass `-d variables_order=EGPCS`
 # to `php -S`, relying on config/env.php honoring an exported env var over
-# backend/.env (the fix from the 2026-09-02 regression) as an early
-# warning canary — see verify-devices-map-packages.sh's header for detail.
+# backend/.env, as an early warning canary — see verify-devices-map-packages.sh's header for detail.
 #
 # Usage (from a Git Bash prompt): bash backend/scripts/verify-duty-status-map-upload.sh
 
@@ -30,10 +28,8 @@ expect_eq() { # expect_eq <actual> <expected> <label>
 }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -50,12 +46,8 @@ echo "Baranguard duty-status + map-package-upload validation — $(date -u +%Y-%
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for candidate in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$candidate" ] && { echo "$candidate"; return; }
   done
@@ -97,8 +89,7 @@ mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CH
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0001_baseline_schema.sql" && pass "0001 baseline applied" || fail "0001 apply failed"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0002_seed_barangays.sql" && pass "0002 barangays seeded" || fail "0002 seed failed"
 
-# FULL CHAIN — see verify-sprint1-auth.sh's note. This suite applied a
-# partial schema and so 500'd at login from 2026-09-05 onward.
+# Apply the full migration chain, not a subset.
 for m in $(cd "$BACKEND_DIR/migrations" && ls [0-9]*.sql | grep -v '\.down\.sql$' | sed 's/\.sql$//' | sort | awk -v s=0003_shift_schedule_nullable_user '$0 >= s'); do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
@@ -236,7 +227,7 @@ expect_eq "$(status_of POST /duty-status "$T1_TOKEN" "{\"status\":\"off_duty\",\
 expect_eq "$(db_one "SELECT COUNT(*) FROM duty_status WHERE client_event_id='$CEID_OFF_BLOCKED';")" "0" "The rejected attempt wrote no duty_status row"
 expect_eq "$(db_one "SELECT status FROM duty_status WHERE user_id=$TANOD1_ID ORDER BY changed_at DESC, status_id DESC LIMIT 1;")" "on_duty" "Tanod's current status is still on_duty in the DB, not off_duty"
 
-# Idempotency must survive this new check: retrying an ALREADY-RECORDED
+# Idempotency must survive the active-dispatch check: retrying an ALREADY-RECORDED
 # off_duty transition (from before any dispatch existed) must still return
 # the original success, not get newly blocked by the active-dispatch check.
 CEID_RETRY=$(uuidgen_php)
@@ -303,7 +294,7 @@ step "16. Code-review finding M-07: total per-barangay map-package storage quota
 # Seed a fake package row that alone sits right at the 2000MB quota for
 # barangay 1 (no need to actually write a multi-GB file — the quota check
 # only sums the `byte_size` column). Any further upload, however small,
-# must now be rejected.
+# must be rejected.
 mysql_exec "$VALDB" <<SQL
 INSERT INTO offline_map_package (barangay_id, version, file_path, checksum_sha256, byte_size, created_by, created_at, is_published)
 VALUES (1, 'quota-filler', 'quota-filler.mbtiles', '$(printf 'a%.0s' {1..64})', 2097152000, (SELECT user_id FROM user WHERE username='dmchk_admin'), UTC_TIMESTAMP(), 0);

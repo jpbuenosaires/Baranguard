@@ -1,8 +1,7 @@
 /**
- * referral-log.css — Referral Log overhaul.
- *
- * Inter-agency delegation registry (PNP, BFP, EMS, DOH, DPWH, VAW Desk, LGU, Brgy).
- * Follows Baranguard design system tokens (REFERENCE.md §6).
+ * referral-log.css — Referral Log. Inter-agency delegation registry (PNP,
+ * BFP, EMS, DOH, DPWH, VAW Desk, LGU, Brgy). Follows the design system
+ * tokens.
  */
 
 .tw-referrals__body .data-table-wrap {

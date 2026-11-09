@@ -1,15 +1,13 @@
 /**
  * sosEnvelopeCore.ts — pure (no Capacitor, no storage) construction of the
- * §6 SMS envelope for an SOS, so it can be unit-verified in plain Node.
+ * SMS envelope for an SOS, so it can be unit-verified in plain Node.
  *
  * WHY THIS EXISTS: when the workstation API is unreachable but cellular SMS
  * still works (partial outage), the Tanod app texts this envelope to the GSM
  * gateway phone's SIM. `gsm-ingest-daemon.php` reads it off that phone and
  * forwards it to `POST /internal/sms/sos`, where `SmsGatewayService` decrypts
  * it and creates the SOS through `TanodSosController::createItem()` with
- * `fallback_channel = 'sms'`. The server half was built and verified long
- * before the app could send it (see `smsFallbackState.ts` history); this is
- * the missing mobile half.
+ * `fallback_channel = 'sms'`. This is the mobile half of that path.
  *
  * WIRE FORMAT = `backend/services/sms/EnvelopeCrypto.php` +
  * `backend/scripts/sms-envelope-build.php`, byte for byte:

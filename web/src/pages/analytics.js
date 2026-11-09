@@ -1,24 +1,16 @@
 /**
- * analytics.js — Analytics (2026-09-05 UX pass): merges W9 Statistical
- * Reports and W5 Historical Heatmap into one tabbed screen, the same
- * shared-AppShell/PageHeader/`.page-tabs` tab pattern
- * `sms-monitor.js`/`personnel.js` already use.
+ * analytics.js — Analytics: Statistical Reports and Historical Heatmap in
+ * one tabbed screen, the same shared-AppShell/PageHeader/`.page-tabs` tab
+ * pattern `sms-monitor.js`/`personnel.js` use.
  *
- * Why these two specifically: both are Admin/Punong Barangay (read-only)
- * — the exact same role pair, so unlike Personnel there is no per-tab
- * gating at all — and both are bounded, historical, no-write-action
- * screens (pick a date range, look at aggregate data). This is the pair
- * the user asked about right after Incident Management + Heatmap, which
- * was declined for the opposite reasons (different roles, and Incident
- * Management's live/operational nature clashing with Heatmap's explicit
- * "not predictive or real-time" framing) — see `backend/DEVLOG.md`.
+ * Both are Admin/Punong Barangay (read-only) — the same role pair, so unlike
+ * Personnel there is no per-tab gating — and both are bounded, historical,
+ * no-write-action screens (pick a date range, look at aggregate data).
  *
- * Each tab's real logic still lives in its own file (Reports ->
+ * Each tab's real logic lives in its own file (Reports ->
  * `statistical-reports.js`'s `renderReportsTab`, Heatmap ->
- * `historical-heatmap.js`'s `renderHeatmapTab`) — only the outer shell
- * is new here.
- *
- * kebab-case filename per §4 (pages/routes convention).
+ * `historical-heatmap.js`'s `renderHeatmapTab`) — only the outer shell is
+ * here.
  */
 
 import { logout } from '../api/apiClient.js';

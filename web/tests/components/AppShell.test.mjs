@@ -15,7 +15,7 @@ function mountShell(role, activePage = 'settings', userOverrides = {}) {
 }
 const navLabels = () => $$('.sidebar__nav-item').map((b) => b.title);
 
-// REFERENCE.md §3/§7 + main.js PAGE_ROLES.
+// Roles per nav item follow main.js PAGE_ROLES.
 const EXPECTED_NAV = {
   admin: ['Dashboard', 'Dispatch Center', 'Incident Management', 'Live Map', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Analytics', 'Personnel', 'SMS Monitor', 'Audit Log', 'Service Health', 'Map Packages', 'Settings'],
   secretary: ['Dispatch Center', 'Incident Management', 'Live Map', 'Approvals', 'Accomplishment Reports', 'Referral Log', 'Safer School Zones', 'Personnel', 'Settings'],

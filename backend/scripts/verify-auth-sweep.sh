@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Baranguard — authentication and authorization sweep over EVERY /api/v1
-# route (Rule 2: every protected endpoint verifies role + tenant + ownership
-# server-side; Rule 12: a session dies on the next request after logout).
+# route (every protected endpoint verifies role + tenant + ownership
+# server-side; a session dies on the next request after logout).
 #
 # The route list comes from the real route tables (scripts/lib/route-table.php),
 # so a new route is swept automatically. Three checks per route:

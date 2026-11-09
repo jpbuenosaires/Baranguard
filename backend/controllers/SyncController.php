@@ -9,60 +9,43 @@ use Baranguard\Middleware\AuthMiddleware;
 use PDO;
 
 /**
- * POST /sync/batch — Master Reference §6 "Sync" section, §5 sync
- * invariants, §9 M6 (dispatch_status_updates[] reconciliation).
+ * POST /sync/batch — Tanod only. Returns
+ * {results:[{client_event_id,server_id,status,reason?}]}.
  *
- * §6: "Tanod only -> {results:[{client_event_id,server_id,status,reason?}]}.
- * Body {device_id,incidents[],gps_tracks[],duty_status_updates[],
- * dispatch_status_updates[],sos[]}. Device ownership must match
- * authenticated Tanod. Every item has client_event_id; dispatch status
- * updates use the same event-key/idempotency rules as other mobile writes;
- * server processes oldest-first per device, locks/deduplicates by event
- * key ... Server mirror stores only reconciliation metadata."
+ * Body {device_id, incidents[], gps_tracks[], duty_status_updates[],
+ * dispatch_status_updates[], sos[], referrals[], availability[],
+ * accomplishment_entries[], school_checkins[]}. Device ownership must match
+ * the authenticated Tanod. Every item has client_event_id; dispatch status
+ * updates use the same event-key/idempotency rules as other mobile writes.
+ * The server mirror stores only reconciliation metadata.
  *
- * Resolved decisions not fully pinned down by that prose (logged in
- * DEVLOG.md — this endpoint was Sprint 3's own "idempotent sync" box):
- *
- *   - **Per-item body shape.** §6 never spells out each array's item
- *     shape beyond "every item has client_event_id." Resolved as exactly
- *     the same body each item's own single-item endpoint already
- *     documents: incidents[] = POST /incidents (mobile) body,
+ *   - Per-item body shape is exactly the body each item's own single-item
+ *     endpoint documents: incidents[] = POST /incidents (mobile) body,
  *     gps_tracks[] = POST /gps body, duty_status_updates[] = POST
  *     /duty-status body, dispatch_status_updates[] =
  *     {dispatch_id,status,client_event_id} (a subset of PATCH
- *     /dispatch/:id/status's body — no override_reason, since a sync item
- *     is always the owning Tanod moving their own dispatch, never an
- *     Admin override).
+ *     /dispatch/:id/status's body, with no override_reason, since a sync item
+ *     is always the owning Tanod moving their own dispatch).
  *
- *   - **"Oldest-first per device."** With no shared timestamp field across
- *     five differently-shaped item types, and no license to invent one not
- *     in §6's documented per-endpoint bodies, this is interpreted as: the
- *     five arrays are processed in the fixed order §6's own body lists
- *     them (incidents, gps_tracks, duty_status_updates,
- *     dispatch_status_updates, sos), and within each array, in the order
- *     the client supplied — i.e. each array is itself already
- *     "oldest-first" because that's the order a client naturally appends
- *     to it while queuing offline.
+ *   - Ordering: the arrays are processed in a fixed order (see the loop
+ *     below; SOS first), and within each array in the order the client
+ *     supplied, which is the order it naturally appended while queuing
+ *     offline.
  *
- *   - **The `offline_queue` table is the idempotency ledger for THIS
- *     endpoint specifically**, keyed on (device_id, client_event_id),
- *     independent of whatever dedup column the underlying business table
- *     may or may not have. This matters most for `dispatch_status_updates`
- *     — `dispatch` has NO client_event_id column at all, so without this
- *     ledger a retried sync of the same status-change event would attempt
- *     the same transition twice and hit a real 409 on the second attempt.
- *     `incidents`/`gps_tracks`/`duty_status_updates` DO have their own
- *     business-table UNIQUE(device_id-or-user_id, client_event_id), so
- *     they are self-deduping too — the ledger check here is then a
- *     harmless fast-path that also correctly reports 'duplicate' for a
- *     retried sync call itself, not just a cross-transport duplicate.
+ *   - The `offline_queue` table is the idempotency ledger for THIS endpoint,
+ *     keyed on (device_id, client_event_id), independent of whatever dedup
+ *     column the underlying business table has. This matters most for
+ *     `dispatch_status_updates`: `dispatch` has NO client_event_id column, so
+ *     without this ledger a retried sync of the same status-change event
+ *     would attempt the same transition twice and hit a real 409.
+ *     `incidents`/`gps_tracks`/`duty_status_updates` have their own UNIQUE
+ *     keys, so the ledger check there is a harmless fast-path that also
+ *     reports 'duplicate' for a retried sync call itself.
  *     `sync_metadata_json` holds only `{"server_id": ...}` — reconciliation
- *     metadata, never the original payload (§5: "Server mirror never
- *     stores original raw payload").
+ *     metadata, never the original payload.
  *
- *   - **`sos[]` works as of Sprint 4.** It reuses
- *     `TanodSosController::createItem()`, so a queued offline SOS lands
- *     identically to a live one — same idempotency key, same Rule 27
+ *   - `sos[]` reuses `TanodSosController::createItem()`, so a queued offline
+ *     SOS lands identically to a live one — same idempotency key, same
  *     fan-out — and an SOS that also arrived by SMS fallback correlates
  *     rather than alarming twice.
  */
@@ -84,7 +67,7 @@ final class SyncController
             throw new ApiError(400, 'VALIDATION_ERROR', 'device_id is required.');
         }
 
-        // §6: "Device ownership must match authenticated Tanod."
+        // Device ownership must match the authenticated Tanod.
         $deviceStmt = $pdo->prepare(
             'SELECT device_id FROM mobile_device WHERE device_id = :device_id AND user_id = :user_id AND is_active = 1 LIMIT 1'
         );
@@ -93,7 +76,7 @@ final class SyncController
             // Distinct code (status unchanged) so the app can tell this
             // whole-batch refusal apart from an ordinary validation 422 and
             // show "this phone belongs to another account" instead of
-            // silently retrying forever (docs/OFFLINE_SYNC_CONFLICT_RULES.md, gap 1).
+            // silently retrying forever.
             throw new ApiError(422, 'DEVICE_NOT_REGISTERED', 'Device is not registered or not active for this account.');
         }
 
@@ -103,8 +86,7 @@ final class SyncController
             'duty_status' => self::asItemArray($body['duty_status_updates'] ?? null),
             'dispatch_status' => self::asItemArray($body['dispatch_status_updates'] ?? null),
             'sos' => self::asItemArray($body['sos'] ?? null),
-            // docs/FEATURE_CONTRACT_2026-10.md §6: item shape = each
-            // feature's own single-item endpoint body.
+            // Item shape = each feature's own single-item endpoint body.
             'referral' => self::asItemArray($body['referrals'] ?? null),
             'availability' => self::asItemArray($body['availability'] ?? null),
             'accomplishment_entry' => self::asItemArray($body['accomplishment_entries'] ?? null),
@@ -141,15 +123,14 @@ final class SyncController
     }
 
     /**
-     * Thesis measurement (objective 2 / ISO 25010 reliability): one JSON line
-     * per non-empty batch in `backend/storage/metrics/sync-YYYYMMDD.jsonl` —
-     * counts of success / duplicate / failed per item kind and the server's
-     * processing time. Read by `scripts/metrics-report.php`. Deliberately a
-     * file, not `audit_log`: a batch is posted every few seconds while a
-     * phone has a queue, which would drown the Admin-visible audit trail,
-     * and a file needs no migration. Identifiers and counts ONLY (Rule 17 /
-     * Rule 8: never narratives, coordinates or tokens). Best-effort: any
-     * failure here is swallowed, because measuring must never break a sync.
+     * Thesis measurement (reliability): one JSON line per non-empty batch in
+     * `backend/storage/metrics/sync-YYYYMMDD.jsonl` — counts of success /
+     * duplicate / failed per item kind and the server's processing time. Read
+     * by `scripts/metrics-report.php`. Deliberately a file, not `audit_log`: a
+     * batch is posted every few seconds while a phone has a queue, which
+     * would drown the Admin-visible audit trail. Identifiers and counts ONLY
+     * (never narratives, coordinates or tokens). Best-effort: any failure
+     * here is swallowed, because measuring must never break a sync.
      *
      * @param array{user_id:int,barangay_id:int,role:string} $identity
      * @param array<string,array<string,int>> $tally
@@ -211,8 +192,8 @@ final class SyncController
             ];
         }
 
-        // §5 offline_queue mirror — see class doc for why this ledger
-        // exists independent of each business table's own dedup column.
+        // `offline_queue` mirror: the ledger exists independent of each
+        // business table's own dedup column (see class doc).
         $existingQueueStmt = $pdo->prepare(
             'SELECT queue_id, reconciliation_status, sync_metadata_json FROM offline_queue
              WHERE device_id = :device_id AND client_event_id = :client_event_id LIMIT 1'
@@ -410,17 +391,16 @@ final class SyncController
                 return [$result['dispatch_id'], true];
 
             case 'sos':
-                // Sprint 4: an SOS raised while offline reaches the server
-                // through exactly the same path as a live one, including
-                // the same (user_id, client_event_id) idempotency key — so
-                // an SOS that was ALSO delivered by SMS fallback correlates
-                // instead of raising a second alarm (§2 Rule 27).
+                // An SOS raised while offline reaches the server through
+                // exactly the same path as a live one, including the same
+                // (user_id, client_event_id) idempotency key, so an SOS that
+                // was ALSO delivered by SMS fallback correlates instead of
+                // raising a second alarm.
                 $result = TanodSosController::createItem($pdo, $identity, $item);
                 return [$result['sos_id'], $result['wasCreated']];
 
             // The four feature controllers below each expose
-            // `createItem(PDO, identity, deviceId, item): array{id:int,wasCreated:bool}`
-            // (docs/FEATURE_CONTRACT_2026-10.md §6).
+            // `createItem(PDO, identity, deviceId, item): array{id:int,wasCreated:bool}`.
             case 'referral':
                 $result = ReferralsController::createItem($pdo, $identity, $deviceId, $item);
                 return [$result['id'], $result['wasCreated']];

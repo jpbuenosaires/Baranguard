@@ -2,8 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Route table for the Annex D term report (docs/FEATURE_CONTRACT_2026-10.md
- * section 7, migration 0033): draft -> prepared -> submitted.
+ * Route table for the Annex D term report: draft -> prepared -> submitted.
  * The live, non-persisted computation is GET /reports/school-term
  * (routes/reports.php).
  */

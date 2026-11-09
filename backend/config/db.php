@@ -32,16 +32,12 @@ function baranguard_db(): PDO
 
 /**
  * A NEW, non-memoized connection with the same credentials as
- * baranguard_db(). Added 2026-09-24 (code-review finding H-06/H-07) for
- * AuthMiddleware's denial-audit writes: baranguard_db()'s singleton means
- * a write on that connection while a controller has an open transaction
- * would be erased by that controller's own rollBack() in its catch block —
- * exactly the case for a `requireRole()`/`requireTenant()` denial thrown
- * from inside, e.g., DispatchController::create()'s transaction. A short-
- * lived separate connection commits independently of the caller's
- * transaction. Only used on failure paths (a 403/404 denial), not on every
- * request, so the extra connect overhead is acceptable. Not memoized on
- * purpose — callers should open one, use it immediately, and let it go.
+ * baranguard_db(), for AuthMiddleware's denial-audit writes: a write on the
+ * shared singleton while a controller has an open transaction would be erased
+ * by that controller's rollBack() when a `requireRole()`/`requireTenant()`
+ * denial is thrown from inside it. A separate connection commits independently.
+ * Only used on failure paths (403/404 denials). Open one, use it immediately,
+ * let it go.
  */
 function baranguard_db_fresh(): PDO
 {
@@ -57,7 +53,7 @@ function baranguard_db_fresh(): PDO
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES   => false,
-        // Session timezone left server-default (UTC storage per Rule 31);
+        // Session timezone left server-default (UTC storage);
         // Asia/Manila conversion happens in application/display code.
     ]);
 }

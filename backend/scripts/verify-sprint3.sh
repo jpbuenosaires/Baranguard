@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
-# Baranguard — REMAINING.md B4: Sprint 3's backend endpoints never got
-# their own verify script. `POST /gps`, `PATCH /dispatch/:id/status`,
+# Baranguard — mobile-facing endpoints: `POST /gps`, `PATCH /dispatch/:id/status`,
 # `POST /sync/batch`, `GET /incidents/nearby`, and the mobile
-# `POST /incidents` branch were coded in one sitting and have only ever
-# been exercised INCIDENTALLY by later suites. This is functional/
-# integration coverage, not a role/tenant pentest — Dispatch's own
-# auth dimensions are already covered by
-# verify-b2-pentest-remaining-resources.sh; this suite tests that these
-# endpoints do the RIGHT THING, especially the two behaviors
-# REMAINING.md calls out as specifically unproven:
+# `POST /incidents` branch. This is functional/integration coverage, not a
+# role/tenant pentest (see verify-b2-pentest-remaining-resources.sh); it
+# tests that these endpoints do the RIGHT THING, especially:
 #
 #   - Duplicate-GPS handling: resubmitting the same client_event_id must
 #     never create a second gps_track row.
@@ -36,10 +31,8 @@ step() { echo; echo "=== $1 ==="; }
 expect_eq() { if [ "$1" = "$2" ]; then pass "$3 ($2)"; else fail "$3 — expected '$2', got '$1'"; fi; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -56,12 +49,8 @@ echo "Baranguard Sprint 3 backend verification — $(date -u +%Y-%m-%dT%H:%M:%SZ
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for c in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$c" ] && { echo "$c"; return; }
   done
@@ -172,7 +161,7 @@ INSERT INTO incident (barangay_id, reported_by, incident_type, priority, raw_nar
  (1, $ADMIN_ID, 'theft','normal','s3check far raw','pending','app',13.0100,123.7000,UTC_TIMESTAMP(),UTC_TIMESTAMP()),
  (2, $ADMIN_ID, 'theft','normal','s3check other-barangay-same-coords raw','pending','app',13.0000,123.7000,UTC_TIMESTAMP(),UTC_TIMESTAMP());
 SQL
-# nearby() deliberately never SELECTs raw_narrative (Rule 1) — match by
+# nearby() deliberately never SELECTs raw_narrative — match by
 # incident_id below, not narrative text.
 INC_NEAR=$(db_one "SELECT incident_id FROM incident WHERE raw_narrative='s3check near raw';")
 INC_FAR=$(db_one "SELECT incident_id FROM incident WHERE raw_narrative='s3check far raw';")
@@ -218,7 +207,7 @@ expect_eq "$(code_for POST "$BASE_URL/gps" "$TANOD" "$BAD_LAT_BODY")" "400" "Out
 
 DP_OTHER_CEID="$(uuid)"
 DP_OTHER_BODY="{\"latitude\":13.0,\"longitude\":123.7,\"accuracy_m\":10,\"recorded_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"client_event_id\":\"$DP_OTHER_CEID\",\"dispatch_id\":$DP_OTHER}"
-# A breadcrumb is never dropped over a bad dispatch link (H-08/C-01 design): the ping
+# A breadcrumb is never dropped over a bad dispatch link: the ping
 # is stored, but the other Tanod's dispatch_id is nulled rather than linked.
 expect_eq "$(code_for POST "$BASE_URL/gps" "$TANOD" "$DP_OTHER_BODY")" "201" "Ping carrying a DIFFERENT Tanod's dispatch_id is still stored"
 DP_OTHER_LINK="$(mysql_exec -N -s "$VALDB" -e "SELECT COALESCE(dispatch_id,'NULL') FROM gps_track WHERE client_event_id='$DP_OTHER_CEID';" 2>/dev/null)"
@@ -228,9 +217,8 @@ DP_OWN_BODY="{\"latitude\":13.0,\"longitude\":123.7,\"accuracy_m\":10,\"recorded
 CODE_OWN_DISPATCH=$(code_for POST "$BASE_URL/gps" "$TANOD" "$DP_OWN_BODY")
 expect_eq "$CODE_OWN_DISPATCH" "201" "dispatch_id belonging to the CALLER'S OWN active dispatch is accepted"
 
-# Code-review findings H-08/M-06 (2026-09-24): implausible accuracy and a
-# future-dated recorded_at (only explainable by a wrong/tampered device
-# clock) are now rejected; a genuinely OLD recorded_at (a legitimate
+# Implausible accuracy and a future-dated recorded_at (only explainable by a
+# wrong/tampered device clock) are rejected; a genuinely OLD recorded_at (a legitimate
 # offline-queued point syncing late) must still be accepted — this app is
 # offline-first by design, and rejecting stale-but-honest points would
 # break that.

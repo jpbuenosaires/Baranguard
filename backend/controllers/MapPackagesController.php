@@ -11,98 +11,73 @@ use Baranguard\Middleware\AuthMiddleware;
 use PDO;
 
 /**
- * Offline basemap packages — Master Reference §6 "Map packages",
- * §5 `offline_map_package`, §2 Rule 14 ("Offline maps are part of the
- * offline-first guarantee. Each approved device has a versioned
- * encrypted/app-private cached basemap package.").
+ * Offline basemap packages (`offline_map_package`). Offline maps are part of
+ * the offline-first guarantee: each approved device has a versioned
+ * app-private cached basemap package. The mobile login checks the map
+ * package version and enters the app without blocking on a map download.
  *
- * Built for Sprint 2's M1 Login box, which "checks map package version
- * and enters M2 without blocking on map download" (§9 M1).
- *
- * §6 fixes these contracts:
  *   - `GET /map-packages/:barangay_id` — Admin or Tanod, only when the
  *     requested barangay equals the caller's tenant →
  *     `{version,checksum_sha256,download_url,is_published}`.
  *   - `GET /map-packages/:barangay_id/download` — Tanod only, own
- *     barangay. "Streams the published package; client verifies SHA-256
- *     before activation."
+ *     barangay. Streams the published package; the client verifies SHA-256
+ *     before activation.
+ *   - `POST /map-packages` — Admin only, own barangay. Multipart
+ *     {version,file}. The server derives the barangay, validates MBTiles
+ *     structure/checksum/size/version uniqueness and publishes atomically ->
+ *     {package_id,version,checksum_sha256,is_published}.
  *
- * `POST /map-packages` — Admin only, own barangay. §6: "Body multipart
- * {version,file}. Server derives barangay, validates MBTiles
- * structure/checksum/size/version uniqueness, publishes atomically ->
- * {package_id,version,checksum_sha256,is_published}."
+ * Upload path:
+ *   - "Validates MBTiles structure" is two-tier. Every upload's first 16
+ *     bytes are checked against the SQLite file-format magic header (MBTiles
+ *     IS a SQLite database), which alone rejects arbitrary non-package
+ *     uploads with no extra dependency. If this PHP build's `pdo_sqlite`
+ *     driver is available, a second, stricter check opens the file and
+ *     confirms `tiles`/`metadata` tables exist in `sqlite_master`. If the
+ *     driver is absent the endpoint still works but only the header check
+ *     ran; that is logged via `error_log` so the gap is visible.
+ *   - "Atomic publish": exactly one package is published per barangay,
+ *     enforced transactionally. A `SELECT ... FOR UPDATE` locks that
+ *     barangay's existing rows, any previously-published version is flipped
+ *     to `is_published=0`, then the new row is inserted published, all inside
+ *     one transaction. The uploaded file is only moved into permanent storage
+ *     after validation passes, and is deleted if the transaction rolls back,
+ *     so a failed publish never leaves an orphaned file.
+ *   - 500MB per-file ceiling, 2000MB total per barangay: sane ceilings for a
+ *     local workstation disk, not a documented requirement. The total quota
+ *     only rejects new uploads once hit; it does not delete old package
+ *     files (retention of old packages is an open policy question).
+ *   - Version string charset is `[A-Za-z0-9._-]{1,64}`, since it becomes part
+ *     of a stored filename.
  *
- * Resolved decisions for the upload path (§6 states the contract but not
- * these specifics — logged in DEVLOG.md):
- *   - **"Validates MBTiles structure"** is two-tier. Every upload's first
- *     16 bytes are checked against the SQLite file-format magic header
- *     (MBTiles IS a SQLite database, per the MBTiles spec) — this alone
- *     rejects arbitrary non-package uploads with no extra dependency. If
- *     this PHP build's `pdo_sqlite` driver is available, a second,
- *     stricter check opens the file and confirms `tiles`/`metadata`
- *     tables actually exist in `sqlite_master`. If the driver is absent,
- *     the endpoint still works (does not hard-fail) but only the header
- *     check ran — logged via `error_log` so that gap is visible in
- *     practice, not silently assumed away.
- *   - **"Atomic publish"** implements §5's own invariant on
- *     `offline_map_package`: "Exactly one package is published per
- *     barangay, enforced transactionally by locking the barangay package
- *     set before publication." A `SELECT ... FOR UPDATE` locks that
- *     barangay's existing rows, any previously-published version is
- *     flipped to `is_published=0`, then the new row is inserted
- *     published — all inside one transaction. The uploaded file is only
- *     moved into permanent storage after validation passes, and is
- *     deleted if the transaction rolls back, so a failed publish never
- *     leaves an orphaned file.
- *   - **500MB per-file ceiling, 2000MB total per barangay** — no §6/§5
- *     number is given for a barangay basemap package; picked as a sane
- *     ceiling for hosting on a local XAMPP workstation disk, not a
- *     documented requirement. The total quota (code-review finding M-07,
- *     2026-09-24) only rejects new uploads once hit — it does not delete
- *     old package files, since map_package retention is an open policy
- *     question (`docs/REMAINING.md` H-15).
- *   - **Version string**: same charset as other identifier fields in this
- *     codebase (`device_id`, etc.) — `[A-Za-z0-9._-]{1,64}` — rather than
- *     accepting arbitrary bytes into a value that becomes part of a
- *     stored filename.
- *
- * Resolved decisions from the original read-only cut (§6 states the
- * contract but not these specifics):
- *   - **Package files live under `MAP_PACKAGE_DIR`** (env; defaults to
+ * Download/metadata:
+ *   - Package files live under `MAP_PACKAGE_DIR` (env; defaults to
  *     `backend/storage/map-packages`), and `offline_map_package.file_path`
- *     is interpreted as a path RELATIVE to it. The resolved real path is
- *     then asserted to still sit inside that directory, so a malformed or
- *     hostile `file_path` row cannot turn this endpoint into an arbitrary
- *     file reader.
- *   - **`download_url` is API-relative**, not absolute. The server has no
- *     reliable notion of its own externally-visible host (§2 Rule 7: LAN
- *     only, no fixed public origin), and the mobile client already knows
- *     its API base URL.
- *   - **No published package → 404.** §9 M1 requires the map check to be
- *     non-blocking, so the client must treat this as "nothing to download
- *     yet", never as a login failure.
- *   - **The download response carries `X-Checksum-SHA256`** so the client
- *     can do §6's mandatory pre-activation verification without a second
- *     round trip. The metadata endpoint returns the same value.
+ *     is a path RELATIVE to it. The resolved real path is asserted to still
+ *     sit inside that directory, so a malformed or hostile `file_path` row
+ *     cannot turn this endpoint into an arbitrary file reader.
+ *   - `download_url` is API-relative, not absolute: the server has no
+ *     reliable notion of its own externally-visible host, and the mobile
+ *     client already knows its API base URL.
+ *   - No published package → 404. The client must treat this as "nothing to
+ *     download yet", never as a login failure.
+ *   - The download response carries `X-Checksum-SHA256` so the client can do
+ *     its pre-activation verification without a second round trip. The
+ *     metadata endpoint returns the same value.
  */
 final class MapPackagesController
 {
-    /** §5 offline_map_package.version is VARCHAR(64). */
+    /** `offline_map_package.version` is VARCHAR(64). */
     private const VERSION_PATTERN = '/^[A-Za-z0-9._-]{1,64}$/';
     private const MAX_BYTES = 500 * 1024 * 1024;
 
     /**
-     * Total per-barangay ceiling — code-review finding M-07 (2026-09-24):
-     * the per-file cap above bounded a single upload but nothing bounded
-     * how many distinct versions a barangay could accumulate, and old
-     * (superseded, unpublished) package files are never deleted, so
-     * uploads alone could grow disk usage without limit. No §5/§6 number
-     * is given (same situation as MAX_BYTES); picked to allow a handful of
-     * recent versions per barangay. This only stops accepting NEW uploads
-     * once the ceiling is hit — it does not reclaim space itself, since
-     * deciding whether/when to purge old map packages is an open retention
-     * policy question (`docs/REMAINING.md` H-15), not something to resolve
-     * unilaterally here.
+     * Total per-barangay ceiling. The per-file cap bounds a single upload but
+     * nothing else bounds how many distinct versions a barangay accumulates,
+     * and superseded package files are never deleted. This only stops
+     * accepting NEW uploads once the ceiling is hit; it does not reclaim
+     * space (whether and when to purge old packages is an open retention
+     * policy question).
      */
     private const MAX_TOTAL_BYTES_PER_BARANGAY = 2000 * 1024 * 1024;
 
@@ -111,11 +86,10 @@ final class MapPackagesController
     {
         AuthMiddleware::requireRole($identity, ['admin']);
 
-        // H-11: a request-rate quota, separate from MAX_BYTES/MAX_TOTAL_
-        // BYTES_PER_BARANGAY above — those bound total disk use, this
-        // bounds how often the (relatively expensive: SQLite structure
-        // validation, file move, transactional publish) endpoint can be
-        // hit regardless of file size.
+        // A request-rate quota, separate from MAX_BYTES/MAX_TOTAL_BYTES_PER_BARANGAY
+        // above: those bound total disk use, this bounds how often the
+        // (relatively expensive: SQLite structure validation, file move,
+        // transactional publish) endpoint can be hit regardless of file size.
         if (!RateLimiter::check($pdo, 'map_package_upload:user:' . $identity['user_id'], 3600, 10)) {
             throw new ApiError(429, 'RATE_LIMITED', 'Too many map-package uploads recently. Please wait before uploading another.');
         }
@@ -162,7 +136,7 @@ final class MapPackagesController
         $checksum = hash_file('sha256', $tmpPath);
 
         // Uniqueness pre-check for a clean 409 rather than a raw DB
-        // constraint-violation error; §5 UNIQUE(barangay_id,version).
+        // constraint-violation error; UNIQUE(barangay_id,version).
         $dupStmt = $pdo->prepare(
             'SELECT package_id FROM offline_map_package WHERE barangay_id = :barangay_id AND version = :version LIMIT 1'
         );
@@ -184,9 +158,9 @@ final class MapPackagesController
         try {
             $pdo->beginTransaction();
 
-            // §5: "Exactly one package is published per barangay, enforced
+            // Exactly one package is published per barangay, enforced
             // transactionally by locking the barangay package set before
-            // publication."
+            // publication.
             $pdo->prepare('SELECT package_id FROM offline_map_package WHERE barangay_id = :barangay_id FOR UPDATE')
                 ->execute(['barangay_id' => $identity['barangay_id']]);
             $pdo->prepare('UPDATE offline_map_package SET is_published = 0 WHERE barangay_id = :barangay_id AND is_published = 1')
@@ -293,8 +267,8 @@ final class MapPackagesController
     /** @param array{user_id:int,barangay_id:int,role:string} $identity */
     public static function download(PDO $pdo, array $identity, string $barangayId): void
     {
-        // §6: download is Tanod-only (an Admin has no offline map to
-        // install), unlike the metadata endpoint above which both roles read.
+        // Download is Tanod-only (an Admin has no offline map to install),
+        // unlike the metadata endpoint above which both roles read.
         AuthMiddleware::requireRole($identity, ['tanod']);
         AuthMiddleware::requireTenant($identity, (int) $barangayId);
 
@@ -327,8 +301,8 @@ final class MapPackagesController
         header('Content-Type: application/octet-stream');
         header('Content-Length: ' . (string) filesize($absolutePath));
         header('Content-Disposition: attachment; filename="' . $filename . '"');
-        // §6: "client verifies SHA-256 before activation" — served here so
-        // that verification needs no second request.
+        // The client verifies SHA-256 before activation; served here so that
+        // verification needs no second request.
         header('X-Checksum-SHA256: ' . $package['checksum_sha256']);
         header('X-Package-Version: ' . $package['version']);
 
@@ -344,9 +318,9 @@ final class MapPackagesController
     /** @return array<string,mixed>|null */
     private static function findPublishedPackage(PDO $pdo, int $barangayId): ?array
     {
-        // Newest published version wins. §5's UNIQUE(barangay_id, version)
-        // permits several versions per barangay; only published ones are
-        // ever offered to a device.
+        // Newest published version wins. UNIQUE(barangay_id, version) permits
+        // several versions per barangay; only published ones are ever offered
+        // to a device.
         $stmt = $pdo->prepare(
             'SELECT package_id, version, file_path, checksum_sha256, byte_size
              FROM offline_map_package

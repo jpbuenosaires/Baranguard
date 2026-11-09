@@ -1,35 +1,24 @@
 /**
- * personnel.js — Personnel (2026-09-05 UX pass): merges the
- * standalone W10-W12 screens (User Management, Shift Scheduler, Swap
- * Requests) into one tabbed screen, the same
- * shared-AppShell/PageHeader/`.page-tabs` tab pattern
- * `sms-monitor.js` already established for Conversations/Activity Log.
+ * personnel.js — Personnel: User Management, Shift Scheduler and Swap
+ * Requests in one tabbed screen, the same shared-AppShell/PageHeader/
+ * `.page-tabs` tab pattern `sms-monitor.js` uses for Conversations/Activity
+ * Log. All three share one domain (staffing) and the role story supports one
+ * screen (see the tab-visibility gating below).
  *
- * Why: all four already lived under the same sidebar "Personnel" group
- * and share one domain (staffing); user asked whether they could just be
- * one screen, and — unlike the Historical Heatmap/Incident Management
- * question asked right before this one — the role story here actually
- * supports it (see the tab-visibility gating below), so this is that
- * merge, not a full rebuild.
- *
- * Each tab's real logic still lives in its own file (users tab ->
+ * Each tab's real logic lives in its own file (users tab ->
  * user-management.js's `renderUsersTab`, etc.) — only the outer
- * AppShell/PageHeader/tab-switching shell is new here.
+ * AppShell/PageHeader/tab-switching shell is here.
  *
- * 2026-10 (docs/FEATURE_CONTRACT_2026-10.md §10): Users gained official title/approval authority
- * editing; Scheduler gained a (read-only since 2026-10-12) availability panel, draft/published badges and
- * a Publish action. Swap requests remain their own tab. Admin sees all
- * three tabs; Secretary sees Scheduler + Swap requests (2026-10-07: the
- * Secretary builds the roster and resolves swaps); Punong Barangay sees the
- * Scheduler only (roster approval lives there).
+ * Users edits official title/approval authority; Scheduler has a read-only
+ * availability panel, draft/published badges and a Publish action. Swap
+ * requests remain their own tab. Admin sees all three tabs; Secretary sees
+ * Scheduler + Swap requests (the Secretary builds the roster and resolves
+ * swaps); Punong Barangay sees the Scheduler only (roster approval lives
+ * there).
  *
- * Sidebar badges (`pendingSwapRequests`)
- * used to live on their own separate nav items via `GET
- * /reports/nav-counts` (Admin only). With those nav items gone, this
- * page fetches the same counts itself and shows them on the matching tab
- * chip instead — same data source, moved from the sidebar to the tab bar.
- *
- * kebab-case filename per §4 (pages/routes convention).
+ * The pending-swap badge (`pendingSwapRequests`, from
+ * `GET /reports/nav-counts`, Admin only) is fetched by this page itself and
+ * shown on the matching tab chip.
  */
 
 import { getNavCounts, getShiftSwapRequests, logout } from '../api/apiClient.js';
@@ -66,7 +55,7 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
   header.appendChild(pageHeader.el);
 
   const isAdmin = user.role === 'admin';
-  // 2026-10-07: the Secretary resolves shift swaps too (the server allows
+  // The Secretary resolves shift swaps too (the server allows
   // GET/PATCH /shift-swap-requests for admin and secretary).
   const canResolveSwaps = isAdmin || user.role === 'secretary';
 
@@ -75,7 +64,7 @@ export function renderPersonnelPage(root, user, onLoggedOut, navigate, param) {
   // Punong Barangay: Scheduler only (roster publishing). The server checks
   // role and approval authority on every action; the Users endpoints are
   // Admin-only. Swap requests stay a tab of their own so they remain one
-  // click from the Scheduler (contract §10).
+  // click from the Scheduler.
   const TABS = [
     isAdmin && { key: 'users', label: 'Users', icon: icons.users },
     { key: 'scheduler', label: 'Scheduler', icon: icons.calendar },

@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# Baranguard — Sprint 4 validation: notification model, Tanod SOS,
+# Baranguard — notification model, Tanod SOS,
 # notification acknowledgment, and dispatch-triggered notifications.
 #
 # ***NO TRANSPORT IS CONFIGURED WHEN THIS RUNS, ON PURPOSE.*** There is no
-# GSM modem, no funded Semaphore account, and no FCM service-account
-# credentials on this machine — and per §2 Rule 12, "no active FCM
+# GSM modem and no FCM service-account credentials here, and "no active FCM
 # registration" and "no configured transport" are legitimate states the
-# model must record honestly rather than paper over. So this suite asserts
-# the LOGICAL layer (§5 notification / notification_target, the
-# entity-integrity matrix, SOS lifecycle, acknowledgment) which is fully
-# determinable without sending anything. Live send/receive stays a
-# workstation task, exactly as Sprint 4's own prompt anticipates.
+# model must record honestly. So this suite asserts the LOGICAL layer
+# (notification / notification_target, the entity-integrity matrix, SOS
+# lifecycle, acknowledgment), which is determinable without sending
+# anything. Live send/receive is checked on a workstation.
 #
 # Safe to run: disposable database, disposable app-user, disposable test
 # accounts, throwaway port. The real `baranguard` database and
@@ -32,10 +30,8 @@ expect_eq() { if [ "$1" = "$2" ]; then pass "$3 ($2)"; else fail "$3 — expecte
 expect_contains() { case "$1" in *"$2"*) pass "$3";; *) fail "$3 — '$2' not in: $1";; esac; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -51,12 +47,8 @@ echo "Baranguard Sprint 4 validation — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for c in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$c" ] && { echo "$c"; return; }
   done
@@ -90,13 +82,12 @@ mysql_exec -e "SELECT VERSION();" >/dev/null && pass "Connected to MariaDB" || {
 mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0001_baseline_schema.sql" && pass "0001 applied" || fail "0001 failed"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0002_seed_barangays.sql" >/dev/null && pass "barangays seeded" || fail "seed failed"
-# 0007: DevicesController writes mobile_device.deactivated_at (§11's
-# 90-day device-retention clock), so any suite that registers a device
+# 0007: DevicesController writes mobile_device.deactivated_at (the
+# device-retention clock), so any suite that registers a device
 # needs the column present.
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0007_retention_columns.sql" >/dev/null && pass "0007 applied" || fail "0007 failed"
 
-# FULL CHAIN — see verify-sprint1-auth.sh's note. This suite applied a
-# partial schema and so 500'd at login from 2026-09-05 onward.
+# Apply the full migration chain, not a subset.
 for m in $(cd "$BACKEND_DIR/migrations" && ls [0-9]*.sql | grep -v '\.down\.sql$' | sed 's/\.sql$//' | sort | awk -v s=0003_shift_schedule_nullable_user '$0 >= s'); do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
@@ -113,7 +104,7 @@ INSERT INTO user (barangay_id, username, password_hash, full_name, role, is_acti
  (1,'s4_secretary','$HASH','S4 Secretary','secretary',1,UTC_TIMESTAMP()),
  (2,'s4_admin2','$HASH','S4 Admin Brgy2','admin',1,UTC_TIMESTAMP());
 SQL
-# Duty state drives Rule 27's fan-out: on-duty tanod is a recipient,
+# Duty state drives the SOS fan-out: on-duty tanod is a recipient,
 # off-duty one must NOT be.
 mysql_exec "$VALDB" <<SQL
 INSERT INTO duty_status (user_id,status,channel,client_event_id,changed_at) VALUES
@@ -152,8 +143,7 @@ body_of() {
 }
 jget() { "$PHP_BIN" -r '$d=json_decode(file_get_contents("php://stdin"),true); echo $d["'"$1"'"] ?? "";'; }
 db_one() { # single scalar, with ONE retry.
-  # Observed twice across this repo's suites (once in verify-sprint6.sh's
-  # audit-row check, once here): a COUNT query returns an EMPTY string
+  # A COUNT query returns an EMPTY string
   # rather than a number, late in a long script, and is not reproducible in
   # isolation. An empty result from `mysql -N -s` means the client failed,
   # not that the count was zero. The likely cause is connection churn —
@@ -184,7 +174,7 @@ SOS_ID=$(echo "$SOS" | jget sos_id)
 expect_eq "$(echo "$SOS" | jget status)" "active" "New SOS is active"
 expect_contains "$SOS" "received_at" "Response carries received_at"
 expect_eq "$(db_one "SELECT COUNT(*) FROM tanod_sos WHERE sos_id=$SOS_ID;")" "1" "SOS row exists in the DB"
-# Rule 27: Admin + OTHER on-duty tanods; never the raiser, never off-duty.
+# SOS fan-out: Admin + OTHER on-duty tanods; never the raiser, never off-duty.
 NOTIF_ID=$(db_one "SELECT notification_id FROM notification WHERE sos_id=$SOS_ID;")
 expect_eq "$(db_one "SELECT notification_type FROM notification WHERE notification_id=$NOTIF_ID;")" "sos" "A 'sos' notification was created"
 expect_eq "$(db_one "SELECT COUNT(*) FROM notification_target WHERE notification_id=$NOTIF_ID;")" "2" "Fan-out targeted exactly 2 people (admin + on-duty tanod)"
@@ -192,9 +182,9 @@ expect_eq "$(db_one "SELECT COUNT(*) FROM notification_target nt JOIN user u ON 
 expect_eq "$(db_one "SELECT COUNT(*) FROM notification_target nt JOIN user u ON u.user_id=nt.user_id WHERE nt.notification_id=$NOTIF_ID AND u.username='s4_tanod_on';")" "1" "On-duty Tanod was targeted"
 expect_eq "$(db_one "SELECT COUNT(*) FROM notification_target nt JOIN user u ON u.user_id=nt.user_id WHERE nt.notification_id=$NOTIF_ID AND u.username='s4_tanod_off';")" "0" "OFF-duty Tanod was NOT targeted"
 expect_eq "$(db_one "SELECT COUNT(*) FROM notification_target nt JOIN user u ON u.user_id=nt.user_id WHERE nt.notification_id=$NOTIF_ID AND u.username='s4_tanod_sos';")" "0" "The RAISER was not alerted to their own SOS"
-# Rule 27: SOS never depends on dispatch triage.
+# SOS never depends on dispatch triage.
 expect_eq "$(db_one "SELECT COUNT(*) FROM incident;")" "0" "Raising an SOS created NO incident (never depends on dispatch triage)"
-# Rule 17: coordinates are a person's location and must not be audited.
+# Coordinates are a person's location and must not be audited.
 expect_eq "$(db_one "SELECT COUNT(*) FROM audit_log WHERE action='tanod_sos_raised' AND metadata_json LIKE '%12.9186%';")" "0" "SOS audit metadata does NOT contain coordinates"
 
 step "4. SOS idempotency"
@@ -207,7 +197,7 @@ step "4b. C-01 — SOS is never blocked on a missing GPS fix"
 RAISER_USER_ID=$(db_one "SELECT user_id FROM user WHERE username='s4_tanod_sos';")
 
 # No latitude/longitude at all, and no prior gps_track row for this user
-# -> the SOS must still be CREATED (Rule 27), with location_source='no_fix'.
+# -> the SOS must still be CREATED, with location_source='no_fix'.
 CE_NOFIX=$(uuid)
 SOS_NOFIX=$(body_of POST /tanod-sos "$RAISER" "{\"client_event_id\":\"$CE_NOFIX\"}")
 echo "  response: $SOS_NOFIX"
@@ -239,7 +229,7 @@ expect_eq "$(status_of PATCH "/tanod-sos/$SOS_ID/acknowledge" "$RAISER")" "403" 
 expect_eq "$(status_of PATCH "/tanod-sos/$SOS_ID/acknowledge" "$ADMIN2")" "404" "Cross-tenant admin gets 404"
 ACK=$(body_of PATCH "/tanod-sos/$SOS_ID/acknowledge" "$ADMIN")
 expect_eq "$(echo "$ACK" | jget status)" "acknowledged" "Acknowledge sets status"
-# §6/§9: acknowledging must NOT resolve — W3's banner keeps showing.
+# Acknowledging must NOT resolve — the dispatch banner keeps showing.
 expect_eq "$(db_one "SELECT resolved_at IS NULL FROM tanod_sos WHERE sos_id=$SOS_ID;")" "1" "Acknowledge did NOT resolve (banner stays up)"
 ACK_AT=$(db_one "SELECT acknowledged_at FROM tanod_sos WHERE sos_id=$SOS_ID;")
 body_of PATCH "/tanod-sos/$SOS_ID/acknowledge" "$ADMIN" >/dev/null
@@ -254,26 +244,20 @@ CE2=$(uuid)
 SOS2=$(body_of POST /tanod-sos "$RAISER" "{\"latitude\":12.92,\"longitude\":123.67,\"client_event_id\":\"$CE2\"}")
 SOS2_ID=$(echo "$SOS2" | jget sos_id)
 N2=$(db_one "SELECT notification_id FROM notification WHERE sos_id=$SOS2_ID;")
-# Admin genuinely IS a target of N2 (Rule 27 fans an SOS out to Admin +
+# Admin genuinely IS a target of N2 (an SOS fans out to Admin +
 # other on-duty Tanods, confirmed in step 3's own "Admin was targeted"
 # assertion above), and acknowledge()/acknowledgeAll() deliberately allow
 # EVERY role to ack its OWN notification_target row -- mobile Tanod:
 # SOS/dispatch targets; web Admin/Secretary/PB: the topbar bell, per
-# index()'s own docblock. This was fixed 2026-09-24 (DEVLOG (9)) after a
-# code review found the role list had invented three nonexistent roles
-# while omitting punong_barangay entirely -- a PB clicking a notification
-# got a silent 403. This assertion used to expect 403 here, which tested
-# the OLD (buggy) role list rather than the endpoint's real, ownership-
-# scoped design; the actual boundary this endpoint enforces is ownership
+# index()'s own docblock. The boundary this endpoint enforces is ownership
 # (nt.user_id = caller), not role -- proven by the very next assertion.
 ADMIN_ACK=$(body_of POST "/notifications/$N2/ack" "$ADMIN" '{}')
 expect_contains "$ADMIN_ACK" '"success":true' "Admin CAN acknowledge their own SOS-fan-out target (ownership-scoped, not role-gated)"
 expect_eq "$(db_one "SELECT ack_status FROM notification_target nt JOIN user u ON u.user_id=nt.user_id WHERE nt.notification_id=$N2 AND u.username='s4_admin';")" "acknowledged" "Admin's own ack_status recorded"
 expect_eq "$(status_of POST "/notifications/$N2/ack" "$OFFDUTY" '{}')" "404" "A Tanod who is NOT a target gets 404 (the real boundary is ownership, not role)"
-# Rule 24: acknowledgment is NOT a transport record — captured BEFORE the
-# ack call, not asserted as a global zero. Since Sprint 4 Phase 2 wired
-# NotificationDispatcher into SOS/dispatch creation, delivery rows now
-# legitimately exist by this point (every SOS raised above already
+# Acknowledgment is NOT a transport record — captured BEFORE the
+# ack call, not asserted as a global zero. NotificationDispatcher runs on
+# SOS/dispatch creation, so delivery rows legitimately exist by this point (every SOS raised above already
 # attempted FCM/SMS and recorded 'failed' rows, since nothing is
 # configured on this machine) — the invariant this step actually checks is
 # narrower and still holds: calling POST /notifications/:id/ack itself
@@ -301,7 +285,7 @@ expect_eq "$(db_one "SELECT COUNT(*) FROM notification_target nt JOIN notificati
 expect_eq "$(db_one "SELECT nt.user_id FROM notification_target nt JOIN notification n ON n.notification_id=nt.notification_id WHERE n.dispatch_id=$DISP_ID;")" "$TANOD_ON_ID" "The target IS the assigned Tanod"
 
 step "8. Entity-integrity matrix is enforced in app code (the ERROR 1901 workaround)"
-# §5's matrix cannot be a CHECK constraint on MariaDB, so NotificationService
+# The entity matrix cannot be a CHECK constraint on MariaDB, so NotificationService
 # enforces it. Prove the DB would happily accept a bad row that the service
 # refuses — i.e. that the app layer is genuinely the thing protecting it.
 BAD=$(mysql_exec "$VALDB" -e "INSERT INTO notification (barangay_id,notification_type,created_at) VALUES (1,'sos',UTC_TIMESTAMP());" 2>&1 && echo "ACCEPTED" || echo "REJECTED")

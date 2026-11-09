@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# Baranguard — device session policy validation (SessionPolicy, migration
-# 0022, architecture decision 2026-09-19 — DEVLOG 2026-09-19 (7)).
+# Baranguard — device session policy validation (SessionPolicy, migration 0022).
 #
 # Proves over real HTTP that:
 #   - a Tanod login carrying a well-formed X-Device-Id gets a DEVICE session
 #     (24h expiry, auth_session.session_kind='device');
 #   - the same login without the header, or with a malformed one, gets a
 #     WEB session (JWT_EXPIRES_IN_MINUTES);
-#   - an Admin sending X-Device-Id gets a DEVICE session too (2026-10-07,
-#     decision 15C, scope-limited elsewhere) while an Admin without the
+#   - an Admin sending X-Device-Id gets a DEVICE session too
+#     (scope-limited elsewhere) while an Admin without the
 #     header keeps the WEB session;
 #   - sliding renewal of a device session never exceeds issued_at + 7 days
 #     (absolute cap), while a web session renews on its own lifetime;
@@ -34,10 +33,8 @@ step() { echo; echo "=== $1 ==="; }
 expect_eq() { if [ "$1" = "$2" ]; then pass "$3 ($2)"; else fail "$3 — expected '$2', got '$1'"; fi; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -53,12 +50,8 @@ echo "Baranguard device-session validation — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for c in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$c" ] && { echo "$c"; return; }
   done

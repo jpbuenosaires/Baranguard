@@ -1,6 +1,6 @@
 import { manilaToday } from './manilaTime';
 
-/** Accomplishment entry form state and duration helpers (moved out of accomplishments.tsx, Phase 6). */
+/** Accomplishment entry form state and duration helpers (moved out of accomplishments.tsx). */
 export interface FormState {
   workDate: string;
   text: string;

@@ -1,49 +1,21 @@
 /**
- * DateRangePicker — the "Last 7 / 30 / 90 days · Custom range…" control.
+ * DateRangePicker — the "Last 7 / 30 / 90 days · Custom range…" control shared
+ * by Admin Dashboard, Analytics (Heatmap, Reports), SMS Monitor and Audit Log.
+ * Its CSS lives once, in css/components/DateRangePicker.css.
  *
- * Extracted 2026-09-06 by the full UI/UX consistency audit. Five screens
- * (Admin Dashboard, Analytics>Heatmap, Analytics>Reports, SMS Monitor,
- * Audit Log) had each copy-pasted ~120 lines of identical DOM
- * construction, and the copies had drifted apart in every dimension a
- * user can see:
+ * The `document`-level click and keydown listeners are registered ONCE at
+ * module scope and point at whichever instance is currently mounted: main.js
+ * rebuilds #app wholesale on every navigate(), so listeners added inside a
+ * page render function would pile up one pair per navigation (the same idiom
+ * AppShell.js uses for its search widget).
  *
- *   - option sets      7/30/90/custom vs. the same + "All time"
- *   - default          "30" on three screens, "7" on Audit Log
- *   - ellipsis         "Custom range..." vs. "Custom range…"
- *   - field labels     "From"/"To" vs. "From Date"/"To Date"
- *   - popover title    "Custom Date Range" vs "Select Custom Date Range"
- *   - one screen labelled its default option "Last 7 days (Default)"
- *   - Audit Log swapped the shared select styling for a bespoke wrapper
- *     plus a JS-injected chevron, and used a <div> error element with
- *     inline style.cssText where everyone else used .app-inline-error
- *
- * Worse, the CSS was triplicated too — admin-dashboard.css, audit-log.css
- * and sms-monitor.css each defined the SAME global `.date-range-popover*`
- * classes, so link order (audit-log.css is last) silently decided how the
- * control looked on all five screens. That CSS now lives once, in
- * css/components/DateRangePicker.css.
- *
- * Two real bugs were fixed while consolidating, both present in all five
- * copies:
- *
- *   1. Each copy registered `document`-level click and keydown listeners
- *      inside the page render function and never removed them. main.js
- *      rebuilds #app wholesale on every navigate(), so those piled up one
- *      pair per navigation for the life of the tab. This module registers
- *      ONE pair at module scope and points them at whichever instance is
- *      currently mounted — the same idiom AppShell.js uses for its search
- *      widget, and for the same reason.
- *
- *   2. "Today" was computed with `new Date().toISOString().slice(0,10)`,
- *      which is a UTC date. Between 00:00 and 08:00 Asia/Manila that is
- *      YESTERDAY, so for eight hours of every day the presets silently
- *      requested a window ending one day early. Day boundaries here are
- *      now taken against a fixed +08:00, matching the rule the backend
- *      already follows (working reference §2 rule 11: timestamps stored
- *      UTC, day-bucketing done against a fixed +08:00, never CONVERT_TZ).
+ * "Today" is computed against a fixed +08:00 (Asia/Manila), not
+ * `new Date().toISOString().slice(0,10)`, which is a UTC date and is
+ * YESTERDAY between 00:00 and 08:00 Manila. Timestamps are stored UTC and
+ * day-bucketing is done against a fixed +08:00, never CONVERT_TZ.
  */
 
-/** Fixed +08:00, per working reference §2 rule 11. */
+/** Fixed +08:00 (Asia/Manila). */
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 /** Today's date in Asia/Manila as YYYY-MM-DD. */
@@ -58,13 +30,11 @@ export function manilaDaysAgoIso(n) {
 
 /**
  * Preset -> how many days back the window STARTS, inclusive of today.
- * "Last 7 days" is today plus the six before it, which is what every copy
- * of this control already computed (and what audit-log.js's
- * getPastDateISO(days) expressed as `days - 1`).
+ * "Last 7 days" is today plus the six before it.
  */
 const PRESET_DAYS_AGO = { 7: 6, 30: 29, 90: 89 };
 
-/** "2026-09-04" -> "Sep 4", for the selected-custom-range option label. */
+/** "YYYY-MM-DD" -> "Sep 4", for the selected-custom-range option label. */
 function shortDate(iso) {
   if (!iso) return '';
   const [, m, d] = iso.split('-');

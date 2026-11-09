@@ -27,10 +27,10 @@ declare(strict_types=1);
  *    only for incidents that were created offline.
  *  - SOS delay = tanod_sos.received_at - triggered_at.
  *  - Dispatch response = incident.created_at to the earliest dispatch.arrived_at
- *    (REFERENCE.md definition, same de-dup as ReportsController / F8).
+ *    (de-duplicated per incident, same as ReportsController).
  *  - Sync batch outcomes come from backend/storage/metrics/sync-*.jsonl, which
- *    exists only for batches processed AFTER the logging was added
- *    (2026-10-10). Duplicates are expected after a retry and are not errors.
+ *    exists only for batches processed while that logging was on. Duplicates
+ *    are expected after a retry and are not errors.
  * Clock skew between phone and server inflates or deflates the delay figures;
  * they are only as good as the phones' clocks.
  */
@@ -153,7 +153,7 @@ $sosStmt = $pdo->prepare('SELECT fallback_channel, COUNT(*) c FROM tanod_sos' . 
 $sosStmt->execute($sinceP);
 $report['sos_by_channel'] = array_column($sosStmt->fetchAll(), 'c', 'fallback_channel');
 
-// Sync batch outcomes (file log, added 2026-10-10).
+// Sync batch outcomes (file log).
 $kinds = [];
 $serverMs = [];
 $batches = 0;

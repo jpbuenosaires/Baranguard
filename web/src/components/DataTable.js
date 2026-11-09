@@ -1,45 +1,34 @@
 /**
- * DataTable — the compact table every list screen in the Figma reference
- * uses (Incidents, Users, Audit Log). Replaces this app's stacked-card
- * lists, which rendered ~90px per row against the reference's ~44px —
- * roughly half the information density, and the main reason the UI read
- * as oversized regardless of font size.
+ * DataTable — the compact table every list screen uses (Incidents, Users,
+ * Audit Log); roughly half the row height of stacked-card lists.
  *
- * Renders a real <table> (not divs) so it stays navigable to screen
- * readers and keyboard users, with scope="col" headers per §8's
- * accessibility rules. Column headers are uppercase 12px grey on a
- * --color-bg header row; body rows divide with --color-divider and
- * highlight on hover.
+ * Renders a real <table> (not divs) so it stays navigable to screen readers
+ * and keyboard users, with scope="col" headers. Column headers are uppercase
+ * 12px grey on a --color-bg header row; body rows divide with --color-divider
+ * and highlight on hover.
  *
- * Wraps itself in a horizontally scrollable container — §8 requires wide
- * content to scroll inside its own box rather than push the page into a
- * horizontal scroll.
+ * Wraps itself in a horizontally scrollable container so wide content scrolls
+ * inside its own box rather than pushing the page into a horizontal scroll.
  *
- * Column sorting (§3.3 of the UI/UX review) is CLIENT-SIDE ONLY, sorting
- * the `rows` array already handed to this component — deliberately not
- * wired to any API `page`/`limit`/`sort` param, since that would need
- * per-endpoint verification this pass didn't do (some list endpoints
- * paginate, not all are confirmed to). A column opts in with `sortable:
- * true` plus a `sortValue(row)` accessor — required per sortable column
- * rather than defaulting to `row[key]`, because this codebase's column
+ * Column sorting is CLIENT-SIDE ONLY, sorting the `rows` array already handed
+ * to this component — deliberately not wired to any API `page`/`limit`/`sort`
+ * param (some list endpoints paginate, not all are confirmed to). A column
+ * opts in with `sortable: true` plus a `sortValue(row)` accessor — required
+ * per sortable column rather than defaulting to `row[key]`, because column
  * `key`s (e.g. `'reported'`) frequently don't match the underlying row
- * property name (`createdAt`) the way `renderCell`'s own switch already
- * demonstrates.
+ * property name (`createdAt`), as `renderCell`'s own switch shows.
  *
- * Pagination (§3.3), when the caller passes all four of `page`/
- * `totalItems`/`pageSize`/`onPageChange`, renders a real Prev/Next +
- * "Page X of Y" footer that calls back into the PAGE's own `load()` — this
- * component never invents client-side pagination on top of an
- * already-fetched, already-capped array; `rows` is always exactly what the
- * caller's own API call for the CURRENT page returned. Omit all four (the
- * default) and no footer renders at all — every pre-existing DataTable
- * usage is unaffected.
+ * Pagination, when the caller passes all four of `page`/`totalItems`/
+ * `pageSize`/`onPageChange`, renders a real Prev/Next + "Page X of Y" footer
+ * that calls back into the PAGE's own `load()` — this component never
+ * invents client-side pagination on top of an already-fetched, already-capped
+ * array; `rows` is always exactly what the caller's API call for the CURRENT
+ * page returned. Omit all four (the default) and no footer renders at all.
  *
- * Empty state (§3.3): when `rows.length === 0` AND `emptyMessage` was
- * passed, a single centred row (optional icon + message) renders inside
- * the table itself instead of an empty <tbody> — opt-in, so a page that
- * already renders its own empty-state block instead of the table entirely
- * (the established pattern before this) keeps working exactly as before.
+ * Empty state: when `rows.length === 0` AND `emptyMessage` was passed, a
+ * single centred row (optional icon + message) renders inside the table
+ * itself instead of an empty <tbody> — opt-in, so a page that renders its own
+ * empty-state block instead of the table keeps working.
  *
  * @param {{
  *   columns: Array<{key:string, label:string, align?:'left'|'right', width?:string, sortable?:boolean, sortValue?:(row:object)=>(string|number)}>,
@@ -57,7 +46,7 @@
  * @returns {HTMLElement}
  */
 
-// --- String cells are sanitized, not trusted (audit 2026-10-09 V-12) -------
+// --- String cells are sanitized, not trusted --------------------------------
 // `renderCell` may return a string, and callers use that for small static
 // markup ('<span class="text-tertiary">—</span>'). Trusting it as raw
 // innerHTML meant any caller that returned server text unescaped was a stored
@@ -110,14 +99,9 @@ export function DataTable({
   const wrapper = document.createElement('div');
   wrapper.className = 'data-table-wrap';
 
-  // §3.3/§6.2 of the UI/UX review: a real row-count line, announced to
-  // screen readers via aria-live so a filter/reload/sort that changes
-  // which rows are showing is actually heard, not just seen. Visually
-  // hidden (sr-only) rather than a visible header line — this pass adds
-  // the announcement itself; a VISIBLE "Showing X-Y of Z" summary with
-  // real pagination is Phase 4's own dedicated work once the caller
-  // passes total/page state through (not yet true for every DataTable
-  // usage, so this only ever counts what it was actually given).
+  // A real row-count line, announced to screen readers via aria-live so a
+  // filter/reload/sort that changes which rows are showing is heard, not just
+  // seen. Visually hidden (sr-only); it only ever counts what it was given.
   const summary = document.createElement('p');
   summary.className = 'sr-only';
   summary.setAttribute('role', 'status');
@@ -154,7 +138,7 @@ export function DataTable({
     if (col.align === 'right') th.classList.add('is-right');
     if (col.width) th.style.width = col.width;
 
-    // audit A8: sorting is client-side over `rows`, which is exactly ONE
+    // Sorting is client-side over `rows`, which is exactly ONE
     // page when the caller paginates server-side. Reordering 25 of 30 rows
     // and presenting it as a sorted table is worse than not offering the
     // control, so sorting is suppressed entirely while paginated — until
@@ -192,12 +176,10 @@ export function DataTable({
     for (const [key, button] of Object.entries(headerButtons)) {
       const icon = button.querySelector('.data-table__sort-icon');
       const active = sort.key === key;
-      // audit A10: aria-sort belongs on the column header cell, not on a
-      // button inside it. Sitting on the button, no screen reader reported
-      // the sort state at all — the feature was invisible to exactly the
-      // users it was added for.
+      // aria-sort belongs on the column header cell, not on a button inside
+      // it: on the button, no screen reader reports the sort state.
       headerCells[key].setAttribute('aria-sort', active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none');
-      // audit A12: a neutral glyph at rest, so a sortable column is
+      // A neutral glyph at rest, so a sortable column is
       // identifiable as sortable BEFORE it has been clicked once.
       icon.textContent = active ? (sort.direction === 'asc' ? '▲' : '▼') : '↕';
       icon.classList.toggle('is-active', active);
@@ -260,11 +242,8 @@ export function DataTable({
         }
       }
 
-      // audit A11: this used to set role="button" + tabindex on the <tr>
-      // itself, which overrides the row role — the cells stop being
-      // associated with their column headers, so a screen-reader user
-      // hears a flat run of values with no idea which column each belongs
-      // to. Worse than a plain row.
+      // role="button" + tabindex on the <tr> itself would override the row
+      // role, so the cells stop being associated with their column headers.
       // The row stays a row. The FIRST CELL gets a real button carrying
       // the accessible name, which is the keyboard/AT activator; the
       // row-level click handler stays as a mouse convenience only.
@@ -349,7 +328,7 @@ export function DataTable({
 }
 
 /**
- * §3.3 of the UI/UX review — one shared CSV export used by every page that
+ * One shared CSV export used by every page that
  * wants a Download button, rather than each page hand-rolling its own
  * serialization. Exports exactly the ROWS the caller currently has loaded
  * (whatever a filter/pagination/sort left them with) — never a second
@@ -401,12 +380,11 @@ export function exportRowsToCsv(columns, rows, filename) {
 }
 
 /**
- * audit A9: an "Export CSV" button next to a server-paginated table wrote
- * only the loaded page — 25 of 30 rows on the SMS log — with nothing
- * saying the file was partial. A quiet data-loss trap for anyone building
- * a report from it.
+ * An "Export CSV" button next to a server-paginated table would write only
+ * the loaded page (e.g. 25 of 30 rows) with nothing saying the file is
+ * partial.
  *
- * The button now states what it will actually write. Callers pass the
+ * The button states what it will actually write. Callers pass the
  * rows they hold; if that is fewer than the server's total, the label
  * says so rather than the file quietly disagreeing with the screen.
  *

@@ -1,17 +1,14 @@
 /**
- * school-checkin.tsx — School check-in / check-out (Safer School Zones,
- * contract §7, §9).
+ * school-checkin.tsx — School check-in / check-out (Safer School Zones).
  *
- * A Tanod posted at a school taps Check In (and later Check Out); the desk
- * counts deployment days from these. Everything is OFFLINE-SAFE: the school
- * picker reads the cached `school_local` list (filled on login/resume/sync),
- * and each tap persists to encrypted SQLite before the screen reacts (Rule 7).
- * The chip on every row says only what that row can prove — "Saved on phone"
- * until the server has confirmed it, including a check-out that is still
- * waiting to be sent (contract §7's close-by-reference item).
+ * A Tanod posted at a school taps Check In (and later Check Out); the desk counts deployment days from
+ * these. Everything is OFFLINE-SAFE: the school picker reads the cached `school_local` list (filled on
+ * login/resume/sync), and each tap persists to encrypted SQLite before the screen reacts. The chip on
+ * every row says only what that row can prove, "Saved on phone" until the server has confirmed it,
+ * including a check-out still waiting to be sent (the close-by-reference item).
  *
- * No coordinates are captured or stored for a check-in (the server stores
- * none), and nothing about students is ever recorded.
+ * No coordinates are captured or stored for a check-in (the server stores none), and nothing about
+ * students is ever recorded.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';

@@ -1,41 +1,21 @@
 /**
- * evidenceCapture.ts — the native-plugin edge for M3's photo/voice
- * attachment capture (§9 M3: "Voice/photo files use app-private
- * storage").
+ * evidenceCapture.ts — the native-plugin edge for photo/voice attachment capture.
  *
- * Deliberately mirrors `localDatabase.ts`'s split: this file is the thin
- * platform edge (Capacitor Camera / Filesystem / voice-recorder plugin
- * calls), while `evidenceRepository.ts` owns the SQLite write.
- * Device-verified 2026-09-23 on the Infinix X6840 (A1 #3): photo capture
- * worked first try; voice recording did NOT — `stopVoiceRecording()` was
- * calling `Filesystem.stat()`/`readFile()` on the voice-recorder plugin's
- * own returned `path` with no `directory` option, but that `path` is
- * relative to `Directory.Data`, not an absolute URI (confirmed by reading
- * `capacitor-voice-recorder`'s `VoiceRecorder.java`, not assumed) — fixed
- * by passing `directory: Directory.Data` through and returning `stat.uri`
- * instead of the plugin's raw relative path. Re-verify on device before
- * closing A1 #3.
+ * Deliberately mirrors `localDatabase.ts`'s split: this file is the thin platform edge (Capacitor
+ * Camera / Filesystem / voice-recorder plugin calls), while `evidenceRepository.ts` owns the SQLite
+ * write.
  *
- * Every captured file lands under `Directory.Data` (§5/§9: app-private,
- * deleted on uninstall — never the public Documents/gallery directory),
- * and every result carries the SHA-256 of the actual bytes on disk, not a
- * value trusted from the plugin — the same "verify, don't assume"
- * discipline `evidenceRepository.ts`'s eventual upload path will depend
- * on.
+ * Every captured file lands under `Directory.Data` (app-private, deleted on uninstall, never the public
+ * Documents/gallery directory), and every result carries the SHA-256 of the actual bytes on disk, not a
+ * value trusted from the plugin: verify, don't assume.
  *
- * PHOTO COMPRESSION (Mobile Improvement Plan Phase 3.1): camera sensors
- * commonly produce 4-8MB originals; a barangay's WiFi/hotspot sync
- * shouldn't have to move that much per photo for a record that only
- * needs to stay legible, not print-resolution. `capturePhoto()` downsamples
- * to a 1600px max dimension and re-encodes as JPEG @ 0.75 quality via an
- * in-memory `<canvas>` BEFORE the file ever touches disk — the SHA-256 is
- * computed over the compressed bytes actually written, same as before. If
- * compression fails for any reason (a WebView/canvas limitation on some
- * device), the ORIGINAL uncompressed capture is saved instead of losing
- * the photo — still real evidence, just larger, never silently dropped.
- * Voice notes are NOT compressed: AAC recordings are already compact
- * relative to a multi-MB camera photo, so there is no equivalent problem
- * to solve there.
+ * PHOTO COMPRESSION: camera sensors commonly produce 4-8MB originals, and sync over a barangay's
+ * WiFi/hotspot shouldn't move that much per photo for a record that only needs to stay legible.
+ * `capturePhoto()` downsamples to a 1600px max dimension and re-encodes as JPEG @ 0.75 quality via an
+ * in-memory `<canvas>` BEFORE the file touches disk; the SHA-256 is computed over the compressed bytes
+ * actually written. If compression fails (a WebView/canvas limitation on some device), the ORIGINAL
+ * capture is saved instead of losing the photo. Voice notes are NOT compressed: AAC recordings are
+ * already compact.
  */
 
 import { Camera } from '@capacitor/camera';
@@ -203,17 +183,11 @@ export async function stopVoiceRecording(): Promise<StagedAttachment> {
   const { path, mimeType, recordDataBase64 } = result.value;
 
   if (path) {
-    // capacitor-voice-recorder's own VoiceRecorder.java (stopRecording())
-    // returns `path` RELATIVE to the `directory` passed to startRecording()
-    // (here always Directory.Data — see startVoiceRecording() above), e.g.
-    // "evidence/recording-xxxx.aac" — never a full URI, despite this file's
-    // header comment previously assuming otherwise. Confirmed on a real
-    // device 2026-09-23: omitting `directory` here made Filesystem.stat()
-    // treat that relative string as already-absolute and fail with "stat
-    // failed: evidence/recording-... does not exist". `stat.uri` (a real
-    // absolute URI) is what gets returned, not the plugin's own relative
-    // `path` — same convention capturePhoto() and the base64 fallback below
-    // already follow.
+    // capacitor-voice-recorder's VoiceRecorder.java (stopRecording()) returns `path` RELATIVE to the
+    // `directory` passed to startRecording() (here always Directory.Data, see startVoiceRecording()
+    // above), e.g. "evidence/recording-xxxx.aac", never a full URI. Omitting `directory` here made
+    // Filesystem.stat() treat that relative string as already-absolute and fail. `stat.uri` (a real
+    // absolute URI) is what gets returned, same convention capturePhoto() and the base64 fallback follow.
     const stat = await Filesystem.stat({ path, directory: Directory.Data });
     const read = await Filesystem.readFile({ path, directory: Directory.Data });
     const sha256 = await sha256OfBase64(typeof read.data === 'string' ? read.data : '');
@@ -245,8 +219,7 @@ export async function cancelVoiceRecording(): Promise<void> {
 }
 
 /**
- * Deletes a captured attachment's file off disk (Phase 3.3's 30-day
- * cleanup rule) — never the database row, which is
+ * Deletes a captured attachment's file off disk (the 30-day cleanup rule) — never the database row, which is
  * `evidenceRepository.ts`'s job. Tolerant of the file already being gone
  * (a repeat prune pass, or a partial previous run) — that is the
  * intended end state, not a failure.
@@ -261,7 +234,7 @@ export async function deleteEvidenceFile(filePath: string): Promise<void> {
 
 /**
  * Reads a previously-captured attachment's bytes back off disk, for
- * `syncService.ts`'s evidence-upload step (Phase 3.2). `filePath` here is
+ * `syncService.ts`'s evidence-upload step. `filePath` here is
  * always the FULL URI `StagedAttachment.filePath` already carries (both
  * capture paths above return `stat.uri`, not a `Directory.Data`-relative
  * path), so no `directory` option is passed — same convention

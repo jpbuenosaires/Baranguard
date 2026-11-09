@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
-# Baranguard — Sprint 4 Phase 2+3 validation: FCM/SMS transport, the Rule 12
+# Baranguard — FCM/SMS transport validation: the FCM-to-SMS
 # fallback ladder, the 60s ack-timeout worker, device secret provisioning,
 # encrypted SMS envelopes, the internal-only /internal/sms/* router, and
 # GET /sms/logs.
 #
-# ***NO LIVE FCM/SEMAPHORE CREDENTIALS ARE USED.*** There is still no
-# funded Firebase project or Semaphore account on this machine. That is
-# exactly why this suite is worth running anyway: FcmClient/SemaphoreClient
-# both being "not configured" is itself a real, fully-deterministic code
-# path (Rule 12's own "if no active FCM registration, go straight to SMS"
-# and "FCM error -> retry once -> SMS on second failure" apply IDENTICALLY
-# whether the failure is "not configured" or "the real service rejected
-# it"), so every branch of the ladder is genuinely exercised here — only
-# the very last hop (an actual byte over the wire to Google/Semaphore) is
-# unverified. DEVICE_SECRET_MASTER_KEY and INTERNAL_SERVICE_TOKEN, by
+# ***NO LIVE FCM CREDENTIALS ARE USED.*** FcmClient being "not configured"
+# is itself a real, fully-deterministic code path ("no active FCM
+# registration -> straight to SMS" and "FCM error -> retry once -> SMS on
+# second failure" apply IDENTICALLY whether the failure is "not configured"
+# or "the real service rejected it"), so every branch of the ladder is
+# exercised here — only the very last hop (an actual byte over the wire to
+# Google) is unverified. DEVICE_SECRET_MASTER_KEY and INTERNAL_SERVICE_TOKEN, by
 # contrast, ARE fully local secrets this suite generates and uses for
 # real — envelope crypto and the internal router are verified completely.
 #
@@ -37,10 +34,8 @@ expect_contains() { case "$1" in *"$2"*) pass "$3";; *) fail "$3 — '$2' not in
 expect_not_contains() { case "$1" in *"$2"*) fail "$3 — '$2' unexpectedly in: $1";; *) pass "$3";; esac; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -57,12 +52,8 @@ echo "Baranguard Sprint 4 Phase 2+3 validation — $(date -u +%Y-%m-%dT%H:%M:%SZ
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for c in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$c" ] && { echo "$c"; return; }
   done
@@ -96,15 +87,14 @@ mysql_exec -e "SELECT VERSION();" >/dev/null && pass "Connected to MariaDB" || {
 mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0001_baseline_schema.sql" && pass "0001 applied" || fail "0001 failed"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0002_seed_barangays.sql" >/dev/null && pass "barangays seeded" || fail "seed failed"
-# 0007: DevicesController writes mobile_device.deactivated_at (§11's
-# 90-day device-retention clock), so any suite that registers a device
+# 0007: DevicesController writes mobile_device.deactivated_at (the
+# device-retention clock), so any suite that registers a device
 # needs the column present.
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0007_retention_columns.sql" >/dev/null && pass "0007 applied" || fail "0007 failed"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0005_sms_envelope_replay.sql" && pass "0005 (sms_envelope_replay) applied" || fail "0005 failed"
 mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/0006_sms_log_barangay.sql" && pass "0006 (sms_log.barangay_id) applied" || fail "0006 failed"
 
-# FULL CHAIN — see verify-sprint1-auth.sh's note. This suite applied a
-# partial schema and so 500'd at login from 2026-09-05 onward.
+# Apply the full migration chain, not a subset.
 for m in $(cd "$BACKEND_DIR/migrations" && ls [0-9]*.sql | grep -v '\.down\.sql$' | sed 's/\.sql$//' | sort | awk -v s=0003_shift_schedule_nullable_user '$0 >= s' | grep -v -E '^000[567]_'); do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
@@ -131,7 +121,7 @@ export DEVICE_SECRET_MASTER_KEY="$("$PHP_BIN" -r 'echo bin2hex(random_bytes(32))
 # FCM_SERVICE_ACCOUNT_PATH is exported EMPTY (not merely unset): config/env.php
 # never overrides an already-set variable, so an empty export beats a real
 # service account in backend/.env and genuinely exercises the not-configured
-# path regardless of what credentials this machine has. SEMAPHORE_API_KEY unset.
+# path regardless of what credentials this machine has.
 export FCM_SERVICE_ACCOUNT_PATH=''
 # Same for the SMS gateway: a real .env switches it on, and then this suite would drive the REAL
 # gateway phone (adb) instead of exercising the not-configured path it asserts below.
@@ -424,7 +414,7 @@ step "17c. An SOS whose first attempt failed after the replay row was written is
 CE_ENV8=$(uuid)
 ENV8=$("$PHP_BIN" "$BACKEND_DIR/scripts/sms-envelope-build.php" --secret="$KEY1" --device-id="$DEV1" --type=sos --payload='{"latitude":12.98,"longitude":123.68}' --client-event-id="$CE_ENV8")
 MSG8=$(echo "$ENV8" | jget message_id)
-# Simulates the old failure: replay row committed, then a 500 before the SOS row existed.
+# Simulates a failed first attempt: replay row committed, then a 500 before the SOS row existed.
 mysql_exec "$VALDB" -e "INSERT INTO sms_envelope_replay (message_id, device_id, received_at) VALUES ('$MSG8', '$DEV1', UTC_TIMESTAMP());"
 SOS_RETRY_STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$INTERNAL_URL/sms/sos" -H "X-Internal-Token: $INTERNAL_SERVICE_TOKEN" -H "Content-Type: application/json" -d "$ENV8")
 expect_eq "$SOS_RETRY_STATUS" "200" "The retried SOS envelope answers 200"

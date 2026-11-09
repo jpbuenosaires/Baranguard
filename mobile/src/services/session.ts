@@ -1,23 +1,17 @@
 /**
- * session.ts — on-device auth session storage (§2 Rule 9).
+ * session.ts — on-device auth session storage.
  *
- * Stored via @capacitor/preferences, which is Android SharedPreferences
- * under the hood: app-private, and not reachable from any script running
- * inside the WebView the way `localStorage` would be. A 15-minute JWT is
- * short-lived but still a credential, so it gets the same app-private
- * treatment §9 M3 already requires for voice/photo evidence.
+ * Stored via @capacitor/preferences (Android SharedPreferences): app-private, and not reachable from any
+ * script in the WebView the way `localStorage` would be. A 15-minute JWT is short-lived but still a
+ * credential.
  *
- * Rule 9 specifics honored here:
- *   - "Sliding renewal may extend a still-valid session; the server emits
- *     the newest token with a non-decreasing expiry, and the client must
- *     keep the token with the latest expiry." → `storeRenewedToken()`
- *     refuses to replace a stored token with one that expires EARLIER,
- *     so an out-of-order response can never roll the session backwards.
- *   - "An expired/revoked session is never revived." → nothing here
- *     re-creates a session; only a fresh login writes one.
- *   - "offline mobile capture is unaffected" by session expiry → this
- *     module is deliberately not consulted by the local-capture path.
- *     Losing a session must never block writing to incident_local.
+ *   - Sliding renewal may extend a still-valid session; the server emits the newest token with a
+ *     non-decreasing expiry, and the client keeps the token with the latest expiry: `storeRenewedToken()`
+ *     refuses to replace a stored token with one that expires EARLIER, so an out-of-order response can
+ *     never roll the session backwards.
+ *   - An expired/revoked session is never revived: only a fresh login writes one.
+ *   - Offline capture is unaffected by session expiry: the local-capture path never consults this
+ *     module. Losing a session must never block writing to incident_local.
  */
 
 import { Preferences } from '@capacitor/preferences';
@@ -41,8 +35,7 @@ let cached: StoredSession | null = null;
  * Reads the `exp` claim without verifying the signature — the client
  * cannot verify (it has no secret) and must not pretend to. This is used
  * only to decide local expiry/renewal ordering; every actual
- * authorization decision is the server's (§2 Rule 6: "Client-side hiding
- * is UX only").
+ * authorization decision is the server's (client-side hiding is UX only).
  */
 export function readTokenExpiry(token: string): number {
   const parts = token.split('.');
@@ -77,7 +70,7 @@ export async function saveSession(session: StoredSession): Promise<void> {
 
 /**
  * Applies a sliding-renewal token from an `X-Renewed-Token` response
- * header. Keeps whichever token expires LATER, per Rule 9.
+ * header. Keeps whichever token expires LATER.
  */
 export async function storeRenewedToken(token: string): Promise<void> {
   const current = await loadSession();
@@ -109,30 +102,22 @@ export async function hasLiveSession(): Promise<boolean> {
 }
 
 /**
- * True if ANY session is stored, expired or not. This is what the app
- * shell gates on (App.tsx `RequireSession`) — decided 2026-09-19 after a
- * real device run: a Tanod out of workstation range for >15 minutes
- * (Rule 9's JWT TTL) who cold-started the app was sent to Login and
- * could not sign in offline, losing access to their cached dispatches,
- * the offline map and My Reports until back on the LAN. The server
- * still rejects the stale token on every request (nothing here revives
- * a session, Rule 9 holds), and `apiService.request()`'s 401 handling
- * clears it and redirects to Login the moment the workstation is
- * reachable again; the phone just no longer pre-empts that locally
- * while the only thing it can show is its own cache.
+ * True if ANY session is stored, expired or not. This is what the app shell gates on (App.tsx
+ * `RequireSession`): a Tanod out of workstation range for >15 minutes who cold-started the app would
+ * otherwise be sent to Login and unable to sign in offline, losing their cached dispatches, the offline
+ * map and My Reports. The server still rejects the stale token on every request (nothing here revives
+ * a session), and `apiService.request()`'s 401 handling clears it and redirects to Login the moment the
+ * workstation is reachable again.
  */
 export async function hasStoredSession(): Promise<boolean> {
   return (await loadSession()) !== null;
 }
 
 /**
- * Session-expiry notification — `apiService.ts`'s `request()` is the one
- * place that actually learns a session died server-side (a 401 on an
- * authenticated call), but it has no router context to act on that. A
- * single listener, registered once near the app root, is how it tells the
- * UI to leave whatever screen it's on and go back to `/login`, instead of
- * every screen's own catch block guessing at what a 401 means (the gap
- * this was built to close — see DEVLOG.md).
+ * Session-expiry notification — `apiService.ts`'s `request()` is the one place that learns a session
+ * died server-side (a 401 on an authenticated call), but it has no router context to act on that. A
+ * single listener, registered once near the app root, tells the UI to leave the current screen and go
+ * back to `/login`, instead of every screen's catch block guessing what a 401 means.
  */
 let sessionExpiredListeners: Array<() => void> = [];
 

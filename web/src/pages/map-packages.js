@@ -1,25 +1,20 @@
 /**
- * map-packages.js — W18 Map Package Management
- *
- * §9: "Roles: Admin only · API: GET /map-packages/:barangay_id,
- * POST /map-packages — Shows only the Admin's own barangay package.
- * Displays published version/checksum and upload validation result."
- * Scope is metadata + upload only — the Tanod-only `/download` route is
- * not surfaced here (an Admin has no offline map to install).
+ * map-packages.js — Map Package Management. Admin only; GET
+ * /map-packages/:barangay_id, POST /map-packages. Shows only the Admin's own
+ * barangay package: published version/checksum and upload validation result.
+ * Scope is metadata + upload only — the Tanod-only `/download` route is not
+ * surfaced here (an Admin has no offline map to install).
  *
  * No published package is a normal empty state (server 404), not an
  * error — `getMapPackage` in apiClient.js already collapses that to
  * `null` for this screen to render honestly rather than alarmingly.
  *
- * Overhauled with:
- * - Baranguard Design Tokens & light/dark theme contrast compliance
- * - Offline Resilience Notice Banner (§2 Rule 14 disaster continuity)
- * - Map Package Quick StatStrip (active version, integrity, sync readiness, max size)
- * - Active Published Basemap Showcase Card with copyable SHA-256 integrity checksum
- * - Interactive Drag-and-Drop MBTiles Publisher with file inspection and version helper
- * - Offline Basemap Ecosystem & Tanod Field Sync Runbook
- *
- * kebab-case filename per §4.
+ * Features: design tokens and light/dark contrast; an offline-resilience
+ * notice banner; a quick StatStrip (active version, integrity, sync
+ * readiness, max size); an active published basemap card with a copyable
+ * SHA-256 integrity checksum; a drag-and-drop MBTiles publisher with file
+ * inspection and version helper; an offline basemap and Tanod field sync
+ * runbook.
  */
 
 import { getMapPackage, uploadMapPackage, logout, ApiClientError } from '../api/apiClient.js';
@@ -59,7 +54,7 @@ function formatBytes(bytes) {
  * @returns {string}
  */
 function getTodayVersionString() {
-  // Manila calendar day, not the browser's (Rule 11).
+  // Manila calendar day, not the browser's.
   return manilaDateKey(new Date()).replace(/-/g, '.');
 }
 
@@ -593,7 +588,7 @@ export function renderMapPackagesPage(root, user, onLoggedOut, navigate) {
       }
 
       // Publishing replaces the map every Tanod phone downloads next sign-in,
-      // so name what is live now and what will replace it (audit A-30).
+      // so name what is live now and what will replace it.
       let liveVersion = null;
       try { liveVersion = (await getMapPackage(user.barangayId))?.version || null; } catch { /* confirm without it */ }
       const ok = await confirmDialog({

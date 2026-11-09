@@ -1,7 +1,6 @@
 /**
- * syncService.ts — the offline-reconciliation worker (§6 "Sync" section,
- * §5 sync invariants, §10 backlog "auto-sync on reconnect with idempotent
- * reconciliation (S3)").
+ * syncService.ts — the offline-reconciliation worker: auto-sync on reconnect with idempotent
+ * reconciliation.
  *
  * Gathers everything still unsynced across the local domain tables
  * (`incident_local`, `gps_track_local`, the `dispatch_status`/`sos` items
@@ -27,7 +26,7 @@
  * (earlier chunks stay applied; nothing needs unwinding) and propagates. A
  * server-reported per-item 'failed' is different — it counts toward a retry
  * cap (`MAX_SYNC_ATTEMPTS`) so one poison row cannot be re-sent forever;
- * capped rows stay on the device (Rule 2) and surface as "needs attention"
+ * capped rows stay on the device and surface as "needs attention"
  * until a manual `retryNeedsAttention()`. A dispatch-status item the server's
  * rules refuse (`syncFailureClass.ts`: invalid transition, not found, not ours)
  * is DEFINITIVE: it reverts the optimistic local status and refreshes from the
@@ -43,12 +42,12 @@
  * reaches the server before the off-duty that depends on it — the server
  * refuses off-duty while a dispatch is active) and BEFORE accomplishment
  * entries (whose suggested duration is computed from duty_status). A
- * server 'failed' is a permanent rejection (Rule 48): the queue row is
+ * server 'failed' is a permanent rejection: the queue row is
  * marked failed with the reason, `dutyRejected` is reported, and Home
  * re-reads the server's duty status and shows the rejection until the
  * Tanod dismisses it.
  *
- * TANOD WORKFLOW KINDS (2026-10, contract §6/§9): referrals, availability,
+ * TANOD WORKFLOW KINDS: referrals, availability,
  * accomplishment entries and school check-ins ride the same chunked, capped,
  * needs-attention machinery as the older kinds (request keys `referrals`,
  * `availability`, `accomplishment_entries`, `school_checkins`). They go out
@@ -59,7 +58,7 @@
  * After the pass, school list / availability status are refreshed best-effort
  * (`workflowRefresh.ts`) — that read direction never affects the summary.
  *
- * EVIDENCE (Mobile Improvement Plan Phase 3.2, closes F4): drained in a
+ * EVIDENCE: drained in a
  * SEPARATE step after the batches above, not folded into them — evidence
  * upload is a per-file multipart POST (`/incidents/:id/evidence`), not
  * JSON that fits `/sync/batch`'s body shape, and it needs the PARENT
@@ -363,7 +362,7 @@ async function syncChunk(deviceId: string, input: ChunkInput): Promise<ChunkCoun
     client_event_id: row.client_event_id,
   }));
 
-  // Contract §7: an unsynced check-in goes out as ONE create item (with any
+  // An unsynced check-in goes out as ONE create item (with any
   // check-out merged in); an already-synced one is closed by a NEW item that
   // references it — re-sending the same event id would be answered 'duplicate'.
   const schoolCheckinItems: SyncSchoolCheckinItem[] = schoolCheckins.map(({ row, kind }) =>

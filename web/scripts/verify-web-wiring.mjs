@@ -1,14 +1,13 @@
 /**
  * verify-web-wiring.mjs — static wiring checks for the web dashboard.
  *
- * WHY THIS EXISTS: this stack has no bundler and no test runner (§1 — plain
- * ES modules loaded straight from index.html), so nothing catches a broken
+ * WHY THIS EXISTS: this stack has no bundler and no test runner (plain ES
+ * modules loaded straight from index.html), so nothing catches a broken
  * import or a CSS class that was never defined until a human opens the page
- * and sees a blank screen. A real bug of exactly that kind was made while
- * building W8 in Sprint 6: `className = 'muted'` / `'card__header'` /
- * `'card__actions'` — all classes that exist in the MOBILE app's
- * theme/app.css, not the web dashboard's base.css. They would have
- * rendered as unstyled text with no error anywhere.
+ * and sees a blank screen. For example, `className = 'muted'` /
+ * `'card__header'` / `'card__actions'` are classes that exist in the MOBILE
+ * app's theme/app.css, not the web dashboard's base.css; they would render
+ * as unstyled text with no error anywhere.
  *
  * That class of bug is invisible to `node --check`, which only parses
  * syntax. This script closes the gap WITHOUT a browser, a bundler, or a
@@ -23,9 +22,9 @@
  *
  * WHAT IT DOES NOT CHECK (stated so nobody mistakes a pass for more than
  * it is): runtime behaviour, DOM structure, or whether a screen looks
- * right. Notably it also does NOT catch undefined identifiers — the other
- * W8 bug was `${API_BASE_URL}` where the constant is actually named
- * `BASE_URL`, a ReferenceError that only fires when that line runs.
+ * right. Notably it also does NOT catch undefined identifiers, e.g.
+ * `${API_BASE_URL}` where the constant is actually named `BASE_URL`, a
+ * ReferenceError that only fires when that line runs.
  * Catching that needs real scope analysis (i.e. a linter), which is a
  * dependency this project has deliberately not taken on. This is a wiring
  * check, not a test suite; a browser pass remains the only thing that
@@ -207,7 +206,7 @@ if (unknownByFile.size === 0) {
 }
 
 // ---------------------------------------------------------------------------
-// 2b. Typography guard (2026-10-17 font cleanup): one typeface (Inter), four
+// 2b. Typography guard: one typeface (Inter), four
 // weights (400/500/600/700), sizes only from the token scale. Monospace is
 // allowed ONLY for true code: the audit JSON viewer, the Service Health
 // runbook box and the evidence hash.

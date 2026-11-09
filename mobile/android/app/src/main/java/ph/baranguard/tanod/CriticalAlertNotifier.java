@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * CriticalAlertNotifier — shared by `CriticalAlertMessagingService.java`
  * (a real incoming critical push) and `FullScreenAlertPlugin.java` (the
  * JS-callable test trigger, since no real FCM project exists to exercise
- * the first path — REMAINING.md A4) so there is exactly one place that
+ * the first path) so there is exactly one place that
  * builds this notification, not two drifting copies.
  *
  * `setFullScreenIntent(..., true)` is the actual mechanism: Android shows
@@ -34,12 +34,9 @@ final class CriticalAlertNotifier {
     // "_v2": a NotificationChannel's sound/vibration/importance are locked
     // by Android the moment it's first created — the app can never change
     // them on a channel ID that already exists on a device (only the user
-    // can, from system settings). This app has already shipped
-    // `baranguard_critical_alert` (silent-by-default) to test devices, so
-    // 2026-09-24's alarm-sound/vibration fix needs a NEW channel ID to
-    // actually take effect on them — bumping to "_v2" rather than deleting
-    // and recreating the old ID, which would need extra code for no benefit
-    // here (no per-channel user customization to preserve yet).
+    // can, from system settings). The earlier silent
+    // `baranguard_critical_alert` channel was already on test devices, so the
+    // alarm-sound/vibration settings need a NEW channel ID to take effect.
     private static final String CHANNEL_ID = "baranguard_critical_alert_v2";
     private static final int NOTIFICATION_ID_BASE = 2001;
     // One tray entry per alert (a later dispatch must not replace an unacknowledged SOS).
@@ -67,10 +64,8 @@ final class CriticalAlertNotifier {
     private CriticalAlertNotifier() {}
 
     /**
-     * C4 (2026-09-19 device session): the system heads-up notification
-     * stayed posted after the in-app "Acknowledge" dismissed only
-     * the overlay — `setAutoCancel(true)` above only clears it on a TAP,
-     * not on an in-app acknowledge. Called from
+     * Clears the system heads-up notification after an in-app
+     * "Acknowledge" — `setAutoCancel(true)` above only clears it on a TAP. Called from
      * `FullScreenAlertPlugin.dismiss()`, itself called by
      * `criticalAlertStore.ts`'s `dismissCriticalAlert()`.
      */
@@ -148,12 +143,8 @@ final class CriticalAlertNotifier {
                 return;
             }
 
-            // Distinct display name from the old (pre-2026-09-24, silent)
-            // "Critical Alerts" channel this app already shipped to test
-            // devices — a code-review finding pointed out that leaving both
-            // channels titled identically risks a user muting the wrong one
-            // from system settings, since neither name would tell them
-            // which is which.
+            // Distinct display name from the older silent "Critical Alerts"
+            // channel, so a user cannot mute the wrong one from system settings.
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 "Critical Alerts (Sound & Vibration)",

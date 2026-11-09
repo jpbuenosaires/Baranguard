@@ -156,7 +156,7 @@ describe('Toast', () => {
     assert.equal(err.getAttribute('role'), 'alert');
     assert.equal(ok.getAttribute('role'), 'status');
     noInjection();
-    // Each toast is its own live region; the container is not (X-08).
+    // Each toast is its own live region; the container is not.
     assert.equal($('.toast-container').getAttribute('aria-live'), null);
   });
 

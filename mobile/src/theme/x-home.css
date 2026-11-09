@@ -1,4 +1,4 @@
-/* Extracted from inline styles and split components (UI overhaul Phase 6). Tokens only. */
+/* Extracted from inline styles and split components. Tokens only. */
 
 .h4-content { --background: var(--color-bg); }
 .h4-fallback-badge { margin-top: 2px; display: flex; justify-content: center; }
@@ -98,7 +98,7 @@
 .critical-alert-overlay__title.critical-alert-overlay__title--flush { margin: 0; }
 .critical-alert-overlay__btn { font-weight: 700; height: var(--touch-min-size, 48px); }
 
-/* ---- Audit 2026-10-15: SOS dock, emergency rows, SOS confirm sheet ---- */
+/* ---- SOS dock, emergency rows, SOS confirm sheet ---- */
 
 /* Dedicated SOS tokens: solid saturated red with white text in light AND dark (the shared
    --color-critical lightens to salmon in dark mode and takes dark text). #dc2626 vs white = 4.83:1. */
@@ -194,7 +194,7 @@
 .sos-sheet__btn-confirm:focus-visible,
 .sos-sheet__btn-cancel:focus-visible { outline: 3px solid var(--color-text-primary); outline-offset: 2px; }
 
-/* ---- Report form (audit 2026-10-15) ---- */
+/* ---- Report form ---- */
 .intake-textarea-box { resize: none; }
 
 /* Quick phrases wrap onto several lines instead of a cut-off scrolling row. */

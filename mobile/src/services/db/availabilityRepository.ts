@@ -1,21 +1,17 @@
 /**
- * availabilityRepository.ts — `availability_local` (contract §3, migration 6).
+ * availabilityRepository.ts — `availability_local` (migration 6).
  *
- * A Tanod submits the dates and time windows they can serve for a period.
- * Since 2026-10-12 that is the tanod's own fixed statement: it is not
- * reviewed, never locked, and the desk can only schedule the tanod inside it.
- * The write is offline-first (Rule 7): it persists to encrypted SQLite before
- * the screen closes and goes out through `/sync/batch`'s `availability[]`,
- * keyed by `client_event_id`. The server's copy (version, and on rows from
- * before 2026-10-12 the legacy `accepted`/`revised` status and `review_note`,
- * kept but not shown) flows back in through `applyServerAvailability()`.
+ * A Tanod submits the dates and time windows they can serve for a period. That is the tanod's own fixed
+ * statement: it is not reviewed, never locked, and the desk can only schedule the tanod inside it. The
+ * write is offline-first: it persists to encrypted SQLite before the screen closes and goes out through
+ * `/sync/batch`'s `availability[]`, keyed by `client_event_id`. The server's copy (version, and on older
+ * rows the legacy `accepted`/`revised` status and `review_note`, kept but not shown) flows back in
+ * through `applyServerAvailability()`.
  *
- * ONE LOCAL ROW PER PERIOD (unique index): the server has UNIQUE(user_id,
- * period_start, period_end) and treats a re-send with changed windows as an
- * update (version + 1), whatever the row's status. So an edit re-uses the row, bumps the
- * local version and mints a NEW `client_event_id` — the old event id has
- * already been (or may have been) applied, and an idempotent replay of it
- * would carry the old windows.
+ * ONE LOCAL ROW PER PERIOD (unique index): the server has UNIQUE(user_id, period_start, period_end) and
+ * treats a re-send with changed windows as an update (version + 1), whatever the row's status. So an
+ * edit re-uses the row, bumps the local version and mints a NEW `client_event_id`: the old event id has
+ * already been (or may have been) applied, and an idempotent replay of it would carry the old windows.
  *
  * Nothing in here logs window contents.
  */
@@ -26,7 +22,7 @@ import { uuid } from '../uuid';
 import { manilaToday } from '../../utils/manilaTime';
 import { markWorkflowSyncFailed } from './workflowSync';
 
-/** Contract §3 limit. */
+/** Server-side limit. */
 export const MAX_AVAILABILITY_WINDOWS = 62;
 
 export interface NewAvailabilityInput {
@@ -38,7 +34,7 @@ export interface NewAvailabilityInput {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-/** Returns a human-readable problem, or null when the input satisfies contract §3's validation. */
+/** Returns a human-readable problem, or null when the input satisfies the server's validation. */
 export function validateAvailability(input: NewAvailabilityInput): string | null {
   const { periodStart, periodEnd, windows } = input;
   if (!DATE_RE.test(periodStart) || !DATE_RE.test(periodEnd)) return 'Choose a start and end date for the period.';

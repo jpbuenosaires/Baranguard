@@ -1,24 +1,13 @@
 /**
- * messageEncryptionKey.ts — stores the per-device symmetric key Sprint 4
- * Phase 3's `POST /devices/register` now issues once, on a device_id's
- * first-ever registration (see backend/controllers/DevicesController.php's
- * own doc for the server side of this). This is the SAME symmetric key
- * `EnvelopeCrypto` on the server uses for AES-256-GCM — the device must
- * hold the exact raw bytes, not a hash, so this is genuinely a secret,
- * not a passphrase-style "recreate if lost" value: losing it means this
- * device can no longer produce SMS envelopes the server will accept, and
- * only a fresh device_id (which mints a fresh key) recovers from that.
+ * messageEncryptionKey.ts — stores the per-device symmetric key that `POST /devices/register` issues
+ * once, on a device_id's first-ever registration (see backend/controllers/DevicesController.php). This
+ * is the SAME symmetric key `EnvelopeCrypto` on the server uses for AES-256-GCM: the device must hold the
+ * exact raw bytes, not a hash, so it is a true secret, not a "recreate if lost" value. Losing it means
+ * this device can no longer produce SMS envelopes the server will accept, and only a fresh device_id
+ * (which mints a fresh key) recovers.
  *
- * Storage pattern is a direct copy of `db/passphrase.ts`'s Keystore
- * approach (`@aparajita/capacitor-secure-storage` — Android-Keystore-
- * backed AES-GCM under the hood, confirmed against that plugin's own
- * README) — no separate design decision needed here, this is the same
- * secret-at-rest problem passphrase.ts already solved. Unlike that file,
- * there is no legacy-migration case: this key never existed before
- * Sprint 4 Phase 5, so there is nothing older to migrate from.
- *
- * NOT DEVICE-VERIFIED — same standing caveat as every other file in this
- * local-storage layer (see passphrase.ts's own note).
+ * Storage follows `db/passphrase.ts`'s Keystore approach (`@aparajita/capacitor-secure-storage`,
+ * Android-Keystore-backed AES-GCM).
  */
 
 import { SecureStorage } from '@aparajita/capacitor-secure-storage';

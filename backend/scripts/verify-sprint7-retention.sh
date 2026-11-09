@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Baranguard — Sprint 7 validation: retention jobs (§11's retention table,
-# all record types) + legal-hold override.
+# Baranguard — retention jobs (every record type) + legal-hold override.
 #
-# Every rule in §11 is a TIME-WINDOW rule, and none of the windows are
+# Every retention rule is a TIME-WINDOW rule, and none of the windows are
 # short (90 days is the shortest). So this suite seeds rows with
 # deliberately BACK-DATED timestamps — one just inside each window and one
 # just outside it — and asserts the job takes exactly the outside one.
@@ -28,10 +27,8 @@ expect_eq() { if [ "$1" = "$2" ]; then pass "$3 ($2)"; else fail "$3 — expecte
 expect_contains() { case "$1" in *"$2"*) pass "$3";; *) fail "$3 — '$2' not in: $1";; esac; }
 
 XAMPP_MYSQL_HOST="${XAMPP_MYSQL_HOST:-127.0.0.1}"
-# Port default: prefer backend/.env's DB_PORT over the stock-XAMPP
-# 3306 guess -- this machine's own XAMPP MariaDB runs on a non-default
-# port (an unrelated MySQL80 service owns 3306 here; see
-# docs/REFERENCE.md Sec 8), and .env is the one place that's recorded.
+# Port default: backend/.env's DB_PORT, else 3306 (an unrelated MySQL80 service
+# can own 3306, so XAMPP's MariaDB may be elsewhere).
 ENV_DB_PORT="$(grep -m1 '^DB_PORT=' "$BACKEND_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d '\r')"
 XAMPP_MYSQL_PORT="${XAMPP_MYSQL_PORT:-${ENV_DB_PORT:-3306}}"
 XAMPP_MYSQL_USER="${XAMPP_MYSQL_USER:-root}"
@@ -47,12 +44,8 @@ echo "Baranguard Sprint 7 retention validation — $(date -u +%Y-%m-%dT%H:%M:%SZ
 
 find_bin() {
   local name="$1"
-  # Explicit XAMPP path checked FIRST, not `command -v`: this machine
-  # (and possibly others) has an unrelated same-named binary earlier on
-  # PATH -- a separate MySQL Server install whose client can silently
-  # fail against XAMPP's own MariaDB (see docs/REFERENCE.md Sec 8) --
-  # that `command -v` would otherwise prefer over the XAMPP install
-  # these scripts are meant for. PATH is now only a fallback.
+  # XAMPP's binaries first: another MySQL client earlier on PATH can fail
+  # against XAMPP's MariaDB. PATH is only a fallback.
   for c in "/c/xampp/mysql/bin/${name}.exe" "/c/xampp/mysql/bin/${name}" "/c/xampp/php/${name}.exe" "/c/xampp/php/${name}"; do
     [ -x "$c" ] && { echo "$c"; return; }
   done
@@ -67,7 +60,7 @@ mysql_exec() {
   MYSQL_PWD="$XAMPP_MYSQL_PASSWORD" "$MYSQL_BIN" --host="$XAMPP_MYSQL_HOST" --port="$XAMPP_MYSQL_PORT" --user="$XAMPP_MYSQL_USER" "$@"
 }
 # One retry: this repo has hit transient mysql-client connection churn on
-# Windows across long suites before (see DEVLOG's Sprint 4 Phase 1 entry).
+# Windows across long suites.
 db_one() {
   local out
   out="$(mysql_exec -N -s "$VALDB" -e "$1" 2>/dev/null)"
@@ -95,13 +88,8 @@ step "0. Schema + migrations"
 # --------------------------------------------------------------------------
 mysql_exec -e "SELECT VERSION();" >/dev/null && pass "Connected to MariaDB" || { fail "Could not connect"; exit 1; }
 mysql_exec -e "DROP DATABASE IF EXISTS \`$VALDB\`; CREATE DATABASE \`$VALDB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-# FULL CHAIN, not this sprint's subset. Applying only 0001/0002/0004/
-# 0006/0007 was correct when written and silently stopped being correct on
-# 2026-09-05: migration 0011 added `user.is_suspended`, which
-# AuthController::login() selects, so every login here 500'd from then on
-# and the suite could not reach its own assertions. A suite pinned to a
-# partial schema expires the next time a migration touches a table it logs
-# in through.
+# Apply the full migration chain, not a subset: a partial schema 500s every
+# login (AuthController::login() selects columns from later migrations).
 for m in $(cd "$BACKEND_DIR/migrations" && ls [0-9]*.sql | grep -v '\.down\.sql$' | sed 's/\.sql$//' | sort | awk -v s=0001_baseline_schema '$0 >= s'); do
   mysql_exec "$VALDB" < "$BACKEND_DIR/migrations/$m.sql" >/dev/null 2>&1 || fail "migration $m failed"
 done
@@ -156,11 +144,10 @@ step "1. --list and --only argument handling"
 LIST_OUT="$(run_job --list)"
 expect_contains "$LIST_OUT" "raw_narrative" "--list names the raw_narrative rule"
 expect_contains "$LIST_OUT" "2557" "--list prints the real 7-year constant"
-# Capital L: it starts a sentence in the real output. This repo's own
-# DEVLOG has logged case-sensitivity assertion bugs twice before.
+# Capital L: it starts a sentence in the real output (the match is case-sensitive).
 expect_contains "$LIST_OUT" "Legal hold" "--list states legal hold is the only exception"
 
-# Wave 3 (review decision 10): the 0030-0033 tables have PLACEHOLDER rules
+# The 0030-0033 tables have PLACEHOLDER rules
 # with no period set. They must be listed, flagged pending, and accepted by
 # --only; the deep behaviour is in verify-retention-new-tables.sh.
 expect_contains "$LIST_OUT" "provisional_one_year" "--list flags the new-table rules as provisional one year"
@@ -186,7 +173,7 @@ INSERT INTO incident (barangay_id, reported_by, incident_type, priority, raw_nar
  (1,2,'theft','normal','RAW approved 10 days ago','[NAME] took it', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 DAY),'resolved','app', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 20 DAY), UTC_TIMESTAMP(), 0),
  (1,2,'theft','normal','RAW approved 40 days ago BUT HELD','[NAME] took it', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 40 DAY),'resolved','app', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 DAY), UTC_TIMESTAMP(), 1);
 SQL
-# Two more for the unapproved 365-day ceiling (one year since 2026-10-17).
+# Two more for the unapproved 365-day ceiling (one year).
 mysql_exec "$VALDB" <<SQL
 INSERT INTO incident (barangay_id, reported_by, incident_type, priority, raw_narrative, status, source, created_at, updated_at, legal_hold) VALUES
  (1,2,'disturbance','normal','RAW unapproved 400 days old','pending','app', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 400 DAY), UTC_TIMESTAMP(), 0),
@@ -221,7 +208,7 @@ expect_eq "$CEILING_KEPT" "1" "unapproved 30-day incident is under the ceiling a
 REDACTED_INTACT=$(db_one "SELECT COUNT(*) FROM incident WHERE redacted_narrative = '[NAME] took it';")
 expect_eq "$REDACTED_INTACT" "3" "approved redactions survived the raw_narrative purge"
 
-# Rule 17: retention jobs produce audit events.
+# Retention jobs produce audit events.
 AUDIT_ROW=$(db_one "SELECT COUNT(*) FROM audit_log WHERE action = 'retention_raw_narrative_purged';")
 expect_eq "$AUDIT_ROW" "1" "one audit row written for the raw_narrative rule"
 AUDIT_ACTOR=$(db_one "SELECT actor_user_id IS NULL AND barangay_id IS NULL FROM audit_log WHERE action='retention_raw_narrative_purged';")
@@ -310,10 +297,9 @@ if [ "$GONE_CODE" -ne 0 ]; then pass "ai_processing_log is no longer a known ret
 # --------------------------------------------------------------------------
 step "6. mobile_device — secrets scrubbed at 90 days, ROW RETAINED (0016)"
 # --------------------------------------------------------------------------
-# The rule changed: this used to DELETE the row, which silently stripped
-# `incident.device_id` off 7-year records via ON DELETE SET NULL 90 days
-# after a handset was retired. The provenance assertion below is the one
-# that would have caught that, and is the reason the rule was revised.
+# The row is kept, not deleted: deleting it would strip `incident.device_id`
+# off 7-year records via ON DELETE SET NULL 90 days after a handset was
+# retired. The provenance assertion below guards that.
 mysql_exec "$VALDB" <<SQL
 INSERT INTO mobile_device (device_id, user_id, platform, fcm_token, device_secret_ref, last_seen_at, is_active, created_at, deactivated_at) VALUES
  ('dev-old-inactive', 2, 'android', 'tok', 'secret-should-go', UTC_TIMESTAMP(), 0, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 200 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 120 DAY)),
@@ -410,7 +396,7 @@ fi
 HELD_ALIVE=$(db_one "SELECT COUNT(*) FROM incident WHERE incident_id = $HELD_INC;")
 expect_eq "$HELD_ALIVE" "1" "the legal-hold twin of the same age SURVIVED"
 
-# §11: a converted citizen_report follows its incident. The FK is SET
+# A converted citizen_report follows its incident. The FK is SET
 # NULL, so the report itself survives the cascade and simply loses the
 # link — after which its own 1-year clock (step 3's rule) applies again.
 ORPHANED=$(db_one "SELECT COUNT(*) FROM citizen_report WHERE description='converted long ago' AND incident_id IS NULL;")

@@ -1,12 +1,8 @@
 /**
- * icons.js — small inline-SVG icon set matching the Figma design's visual
- * language (24x24 grid, 2px stroke, round caps/joins — the same style
- * lucide-react uses throughout the Figma Make export's source, e.g.
- * DashboardLayout.tsx/LoginPage.tsx/AdminDashboard.tsx). This is a
- * from-scratch, geometrically-equivalent icon set, not a port of
- * lucide-react's actual path data — this app has no npm install step
- * (§1: no bundler), so a library import isn't an option the way it was
- * vendored for MapLibre GL JS.
+ * icons.js — small inline-SVG icon set (24x24 grid, 2px stroke, round
+ * caps/joins — the same style lucide uses). A from-scratch,
+ * geometrically-equivalent set, not a port of lucide's actual path data:
+ * there is no npm step or bundler, so a library import isn't an option.
  *
  * Each icon is a function `(size = 20) => svgString` so callers can inline
  * it directly via `.innerHTML` at whatever size the badge/context needs.

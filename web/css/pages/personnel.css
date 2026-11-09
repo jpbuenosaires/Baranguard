@@ -851,7 +851,7 @@
   }
 }
 
-/* --- 2026-10 tanod workflow: approval authority, availability, publish ---- */
+/* --- Tanod workflow: approval authority, availability, publish ---------- */
 .user-approval-cell {
   display: flex;
   flex-direction: column;
@@ -950,7 +950,7 @@
   flex: 1 1 12rem;
 }
 
-/* ---- Scheduler: weekly roster grid (2026-10-12) ------------------------- */
+/* ---- Scheduler: weekly roster grid ------------------------------------- */
 
 .split-panel.scheduler-layout--week {
   grid-template-columns: minmax(0, 1fr);

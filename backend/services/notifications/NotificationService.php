@@ -8,26 +8,21 @@ use PDO;
 
 /**
  * NotificationService — creates LOGICAL notifications and their per-user
- * targets (§5 `notification` / `notification_target`, §2 Rule 12).
+ * targets (`notification` / `notification_target`).
  *
- * Rule 12's model is the thing to hold onto: **a notification has one
- * identity; transports are separate attempts against it.** Nothing in this
- * file sends anything. It records who needs to be told and why;
- * `NotificationDispatcher` (Phase 2) decides how, and writes
- * `notification_delivery` rows per attempt. Keeping those apart is what
- * makes §6's reliability reporting able to distinguish "the person was
- * reached" from "a transport succeeded" — Rule 24 requires exactly that
- * separation, and collapsing them would make the metric meaningless.
+ * **A notification has one identity; transports are separate attempts
+ * against it.** Nothing in this file sends anything. It records who needs to
+ * be told and why; `NotificationDispatcher` decides how, and writes
+ * `notification_delivery` rows per attempt. Keeping those apart lets
+ * reliability reporting distinguish "the person was reached" from "a
+ * transport succeeded".
  *
- * THE ENTITY-INTEGRITY MATRIX IS ENFORCED HERE, IN APPLICATION CODE, and
- * that is deliberate rather than lazy. §5 states the matrix
- * (`dispatch` needs `dispatch_id`; `sos` needs `sos_id`; `priority_alert`
- * needs `incident_id` or `dispatch_id`) and also says a table-level CHECK
- * cannot express it — Sprint 0 confirmed MariaDB rejects that CHECK with
- * ERROR 1901, because all three columns carry `ON DELETE SET NULL`. So the
- * database physically cannot hold this invariant and the application must.
- * `assertEntityIntegrity()` below is that enforcement; every write path
- * goes through it.
+ * THE ENTITY-INTEGRITY MATRIX IS ENFORCED HERE, IN APPLICATION CODE:
+ * `dispatch` needs `dispatch_id`; `sos` needs `sos_id`; `priority_alert`
+ * needs `incident_id` or `dispatch_id`. A table-level CHECK cannot express
+ * it (MariaDB rejects it with ERROR 1901 because all three columns carry
+ * `ON DELETE SET NULL`), so `assertEntityIntegrity()` below enforces it and
+ * every write path goes through it.
  */
 final class NotificationService
 {
@@ -111,9 +106,8 @@ final class NotificationService
     /**
      * Adds one recipient.
      *
-     * §5: "Target `user_id`, optional `device_id`, and notification
-     * `barangay_id` must agree on tenant membership; this is enforced
-     * transactionally before target creation." A user outside the
+     * Target `user_id`, optional `device_id`, and notification `barangay_id`
+     * must agree on tenant membership. A user outside the
      * notification's barangay is skipped rather than throwing — a fan-out
      * list is assembled from a query that is already tenant-scoped, so a
      * mismatch here means a caller bug, and silently dropping the wrong
@@ -121,7 +115,7 @@ final class NotificationService
      *
      * The target's `device_id` is the Tanod's currently-active device, if
      * any. A NULL means "no push destination", which is precisely the
-     * signal Rule 12 uses to skip FCM and go straight to SMS.
+     * signal the dispatcher uses to skip FCM and go straight to SMS.
      */
     private static function addTarget(PDO $pdo, int $notificationId, int $barangayId, int $userId): bool
     {
@@ -139,7 +133,7 @@ final class NotificationService
             return false;
         }
 
-        // §5 UNIQUE(notification_id,user_id) — a repeated recipient is a
+        // UNIQUE(notification_id,user_id) — a repeated recipient is a
         // no-op rather than a duplicate alert.
         $stmt = $pdo->prepare(
             "INSERT INTO notification_target
@@ -158,8 +152,7 @@ final class NotificationService
     }
 
     /**
-     * Recipients for an SOS (§2 Rule 27: "sends alerts to Admin and other
-     * eligible on-duty Tanods").
+     * Recipients for an SOS: the Admin and other eligible on-duty Tanods.
      *
      * "Other" is load-bearing — the Tanod who raised the SOS is excluded;
      * alerting someone to their own emergency is noise at the exact moment
@@ -220,7 +213,7 @@ final class NotificationService
     }
 
     /**
-     * §5's notification entity-integrity matrix. See the class doc for why
+     * The notification entity-integrity matrix. See the class doc for why
      * this lives in PHP and not in a CHECK constraint.
      */
     private static function assertEntityIntegrity(string $type, ?int $dispatchId, ?int $sosId, ?int $incidentId, ?int $offerId = null, ?int $reportId = null): void
@@ -242,8 +235,7 @@ final class NotificationService
             // Migration 0040: about the tanod's own published shifts; no entity row.
             self::TYPE_ROSTER_PUBLISHED => ($reportId !== null || $dispatchId !== null || $sosId !== null || $incidentId !== null || $offerId !== null)
                 ? 'A roster_published notification carries no entity.' : null,
-            // §5: "'other' may use a documented entity relationship" — no
-            // combination is mandated, so nothing to reject.
+            // 'other' may use any entity relationship, so nothing to reject.
             default => null,
         };
 
@@ -251,8 +243,8 @@ final class NotificationService
             throw new ApiError(422, 'UNPROCESSABLE_ENTITY', $problem);
         }
 
-        // The matrix is also exclusive in spirit: §5 says "exactly one
-        // relevant target entity relationship is required". An SOS
+        // The matrix is also exclusive: exactly one relevant entity
+        // relationship. An SOS
         // notification carrying a dispatch_id would make the row ambiguous
         // for the reliability report, so reject the obvious cross-wiring.
         if ($type === self::TYPE_SOS && $dispatchId !== null) {

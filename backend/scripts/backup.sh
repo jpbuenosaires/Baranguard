@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
-# Baranguard — local backup baseline (Master Reference §11: "daily local
-# database backup with encrypted storage, documented backup retention,
-# periodic restore verification").
-#
-# This is the recovery baseline for Sprint 0. It is NOT the final
-# production schedule — the final backup schedule/retention number must
-# still be recorded in the deployment runbook before UAT (§11).
+# Baranguard — local backup: daily local database backup with encrypted
+# storage, age-based pruning and periodic restore verification.
 #
 # Usage: DB_PASSWORD=... ./scripts/backup.sh
 # Reads DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD from the environment
 # (source .env first, or export them) — never hardcoded here.
 #
-# Backup retention note (§11 Rule 11): a backup is a recovery copy, not an
+# Backup retention note: a backup is a recovery copy, not an
 # independent archive. Its expiration follows the retention of the source
 # data it contains. BACKUP_RETENTION_DAYS is age-based pruning, but the
 # pruning step below additionally checks for an active legal_hold and, while
@@ -65,26 +60,19 @@ sha256sum "$ENCRYPTED_DUMP" > "$CHECKSUM_FILE"
 echo "[backup] Wrote $ENCRYPTED_DUMP"
 echo "[backup] Checksum: $(cat "$CHECKSUM_FILE")"
 
-# §11 Rule 11 / docs/REMAINING.md C1 — LEGAL HOLD PRUNES NOTHING (review
-# decision 2026-10-07; supersedes the earlier "earliest held record" floor).
+# LEGAL HOLD PRUNES NOTHING.
 #
 # A backup is a full-DB dump named ${DB_NAME}_<TIMESTAMP>.sql.enc, and
 # RetentionService.php only purges DB rows (by deliberate design), so this
-# script is where backup-FILE legal hold has to be enforced. The earlier rule
-# kept only backups taken on/after the oldest held record, which let a backup
-# that predated a hold (yet still contained a record that later became held)
-# be deleted. The simpler, safer rule: while ANY record is under legal_hold in
-# ANY table inspected below (incident, citizen_report, evidence_attachment,
-# sms_log) no backup file is deleted at all. With no hold, the normal
-# age-based pruning (BACKUP_RETENTION_DAYS) applies.
+# script is where backup-FILE legal hold has to be enforced. A backup that
+# predates a hold may still contain a record that later became held, so the
+# rule is: while ANY record is under legal_hold in ANY table inspected below
+# (incident, citizen_report, evidence_attachment, sms_log) no backup file is
+# deleted at all. With no hold, the normal age-based pruning
+# (BACKUP_RETENTION_DAYS) applies.
 #
 # Fails CLOSED: if the hold query itself errors, nothing is pruned this run.
-#
-# Real bug fixed 2026-09-26 (DEVLOG (35)): the old query selected `created_at`
-# from `citizen_report`, which has never had that column (it uses
-# `submitted_at`), so every run failed closed and silently skipped pruning
-# from the day the script was written. The tables/columns below are the real
-# ones (all four carry `legal_hold`).
+# All four tables below carry `legal_hold`.
 set +e
 HELD_COUNT="$(MYSQL_PWD="$DB_PASSWORD" mysql \
   --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" -N -B "$DB_NAME" -e "

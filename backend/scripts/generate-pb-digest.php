@@ -2,21 +2,17 @@
 declare(strict_types=1);
 
 /**
- * generate-pb-digest.php — the periodic half of the "Periodic PB digest"
- * backlog item (docs/REMAINING.md section G). The content half already
- * existed (GET /reports/export?format=pdf); this is what makes it
- * periodic, now that C2 (2026-09-26) proved a Scheduled Task can run
- * unattended on this workstation without needing an Administrator
- * prompt.
+ * generate-pb-digest.php — the periodic half of the Punong Barangay
+ * digest. The content half is GET /reports/export?format=pdf; this makes
+ * it periodic via a Scheduled Task that runs unattended on this
+ * workstation without an Administrator prompt.
  *
  * CLI-ONLY, deliberately -- same reasoning as retention-job.php's own
  * header: there is no HTTP endpoint that triggers digest generation
  * (only GET /reports/digest and GET /reports/digest/download exist, both
  * read-only), and there should not be one. This calls
  * ReportsController::generateDigest() directly for every real barangay
- * in the `barangay` table (never a hardcoded 1-4 -- see §1's "four
- * barangays, fixed" note, but this reads the table anyway rather than
- * assuming it matches that note forever).
+ * in the `barangay` table (never a hardcoded 1-4).
  *
  * Usage (from `backend/`):
  *   php scripts/generate-pb-digest.php              # last 7 days (default)

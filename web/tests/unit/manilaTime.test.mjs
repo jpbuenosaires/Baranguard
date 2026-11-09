@@ -1,5 +1,5 @@
 /**
- * manilaTime.js is the one place the dashboard formats an instant (Rule 11).
+ * manilaTime.js is the one place the dashboard formats an instant.
  * These checks run with the PROCESS time zone set to Los Angeles, so any
  * accidental use of the browser/process zone would print the wrong hour.
  */

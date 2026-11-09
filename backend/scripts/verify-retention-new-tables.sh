@@ -1,20 +1,17 @@
 #!/usr/bin/env bash
-# Baranguard — Wave 3 / Agent H validation: placeholder retention rules for
-# the tables added by migrations 0030-0033 (document_scan, 0037, was dropped by 0041).
+# Baranguard — placeholder retention rules for the tables added by
+# migrations 0030-0033.
 #
-# Review decision 10: retention for these tables is NOT yet decided by the
-# barangay/COA, so the rules ship with NO duration (null / status
-# `pending_barangay_confirmation`) and are no-ops. The purge code is written
-# but unreachable in production. This suite proves, on a disposable DB:
+# Retention for these tables is provisional (one year) pending a barangay/COA
+# decision. This suite proves, on a disposable DB:
 #
 #   A. with the SHIPPED constants, a full non-dry-run run deletes NOTHING
-#      (row counts of every table, before/after),
-#      writes no audit row, and --list shows each rule as pending;
+#      young (row counts of every table, before/after), writes no audit
+#      row, and --list shows each rule as provisional;
 #   B. with the TEST-ONLY constructor seam given a duration, the purge
 #      removes only EXPIRED rows, never an accomplishment report that is not
 #      `prepared`, never rows newer than the cutoff, respects legal hold,
-#      and its
-#      audit metadata is counts only;
+#      and its audit metadata is counts only;
 #   C. the seam rejects bad values, and nothing outside the suite reaches it
 #      (env var / production caller).
 #

@@ -8,7 +8,7 @@ declare(strict_types=1);
  * Drives RetentionService for the four placeholder rules of the 0030-0033
  * tables, optionally handing the constructor's TEST-ONLY duration override
  * (the one and only way to give those rules a number outside a reviewed
- * constant change — Rule 10). Prints one JSON document on stdout.
+ * constant change). Prints one JSON document on stdout.
  *
  * Usage (from backend/, DB_* + SCANS_DIR in the environment):
  *   php scripts/verify-retention-new-tables-seam.php shipped

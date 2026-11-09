@@ -3,8 +3,7 @@
 # reboot without anyone manually clicking "Start" in the XAMPP Control
 # Panel or re-running `cloudflared tunnel run` by hand.
 #
-# (Earlier versions also registered a BaranguardAiWorker Scheduled Task;
-# the AI pipeline was removed in migration 0029. If that task is still
+# (If a BaranguardAiWorker Scheduled Task from an older install is still
 # registered on this machine, unregister it -- see the undo cheat-sheet
 # printed at the end.)
 #

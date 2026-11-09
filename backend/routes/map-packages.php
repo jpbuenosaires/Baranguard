@@ -2,9 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Route table for /map-packages (§6 "Map packages"). Built for Sprint 2's
- * M1 Login box (version check + download); POST added for the
- * admin-upload follow-up.
+ * Route table for /map-packages (version check, download, admin upload).
  *
  * The `/download` route is listed first so it can never be shadowed by
  * the metadata route; the patterns are mutually exclusive anyway (`$`

@@ -2,7 +2,7 @@
  * admin-log-incident.tsx — Chief Tanod console: log an incident reported by phone call,
  * Facebook message, walk-in or SMS. The report is saved on the phone first and sent
  * when there is a connection, so it is never lost to a dead signal. The narrative
- * is typed here and never shown back (Rule 1).
+ * is typed here and never shown back.
  */
 
 import { useCallback, useEffect, useId, useState } from 'react';

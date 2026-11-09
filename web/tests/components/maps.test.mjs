@@ -51,8 +51,8 @@ describe('LiveMap', () => {
     live.setMarkers([{ userId: 4, fullName: 'Jose', latitude: 12.918, longitude: 123.667, ageSeconds: 5, isStale: false }]);
     live.setSosMarkers([{ sosId: 91, latitude: 12.918, longitude: 123.667, status: 'active' }]);
     await settle();
-    // Seen failing once under a full parallel run (2026-10-07/28) and never reproduced
-    // since; the message lists every marker so the next failure explains itself.
+    // Failed once under a full parallel run and never reproduced; the message
+    // lists every marker so a failure explains itself.
     const sos = markerEls().filter((el) => el.className.includes('--sos'));
     assert.equal(sos.length, 1, `expected 1 SOS marker; markers: ${markerEls().map((el) => el.className).join(' | ')}`);
   });

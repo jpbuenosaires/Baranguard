@@ -1,5 +1,5 @@
 /**
- * home.tsx — M2 Home / Patrol Console (§9 Mobile).
+ * home.tsx — Home / Patrol Console.
  *
  * Priority-ordered HUD: duty status, alerts, active call, emergency lines,
  * with Report/SOS docked above the tab bar. Sections live in components/home/*.
@@ -99,7 +99,7 @@ const HomePage: React.FC = () => {
   const [deviceBlocked, setDeviceBlocked] = useState(isSyncDeviceBlocked());
   useEffect(() => subscribeSyncDeviceBlocked(setDeviceBlocked), []);
 
-  // Offline OFF-duty (closes assumption A4): an off-duty toggled with no
+  // Offline OFF-duty: an off-duty toggled with no
   // signal is queued with the device's tap time and shown locally right
   // away; going ON duty stays online-only. `pendingOffDutyRef` mirrors the
   // state for the sync-summary listener, which is subscribed once.

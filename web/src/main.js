@@ -1,18 +1,14 @@
 /**
- * main.js — app bootstrap/router. No framework (§1), so this is a small
- * hand-rolled state machine rather than a router library: show the login
- * page if there's no valid session, otherwise show whichever built
- * screen the caller's role/current page selection allows, or an honest
- * "not built yet" message for any role with no built screen at all
- * (Tanod — mobile-only, §6 doesn't gate login by role so a Tanod account
- * can still authenticate here, it just has no web screen to land on).
+ * main.js — app bootstrap/router. No framework, so this is a small hand-rolled
+ * state machine rather than a router library: show the login page if there's
+ * no valid session, otherwise whichever built screen the caller's role/current
+ * page selection allows, or an honest "not built yet" message for a role with
+ * no built screen (Tanod is mobile-only; a Tanod account can still
+ * authenticate here, it just has no web screen to land on).
  *
- * `currentPage` is in-memory only (no URL routing exists yet in this
- * vanilla-JS, no-bundler stack) — a reload always returns to the default
- * page for the role. (The public `#/citizen-report` page was removed
- * 2026-10-07: walk-ins are logged by staff from Incident Management, and
- * `POST /citizen-reports` no longer exists. The public transparency report
- * is a separate static page, not a route of this app.)
+ * `currentPage` is in-memory only (no URL routing) — a reload always returns
+ * to the default page for the role. The public transparency report is a
+ * separate static page, not a route of this app.
  */
 
 import { getSession, logout, login, onSessionExpired, SESSION_EXPIRED_MESSAGE } from './api/apiClient.js';
@@ -30,7 +26,7 @@ import { renderSmsMonitorPage } from './pages/sms-monitor.js';
 import { renderAuditLogPage } from './pages/audit-log.js';
 import { renderServiceHealthPage } from './pages/service-health.js';
 import { renderMapPackagesPage } from './pages/map-packages.js';
-// 2026-10 tanod-workflow pages (docs/FEATURE_CONTRACT_2026-10.md §10).
+// Tanod-workflow pages.
 import { renderApprovalsPage } from './pages/approvals.js';
 import { renderAccomplishmentReportsPage } from './pages/accomplishment-reports.js';
 import { renderReferralLogPage } from './pages/referral-log.js';
@@ -45,38 +41,37 @@ const PAGE_ROLES = {
   dashboard: ['admin', 'punong_barangay'],
   dispatch: ['admin', 'secretary'],
   'incident-management': ['admin', 'secretary'],
-  gis: ['admin', 'secretary', 'punong_barangay'], // Secretary = back-up dispatcher (2026-11-08): read-only map, no Call button
-  // 2026-09-05 merge of W9 Statistical Reports + W5 Historical Heatmap
-  // into one tabbed screen — see pages/analytics.js. Same role pair both
-  // already had, so (unlike `personnel` below) no per-tab role gating.
+  gis: ['admin', 'secretary', 'punong_barangay'], // Secretary = back-up dispatcher: read-only map, no Call button
+  // Statistical Reports + Historical Heatmap in one tabbed screen — see
+  // pages/analytics.js. Same role pair for both, so (unlike `personnel` below)
+  // no per-tab role gating.
   analytics: ['admin', 'punong_barangay'],
-  // 2026-09-05 merge of W10-W12 (User Management/Scheduler/Swap Requests)
-  // into one tabbed screen — see pages/personnel.js. Role list is the
-  // union of the three; personnel.js gates individual tabs below that.
-  // 2026-10: Secretary and Punong Barangay get
-  // the Scheduler tab only (read-only availability / roster publishing, which
-  // the Approvals page deep-links to); Users and Swap requests stay Admin —
-  // see personnel.js. The server gates every action by role + authority.
+  // User Management + Scheduler + Swap Requests in one tabbed screen — see
+  // pages/personnel.js. Role list is the union of the three; personnel.js
+  // gates individual tabs. Secretary and Punong Barangay get the Scheduler tab
+  // only (read-only availability / roster publishing, which the Approvals page
+  // deep-links to); Users and Swap requests stay Admin. The server gates every
+  // action by role + authority.
   personnel: ['admin', 'secretary', 'punong_barangay'],
-  // §9 W14 — Admin only, explicitly.
+  // SMS Monitor — Admin only, explicitly.
   'sms-log': ['admin'],
-  // §9 W17 and W20 — both Admin only, explicitly.
+  // Audit Log and Service Health — both Admin only, explicitly.
   'audit-log': ['admin'],
   'service-health': ['admin'],
-  // §D/W18 — Admin only, explicitly.
+  // Map Packages — Admin only, explicitly.
   'map-packages': ['admin'],
   settings: ['admin', 'secretary', 'punong_barangay'],
   // Per-incident detail view — the app's ONLY one, and the landing point
   // for search, notifications, Incident Management and the dashboard.
   // The lifecycle controls inside are Secretary-only, and the server
-  // enforces all of it independently (§2 Rule 6: client-side hiding is
-  // UX, not a boundary).
+  // enforces all of it independently (client-side hiding is UX, not a
+  // boundary).
   'incident-detail': ['admin', 'secretary', 'punong_barangay'],
-  // 2026-10 tanod-workflow pages (contract §10). Appended AFTER the screens
+  // Tanod-workflow pages. Appended AFTER the screens
   // above on purpose: the default landing page is the first PAGE_ROLES match
   // for a role, and these must not change anyone's existing landing page.
   // Each page's own actions are additionally gated server-side by role AND
-  // by the account's approval_authority (§2); hiding here is UX only.
+  // by the account's approval_authority; hiding here is UX only.
   approvals: ['admin', 'secretary', 'punong_barangay'],
   'accomplishment-reports': ['admin', 'secretary', 'punong_barangay'],
   referrals: ['admin', 'secretary', 'punong_barangay'],
@@ -88,9 +83,9 @@ const PAGE_ROLES = {
 // default landing page, since there is no id to land on.
 const DETAIL_PAGES = new Set(['incident-detail']);
 
-// --- Idle lock (audit 2026-10-09 X-02) --------------------------------------
+// --- Idle lock --------------------------------------------------------------
 // The dashboard polls every 15 s and every response slides the server session
-// (Rule 12), so a tab left open on a shared barangay-hall PC never expires on
+// so a tab left open on a shared barangay-hall PC never expires on
 // its own. This signs the user out after IDLE_TIMEOUT_MS with no keyboard,
 // mouse, touch or scroll input, after a visible IDLE_WARNING_MS warning. It
 // is measured by wall clock, so a PC that slept past the limit locks on wake.
@@ -166,7 +161,7 @@ export const __idleLockForTests = {
 };
 
 // --- Session end: back to sign-in, keeping the user's place -----------------
-// The token is memory-only (H-05), so a reload still signs out; that trade-off
+// The token is memory-only, so a reload still signs out; that trade-off
 // is unchanged. What IS kept (in memory, not storage) is the page the user was
 // on: signing back in as the SAME user returns there instead of the landing
 // page. Unsaved form text is not preserved.
@@ -214,7 +209,7 @@ function boot(currentPage, param, { notice } = {}) {
   const role = session.user.role;
   let page = currentPage;
   if (!page || !PAGE_ROLES[page]?.includes(role)) {
-    // W15 Settings > Appearance > Default landing page — a real per-user
+    // Settings > Appearance > Default landing page — a real per-user
     // preference, honoured only when it names a page this role can
     // actually see; otherwise falls back to the normal first-match.
     let preferred = null;
@@ -248,8 +243,8 @@ function boot(currentPage, param, { notice } = {}) {
   if (page === 'dashboard') {
     renderAdminDashboardPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'dispatch') {
-    // Returns a stop handle now that W3 polls its queue every 15s (audit
-    // W3) — same contract the GIS page already uses.
+    // Returns a stop handle: the dispatch page polls its queue every 15s,
+    // same contract the GIS page already uses.
     const handle = renderDispatchCenterPage(root, session.user, onLoggedOut, navigate);
     activeStop = handle?.stop ?? null;
   } else if (page === 'incident-management') {
@@ -269,7 +264,7 @@ function boot(currentPage, param, { notice } = {}) {
     renderPersonnelPage(root, session.user, onLoggedOut, navigate, param);
   } else if (page === 'sms-log') {
     // Returns a stop handle: the Live Feed panel polls GET /sms/logs
-    // every 10s (2026-09-05 UX pass) and that interval must not outlive
+    // every 10s and that interval must not outlive
     // the page — same contract as service-health/incident-detail below.
     // param can be an optional target phoneNumber or 'activity-log'.
     const handle = renderSmsMonitorPage(root, session.user, onLoggedOut, navigate, param);
@@ -279,7 +274,7 @@ function boot(currentPage, param, { notice } = {}) {
   } else if (page === 'map-packages') {
     renderMapPackagesPage(root, session.user, onLoggedOut, navigate);
   } else if (page === 'service-health') {
-    // Returns a stop handle: W20 re-checks health every 30s and that
+    // Returns a stop handle: Service Health re-checks every 30s and that
     // interval must not outlive the page.
     const handle = renderServiceHealthPage(root, session.user, onLoggedOut, navigate);
     activeStop = handle?.stop ?? null;
@@ -312,12 +307,10 @@ function boot(currentPage, param, { notice } = {}) {
 }
 
 /**
- * audit A6: document.title was never touched, so every screen, every
- * history entry and every bookmark read "Baranguard" — tab-switching
- * between Dispatch and Incidents was guesswork and browser history was
- * useless. Read from the heading the page just rendered rather than
- * maintained as a second lookup table beside PAGE_ROLES, which would be
- * one more thing to keep in sync with the PageHeader titles.
+ * Sets document.title from the heading the page just rendered, so tab
+ * switching, browser history and bookmarks name the screen. Read from the
+ * heading rather than kept as a second lookup table beside PAGE_ROLES, which
+ * would be one more thing to keep in sync with the PageHeader titles.
  */
 function setDocumentTitle(root) {
   const heading = root.querySelector('.page-header__title, h1, h2');
@@ -326,22 +319,15 @@ function setDocumentTitle(root) {
 }
 
 /**
- * §6.3 of the UI/UX review: move focus to the new page's own title after
- * every navigation, so a keyboard/screen-reader user isn't left on a DOM
- * node `root.innerHTML = ''` (inside each render*Page call) just deleted
- * out from under them — the same problem the skip-link's own `#page-main`
- * target solves for the FIRST Tab press on a page, extended here to every
- * subsequent navigation, not just the initial load.
+ * Moves focus to the new page's own title after every navigation, so a
+ * keyboard/screen-reader user isn't left on a DOM node that
+ * `root.innerHTML = ''` (inside each render*Page call) just deleted. Done
+ * centrally rather than in each render*Page function: every one builds its
+ * `PageHeader` synchronously before any async data load, so the title exists
+ * by the time this runs.
  *
- * Centralized here rather than added to each of the dozen render*Page
- * functions individually — every one of them already builds its
- * `PageHeader` synchronously before any async data load starts (confirmed
- * by reading several), so the title exists in the DOM by the time this
- * runs, immediately after the dispatch above returns.
- *
- * `tabindex="-1"` makes an element that isn't normally focusable (a
- * heading) a valid `.focus()` target without adding it to the Tab order —
- * the standard pattern for a programmatic focus move, not a UI trap.
+ * `tabindex="-1"` makes a heading a valid `.focus()` target without adding it
+ * to the Tab order.
  */
 function focusPageHeading(root) {
   const heading = root.querySelector('.page-header__title, h1, h2');

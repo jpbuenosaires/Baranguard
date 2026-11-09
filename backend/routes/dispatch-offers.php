@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Route table for night-time dispatch offers (Wave 2, migration 0038).
+ * Route table for night-time dispatch offers.
  * Picked up automatically by public/index.php's glob of routes/*.php.
  * Accept is deliberately online-only: it is NOT a /sync/batch kind.
  */

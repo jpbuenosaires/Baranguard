@@ -4,34 +4,25 @@ declare(strict_types=1);
 /**
  * gsm-ingest-daemon.php — reads inbound SMS off a tethered Android phone
  * over `adb` and forwards each one to the matching `/internal/sms/*`
- * handler. §6 "Internal SMS / GSM": "the real GSM ingestion process
- * (reading messages off the tethered phone)" — the half
- * `scripts/sms-envelope-build.php` stood in for while no hardware
- * existed (see that script's own doc block, and DEVLOG.md's
- * "GSM-modem INBOUND ingestion... is NOT trimmed" note). A5
- * (docs/REMAINING.md) unblocks this once hardware is available.
+ * handler. This is the real GSM ingestion process (reading messages off
+ * the tethered phone); `scripts/sms-envelope-build.php` builds the same
+ * envelopes for testing without hardware.
  *
- * WIRE FORMAT, DEFINED HERE (nothing upstream had ever defined one — the
- * mobile side never built on-device SMS *sending* either, see
- * `mobile/src/services/smsFallbackState.ts`'s own header comment): the
- * SMS body is the EXACT flat JSON envelope §6 documents for
- * `POST /internal/sms/*` — the same shape `sms-envelope-build.php`
- * already prints. No new encoding invented; the proven contract is
- * reused verbatim, so a real phone's SMS app and this daemon need to
- * agree on nothing beyond "send this JSON as the message text."
+ * WIRE FORMAT: the SMS body is the EXACT flat JSON envelope accepted by
+ * `POST /internal/sms/*` — the same shape `sms-envelope-build.php` prints.
+ * A real phone's SMS app and this daemon need to agree on nothing beyond
+ * "send this JSON as the message text."
  *
  * THIS PROCESS NEVER DECRYPTS ANYTHING. It only reads a body string off
  * the phone and forwards it byte-for-byte as the request body — the
  * ciphertext stays ciphertext all the way to `EnvelopeCrypto` inside the
  * backend. Nothing here ever holds a device's `message_encryption_key`
- * or plaintext narrative, so this script's own output discipline (like
- * `ai-worker.php`'s) is easy to keep: identifiers and statuses only.
+ * or plaintext narrative, so output is identifiers and statuses only.
  *
- * Runs on THIS workstation, over loopback, same as `public/internal.php`
- * requires (§2 Rule 7). `INTERNAL_SERVICE_TOKEN` must be configured or
- * every forward attempt 401s — this is a real requirement, not a
- * decoration: unlike `ai-worker.php`, `/internal/sms/*` is a normal
- * `curl`-able HTTP endpoint with no other identity to fall back on.
+ * Runs on THIS workstation, over loopback, as `public/internal.php`
+ * requires. `INTERNAL_SERVICE_TOKEN` must be configured or every forward
+ * attempt 401s: `/internal/sms/*` is a normal `curl`-able HTTP endpoint
+ * with no other identity to fall back on.
  *
  * Usage (from backend/):
  *   php scripts/gsm-ingest-daemon.php --once        one poll, then exit
@@ -67,9 +58,7 @@ baranguard_load_env();
 
 /**
  * Resolves the adb binary path when neither --adb nor GSM_GATEWAY_ADB_PATH
- * is given: previously hardcoded to one specific machine's own username
- * (C:/Users/JAYSON~1/...), which silently reported "adb NOT reachable" on
- * every OTHER machine, real adb install notwithstanding. Tries the
+ * is given. Tries the
  * standard Android Studio SDK location under LOCALAPPDATA first, then
  * ANDROID_HOME/ANDROID_SDK_ROOT if set, then falls back to a bare `adb`
  * (relies on PATH — works if it's already discoverable there).
@@ -186,8 +175,8 @@ function parseContentQueryOutput(string $raw): array
     $rows = [];
     foreach (preg_split('/\R/', $raw) as $line) {
         if (!str_starts_with($line, 'Row:')) {
-            // 2026-09-19, seen on the real Infinix inbox: a body containing a
-            // newline prints as a continuation line with no "Row:" prefix.
+            // A body containing a newline prints as a continuation line with
+            // no "Row:" prefix.
             // Re-attach it to the row above instead of silently truncating.
             if ($rows !== [] && $line !== '') {
                 $rows[array_key_last($rows)]['body'] .= "
@@ -357,11 +346,10 @@ function pollOnce(
             $lastId = max($lastId, $row['id']); $lastDate = max($lastDate, $row['date']);
             $forwarded++;
         } elseif ($result['status'] === 422) {
-            // §6/EnvelopeException: "deliberately generic — no detail that
-            // would help distinguish WHY an envelope was rejected." A
+            // EnvelopeException is deliberately generic: no detail that would
+            // help distinguish WHY an envelope was rejected. A
             // replayed/expired/tampered/unknown-device envelope all look
-            // identical here on purpose (same class of denial Rule 13
-            // uses elsewhere) — terminal for THIS message either way.
+            // identical here on purpose, terminal for THIS message either way.
             out("[sms _id={$row['id']} type={$envelope['message_type']}] SKIPPED — envelope rejected (expired/replayed/unknown device/tampered — indistinguishable by design).");
             reportText($baseUrl, $token, $row, 'ENVELOPE_REJECTED_' . strtoupper($envelope['message_type']));
             $lastId = max($lastId, $row['id']); $lastDate = max($lastDate, $row['date']);

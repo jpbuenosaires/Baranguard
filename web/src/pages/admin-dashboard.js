@@ -1,34 +1,19 @@
 /**
- * admin-dashboard.js — W2 Admin Dashboard (§9): "KPI cards plus trend
- * chart. The API returns trend[] with a defined date bucket and counts,
- * so the chart never invents a client-side data shape. Fresh deployments
- * show an intentional empty state." Roles: Admin, Punong Barangay
- * (read-only) — this screen has no write action at all, so there is
- * nothing role-specific to disable in the UI; both roles just call the
- * same GET.
+ * admin-dashboard.js — Admin Dashboard: KPI cards plus trend chart. The API
+ * returns trend[] with a defined date bucket and counts, so the chart never
+ * invents a client-side data shape. A barangay with no incidents shows an
+ * intentional empty state. Roles: Admin, Punong Barangay (read-only).
  *
- * 2026-09-02 "Phase 1" addition — Recent Incidents panel, Tanods On Duty
- * panel, and KPI period-over-period deltas. All three are built entirely
- * from endpoints that already exist (GET /incidents, GET /duty-status,
- * GET /users?role=, and a second GET /reports/summary call for the
- * previous period) — no new backend route or response field was added.
- * The delta is computed client-side by calling GET /reports/summary a
- * second time for the immediately-preceding period of equal length; that
- * second call is best-effort (wrapped separately from the main load) so
- * a slow/failed previous-period fetch never blocks the dashboard's core
- * data from rendering.
+ * The Recent Incidents panel, Tanods On Duty panel and KPI period-over-period
+ * deltas are built entirely from existing endpoints (GET /incidents,
+ * GET /duty-status, GET /users?role=, and a second GET /reports/summary call
+ * for the immediately-preceding period of equal length). That second call is
+ * best-effort (wrapped separately from the main load) so a slow/failed
+ * previous-period fetch never blocks the dashboard's core data.
  *
- * CORRECTION, found by browser-verifying Punong Barangay's own nav
- * (2026-09-13, docs/REMAINING.md B5): the class doc above used to claim
- * "both roles just call the same GET" for this whole screen. That was
- * false for the Tanods On Duty panel specifically — `GET /users?role=`
- * is Admin-only server-side (§3; UsersController::index() requires the
- * `admin` role), so Punong Barangay 403'd on every single dashboard load
- * and `loadTanodsOnDuty()`'s catch-all turned that permanent, by-design
- * 403 into a generic "Could not load Tanod duty status." — indistinguishable
- * from a real transient failure. See that function's own note below.
- *
- * kebab-case filename per §4 (pages/routes convention).
+ * The two roles do not make identical GETs: `GET /users?role=` is Admin-only
+ * server-side, so the Tanods On Duty panel is skipped for Punong Barangay
+ * (see loadTanodsOnDuty's own note below).
  */
 
 import { getOwnApprovalAuthority, getPendingApprovalCounts } from '../services/shellWorkflowApi.js';
@@ -69,8 +54,8 @@ const INCIDENT_TYPE_COLORS = {
   animal_complaint: 'var(--cat-animal)',
   other: 'var(--cat-other)',
 };
-// Audit P-06 (2026-10-09): by_status now carries every incident status
-// (migration 0025's lifecycle states too), so the rows add up to the total.
+// by_status carries every incident status (including the lifecycle states),
+// so the rows add up to the total.
 const STATUS_LABELS = INCIDENT_STATUS_LABELS;
 const STATUS_PILL_CLASS = {
   pending: 'status-pill--pending', dispatched: 'status-pill--info', resolved: 'status-pill--success',
@@ -86,17 +71,16 @@ const OPEN_STATUSES = ['pending', 'dispatched', 'reopened'];
 
 /**
  * How often the attention banner re-reads the live counts. Same 15 s cadence
- * the rest of the live console uses (Dispatch Center, GIS); audit A-06
- * (2026-10-09) found the banner was fetched once and never refreshed, so an
- * SOS raised while the Dashboard was open never showed here.
+ * the rest of the live console uses (Dispatch Center, GIS), so an SOS raised
+ * while the Dashboard is open shows here.
  */
 const ATTENTION_POLL_MS = 15000;
 
 /**
- * One wording for the response-time metric (audits N-01, N-02, P-02..P-05,
- * 2026-10-09) -- kept identical to statistical-reports.js. The backend
+ * One wording for the response-time metric -- kept identical to
+ * statistical-reports.js. The backend
  * measures incident.created_at to the FIRST dispatch arrived_at per
- * incident. No target exists in any project document, so none is shown; it
+ * incident. No response target is defined, so none is shown; it
  * is an operational measure, never a ranking of tanods.
  */
 const RESPONSE_METRIC_LABEL = 'Incident reported to first Tanod arrival (average)';
@@ -160,11 +144,7 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
   const pageHeader = PageHeader({ title: 'Dashboard', subtitle: 'Barangay-wide incident summary and activity', icon: icons.layoutDashboard });
   header.appendChild(pageHeader.el);
 
-  // Date range control. 2026-09-06 UI/UX audit: this screen used to build
-  // its own ~120-line picker; four other screens had copy-pasted the same
-  // block and drifted. It is now the shared DateRangePicker component —
-  // see that file for what the copies disagreed about and the two bugs
-  // (leaked document listeners, UTC "today") the consolidation fixed.
+  // Date range control: the shared DateRangePicker component.
   const rangePicker = DateRangePicker({
     value: '30',
     ariaLabel: 'Date range',
@@ -193,7 +173,7 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
 
   load(undefined, undefined);
 
-  // A-06: the banner reflects "right now", so it refreshes on its own timer,
+  // The banner reflects "right now", so it refreshes on its own timer,
   // independent of the date range and of the full reload. Retires itself the
   // first tick after this page leaves the DOM (main.js rebuilds #app on
   // every navigate), and stop() is returned for callers that hold a handle.
@@ -231,12 +211,12 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
         }
       }
 
-      // A-07/P-08 (2026-10-09): a quiet date range while nobody is on duty
-      // used to replace the WHOLE dashboard with a "fresh deployment"
-      // message, hiding the live attention banner and pending approvals.
-      // The empty state is now reserved for a barangay with no incident on
-      // record at all (checked independently of the range), and even then
-      // the banner and approvals still load.
+      // A quiet date range while nobody is on duty must not replace the
+      // WHOLE dashboard with a "fresh deployment" message, hiding the live
+      // attention banner and pending approvals. The empty state is reserved
+      // for a barangay with no incident on record at all (checked
+      // independently of the range), and even then the banner and approvals
+      // still load.
       let isFreshDeployment = false;
       if (summary.totalIncidents === 0 && summary.activeTanods === 0) {
         const anyIncident = await getIncidents({ limit: 1 }).catch(() => null);
@@ -278,14 +258,11 @@ export function renderAdminDashboardPage(root, user, onLoggedOut, navigate) {
  * When an un-dispatched high/critical incident's wait escalates the
  * banner from "here is a count" to "this one has been ignored".
  *
- * THIS IS A DISPLAY HEURISTIC, NOT AN SLA. No document in this project
- * defines a dispatch response target — §11 sets retention windows, and
- * Sprint 8's response-time box measures `created_at → arrived_at` without
- * asserting what it should be. So this number decides only when the
- * escalation line changes wording and colour; it is never presented to
- * the operator as a breached standard, and the minutes shown beside it
- * are always the real measured wait. If a real SLA is ever adopted, it
- * belongs in the reference first and this constant follows it.
+ * THIS IS A DISPLAY HEURISTIC, NOT AN SLA. No dispatch response target is
+ * defined anywhere, so this number decides only when the escalation line
+ * changes wording and colour; it is never presented to the operator as a
+ * breached standard, and the minutes shown beside it are always the real
+ * measured wait.
  */
 const STALE_URGENT_MINUTES = 15;
 
@@ -293,8 +270,8 @@ const STALE_URGENT_MINUTES = 15;
  * Minutes the OLDEST still-pending urgent incident has been waiting, or
  * null when there are none. Reads `createdAt`, which `apiClient`'s
  * `reviveUtcTimestamps` has already normalised to a real UTC instant —
- * parsing the raw `2026-09-06 13:41:20` here would silently shift by the
- * local offset (the bug commit 891a01b fixed across 85 call sites).
+ * parsing the raw `YYYY-MM-DD hh:mm:ss` here would silently shift by the
+ * local offset.
  */
 function urgentWaitMinutes(urgentItems) {
   const times = urgentItems
@@ -305,16 +282,13 @@ function urgentWaitMinutes(urgentItems) {
 }
 
 /**
- * "What needs attention right now" banner. Audit A-06/A-07/P-18
- * (2026-10-09): it used to take its pending count from the DATE-RANGE
- * summary (so an incident older than the range was invisible), never
- * counted `reopened` incidents (active work again, queued by Dispatch
- * Center), was fetched once, and vanished with the rest of the page on a
- * quiet range. Now every count comes from live, range-independent queries
- * (GET /incidents?status=pending and ?status=reopened `total`s, GET
- * /tanod-sos), it re-runs on ATTENTION_POLL_MS, and a failed fetch is said
- * out loud instead of being read as zero. Same `status !== 'resolved'`
- * definition of an open SOS as `dispatch-center.js`.
+ * "What needs attention right now" banner. Every count comes from live,
+ * range-independent queries (GET /incidents?status=pending and
+ * ?status=reopened `total`s, GET /tanod-sos), so an incident older than the
+ * date range is still visible and `reopened` incidents (active work again,
+ * queued by Dispatch Center) are counted. It re-runs on ATTENTION_POLL_MS,
+ * and a failed fetch is said out loud instead of being read as zero. Same
+ * `status !== 'resolved'` definition of an open SOS as `dispatch-center.js`.
  */
 async function loadAttentionBanner(container, navigate, role) {
   const host = container.querySelector('[data-attention-banner]');
@@ -382,7 +356,7 @@ async function loadAttentionBanner(container, navigate, role) {
 
   const detail = document.createElement('span');
   detail.className = 'attention-banner__detail';
-  // P-18: the Punong Barangay has no dispatch action, so the banner says who
+  // The Punong Barangay has no dispatch action, so the banner says who
   // acts on it instead of an alarm with no next step.
   if (role === 'admin') {
     detail.textContent = isCritical ? 'Needs immediate response' : 'Needs attention';
@@ -436,11 +410,9 @@ async function loadDeltas(container, dateFrom, dateTo, summary) {
   try {
     const [prevFrom, prevTo] = previousPeriodRange(dateFrom, dateTo);
     const prevSummary = await getReportsSummary({ dateFrom: prevFrom, dateTo: prevTo });
-    // audit W2: these two cards used to be REPLACED wholesale once the
-    // previous-period request landed, so both visibly blinked and
-    // re-rendered a beat after the page had settled — and any focus
-    // inside them was thrown away. KpiCard now exposes setDelta(), so the
-    // existing nodes are mutated instead.
+    // These two cards are mutated in place (KpiCard.setDelta()) rather than
+    // replaced once the previous-period request lands, so they don't blink
+    // or lose focus.
     // Second argument is the PRIOR value, which is what turns the delta
     // into a percentage; a prior period of zero has no percentage, and
     // KpiCard falls back to the raw difference in that case.
@@ -468,7 +440,7 @@ async function loadTanodsOnDuty(container, barangayId, role) {
   const host = container.querySelector('[data-tanods-on-duty]');
   if (!host) return;
   // `GET /users` (needed here purely to resolve a Tanod's display name) is
-  // Admin-only server-side (§3) — Punong Barangay has no Personnel/Users
+  // Admin-only server-side — Punong Barangay has no Personnel/Users
   // reach at all, by design, not by omission. Skip the doomed call rather
   // than let it 403 on every load and report a permissions boundary as a
   // generic load failure; the aggregate "Tanods On Duty" KPI card above
@@ -493,7 +465,7 @@ async function loadTanodsOnDuty(container, barangayId, role) {
 }
 
 /**
- * Pending-approvals widget (2026-10, contract §10). Shown to whoever lands
+ * Pending-approvals widget. Shown to whoever lands
  * on this dashboard (Admin and Punong Barangay): counts of work waiting on
  * THIS user (an Admin sees reports to print and sign and Annex D to prepare; others
  * what their approval authority lets them act on) (GET /users/:id for self, then the existing list endpoints — there
@@ -648,8 +620,8 @@ async function loadPendingApprovals(container, user, navigate) {
 
 /**
  * Punong Barangay's Weekly Digest card. `available: false` (no scheduled
- * run yet) is rendered plainly, not as an error — §2 Rule 6's own
- * `not_configured`-is-neutral reasoning applies here too.
+ * run yet) is rendered plainly, not as an error (`not_configured` is
+ * neutral).
  */
 async function loadPbDigest(container) {
   const host = container.querySelector('[data-pb-digest]');
@@ -748,11 +720,10 @@ function renderEmpty(container, navigate, role) {
     <h3>No activity yet</h3>
     <p>This barangay hasn't logged any incidents or on-duty Tanods yet. Once incidents are reported and Tanods are on duty, this dashboard fills in automatically.</p>
   `;
-  // 2026-09-05 UX pass: gave a fresh deployment a first real action
-  // instead of just describing what happens "automatically" — Incident
-  // Management's create form is Admin/Secretary (§7); Punong Barangay is
-  // read-only oversight and has no create action anywhere, so it keeps
-  // the description-only empty state.
+  // Gives a barangay with no incidents a first real action instead of only
+  // describing what happens "automatically" — Incident Management's create
+  // form is Admin/Secretary; Punong Barangay is read-only oversight and has
+  // no create action anywhere, so it keeps the description-only empty state.
   if (role === 'admin') {
     const cta = document.createElement('button');
     cta.type = 'button';
@@ -799,9 +770,9 @@ function renderPopulated(container, summary, navigate, role) {
       sparkline: summary.trend.map((day) => day.count),
       description: 'Every incident reported in the selected date range, alongside resolution progress and trend activity.',
     }),
-    // N-01/P-03 (2026-10-09): no "Target < 20m" chip -- no document defines
-    // a response target (see STALE_URGENT_MINUTES' own note), and a null
-    // value used to be painted as a warning.
+    // No "Target < 20m" chip -- no response target is defined (see
+    // STALE_URGENT_MINUTES' own note), and a null value must not be painted
+    // as a warning.
     KpiCard({
       label: 'Avg. Response Time',
       value: summary.avgResponseTimeMinutes === null ? null : `${summary.avgResponseTimeMinutes} min`,
@@ -814,7 +785,7 @@ function renderPopulated(container, summary, navigate, role) {
       description: `${RESPONSE_METRIC_LABEL}. Only incidents with a Tanod arrival are counted; incidents resolved without a dispatch are not included. ${RESPONSE_OFFLINE_FOOTNOTE} An operational measure for the barangay, not a rating of any Tanod.`,
     }),
     // No period-over-period delta here — this is a live current-state
-    // snapshot (§9), not a range-bucketed count, so "vs previous period"
+    // snapshot, not a range-bucketed count, so "vs previous period"
     // isn't a meaningful comparison for it.
     KpiCard({
       label: 'Tanods On Duty',
@@ -831,10 +802,7 @@ function renderPopulated(container, summary, navigate, role) {
   );
 
   // Trend + type breakdown side by side, each in a card carrying the
-  // shared card-header (title / subtitle / corner icon) rather than a bare
-  // <h3> with an inline margin — audit A4 removed the inline pixel values
-  // from this file, and .card-header already existed in base.css for
-  // exactly this pattern.
+  // shared card-header (title / subtitle / corner icon) from base.css.
   const chartsGrid = document.createElement('div');
   chartsGrid.className = 'two-col-grid dashboard-row';
 
@@ -890,22 +858,18 @@ function renderPopulated(container, summary, navigate, role) {
   const statusRow = document.createElement('div');
   statusRow.className = 'two-col-grid dashboard-row';
   statusRow.append(renderBreakdownCard('By Status', summary.byStatus, STATUS_LABELS, STATUS_PILL_CLASS, navigate));
-  // 2026-09-06 UX pass: this row's second column was always empty (a
-  // `two-col-grid` with one child) — Admin's most common next steps from
-  // the dashboard (log an incident, open dispatch, message a resident,
-  // review incidents) had no single home; each was a sidebar hop away.
-  // Punong Barangay is read-only oversight (§3, no write action anywhere
-  // on this screen already), so it keeps the single-column status card
-  // exactly as before rather than gaining a card of actions it can't use.
+  // Admin's most common next steps (log an incident, open dispatch, message
+  // a resident, review incidents) get a single home in this row's second
+  // column. Punong Barangay is read-only oversight, so it keeps the
+  // single-column status card rather than gaining a card of actions it can't
+  // use.
   if (role === 'admin') {
     statusRow.append(renderQuickActionsCard(navigate));
   } else if (role === 'punong_barangay') {
-    // Fills the same previously-empty second column the comment above
-    // used to describe as "a card of actions it can't use" — the
-    // periodic PB digest (REMAINING.md section G) is read-only, so it
-    // fits PB's oversight-only role exactly. Loaded async by
-    // loadPbDigest(), same skeleton-then-fill pattern as the Tanods On
-    // Duty panel below.
+    // The same column holds the periodic PB digest for Punong Barangay: it is
+    // read-only, so it fits PB's oversight-only role. Loaded async by
+    // loadPbDigest(), same skeleton-then-fill pattern as the Tanods On Duty
+    // panel below.
     const digestCard = document.createElement('div');
     digestCard.className = 'card';
     digestCard.appendChild(cardHeader(
@@ -962,11 +926,9 @@ function pendingApprovalsRow(navigate) {
 
 /**
  * Shared card title / subtitle / corner-icon header (base.css
- * .card-header). `viewAll` (2026-09-06 UX pass), when given, replaces the
- * purely decorative corner icon with an icon-only button that navigates to
- * that data's full screen — the corner icon has always occupied the
- * "top right of the card" real estate the user asked "View all" to move
- * into, so this reuses that slot rather than adding a second control.
+ * .card-header). `viewAll`, when given, replaces the purely decorative
+ * corner icon with an icon-only button that navigates to that data's full
+ * screen, reusing the corner-icon slot rather than adding a second control.
  */
 function cardHeader(title, subtitle, icon, description, viewAll, chip) {
   const el = document.createElement('div');
@@ -1014,7 +976,7 @@ function blockSkeleton() {
   return el;
 }
 
-/** "2026-09-04" -> "Sep 4", for x-axis tick labels. */
+/** "YYYY-MM-DD" -> "Sep 4", for x-axis tick labels. */
 function shortDate(iso) {
   const [, m, d] = iso.split('-');
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1025,8 +987,8 @@ function renderRecentIncidentsTable(host, items, navigate, role) {
   host.innerHTML = '';
   if (items.length === 0) {
     // For the Punong Barangay the server only returns open incidents and
-    // those reported in the last 30 days (no browsable case list, REFERENCE
-    // section 3), so "none" means none in that window.
+    // those reported in the last 30 days (no browsable case list), so
+    // "none" means none in that window.
     host.innerHTML = role === 'punong_barangay'
       ? '<p class="note">No open incidents and none reported in the last 30 days.</p>'
       : '<p class="note">No incidents logged yet.</p>';
@@ -1038,10 +1000,8 @@ function renderRecentIncidentsTable(host, items, navigate, role) {
     rowKey: (row) => row.incidentId,
     rowAriaLabel: (row) => `#${row.incidentId}`,
     caption: 'Most recent incidents',
-    // 2026-09-05 UX pass: this was the one list in the app whose rows led
-    // nowhere — every other list (Incident Management, topbar
-    // search, notifications) already navigates to incident-detail on
-    // click, same destination used here.
+    // Rows link to incident-detail on click, like every other list
+    // (Incident Management, topbar search, notifications).
     onRowClick: (row) => navigate('incident-detail', row.incidentId),
     renderCell: (row, key) => {
       switch (key) {
@@ -1186,10 +1146,8 @@ function renderIncidentTypeDonutCard(counts, navigate) {
 
 /**
  * Quick Actions — Admin's most common next steps from the dashboard, all
- * to screens that already exist (§9); nothing here is a new capability,
- * just a shortcut to ones that previously required a sidebar hop. Filled
- * this row's previously-empty second column (see renderPopulated's own
- * comment above the call site).
+ * to screens that already exist; nothing here is a new capability, just a
+ * shortcut.
  */
 function renderQuickActionsCard(navigate) {
   const card = document.createElement('div');
@@ -1300,9 +1258,7 @@ function renderBreakdownCard(title, counts, labels, pillClasses, navigate) {
 
   // Operational Pipeline Summary Footer (Balances card height with Quick Actions)
   if (total > 0) {
-    // "Open" = still needs work: pending, dispatched or reopened (audit
-    // P-06; "Active in Field" used to include pending, which is not in the
-    // field yet, and left out reopened).
+    // "Open" = still needs work: pending, dispatched or reopened.
     const activeCount = OPEN_STATUSES.reduce((sum, key) => sum + (counts[key] || 0), 0);
     const activePct = Math.round((activeCount / total) * 100);
     const resolvedCount = counts.resolved || 0;

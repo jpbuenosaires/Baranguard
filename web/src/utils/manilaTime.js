@@ -1,7 +1,7 @@
 /**
  * manilaTime.js — the ONE place the dashboard formats an instant for display.
  *
- * Operational times are Asia/Manila (REFERENCE Rule 11). The browser's own
+ * Operational times are Asia/Manila. The browser's own
  * time zone must never decide what a barangay official reads: a laptop set to
  * another zone would show a dispatch at the wrong hour. Every function here
  * pins `timeZone: 'Asia/Manila'` and uses the 12-hour clock with am/pm, which

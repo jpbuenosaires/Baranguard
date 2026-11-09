@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Baranguard — turns the manual Cloudflare Named Tunnel sequence (tunnel
 # create, hand-writing config.yml, two DNS routes) into one idempotent
-# script. This is the real, persistent remote-access mechanism (C-03),
-# not the Cloudflare Quick Tunnel — see docs/REFERENCE.md §1 for the
-# distinction (Quick Tunnel is a random-hostname, no-auth, testing-only
-# exception; this is the real thing).
+# script. This is the persistent remote-access mechanism, not the
+# Cloudflare Quick Tunnel (a random-hostname, no-auth, testing-only
+# exception).
 #
 # PREREQUISITES, all manual/interactive — not scripted, on purpose:
 #   1. A Cloudflare account (cloudflare.com — free tier is enough).

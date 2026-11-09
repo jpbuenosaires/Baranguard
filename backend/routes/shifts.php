@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Route table for /shifts (§6 "Shifts" section).
+ * Route table for /shifts.
  */
 
 use Baranguard\Controllers\ShiftsController;

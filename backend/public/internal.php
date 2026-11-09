@@ -2,12 +2,10 @@
 declare(strict_types=1);
 
 /**
- * Front controller for the internal-only `/internal/*` surface — §6
- * "Internal SMS / GSM": "Inbound handlers are callable only by the local
- * ingestion service over loopback or a mutually authenticated internal
- * channel; they are never exposed on the public API surface." §2 Rule 22:
- * "Inbound SMS is authenticated ... passed to internal handlers over
- * loopback or an equally protected local service boundary."
+ * Front controller for the internal-only `/internal/*` surface.
+ * Inbound handlers are callable only by the local ingestion service over
+ * loopback or a mutually authenticated internal channel; they are never
+ * exposed on the public API surface.
  *
  * DELIBERATELY A SEPARATE ENTRY POINT from `index.php`, not a special-cased
  * prefix inside it — that is what makes "never exposed on the public API
@@ -27,7 +25,7 @@ declare(strict_types=1);
  * .env.example's own note on why loopback alone isn't trusted as the only
  * check on this particular XAMPP install):
  *   1. REMOTE_ADDR must be loopback (127.0.0.1 or ::1) — the real GSM
- *      ingestion process runs on this same workstation (§2 Rule 7).
+ *      ingestion process runs on this same workstation.
  *   2. The `X-Internal-Token` header must match INTERNAL_SERVICE_TOKEN.
  * Either check failing returns the SAME generic 401 as the other — no
  * detail about which gate failed, so a scan can't learn anything from the
