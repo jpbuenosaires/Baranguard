@@ -8,12 +8,12 @@ import { barangayLabel } from './homeDuty';
 /** Accents to the base letter (José -> Jose), anything else outside GSM-7 dropped, so the text stays in few segments. ñ/Ñ are GSM-7 and kept. */
 export function toGsm7(text: string): string {
   return text
-    .replace(/[ñ]/g, '\u0001n')
-    .replace(/[Ñ]/g, '\u0001N')
+    .replace(/[ñ]/g, 'n')
+    .replace(/[Ñ]/g, 'N')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
-    .replace(/\u0001n/g, 'ñ')
-    .replace(/\u0001N/g, 'Ñ')
+    .replace(/n/g, 'ñ')
+    .replace(/N/g, 'Ñ')
     .replace(/[^\x20-\x7E\nñÑ]/g, '');
 }
 
